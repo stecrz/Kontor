@@ -12,7 +12,7 @@
 //   (leer) = Netz mit Zeitlimit, bei Ausfall Speicher
 const VERSION = '__VERSION__';
 const SHELL = 'kontor-shell-' + VERSION;
-const DATA = 'kontor-data-enc';            // a plain copy of an old version ('kontor-data') is deleted on activation
+const DATA = 'kontor-data-enc';
 const SHELL_FILES = ['/', '/i18n.js', '/app.js', '/app.css', '/icon.svg', '/icon-180.png', '/manifest.webmanifest'];
 const NO_CACHE = ['/api/session', '/api/log', '/api/update/', '/api/receipts/file', '/api/export/', '/api/diagnostics', '/api/package/export', '/api/backup', '/api/touchid', '/api/assistant/'];
 let lastNetOk = 0;          // letzte erfolgreiche Netzantwort: kurz danach gilt ein grosszuegiges Zeitlimit (Server langsam ≠ weg)
@@ -21,7 +21,7 @@ self.addEventListener('install', e => {
   e.waitUntil(caches.open(SHELL).then(c => c.addAll(SHELL_FILES)).then(() => self.skipWaiting()));
 });
 self.addEventListener('activate', e => {
-  e.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => (k.startsWith('kontor-shell-') && k !== SHELL) || k === 'kontor-data').map(k => caches.delete(k)))).then(() => self.clients.claim()));
+  e.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => k.startsWith('kontor-shell-') && k !== SHELL).map(k => caches.delete(k)))).then(() => self.clients.claim()));
 });
 
 function withTimeout(req, ms) {

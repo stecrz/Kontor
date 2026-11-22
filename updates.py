@@ -8,7 +8,9 @@ Before anything of a new version is installed (or run), the installed one reads 
 the things that reach beyond the program -- network, other programs, loading code, addresses, helpers (update_guard.py).
 Nothing new or changed among them: installed as before. Otherwise the update waits, the settings name what was found, and
 it is installed only with an approval given for exactly these files (their digest). A folder that is a git clone is
-checked the same way: fetched, read, and only then moved forward to exactly the commit that was read.
+checked the same way: fetched from the repository the settings name (its origin must be that one), read as a whole -- what
+of it is no part of the program and no ordinary file of its tests is a finding, an approval is for the whole new state --
+and only then moved forward to exactly the commit that was read.
 Die Programmdateien werden direkt ersetzt, ohne Sicherung: VERSION
 zuletzt -- bricht ein Update ab, bleibt die alte Nummer, der Dienst startet nicht neu
 (die alte Version laeuft im Speicher weiter) und das Update laesst sich wiederholen.
@@ -158,6 +160,7 @@ def _archive(data: bytes) -> Tuple[Optional[zipfile.ZipFile], Optional[str]]:
 
 
 MAX_FILE = 64 * 1024 * 1024         # bytes of one file of an update, unpacked (the largest today: a help picture of 1 MB)
+MAX_TREE = 512 * 1024 * 1024        # bytes of everything a git clone's new state holds (today under 20 MB)
 
 
 def _new_files(zf: zipfile.ZipFile, base: str) -> Dict[str, bytes]:
@@ -180,7 +183,7 @@ def review(new: Dict[str, bytes]) -> Dict[str, object]:
     installed version does not hold the same way (update_guard.compare) -- empty: nothing to ask about}. If the check itself
     fails, that is a finding: an update is never installed unread."""
     old: Dict[str, bytes] = {}
-    for rel in new:
+    for rel in sorted(set(new) | update_guard.kept()):         # the files the check names: also when the new version has them no more
         try:
             with open(os.path.join(HERE, *rel.split("/")), "rb") as f:
                 old[rel] = f.read()
@@ -191,6 +194,9 @@ def review(new: Dict[str, bytes]) -> Dict[str, object]:
     except Exception as e:          # a file no reader of Python understands: shown, not passed over
         log.warning("Update: check of the new files failed (%s)", type(e).__name__)
         found = [{"kind": "unreadable", "file": "", "what": type(e).__name__, "new": True}]
+    for f in found:                 # a helper or script: how many lines change, and whether calls to the outside are among them
+        if "added" in f:
+            f["what"] = " · ".join([tr("upd_zeilen", f["added"], f["removed"])] + ([tr("upd_aussen")] if f.get("out") else []) + [str(f["what"])])
     return {"digest": update_guard.digest(new), "findings": found}
 
 
@@ -243,9 +249,15 @@ def check(repo: str, look: bool = True) -> Dict[str, object]:
             log.info("Update check: %s available (%s), newer than installed", out["available"], out["source"])
             if look and out.get("zip"):                        # read it now, so the settings can say whether it will wait for you
                 try:
-                    zf, base = _archive(_get(str(out["zip"]), "*/*"))
-                    if zf is not None and base is not None:
-                        out["review"] = review(_new_files(zf, base))
+                    clone = _clone(repo)                       # a git clone: read as installing reads it (the whole repository)
+                    if clone is not None:
+                        if "review" in clone:
+                            out["review"] = clone["review"]
+                    else:
+                        zf, base = _archive(_get(str(out["zip"]), "*/*"))
+                        if zf is not None and base is not None:
+                            out["review"] = review(_new_files(zf, base))
+                    if "review" in out:
                         log.info("Update check: %d finding(s) in the new version's files", len(out["review"]["findings"]))      # type: ignore[index]
                 except Exception as e:                         # not readable now: installing reads it again and decides
                     log.info("Update check: new version not read yet (%s)", type(e).__name__)
@@ -267,33 +279,71 @@ def _git(*args: str, timeout: int = 120, binary: bool = False, data: Optional[by
 
 
 GIT_OWN = (".gitattributes", ".gitmodules")        # files that change what git itself does with the other files
+GIT_SOURCE = "https://github.com/%s.git"
+REPO_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9-]{0,38}/[A-Za-z0-9_.-]{1,100}")
 
 
-def _git_files(sha: str) -> Tuple[Dict[str, bytes], List[Dict[str, object]]]:
-    """The files of a commit as git holds them (no filters, no archive rules of the repository): ({path: content} of what
-    would reach the program folder as program, [findings for what is no plain file -- a link, another repository -- and for
-    files that tell git to treat others differently])."""
-    r = _git("ls-tree", "-r", "-z", "--full-tree", sha, binary=True)
+def _git_source(repo: str) -> str:
+    """Where a clone of the repository the settings name fetches from."""
+    return GIT_SOURCE % repo
+
+
+def _same_source(url: str, want: str) -> bool:
+    """Is the clone's origin the address of that repository (https or ssh to github.com, with or without .git)?"""
+    def plain(u: str) -> str:
+        u = u.strip().rstrip("/")
+        u = u[:-4] if u.endswith(".git") else u
+        m = re.match(r"(?i)^(?:https://github\.com/|git@github\.com:|ssh://git@github\.com/)([^/]+/[^/]+)$", u)
+        return "github.com/" + m.group(1).lower() if m else u
+    return bool(url.strip()) and plain(url) == plain(want)
+
+
+def _here(rel: str) -> bytes:
+    """A file of the program folder as it is now (empty when there is none)."""
+    try:
+        with open(os.path.join(HERE, *rel.split("/")), "rb") as f:
+            return f.read()
+    except OSError:
+        return b""
+
+
+def _git_tree(ref: str) -> List[Tuple[str, str, str, str]]:
+    """Every entry of a commit's tree as git holds it: [(path, mode, kind, object)]."""
+    r = _git("ls-tree", "-r", "-z", "--full-tree", ref, binary=True)
     if r.returncode != 0:
         raise ValueError("git ls-tree")
-    want: List[Tuple[str, str]] = []
-    odd: List[Dict[str, object]] = []
+    out = []
     for entry in r.stdout.split(b"\0"):
-        if not entry:
-            continue
-        meta, _, raw = entry.partition(b"\t")
-        mode, kind, oid = meta.decode("ascii").split()
-        rel = raw.decode("utf-8", "surrogateescape")
-        own = rel.rsplit("/", 1)[-1] in GIT_OWN
-        if not (own or update_guard.installable(rel)):
-            continue
-        if kind != "blob" or mode not in ("100644", "100755"):
-            odd.append({"kind": "file", "file": rel, "what": "link" if mode == "120000" else kind, "new": True})
-        want.append((rel, oid))
-    out = _git("cat-file", "--batch", binary=True, data=b"".join(o.encode("ascii") + b"\n" for _, o in want)).stdout
-    files: Dict[str, bytes] = {}
+        if entry:
+            meta, _, raw = entry.partition(b"\t")
+            mode, kind, oid = meta.decode("ascii").split()
+            out.append((raw.decode("utf-8", "surrogateescape"), mode, kind, oid))
+    return out
+
+
+def _git_files(sha: str) -> Tuple[Dict[str, bytes], List[Dict[str, object]], str]:
+    """The files of a commit as git holds them (no filters, no archive rules of the repository): ({path: content} of what
+    reaches the program folder as program, [findings for everything else of the new state that arrives unread -- no plain
+    file (a link, another repository), files that tell git to treat others differently, files that are no part of the program
+    and no ordinary file of its tests and development (update_guard.beside)], the fingerprint of the whole tree). Only what is
+    new or changed against the commit there is now is named."""
+    entries = _git_tree(sha)
+    try:
+        before = {rel: (mode, oid) for rel, mode, _kind, oid in _git_tree("HEAD")}
+    except ValueError:
+        before = {}
+    blobs = [(rel, oid) for rel, _mode, kind, oid in entries if kind == "blob"]
+    ask = b"".join(o.encode("ascii") + b"\n" for _, o in blobs)
+    sizes = [int(x.split()[2]) if len(x.split()) == 3 else -1 for x in _git("cat-file", "--batch-check", binary=True, data=ask).stdout.splitlines()]
+    if len(sizes) != len(blobs) or min(sizes, default=0) < 0 or sum(sizes) > MAX_TREE:      # sizes first: nothing too big is read
+        raise ValueError("git cat-file: %d MB" % (sum(sizes) // 1048576))
+    for (rel, _oid), size in zip(blobs, sizes):
+        if size > MAX_FILE:
+            raise ValueError("%s: %d MB" % (rel, size // 1048576))
+    out = _git("cat-file", "--batch", binary=True, data=ask).stdout
+    data: Dict[str, bytes] = {}
     pos = 0
-    for rel, oid in want:
+    for rel, oid in blobs:
         end = out.index(b"\n", pos)
         head = out[pos:end].split()
         if len(head) != 3 or head[0].decode("ascii") != oid:
@@ -301,43 +351,75 @@ def _git_files(sha: str) -> Tuple[Dict[str, bytes], List[Dict[str, object]]]:
         size = int(head[2])
         if size > MAX_FILE:
             raise ValueError("%s: %d MB" % (rel, size // 1048576))
-        files[rel] = out[end + 1:end + 1 + size]
+        data[rel] = out[end + 1:end + 1 + size]
         pos = end + 1 + size + 1
-    for rel in sorted(files):
-        if rel.rsplit("/", 1)[-1] in GIT_OWN:
-            data = files.pop(rel)
-            try:
-                with open(os.path.join(HERE, *rel.split("/")), "rb") as f:
-                    same = f.read() == data
-            except OSError:
-                same = False
+    lists = []                                               # the repository's own list of what programs make (both versions)
+    for text in (data.get(".gitignore", b""), _here(".gitignore")):
+        lists += text.decode("utf-8", "replace").splitlines()
+    files: Dict[str, bytes] = {}
+    odd: List[Dict[str, object]] = []
+    whole: Dict[str, bytes] = {}
+    for rel, mode, kind, oid in entries:
+        whole[rel + "\0" + mode] = data[rel] if rel in data else (kind + " " + oid).encode("ascii")
+        same = before.get(rel) == (mode, oid)
+        base = rel.rsplit("/", 1)[-1]
+        if kind != "blob" or mode not in ("100644", "100755"):
             if not same:
-                odd.append({"kind": "file", "file": rel, "what": rel, "new": not os.path.exists(os.path.join(HERE, *rel.split("/")))})
-    return files, odd
+                odd.append({"kind": "file", "file": rel, "what": "link" if mode == "120000" else kind, "new": rel not in before})
+            continue
+        if base in GIT_OWN:
+            if not same:
+                odd.append({"kind": "file", "file": rel, "what": rel, "new": rel not in before})
+            continue
+        if update_guard.installable(rel):
+            files[rel] = data[rel]
+            if not same and update_guard.ignored(rel, update_guard.MADE_HERE.splitlines() + lists):
+                odd.append({"kind": "extra", "file": rel, "what": rel, "new": rel not in before})
+            continue
+        why = None if same else update_guard.beside(rel, data[rel], lists)
+        if why:
+            odd.append({"kind": "extra", "file": rel, "what": why, "new": rel not in before})
+    return files, odd, update_guard.digest(whole, whole=True)
 
 
-def install_via_git(restart: bool = True, approved: str = "") -> Optional[Dict[str, object]]:
-    """Programmordner ist ein Git-Klon: holen, lesen, dann genau auf den gelesenen Stand vorruecken (statt Archiv; haelt das Repo
-    konsistent). None, wenn nicht anwendbar. Nothing of the new state is in the folder before it is read and approved."""
+def _clone(repo: str) -> Optional[Dict[str, object]]:
+    """Programmordner ist ein Git-Klon: fetched from exactly the repository the settings name (its origin must be that one),
+    read as a whole -- {"sha", "version", "review"} or {"text"} when that is not possible; None when it is no clone."""
     if not os.path.isdir(os.path.join(HERE, ".git")) or not shutil.which("git"):
         return None
-    log.info("Update: program folder is a git clone, fetching")
+    origin = _git("remote", "get-url", "origin")
+    want = _git_source(repo) if REPO_RE.fullmatch(repo or "") and ".." not in repo else ""
+    if not want or origin.returncode != 0 or not _same_source(origin.stdout, want):
+        log.error("Update: the clone fetches from %r, not from %r: not updated", origin.stdout.strip()[:200], want)
+        return {"text": tr("s_git_pull_fehlgeschlagen") % ("origin %s ≠ %s" % (origin.stdout.strip()[:200] or "?", want or repo))}
+    log.info("Update: program folder is a git clone, fetching %s", want)
+    r = _git("fetch", "--quiet", "--no-tags", "origin", "+refs/heads/main:refs/remotes/origin/main")
+    sha = _git("rev-parse", "--verify", "--quiet", "refs/remotes/origin/main^{commit}").stdout.strip() if r.returncode == 0 else ""
+    if r.returncode != 0 or not re.fullmatch(r"[0-9a-f]{40,64}", sha):
+        log.error("Update: git fetch failed: %s", (r.stderr or r.stdout).strip()[:300])
+        return {"text": tr("s_git_pull_fehlgeschlagen") % ((r.stderr or r.stdout).strip()[:300] or "origin/main")}
+    new, odd, whole = _git_files(sha)
+    if "kontor.py" not in new or "VERSION" not in new:
+        return {"text": tr("s_archiv_enthaelt_kein_kontor_kontor")}
+    rev = review(new)
+    rev["findings"] = odd + rev["findings"]                  # type: ignore[operator]
+    rev["digest"] = whole                                    # an approval is for the whole new state of the clone
+    return {"sha": sha, "version": new["VERSION"].decode("utf-8", "replace").strip(), "review": rev}
+
+
+def install_via_git(restart: bool = True, approved: str = "", repo: str = "") -> Optional[Dict[str, object]]:
+    """Programmordner ist ein Git-Klon: holen, lesen, dann genau auf den gelesenen Stand vorruecken (statt Archiv; haelt das Repo
+    konsistent). None, wenn nicht anwendbar. Nothing of the new state is in the folder before it is read and approved -- and
+    then exactly the commit that was read."""
     try:
-        r = _git("fetch", "--quiet")
-        sha = _git("rev-parse", "--verify", "--quiet", "@{upstream}^{commit}").stdout.strip() if r.returncode == 0 else ""
-        if r.returncode != 0 or not re.fullmatch(r"[0-9a-f]{40,64}", sha):
-            log.error("Update: git fetch failed: %s", (r.stderr or r.stdout).strip()[:300])
-            return {"ok": False, "text": tr("s_git_pull_fehlgeschlagen") % ((r.stderr or r.stdout).strip()[:300] or "upstream")}
-        new, odd = _git_files(sha)
-        if "kontor.py" not in new or "VERSION" not in new:
-            return {"ok": False, "text": tr("s_archiv_enthaelt_kein_kontor_kontor")}
-        rev = review(new)
-        rev["findings"] = odd + rev["findings"]              # type: ignore[operator]
-        if odd:
-            rev["digest"] = update_guard.digest(dict(new, **{".git:" + str(o["file"]): str(o["what"]).encode("utf-8") + sha.encode("ascii") for o in odd}))
-        version = new["VERSION"].decode("utf-8", "replace").strip()
-        if not _approved(rev, approved):
-            return _waits(rev, version)
+        clone = _clone(repo)
+        if clone is None:
+            return None
+        if "sha" not in clone:
+            return {"ok": False, "text": clone["text"]}
+        sha, rev = str(clone["sha"]), clone["review"]
+        if not _approved(rev, approved):                     # type: ignore[arg-type]
+            return _waits(rev, str(clone["version"]))        # type: ignore[arg-type]
         r = _git("merge", "--ff-only", "--quiet", sha)
     except (OSError, subprocess.TimeoutExpired, ValueError) as e:
         log.error("Update: git update failed: %s", e)
@@ -390,7 +472,7 @@ def _remove_gone(before: set, installed: set) -> int:
 def install(repo: str, zip_url: Optional[str] = None, restart: bool = True, approved: str = "") -> Dict[str, object]:
     """approved: the digest of the files you have seen the findings of (from check or an earlier try) -- an update with
     findings is installed only when it is exactly those files."""
-    via_git = install_via_git(restart, approved)
+    via_git = install_via_git(restart, approved, repo)
     if via_git is not None:
         return via_git
     info = check(repo, look=False) if not zip_url else {"zip": zip_url, "available": "?"}

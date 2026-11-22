@@ -2,7 +2,13 @@
 
 # Kontor
 
-**Dein digitaler CFO.** Bilanz, Cashflow, Planung und Steuerübersicht auf Basis von [MoneyMoney](https://moneymoney-app.com) (macOS) – für dich privat und für jede Gesellschaft getrennt. Ein kleiner Dienst, der dauerhaft auf dem Mac läuft, mit einer Web-Oberfläche unter `http://127.0.0.1:8765/`. Nur Bordmittel (Python 3, `openssl`, `security`, `osascript`), keine Fremdbibliotheken, keine Zugangsdaten außerhalb von MoneyMoney, keine Netzverbindung außer der abschaltbaren Update-Prüfung bei GitHub (und, nur auf Klick, dem Nachschlagen von Wertpapiernamen per ISIN und dem Laden des optionalen Assistenten). Kontor enthält keine Annahmen über deine Konten: Alles wird in der Oberfläche eingerichtet.
+**Dein digitaler CFO.** Der Überblick über dein Privatvermögen und die Gesellschaften dahinter – Bilanz, Cashflow, Planung und Steuerübersicht auf Basis von [MoneyMoney](https://moneymoney-app.com) (macOS), für dich privat und für jede Gesellschaft getrennt – und ein KI-Assistent, der nur auf deinem Mac läuft, sich erinnert und Routine abnimmt.
+
+Ein kleiner Dienst, der dauerhaft auf dem Mac läuft, mit einer Oberfläche unter `http://127.0.0.1:8765/` – im Browser, als eigene Mac-App und vom iPhone. Nur Bordmittel von macOS (Python 3, `openssl`, `osascript`, Swift für kleine Helfer), keine Fremdbibliotheken, keine Zugangsdaten außerhalb von MoneyMoney. Kontor enthält keine Annahmen über deine Konten: Alles wird in der Oberfläche eingerichtet.
+
+- **Alles bleibt auf dem Mac:** verschlüsselt, lesbar erst nach deiner Anmeldung (Passwort oder Touch ID) – auch für jemanden am entsperrten Mac.
+- **Ins Netz nur, wo du es zulässt:** von selbst fragt Kontor nur nach neuen Versionen (abschaltbar); alles andere – Wertpapiernamen per ISIN, das Laden des Assistenten, seine Internetsuche zum Lesen – erst nach deinem Klick, nie mit deinen Daten ([Sicherheit](docs/help.de.md#security)).
+- **In MoneyMoney nur der enge Rahmen:** Buchungen der Buchungsregeln in Offline-Konten und die Kategorie eines Umsatzes, den du zuordnest – nie Überweisungen.
 
 ## Installation
 
@@ -33,10 +39,14 @@ Sie lädt Kontor, richtet es als Dienst im Hintergrund ein und öffnet die Oberf
 
 **Übersicht** – die wichtigsten Grafiken auf einer Bildschirmseite: Nettovermögen, Vermögensstruktur, monatlicher Cashflow, Vermögensbrücke und Vermögensaufbau; ein Klick führt an ihre Stelle in Bilanz oder Cashflow.
 
-**Assistent** (optional) – ein Sprachmodell, das nur auf deinem Mac läuft ([llama.cpp](https://github.com/ggml-org/llama.cpp) mit einem Modell deiner Wahl, in Kontor geladen und aktualisiert): Fragen in normaler Sprache zu deinen Zahlen und zur Bedienung, als Fenster neben jeder Seite – getippt oder diktiert. Er öffnet die passende Ansicht, hebt hervor, wovon er spricht, und schlägt Einträge vor, die erst dein Klick einträgt. Er liest auch Dateien, die du ihm gibst: Belege, Excel-Tabellen und PDFs mit Tabellen über mehrere Seiten. Er merkt sich, was du ihm sagst (Ziele, Entscheidungen, Menschen, Vorlieben) – verschlüsselt, nur auf diesem Mac, jederzeit einsehbar und löschbar.
+**KI-Assistent** (optional) – ein Sprachmodell, das nur auf deinem Mac läuft ([llama.cpp](https://github.com/ggml-org/llama.cpp) mit einem Modell deiner Wahl, in Kontor geladen und aktualisiert): Fragen in normaler Sprache zu deinen Zahlen und zur Bedienung, als Fenster neben jeder Seite – getippt, diktiert oder per Rechtsklick auf eine Zahl. Er öffnet die passende Ansicht, hebt hervor, wovon er spricht, zeichnet Diagramme aus Kontors Zahlen und liest Dateien, die du ihm gibst: Belege, Excel-Tabellen und PDFs mit Tabellen über mehrere Seiten.
 
-- Nichts verlässt den Mac: Das Modell läuft ohne Netz in der Abschirmung von macOS; ins Netz geht Kontor dafür nur, um nach neueren Versionen zu fragen (von selbst, einstellbar) und – auf Klick – Programm und Modell zu laden.
-- Es liest, was Kontor zeigt, öffnet Seiten und schlägt Einträge vor – eingetragen wird erst nach deinem Klick, und jedes Recht ist einzeln schaltbar. Einstellungen, Regeln und MoneyMoney fasst es nie an.
+- **Er schlägt vor, du entscheidest:** Kontostände und Planwerte, Kategorien, wartende Auto-Buchungen, Buchungsregeln, Belege – alle Änderungen einer Antwort stehen auf einer Karte, ausgeführt erst nach deinem Klick, danach zurücknehmbar und im Protokoll. Jedes Recht ist einzeln schaltbar; Einstellungen, Zugang, Updates und Überweisungen fasst er nie an.
+- **Er merkt sich, was du ihm sagst** (Ziele, Entscheidungen, Menschen, Vorlieben) – nur aus deinen eigenen Worten, verschlüsselt, nur auf diesem Mac, jederzeit einsehbar und löschbar.
+- **Nichts verlässt den Mac:** Die Modelle laufen ohne Netz in der Abschirmung von macOS. Ins Netz geht Kontor dafür nur, um nach neueren Versionen zu fragen (von selbst, einstellbar) und – auf Klick – Programm und Modelle zu laden.
+- **Internet nur zum Lesen** (ab Werk aus): Kontor sucht selbst bei festen, überwiegend amtlichen Quellen; was gesendet wird, steht vorher auf einer Karte im Chat, nie etwas aus deinen Daten.
+
+**Mac-App** – Kontor in einem eigenen Fenster mit Menüleiste, Tastaturkürzeln und Suche (⌘F); am Mac gebaut, öffnet nur Kontors eigene Seite (Einstellungen → Allgemein → Als App).
 
 **[Demo](docs/help.de.md#demo)** – zum Vorzeigen: eine eigene Umgebung mit erfundenen Beispieldaten (Privatperson, UG, GbR) statt deiner, geöffnet mit deiner Anmeldung unten auf der Anmeldeseite.
 
@@ -49,16 +59,16 @@ Sie lädt Kontor, richtet es als Dienst im Hintergrund ein und öffnet die Oberf
 | ![Übersicht](docs/img/de/overview.png)<br>[Übersicht](docs/help.de.md#overview) | ![Cashflow](docs/img/de/cash_flow.png)<br>[Cashflow](docs/help.de.md#cash-flow) |
 | ![Planung](docs/img/de/planning.png)<br>[Planung](docs/help.de.md#planning) | ![Immobilien](docs/img/de/property.png)<br>[Immobilien](docs/help.de.md#properties) |
 | ![Kategorisieren](docs/img/de/assign_categories.png)<br>[Kategorisieren](docs/help.de.md#categories) | ![Einrichtung](docs/img/de/setup.png)<br>[Einrichtung](docs/help.de.md#setup) |
-| ![Assistent](docs/img/de/assistant.png)<br>[Assistent](docs/help.de.md#assistant) | ![Assistent einrichten](docs/img/de/assistant_settings.png)<br>[Assistent einrichten](docs/help.de.md#assistant-setup) |
+| ![KI-Assistent](docs/img/de/assistant.png)<br>[KI-Assistent](docs/help.de.md#assistant) | ![KI-Assistent einrichten](docs/img/de/assistant_settings.png)<br>[KI-Assistent einrichten](docs/help.de.md#assistant-setup) |
 | ![Zugriff vom iPhone](docs/img/de/access.png)<br>[Zugriff vom iPhone](docs/help.de.md#iphone) | <img src="docs/img/de/iphone.png" alt="Kontor auf dem iPhone" width="220"><br>[Auf dem iPhone](docs/help.de.md#iphone) |
 
 ## Entwicklung
 
-- Tests: `python3 -m pytest -q tests` – Regeln und Zinsmodelle, Verschlüsselung, Lauf gegen ein simuliertes MoneyMoney, HTTP-API, Immobilienkalkulation gegen eine handgerechnete Tabellenkalkulation (auf den Cent), der Assistent mit einem Platzhalter statt llama.cpp (ohne Netz, ohne Modell) und die Oberfläche im Browser (Playwright). Testdaten sind frei erfunden.
+- Tests: `python3 -m pytest -q tests` – Regeln und Zinsmodelle, Verschlüsselung, Lauf gegen ein simuliertes MoneyMoney, HTTP-API, Immobilienkalkulation gegen eine handgerechnete Tabellenkalkulation (auf den Cent), der Assistent mit einem Platzhalter statt llama.cpp (ohne Netz, ohne Modell), Zufallswelten für Cashflow und Buchungsregeln und die Oberfläche im Browser (Playwright). Testdaten sind frei erfunden.
 - Bilder für Hilfe und README: `python3 tests/screenshots.py [Ordner|-] [de|en]` (aus denselben erfundenen Daten).
 - Seiten ansehen (hell/dunkel, Mac/iPhone): `python3 tests/preview.py <Ordner> ['#route' …]`.
 - Regeln für Änderungen (Version, Sprache, Sicherheit): [CLAUDE.md](CLAUDE.md). Fahrplan: [ROADMAP.md](ROADMAP.md). Änderungen: [CHANGELOG.md](CHANGELOG.md).
-- Jeder Push wird automatisch getestet (GitHub Actions, Python 3.9 und neu), nachts mit 1000 Zufallsläufen der Buchungsregeln.
+- Jeder Push wird automatisch getestet (GitHub Actions: Python 3.9 und neu, Chrome und Safari-Engine, dazu macOS mit den Swift-Helfern und der Mac-App); nachts laufen 1000 feste und so viele neue Zufallsfälle, wie in drei Stunden passen.
 
 ## Lizenz
 

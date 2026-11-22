@@ -30,7 +30,7 @@ from i18n import tr
 HERE = os.path.dirname(os.path.abspath(__file__))
 TOUCHID_SRC = os.path.join(HERE, "touchid.swift")
 # A small app bundle (no Dock icon): started through LaunchServices it comes to the front with keyboard focus, so Touch ID
-# works without a click on the dialog. Its name appears in the dialog ("Kontor möchte die Finanzübersicht entsperren").
+# works without a click on the dialog. Its name appears in the dialog ("Kontor möchte deine Daten öffnen" -- or the demo).
 TOUCHID_APP = os.path.join(HERE, ".touchid", "Kontor.app")
 TOUCHID_BIN = os.path.join(TOUCHID_APP, "Contents", "MacOS", "Kontor")
 TOUCHID_PLIST = """<?xml version="1.0" encoding="UTF-8"?>
@@ -42,6 +42,7 @@ TOUCHID_PLIST = """<?xml version="1.0" encoding="UTF-8"?>
 </dict></plist>
 """
 TOUCHID_REASON = "s_touchid_reason"          # Schluessel in web/i18n.js (Text im macOS-Fenster)
+TOUCHID_REASON_DEMO = "s_touchid_reason_demo"     # ... when the sign-in opens the demo
 PBKDF2_ROUNDS = 600_000
 _HELPER_ARG = re.compile(r"[A-Za-z0-9+/=]{1,4096}")         # what goes to the helper besides its mode: base64 or hex Kontor made
 
@@ -207,7 +208,50 @@ def build_touchid(force: bool = False) -> str:
         return tr("s_swiftc_nicht_verfuegbar_s_xcode") % e
 
 
-def touchid_verify(reason: str = "") -> bool:
+# The sign-in page's Touch ID request (service.py: one at a time, with a random id) -> the answer file of its macOS window: so
+# that touchid_close can close that window when the page switches between your data and the demo while it is open.
+_TID_LOCK = threading.Lock()
+_TID_FILES: Dict[str, str] = {}             # ("" once closed)
+
+
+def _tid_track(tid: str, out: Optional[str]) -> bool:
+    """out: the answer file of the request tid from now on; None: the request is over -- True when touchid_close closed it."""
+    if not tid:
+        return False
+    with _TID_LOCK:
+        if out is not None:
+            _TID_FILES[tid] = out
+            return False
+        return _TID_FILES.pop(tid, None) == ""
+
+
+def touchid_close(tid: str) -> bool:
+    """Closes the macOS window of the sign-in page's running request tid: its answer file goes, and the empty folder Kontor made
+    for it (so that none is made after) -- touchid.swift sees its output gone and stops without an answer. Only that file, only
+    in a folder of Kontor's own (kontor-tid-...) in the temporary folder. False when no such request runs."""
+    with _TID_LOCK:
+        out = _TID_FILES.get(tid) if tid else None
+        if not out:
+            return out == ""                     # closed already
+        _TID_FILES[tid] = ""
+    d = os.path.dirname(out)
+    if os.path.basename(out) != "result" or not os.path.basename(d).startswith("kontor-tid-") \
+            or os.path.dirname(d) != os.path.abspath(tempfile.gettempdir()):
+        return False
+    try:
+        os.unlink(out)                           # (never follows a link)
+    except FileNotFoundError:
+        pass                                     # not made yet: the folder goes, so none is made after
+    except OSError:
+        return False
+    try:
+        os.rmdir(d)                              # only while empty
+    except OSError:
+        pass
+    return True
+
+
+def touchid_verify(reason: str = "", tid: str = "") -> bool:
     reason = reason or tr(TOUCHID_REASON)
     if not touchid_available():
         return False
@@ -216,6 +260,7 @@ def touchid_verify(reason: str = "") -> bool:
         # confirmed Touch ID, into a file in a fresh private folder; the random nonce ties the answer to this very request.
         nonce, d = secrets.token_hex(16), tempfile.mkdtemp(prefix="kontor-tid-")
         out = os.path.join(d, "result")
+        _tid_track(tid, out)
         try:
             r = subprocess.run(["open", "-n", "-W", "--stdout", out, "-a", TOUCHID_APP, "--args", reason, nonce], capture_output=True, timeout=95)
             if r.returncode == 0:
@@ -227,7 +272,10 @@ def touchid_verify(reason: str = "") -> bool:
         except (subprocess.TimeoutExpired, OSError):
             pass
         finally:
+            closed = _tid_track(tid, None)
             shutil.rmtree(d, ignore_errors=True)
+        if closed:                  # closed by the sign-in page (touchid_close): not asked again without LaunchServices
+            return False
     try:                            # without LaunchServices: the helper directly (the dialog may then need a click)
         r = subprocess.run([TOUCHID_BIN, reason], capture_output=True, timeout=90)
         return r.returncode == 0
@@ -335,7 +383,7 @@ def _unwrap_transport(mine: bytes, nonce: str, line: str) -> Optional[bytes]:
     return bytes(a ^ b for a, b in zip(ct, okm[:32]))
 
 
-def touchid_unseal(se: str, eph: str, salt: str, reason: str = "") -> Optional[bytes]:
+def touchid_unseal(se: str, eph: str, salt: str, reason: str = "", tid: str = "") -> Optional[bytes]:
     """The key touchid_seal made, again -- only after Touch ID (or the Mac's password) in the macOS window. None when not
     confirmed; TouchIdGone when this Mac's Secure Enclave cannot use the key. As touchid_verify: through LaunchServices with
     focus, the answer in a fresh private folder, tied to this request by a random nonce -- and wrapped for it (above)."""
@@ -346,6 +394,7 @@ def touchid_unseal(se: str, eph: str, salt: str, reason: str = "") -> Optional[b
     pub = base64.b64encode(_x25519(mine, (9).to_bytes(32, "little"))).decode("ascii")
     nonce, d = secrets.token_hex(16), tempfile.mkdtemp(prefix="kontor-tid-")
     out = os.path.join(d, "result")
+    _tid_track(tid, out)
     try:
         r = subprocess.run(["open", "-n", "-W", "--stdout", out, "-a", TOUCHID_APP, "--args", "--unseal", reason, nonce, se, eph, salt, pub],
                            capture_output=True, timeout=95)
@@ -363,6 +412,7 @@ def touchid_unseal(se: str, eph: str, salt: str, reason: str = "") -> Optional[b
     except (subprocess.TimeoutExpired, OSError):
         return None
     finally:
+        _tid_track(tid, None)
         shutil.rmtree(d, ignore_errors=True)
 
 

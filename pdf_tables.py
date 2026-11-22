@@ -536,9 +536,23 @@ def _column(cell: Cell, bounds: List[float]) -> int:
 def notation(lines: List[Line]) -> str:
     """Which sign the document uses for decimals: "," (German) unless figures like 1,234.56 clearly lead ("."); "?"
     when nobody can tell thousands from three decimals -- it only has figures like 12,345, or figures like 12.345 beside what
-    reads like a decimal point (0.500; a price 4.80 behind its label): those stay text. Dates and times of day (01.10.26,
-    14.30) say nothing about it, nor does a number like 4400.10 in front of its line (an account)."""
+    reads like a decimal point (0.500; a price 4.80 or 12.40 behind its label): those stay text. 12.40 could be a time of
+    day or a date -- or a price: it says nothing only where it is written as a time or a date (02.10: no amount begins with
+    a nought; 14.30 Uhr), stands in the column of one (above or below it on the page) or under a heading Uhrzeit, Zeit, Uhr
+    or Datum (in a line without figures). 14:30, 01.10.26 and 31.12. are no amounts at all -- but 14:30 vouches for nothing
+    in its column: a page's printing time may stand above any column. Nor does a number like 4400.10 in front of its line
+    (an account) say anything."""
     de = en = de3 = en3 = point = 0
+    when: Dict[int, List[Tuple[float, float]]] = {}      # per page: from where to where a time or a date stands, written as one
+    for ln in lines:
+        words = [w for c in ln.cells for w in c.words]
+        head = not re.search(r"\d", ln.text)             # a line of headings: no figure in it
+        for w, after in zip(words, words[1:] + [None]):
+            t = w.text.strip("()-–−+%")
+            if re.fullmatch(r"0\d\.[0-5]\d", t) \
+                    or (after is not None and re.fullmatch(r"(?:[01]?\d|2[0-3])\.[0-5]\d", t) and re.fullmatch(r"(?i)uhr\W*", after.text)) \
+                    or (head and re.fullmatch(r"(?i)(?:uhr)?zeit|uhr|datum", w.text.rstrip(":"))):
+                when.setdefault(ln.page, []).append((w.x0, w.x1))
     for ln in lines:
         label = False                                    # a text stood before: what follows is no account number
         for c in ln.cells:
@@ -554,8 +568,9 @@ def notation(lines: List[Line]) -> str:
                     de3 += 1
                 elif re.fullmatch(r"\d{1,3}(?:,\d{3})+", t):
                     en3 += 1
-                elif label and re.fullmatch(r"\d+\.\d{2}", t) and not (int(t[:-3]) <= 31 and int(t[-2:]) <= 59):
-                    point += 1                           # (14.30 and 02.10 are a time of day and a date)
+                elif label and re.fullmatch(r"\d+\.\d{2}", t) and not (int(t[:-3]) <= 31 and int(t[-2:]) <= 59
+                                                                        and any(w.x0 < b and a < w.x1 for a, b in when.get(ln.page, ()))):
+                    point += 1                           # (not 14.30 where 02.10, 14.30 Uhr or "Uhrzeit" stands above or below it)
             if re.search(r"[^\W\d_]{3}", c.text):
                 label = True
     if de or en:

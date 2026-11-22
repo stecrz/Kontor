@@ -1,5 +1,5 @@
-"""Sprache fuer Texte, die der Dienst erzeugt (Meldungen, Hinweise, Protokoll bleibt Englisch).
-Ein Katalog fuer alles: web/i18n.js (Schluessel -> [Deutsch, Englisch]); fehlt Englisch, gilt Deutsch."""
+"""Language of the texts the service makes (messages, notes; the log stays English).
+One catalogue for everything: web/i18n.js (key -> [German, English]); without English, German counts."""
 from __future__ import annotations
 
 import json
@@ -32,7 +32,13 @@ def lang() -> str:
 
 
 def tr(key: str, *args) -> str:
-    """Text zum Schluessel in der eingestellten Sprache; {0}, {1} ... werden durch args ersetzt."""
+    """The text of the key in the language set; {0}, {1} ... are replaced by args."""
     e = _load().get(key)
     s = (e[1] if _lang == "en" and len(e) > 1 and e[1] is not None else e[0]) if e else key
     return re.sub(r"\{(\d+)\}", lambda m: str(args[int(m.group(1))]), s) if args else s
+
+
+def trn(key: str, n: int, *args) -> str:
+    """Like tr with n as {0} and the text "singular|plural": the form for n (as tn in app.js)."""
+    f = tr(key, n, *args).split("|")
+    return f[0] if len(f) == 1 or n == 1 else f[1]

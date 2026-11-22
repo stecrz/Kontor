@@ -7,10 +7,20 @@ things that let a program reach beyond itself:
     file and the functions of its file it calls; ways around a plain call (reaching a module through another one, looking
     names up as text, the insides of Python);
   - Internet addresses written anywhere in the program or its pages, and places on a Mac from which other programs are
-    started (LaunchAgents, shell profiles ...);
+    started (LaunchAgents, shell profiles ...) -- also put together from pieces ('Launch' + 'Agents');
+  - writing into the program's own folder (a program that changes its own files);
   - what a page could use to send something or to leave Kontor (the pages' security rules are part of the program above);
-  - files Kontor cannot read this way (helpers in Swift, scripts, anything that is no text, picture or page), and the two
-    files of this check themselves -- a change to the check is always shown, since it decides about the update after it.
+  - files Kontor cannot read this way (helpers in Swift, scripts, anything that is no text, picture or page) -- of helpers
+    and scripts their lines without comments and empty space, with how many lines change and whether calls to the outside
+    are among them;
+  - files that take the place of a part of the program or of Python (a folder named like a part, a name that differs only
+    in its letters' case), or that Python loads by itself;
+  - rules that keep Kontor to itself: where it listens, who may install an update and with whose approval, where updates
+    and the assistant's downloads come from and that they are checked;
+  - the two files of this check themselves -- a change to the check is always shown, since it decides about the update
+    after it;
+  - in a git clone, where the whole repository arrives and not only the program: every file of it that is no part of the
+    program and no ordinary file of its tests and development (ready-made programs, caches, helpers' folders).
 Nothing new or changed among these: the update is installed as before, without a word. Otherwise it waits, and the settings
 show what was found -- an update is then installed only after you have seen that and said so.
 
@@ -20,8 +30,14 @@ reader of its text foresees). Only what is new or changed is named, never what t
 from __future__ import annotations
 
 import ast
+import base64
+import binascii
+import difflib
+import fnmatch
 import hashlib
 import re
+import unicodedata
+from collections import Counter
 from typing import Dict, Iterable, List, Optional, Set, Tuple
 
 # Parts of Python a program file may import without being asked about (they compute, read and write files, keep time).
@@ -52,6 +68,9 @@ RISKY_IN = {
     "threading": ("settrace", "setprofile", "settrace_all_threads", "setprofile_all_threads", "excepthook", "_shutdown"),
     "atexit": ("_run_exitfuncs",), "copy": ("_reconstruct",), "dataclasses": ("make_dataclass",), "ast": ("PyCF_ONLY_AST",),
 }
+# ... by how the name begins rather than a list: every way of os to start or become another program, also those meant for
+# Python itself (os._execvpe, os._spawnvef) and those of a later Python
+RISKY_START = {"os": re.compile(r"_*(?:exec|spawn|fork|posix_spawn|popen|system|startfile)")}
 # names that stand for a part of Python wherever they turn up behind a dot (shutil.os.system, logging.handlers.socket ...)
 MODULE_NAMES = frozenset("""os sys socket subprocess ssl ctypes importlib builtins urllib pickle marshal pty runpy webbrowser asyncio ftplib
 smtplib xmlrpc selectors posix nt _os _sys _socket _ssl _posixsubprocess _thread multiprocessing sqlite3 pydoc inspect gc codeop imp pkgutil
@@ -62,10 +81,15 @@ __bases__ __getattribute__ __reduce__ __reduce_ex__ gi_frame cr_frame f_globals 
 __self__ func_globals""".split())
 INSIDES_OF_MODULES = frozenset(("__dict__", "__getattr__", "__file__", "__path__", "__name__", "__package__", "__all__"))     # ... only behind a part of Python
 BUILTINS = frozenset("eval exec compile __import__ globals locals vars breakpoint getattr setattr delattr __builtins__ memoryview input".split())
+# ... the same behind a part of Python that keeps the builtins under a name of its own (tarfile.bltn.exec)
+CODE_NAMES = BUILTINS - frozenset(("memoryview", "input"))
+# kinds of values every Python has: their table of names leads to everything (type.__dict__[...])
+TYPE_NAMES = frozenset("""type object str bytes bytearray int float complex bool dict list tuple set frozenset range slice property classmethod
+staticmethod super BaseException Exception""".split())
 # an attribute read through a name that is fine: the errors and constants of the parts that reach out
 PLAIN = re.compile(r"^(subprocess\.(TimeoutExpired|CalledProcessError|SubprocessError|CompletedProcess|PIPE|DEVNULL|STDOUT)"
                    r"|socket\.(timeout|error|gaierror|herror|SHUT_RDWR)|ssl\.(SSLError|CertificateError|SSLSocket)|http\.client\.(HTTPException|IncompleteRead|HTTPResponse)"
-                   r"|os\.environ\.get|sys\.(argv|exit|stdin\.isatty)|sqlite3\.(Error|DatabaseError|OperationalError))$")
+                   r"|os\.environ\.get|os\._exit|sys\.(argv|exit|stdin\.isatty)|sqlite3\.(Error|DatabaseError|OperationalError))$")
 
 # places from which macOS or a shell starts other programs, and folders that leave the Mac by themselves
 PLACES = re.compile(r"(?i)LaunchAgents|LaunchDaemons|\.zshrc|\.zprofile|\.zshenv|\.zlogin|\.bash_profile|\.bashrc|\.profile\b|crontab|/etc/"
@@ -90,6 +114,14 @@ PAGE = re.compile(r"""(?x)
   | \b(?:window|self|top|parent|globalThis|frames|opener)\s*\.\s*open\b[^;\n]{0,60}
   | (?<![=!<>])=\s*open\s*(?:[;,]|$)
   | [\w$.\])]{0,24}\.\s*(?:click|submit|requestSubmit)\s*\(\s*\) | \bdispatchEvent\s*\([^;\n]{0,40}
+  | [\w$\])]\s*\.\s*(?:click|submit|requestSubmit)\s*(?:[;),\]}]|\.\s*(?:call|apply|bind)\b)[^;\n]{0,40}
+  | \blocation\s*\.\s*(?:assign|replace)\b(?!\s*\()[^;\n]{0,60}
+  | [\w$\])]\s*(?:\?\.\s*)?\[[^\]\n]{1,60}\]\s*(?:\?\.\s*)?(?:\(|\.\s*(?:call|apply|bind)\b)[^;\n]{0,40}
+  | (?:(?<![=!<>])=(?![=>])|[(,\[?:]|\breturn\b|=>)\s*(?:(?:window|self|globalThis|document|top|parent)\s*\.\s*)*
+      (?:location|window|document|globalThis|navigator|defaultView)\s*(?=[;,)\]}\n?:]|$)
+  | (?<![\w$.])import\s*\([^;\n]{0,40}
+  | /api/update/install[^;\n]{0,80}
+  | (?:(['"`])approved\1|\bapproved\s*:|\.\s*approved\b|[{,]\s*approved\s*[,}]|\bapproved\s*=(?!=))[^;\n]{0,60}
   | \b(?:Reflect\s*\.\s*\w+|Object\s*\.\s*(?:defineProperty|defineProperties|getOwnPropertyDescriptors?))\b[^;\n]{0,40}
   | \bObject\s*\.\s*assign\s*\([^;\n]{0,80}?\b(?:href|src|srcdoc|ping|formAction|location)\b[^;\n]{0,40}
   | (?<![\w$.'"`-])(?:href|src|srcdoc)\s*:(?!\s*['"`]\#)[^,;}\n]{0,40}
@@ -108,7 +140,10 @@ PAGE = re.compile(r"""(?x)
   | <\s*form\b[^>\n]{0,80}\baction\b[^>\n]{0,40}
   | http-equiv[^>\n]{0,60} | \b(?:dns-prefetch|preconnect|prerender|modulepreload)\b
 """ % {"attrs": _ATTRS, "tags": _TAGS})
-LEAVING = re.compile(r"\blocation\s*(?:\.\s*\w+\s*)?[=(]|\.\s*href\s*=|\.\s*(?:click|submit|requestSubmit)\s*\(|\bopen\s*\(|=\s*open\b")
+LEAVING = re.compile(r"\blocation\s*(?:\.\s*\w+\s*)?[=(]|\.\s*href\s*=|\.\s*(?:click|submit|requestSubmit)\s*\(|\bopen\s*\(|=\s*open\b"
+                     r"|/api/update/install|\bapproved\b")
+# pieces of text put together on a page ('htt' + 'ps://'): joined before addresses are looked for
+JS_JOIN = re.compile(r"""(['"`])((?:\\.|(?!\1)[^\\\n])*)\1\s*\+\s*(['"`])((?:\\.|(?!\3)[^\\\n])*)\3""")
 STYLE = re.compile(r"""(?x) @import\b[^;\n]{0,60} | \burl\s*\(\s*(?!['"]?(?:/(?!/)|\#|data:image/|data:font/))[^)\n]{0,60} """)
 PAGE_FILES = (".js", ".mjs", ".html", ".htm", ".css", ".svg", ".webmanifest", ".xml")
 # files that hold no program: read by Kontor as text or shown as a picture
@@ -116,20 +151,36 @@ PASSIVE = (".md", ".txt", ".png", ".jpg", ".jpeg", ".gif", ".ico", ".icns", ".js
 PASSIVE_NAMES = frozenset(("LICENSE", "NOTICE", "VERSION", "CHANGELOG.md", "README.md", "ROADMAP.md", "CLAUDE.md"))
 OWN = frozenset(("updates.py", "update_guard.py"))          # this check: any change to it is shown
 # ... and what the rest of the program may use of it (anything else of these two files, touched from outside, is shown)
-OWN_OPEN = frozenset(("updates.check", "updates.install", "updates.current_version", "updates.changelog", "updates.installed_date",
+# (updates.install is not among them: it is used in one small function of the service, a rule below -- anywhere else it is shown)
+OWN_OPEN = frozenset(("updates.check", "updates.current_version", "updates.changelog", "updates.installed_date",
                       "updates.plist_path", "updates.LABEL", "updates.schedule_restart"))
 # rules that decide where Kontor listens, what its pages may reach, which addresses downloads may use and what the assistant's
 # model is shut out of -- no call of their own reaches out, so they are named here (a test keeps the list true)
 RULES = {"service.py": ("bind_allowed", "_sec_headers", "_host_ok", "_origin_ok", "_static"),
+         # the assistant's internet search (a name set at the top of a file counts like a function: the fixed lists and patterns
+         # such a rule goes by) -- where its reader may connect (the hosts named, redirects, no address of this Mac or the local
+         # network) ...
+         "web_reader.py": ("host_ok", "public", "global_address", "inner_addresses", "NAT64", "NAT64_LOCAL", "redirect_request"),
+         # ... what Kontor keeps back of your own data and how it compares it, what each source is asked and on which hosts, which
+         # websites count as yours, what the reader process is shut out of ...
+         "web_search.py": ("privacy_problem", "_own_in", "_not_plain", "_fold", "_name_tokens", "_readings", "_figure", "_iban", "_lei_ok", "own_index",
+                           "_INVISIBLE", "_LETTERS", "_SIGNS", "_BASE", "_PERCENT", "LEGAL", "GENERIC", "IBAN_LENGTH", "_IBAN_RUN", "_CODE", "_NO_AMOUNT",
+                           "_NO_FIGURES", "_PERIOD", "_NUMBER", "_YEAR", "_RUN", "_CHAIN", "_LEET", "_PLAIN_LEAST",
+                           "prepare", "prepare_read", "_q", "_month", "_since", "_last", "_req", "link_hits", "user_agent", "NEUTRAL_AGENT",
+                           "SOURCES", "LINK_HOSTS", "FEEDS", "_SERIES", "_DATASET", "_LEI", "_QID",
+                           "site", "_ace", "trusted", "trusted_site", "trusted_default", "SHARED", "_SECOND", "HOSTS_MAX",
+                           "reader_profile", "command", "python_exe", "READER", "SANDBOX", "HERE"),
+         # ... and in the assistant: the index it is checked against, what goes without a card, no change once web text is there
+         "assistant.py": ("_own", "_trusted", "_propose"),
          "llm_local.py": ("sandbox_profile", "host_allowed", "_safe_join"),
          "security_names.py": ("valid_isin",), "mm_bridge.py": (), "receipts.py": ("external_ok", "inside")}
 # functions that look themselves at what they are handed before it reaches out (a fixed program, a fixed address, a path that
 # is checked): who calls them cannot make them do anything else, so their callers are not followed. Each is kept as a whole.
 CHECKED: Dict[str, Tuple[str, ...]] = {
-    "storage.py": ("encrypt", "decrypt", "_kc_read", "_kc_write", "_openssl_run", "_pass_mode"),     # openssl / security with fixed commands; the key goes in as a value (over a pipe)
+    "storage.py": ("encrypt", "decrypt", "_openssl_run", "_pass_mode"),     # openssl with fixed commands; the key goes in as a value (over a pipe)
     "mm_bridge.py": ("_call",),                                           # one fixed script, only the listed commands of MoneyMoney
     "auth.py": ("touchid_verify", "touchid_unseal", "_helper_line"),     # Kontor's own helper; the text is what its window says, the rest base64/hex Kontor made
-    "kontor.py": ("service_answers",),                                    # 127.0.0.1 only
+    "kontor.py": ("service_answers", "stop_service"),                     # 127.0.0.1 only; launchctl with Kontor's own label
     "llm_local.py": ("_open", "_env", "ensure", "install_runtime"),       # allowed hosts only; program and model from Kontor's own lists
     "mm_history.py": ("_wipe", "decrypt_in_place", "_page1_ok", "receive", "MemDB", "keys_from_dialog", "run"),     # the uploaded bytes, in memory
     "core.py": ("_cached", "refresh_accounts"), "model.py": ("ledger_to_bytes", "without_planned"),     # values copied from one of Kontor's objects to another
@@ -138,11 +189,103 @@ CHECKED: Dict[str, Tuple[str, ...]] = {
     "tls_cert.py": ("setup", "renew_if_due", "cert_expiry"),              # Tailscale's own program (found by Kontor), paths in Kontor's data folder
     "security_names.py": ("_post", "lookup"),                             # one fixed address; ISINs only
 }
+# -- more rules (review before 3.17), kept apart from the lists above: who may install an update and with whose approval (only
+# at the Mac; the approval the page sent, never one made up by the program; a backup cannot change where updates come from),
+# where the assistant's downloads come from and that nothing is loaded without a SHA-256 that fits. A name stands for a
+# function or for a setting at the top of the file. The function that installs an update is also CHECKED: it looks itself
+# at where the request comes from, and what it hands on is the approval the page sent.
+for _rel, _names in (("service.py", ("_is_local", "_loopback", "_update_install", "restored_config")),
+                     ("auth.py", ("is_loopback",)),
+                     ("llm_local.py", ("_fetch", "pick_asset", "repo_files", "latest_runtime", "RUNTIME_REPO", "RELEASES_URL"))):
+    RULES[_rel] = tuple(RULES.get(_rel, ())) + _names
+CHECKED["service.py"] = CHECKED["service.py"] + ("_update_install",)
+# ... on the pages: what the update page shows of the findings and how it sends the approval, each as a whole
+PAGE_RULES = {"web/app.js": ("UP_KINDS", "upFinds", "upReview", "upInstall")}
+# ... words that carry an approval: where one of them turns up in these files (as a text or as the name of an argument), the
+# function around it is kept as a whole
+WORDS = {"service.py": ("approved",)}
+# ... where something is fetched from: a fixed text given to a key or name like this ({"repo": "a/b"}, RUNTIME_REPO = "a/b",
+# x.get("repo") or "a/b") is kept as an address -- another one is shown, more of the same (a new model in a repository named
+# already) is not
+SOURCE = re.compile(r"(?i)(?:^|_)repo(?:s|sitory)?(?:_|$)")
+
 # names every list, text or table has: a call like x.update() says nothing about whose update it is
 COMMON = frozenset(n for t in (dict, list, str, set, bytes, tuple, bytearray, frozenset) for n in dir(t)) | frozenset(
     ("read", "write", "close", "open", "flush", "seek", "run", "start", "send", "recv", "put", "wait", "acquire", "release", "is_set"))
 SMALL = 40                  # lines: a function of the file whose result goes into such a call is kept whole up to this size
-KINDS = ("guard", "rule", "module", "call", "around", "detour", "place", "address", "page", "file", "unreadable")
+KINDS = ("guard", "rule", "shadow", "module", "call", "around", "detour", "self", "place", "address", "page", "file", "extra", "unreadable")
+
+# writing files: with a path that leads into the program's own folder it is shown (a program that changes its own files)
+WRITERS = {"os": ("rename", "replace", "renames", "remove", "unlink", "rmdir", "removedirs", "makedirs", "mkdir", "chmod", "chown", "symlink",
+                  "link", "truncate", "open", "utime"),
+           "shutil": ("copy", "copy2", "copyfile", "copytree", "copymode", "copystat", "move", "rmtree", "make_archive", "unpack_archive"),
+           "io": ("open", "FileIO"), "gzip": ("open", "GzipFile"), "zipfile": ("ZipFile",), "tarfile": ("open", "TarFile"), "wave": ("open",),
+           "logging": ("FileHandler", "basicConfig"), "logging.handlers": ("RotatingFileHandler", "TimedRotatingFileHandler", "WatchedFileHandler"),
+           "tempfile": ("NamedTemporaryFile", "mkstemp", "mkdtemp", "TemporaryDirectory", "TemporaryFile", "SpooledTemporaryFile")}
+WRITER_MODES = frozenset(("io.open", "io.FileIO", "gzip.open", "gzip.GzipFile", "zipfile.ZipFile", "tarfile.open", "tarfile.TarFile", "wave.open"))
+WRITE_METHODS = frozenset(("write_text", "write_bytes", "touch", "rename", "replace", "unlink", "rmdir", "mkdir", "chmod", "symlink_to",
+                           "hardlink_to", "link_to", "extractall", "extract", "open"))
+READ_MODE = re.compile(r"^[rbtU]{0,3}$")
+HOME_NAME = "__file__"
+# ... what builds a path from another or hands a value on as it is (the way to the program's folder is followed through these)
+PATH_FUNCS = frozenset(("join", "dirname", "abspath", "realpath", "normpath", "normcase", "expanduser", "expandvars", "split", "splitext", "relpath",
+                        "commonpath", "commonprefix", "basename"))
+PATH_CALLS = frozenset(("str", "bytes", "repr", "format", "min", "max", "sorted", "list", "tuple", "set", "frozenset", "dict", "reversed", "next", "iter",
+                        "zip", "map", "filter", "enumerate", "getattr"))
+PATH_METHODS = frozenset(("joinpath", "with_name", "with_suffix", "with_stem", "resolve", "absolute", "expanduser", "as_posix", "relative_to",
+                          "format", "replace", "strip", "lstrip", "rstrip", "lower", "upper", "decode", "encode", "join", "split", "rsplit",
+                          "partition", "rpartition", "removeprefix", "removesuffix", "get", "pop", "setdefault", "copy", "values", "items",
+                          "__str__", "__fspath__", "__truediv__", "__add__"))
+PATH_ATTRS = frozenset(("parent", "parents", "anchor"))
+PROGRAM_FILE = re.compile(r"(?i)\.(?:py|pyc|pyo|pth|swift|jxa|sh|command|js|mjs|html?)$")
+
+# helpers and scripts Kontor cannot follow like Python: compared by their lines without comments and empty space
+SCRIPTS = (".swift", ".jxa", ".sh", ".command")
+# ... and what in them reaches out, as far as fixed patterns can tell (a shell script does so in every line)
+OUT = {".swift": re.compile(r"\b(?:Process|NSTask|URLSession|URLRequest|URLComponents|NSURL|URL|NWConnection|NWListener|NWEndpoint|CFSocket\w*|CFStream\w*"
+                            r"|socket|connect|bind|listen|dlopen|dlsym|system|popen|posix_spawn\w*|exec[lv]\w*|fork|NSAppleScript|OSAScript\w*"
+                            r"|NSUserAppleScriptTask|NSWorkspace|NSXPC\w+|DistributedNotificationCenter|NSPasteboard|FileManager|FileHandle|FileWrapper"
+                            r"|write|contentsOf|contentsOfFile|SecItem\w+|SecKey\w+|SecAccess\w+|LAContext|getenv|setenv|ProcessInfo|UserDefaults|import"
+                            r"|WKWebView\w*|WKWebsiteDataStore|WKUserScript|evaluateJavaScript|AVCapture\w+|CGWindowList\w+|SCStream\w*|CGEvent\w*"
+                            r"|NSEvent|open|openURL|Bundle|NSClassFromString|NSSelectorFromString|perform|unsafeBitCast|withUnsafe\w+)\b"),
+       ".jxa": re.compile(r"\b(?:Application|doShellScript|ObjC|Library|Path|currentApplication|includeStandardAdditions|openLocation|open|eval"
+                          r"|Function|require|run|delay|[A-Z][A-Z0-9_]{2,})\b|\$\s*[.(]|\[[^\]\n]+\]\s*\(|:\s*true\b"),
+       ".sh": re.compile(r"\S"), ".command": re.compile(r"\S")}
+
+# a git clone holds the whole repository: these folders and files of it are no part of the program (an update from an archive
+# leaves them out), and what they ordinarily hold -- tests, rules for GitHub and for development -- is not asked about
+BESIDE = ("tests", ".github", ".claude", ".githooks")
+BESIDE_FILES = (".gitignore", ".gitattributes", ".gitmodules")
+BESIDE_ENDS = (".py", ".md", ".txt", ".json", ".yml", ".yaml", ".toml", ".cfg", ".ini", ".sh", ".mjs", ".js", ".html", ".css", ".svg", ".xml",
+               ".csv", ".png", ".jpg", ".jpeg", ".gif", ".pdf", ".xlsx", ".xlsm", ".wav", ".swift", ".jxa")
+# ... and what a helper or Python itself makes beside the program while it runs: never part of an update, whatever the
+# repository's own list (.gitignore) says
+MADE_HERE = "__pycache__/\n*.pyc\n*.pyo\n.touchid/\n.receipt_ocr/\n*.app/\n.mac-app-*/\n.mac_app_build\n.old/\nmm_touchid\n.files\n"
+STARTUP = frozenset(("sitecustomize.py", "usercustomize.py"))       # loaded by Python itself, wherever it finds them
+# the parts of Python by name (3.9 to 3.13, also those since removed): a file or folder of that name in the program folder
+# is loaded instead
+STDLIB = frozenset("""__future__ _abc _aix_support _android_support _apple_support _ast _asyncio _bisect _blake2 _bootlocale _bz2 _codecs _codecs_cn
+_codecs_hk _codecs_iso2022 _codecs_jp _codecs_kr _codecs_tw _collections _collections_abc _colorize _compat_pickle _compression
+_contextvars _crypt _csv _ctypes _curses _curses_panel _datetime _dbm _decimal _elementtree _frozen_importlib
+_frozen_importlib_external _functools _gdbm _hashlib _heapq _imp _interpchannels _interpqueues _interpreters _io _ios_support _json
+_locale _lsprof _lzma _markupbase _md5 _msi _multibytecodec _multiprocessing _opcode _opcode_metadata _operator _osx_support
+_overlapped _pickle _posixshmem _posixsubprocess _py_abc _pydatetime _pydecimal _pyio _pylong _pyrepl _queue _random _scproxy _sha1
+_sha2 _sha256 _sha3 _sha512 _signal _sitebuiltins _socket _sqlite3 _sre _ssl _stat _statistics _string _strptime _struct
+_suggestions _symtable _sysconfig _thread _threading_local _tkinter _tokenize _tracemalloc _typing _uuid _warnings _weakref
+_weakrefset _winapi _wmi _zoneinfo abc aifc antigravity argparse array ast asynchat asyncio asyncore atexit audioop base64 bdb
+binascii binhex bisect builtins bz2 cProfile calendar cgi cgitb chunk cmath cmd code codecs codeop collections colorsys compileall
+concurrent configparser contextlib contextvars copy copyreg crypt csv ctypes curses dataclasses datetime dbm decimal difflib dis
+distutils doctest email encodings ensurepip enum errno faulthandler fcntl filecmp fileinput fnmatch formatter fractions ftplib
+functools gc genericpath getopt getpass gettext glob graphlib grp gzip hashlib heapq hmac html http idlelib imaplib imghdr imp
+importlib inspect io ipaddress itertools json keyword lib2to3 linecache locale logging lzma macpath mailbox mailcap marshal math
+mimetypes mmap modulefinder msilib msvcrt multiprocessing netrc nis nntplib nt ntpath nturl2path numbers opcode operator optparse os
+ossaudiodev parser pathlib pdb pickle pickletools pipes pkgutil platform plistlib poplib posix posixpath pprint profile pstats pty
+pwd py_compile pyclbr pydoc pydoc_data pyexpat queue quopri random re readline reprlib resource rlcompleter runpy sched secrets
+select selectors shelve shlex shutil signal site sitecustomize smtpd smtplib sndhdr socket socketserver spwd sqlite3 sre_compile
+sre_constants sre_parse ssl stat statistics string stringprep struct subprocess sunau symbol symtable sys sysconfig syslog tabnanny
+tarfile telnetlib tempfile termios textwrap this threading time timeit tkinter token tokenize tomllib trace traceback tracemalloc
+tty turtle turtledemo types typing unicodedata unittest urllib usercustomize uu uuid venv warnings wave weakref webbrowser winreg
+winsound wsgiref xdrlib xml xmlrpc zipapp zipfile zipimport zlib zoneinfo""".split())
 
 
 def installable(rel: str) -> bool:
@@ -156,13 +299,191 @@ def _sha(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def digest(files: Dict[str, bytes]) -> str:
-    """One value for exactly these files and their content (what an approval is given for)."""
+def digest(files: Dict[str, bytes], whole: bool = False) -> str:
+    """One value for exactly these files and their content (what an approval is given for). whole: every file, also those
+    that are no part of the program (a git clone takes the whole repository)."""
     h = hashlib.sha256()
     for rel in sorted(files):
-        if installable(rel):
-            h.update(rel.encode("utf-8") + b"\0" + hashlib.sha256(files[rel]).digest())
+        if whole or installable(rel):
+            h.update(rel.encode("utf-8", "surrogateescape") + b"\0" + hashlib.sha256(files[rel]).digest())
     return h.hexdigest()
+
+
+def kept() -> Set[str]:
+    """The files this check names (itself, rules, checked functions): read from the installed program even when the new
+    version no longer has them -- so that one of them gone is seen."""
+    return set(OWN) | set(RULES) | set(CHECKED) | set(PAGE_RULES) | set(WORDS)
+
+
+def _alike(rel: str) -> str:
+    """A path as the Mac's disks compare it: without regard to upper and lower case or to how a letter is put together."""
+    return unicodedata.normalize("NFD", unicodedata.normalize("NFD", rel).casefold())
+
+
+def _own(rel: str) -> bool:
+    """Is this file (part of) the update check itself -- by the name it is loaded with, whatever kind of file it is?"""
+    return _alike(rel) in {_alike(o) for o in OWN} or _alike(rel.split("/")[0]) in {_alike(o[:-3]) for o in OWN}
+
+
+# ---------------------------------------------------------------------------
+# text put together from fixed pieces
+# ---------------------------------------------------------------------------
+
+HOLE = "\0"                 # stands for a piece that is not fixed (a name, a call)
+_TEXT_METHODS = frozenset(("lower", "upper", "strip", "lstrip", "rstrip", "title", "capitalize", "swapcase", "casefold", "decode", "encode",
+                           "replace", "format", "join"))
+_DECODERS = {("base64", "b64decode"): base64.b64decode, ("base64", "urlsafe_b64decode"): base64.urlsafe_b64decode,
+             ("base64", "b32decode"): base64.b32decode, ("base64", "b16decode"): base64.b16decode, ("base64", "b85decode"): base64.b85decode,
+             ("base64", "a85decode"): base64.a85decode, ("binascii", "unhexlify"): binascii.unhexlify, ("binascii", "a2b_hex"): binascii.a2b_hex,
+             ("binascii", "a2b_base64"): binascii.a2b_base64, ("bytes", "fromhex"): bytes.fromhex, ("bytearray", "fromhex"): bytes.fromhex}
+_FOLD_MAX = 4096
+
+
+def _value(node: Optional[ast.AST], names: Dict[str, ast.AST], holes: bool = False, depth: int = 0):
+    """What a piece of code comes to when it only puts fixed pieces together: 'Launch' + 'Agents', "%s%s" % (...), "".join([...]),
+    f"...", 'x'[::-1], b'..'.decode(), base64.b64decode('...'), a name set once to such a text. A text, bytes or a whole
+    number -- None when it is not fixed (holes: a HOLE stands for each piece that is not, so that the fixed pieces around it
+    still read as one text). Only these fixed operations on fixed values are worked out; nothing of the code is run."""
+    def unknown():
+        return HOLE if holes else None
+
+    def sized(v):
+        return v if not isinstance(v, (str, bytes)) or len(v) <= _FOLD_MAX else unknown()
+
+    def go(x):
+        return _value(x, names, holes, depth + 1)
+
+    if node is None or depth > 60:
+        return unknown()
+    if isinstance(node, ast.Constant):
+        v = node.value
+        return sized(v) if isinstance(v, (str, bytes)) or type(v) is int else unknown()
+    if isinstance(node, ast.Name):
+        return go(names[node.id]) if node.id in names and depth < 20 else unknown()
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.USub):
+        v = _value(node.operand, names, False, depth + 1)
+        return -v if type(v) is int else unknown()
+    if isinstance(node, ast.JoinedStr):
+        out = []
+        for part in node.values:
+            v = go(part.value) if isinstance(part, ast.FormattedValue) and part.format_spec is None and part.conversion == -1 else \
+                go(part) if isinstance(part, ast.Constant) else unknown()
+            if v is None:
+                return None
+            out.append(v.decode("utf-8", "replace") if isinstance(v, bytes) else str(v))
+        return sized("".join(out))
+    if isinstance(node, ast.BinOp):
+        a, b = go(node.left), None
+        if isinstance(node.op, ast.Add):
+            b = go(node.right)
+            if a is None or b is None:
+                return None
+            if holes and type(a) is not type(b):                 # a number and a piece that is not fixed, bytes and a hole ...
+                a, b = (x.decode("utf-8", "replace") if isinstance(x, bytes) else HOLE if not isinstance(x, str) else x for x in (a, b))
+            if type(a) is type(b) and isinstance(a, (str, bytes)):
+                return sized(a + b)
+            return unknown()
+        if isinstance(node.op, ast.Mod) and isinstance(a, str) and re.fullmatch(r"(?:[^%]|%[sdr%])*", a):
+            b = tuple(go(e) for e in node.right.elts) if isinstance(node.right, ast.Tuple) else go(node.right)
+            if b is None or isinstance(b, tuple) and any(x is None for x in b):
+                return None
+            try:
+                return sized(a % b)
+            except (TypeError, ValueError):
+                return unknown()
+        if isinstance(node.op, ast.Mult):
+            b = go(node.right)
+            if isinstance(a, int) and isinstance(b, (str, bytes)):
+                a, b = b, a
+            if isinstance(a, (str, bytes)) and type(b) is int and 0 <= b <= 64 and HOLE not in (a if isinstance(a, str) else ""):
+                return sized(a * b)
+        return unknown()
+    if isinstance(node, ast.Subscript):
+        a = go(node.value)
+        if not isinstance(a, (str, bytes)) or (holes and isinstance(a, str) and HOLE in a):
+            return unknown()
+        sl = node.slice
+        try:
+            if isinstance(sl, ast.Slice):
+                bounds = [None if x is None else _value(x, names, False, depth + 1) for x in (sl.lower, sl.upper, sl.step)]
+                if any(x is not None and type(x) is not int for x in bounds) or any(x is None and y is not None for x, y in zip(bounds, (sl.lower, sl.upper, sl.step))):
+                    return unknown()
+                return a[bounds[0]:bounds[1]:bounds[2]]
+            i = _value(sl, names, False, depth + 1)
+            return a[i] if type(i) is int else unknown()
+        except (IndexError, ValueError):
+            return unknown()
+    if isinstance(node, ast.Call) and not node.keywords:
+        f, args = node.func, node.args
+        if isinstance(f, ast.Name):
+            if f.id == "chr" and len(args) == 1:
+                v = _value(args[0], names, False, depth + 1)
+                return chr(v) if type(v) is int and 0 <= v < 0x110000 else unknown()
+            if f.id == "str" and len(args) in (1, 2):
+                v = go(args[0])
+                return v.decode("utf-8", "replace") if isinstance(v, bytes) else str(v) if isinstance(v, (str, int)) else unknown()
+            if f.id in ("bytes", "bytearray") and len(args) == 1:
+                seq = _values(args[0], names, depth + 1)
+                if seq is not None and all(type(x) is int and 0 <= x < 256 for x in seq):
+                    return bytes(seq)
+                v = go(args[0])
+                return v if isinstance(v, bytes) else unknown()
+            return unknown()
+        if isinstance(f, ast.Attribute):
+            if isinstance(f.value, ast.Name) and (f.value.id, f.attr) in _DECODERS and len(args) == 1:
+                v = _value(args[0], names, False, depth + 1)
+                try:
+                    return sized(_DECODERS[(f.value.id, f.attr)](v)) if isinstance(v, (str, bytes)) else unknown()
+                except (ValueError, TypeError):
+                    return unknown()
+            if f.attr == "join" and len(args) >= 1 and isinstance(f.value, ast.Attribute) and f.value.attr == "path":      # os.path.join(a, 'b' + 'c')
+                parts = [go(x) for x in args]
+                return sized("/".join(x if isinstance(x, str) else HOLE for x in parts)) if holes and None not in parts else unknown()
+            recv = go(f.value)
+            if not isinstance(recv, (str, bytes)) or f.attr not in _TEXT_METHODS:
+                return unknown()
+            try:
+                if f.attr == "join" and len(args) == 1:
+                    seq = _values(args[0], names, depth + 1, holes)
+                    return sized(recv.join(seq)) if seq is not None and all(type(x) is type(recv) for x in seq) else unknown()
+                if f.attr == "format":
+                    vals = [go(x) for x in args]
+                    if None in vals or not isinstance(recv, str) or not re.fullmatch(r"(?:[^{}]|\{\d*\}|\{\{|\}\})*", recv):
+                        return unknown()
+                    return sized(recv.format(*vals))
+                if f.attr in ("decode", "encode"):
+                    codec = [_value(x, names, False, depth + 1) for x in args[:1]]
+                    if codec and not (isinstance(codec[0], str) and codec[0].lower().replace("-", "").replace("_", "") in ("utf8", "ascii", "latin1")):
+                        return unknown()
+                    return recv.decode(*(codec or ["utf-8"]), "replace") if isinstance(recv, bytes) and f.attr == "decode" else \
+                        recv.encode(*(codec or ["utf-8"]), "replace") if isinstance(recv, str) and f.attr == "encode" else unknown()
+                vals = [go(x) for x in args]
+                if any(type(x) is not type(recv) for x in vals) or len(vals) > 2:
+                    return unknown()
+                return sized(getattr(recv, f.attr)(*vals))
+            except (TypeError, ValueError, LookupError):
+                return unknown()
+    return unknown()
+
+
+def _values(node: ast.AST, names: Dict[str, ast.AST], depth: int = 0, holes: bool = False) -> Optional[list]:
+    """A fixed row of such values: [..], (..), a text letter by letter, reversed(...), map(chr, [...])."""
+    if isinstance(node, (ast.List, ast.Tuple)) and len(node.elts) <= 512:
+        out = [_value(e, names, holes, depth + 1) for e in node.elts]
+        return None if None in out else out
+    if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and not node.keywords:
+        if node.func.id in ("reversed", "list", "tuple") and len(node.args) == 1:
+            inner = _values(node.args[0], names, depth + 1, holes)
+            return None if inner is None else list(reversed(inner)) if node.func.id == "reversed" else inner
+        if node.func.id == "map" and len(node.args) == 2 and isinstance(node.args[0], ast.Name) and node.args[0].id == "chr":
+            inner = _values(node.args[1], names, depth + 1)
+            return [chr(x) for x in inner] if inner is not None and all(type(x) is int and 0 <= x < 0x110000 for x in inner) else None
+    v = _value(node, names, False, depth + 1)
+    return list(v) if isinstance(v, str) else None
+
+
+def _text_of(v) -> Optional[str]:
+    return v if isinstance(v, str) else v.decode("utf-8", "replace") if isinstance(v, bytes) else None
 
 
 # ---------------------------------------------------------------------------
@@ -186,18 +507,25 @@ def _show(node: ast.AST, limit: int = 110) -> str:
     return text if len(text) <= limit else text[:limit - 1] + "…"
 
 
+_PLACES_OF_VALUES = (ast.Assign, ast.AnnAssign, ast.AugAssign, ast.NamedExpr, ast.For, ast.AsyncFor, ast.comprehension, ast.With, ast.AsyncWith)
+_SOURCE_PLACES = (ast.Dict, ast.Assign, ast.AnnAssign, ast.keyword, ast.arguments, ast.BoolOp)
+
+
 class _Py:
     """One program file: where it reaches out, and what belongs to those places."""
 
-    def __init__(self, rel: str, tree: ast.Module, local: Set[str]):
+    def __init__(self, rel: str, tree: ast.Module, local: Set[str], world: Optional[Dict[str, "_Py"]] = None):
         self.rel, self.local = rel, local
+        self.world: Dict[str, "_Py"] = world if world is not None else {}      # the program's own parts by the name they are imported with
         self.tree = tree
         self.nodes: List[ast.AST] = []                        # every piece of the file, walked once (with what it stands in)
         self.parents: Dict[int, ast.AST] = {}
         todo: List[ast.AST] = [tree]
+        kind: Dict[type, List[ast.AST]] = {}                  # the same pieces by their kind (in the same order)
         while todo:
             p = todo.pop()
             self.nodes.append(p)
+            kind.setdefault(type(p), []).append(p)
             body = getattr(p, "body", None)                   # explanations at the start of a function, class or file are no code
             if isinstance(p, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Module)) and body and isinstance(body[0], ast.Expr) \
                     and isinstance(getattr(body[0], "value", None), ast.Constant) and isinstance(body[0].value.value, str):
@@ -205,17 +533,39 @@ class _Py:
             for c in ast.iter_child_nodes(p):
                 self.parents[id(c)] = p
                 todo.append(c)
-        self.chains: List[ast.AST] = [n for n in self.nodes if isinstance(n, (ast.Name, ast.Attribute)) and not isinstance(self.parents.get(id(n)), ast.Attribute)]
+
+        def of(*types: type) -> List[ast.AST]:
+            return [n for t in types for n in kind.get(t, [])] if len(types) > 1 else list(kind.get(types[0], []))
+        self.chains: List[ast.AST] = [n for n in self.nodes if type(n) in (ast.Name, ast.Attribute) and type(self.parents.get(id(n))) is not ast.Attribute]
         self.out: Dict[Tuple[str, str, str], str] = {}        # (kind, file, what) -> content, to compare
         self.shown: Dict[Tuple[str, str, str], str] = {}      # ... and a line of it to show
         self.bound: Dict[str, str] = {}                       # a name in this file -> the part of Python behind it
         self.risky_names: Set[str] = set()                    # names that stand for something that reaches out
         self.modules: Set[str] = set()                        # names that stand for a whole part of Python (import x)
-        self.assigned: Set[str] = {n.id for n in self.nodes if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Store)} | {
-            a.arg for n in self.nodes if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)) for a in n.args.args + n.args.kwonlyargs}
+        self.assigned: Set[str] = {n.id for n in of(ast.Name) if isinstance(n.ctx, ast.Store)} | {
+            a.arg for n in of(ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda) for a in n.args.args + n.args.kwonlyargs}
         self.heads: Dict[int, str] = {}
+        self.late: List[Tuple[str, str]] = []                 # names taken from the program's own parts: judged when every part is read
+        self.exports: Set[str] = set()                        # names of this file (at its top) for something that reaches out
+        self.home: Set[str] = set()                           # names of this file (settings, functions) that lead to the program's folder
+        self.home_attrs: Set[str] = set()                     # ... and values kept in an object (self.base = HERE)
+        self.writers: Dict[int, Tuple[str, List[str], Set[str]]] = {}     # functions that write where they are told: (name, takes, which of it)
+        self.echo: Dict[str, Set[int]] = {}                   # functions that give back what they are given: which of it (by place ...
+        self.echo_names: Dict[str, Set[str]] = {}             # ... and by name)
+        self.spreads: Dict[Tuple[int, frozenset], Set[str]] = {}
+        self.assigns: Dict[int, List[Tuple[Set[str], ast.AST]]] = {}
+        self.folded: Dict[int, object] = {}
+        once: Dict[str, List[ast.AST]] = {}                   # names set exactly once in the file, to something fixed ('Launch'): read as that
+        for n in of(ast.Name):
+            if isinstance(n.ctx, ast.Store):
+                up = self.parents.get(id(n))
+                once.setdefault(n.id, []).append(up.value if isinstance(up, (ast.Assign, ast.AnnAssign)) and up.value is not None and
+                                                 (up.targets == [n] if isinstance(up, ast.Assign) else up.target is n) else None)
+        taken = {a.arg for n in of(ast.arguments) for a in n.posonlyargs + n.args + n.kwonlyargs + [x for x in (n.vararg, n.kwarg) if x]} | {
+            nm for n in of(ast.Global, ast.Nonlocal) for nm in n.names}
+        self.consts: Dict[str, ast.AST] = {k: v[0] for k, v in once.items() if len(v) == 1 and v[0] is not None and k not in taken
+                                           and isinstance(v[0], (ast.Constant, ast.BinOp, ast.JoinedStr, ast.Call, ast.Subscript))}
         self._imports()
-        self._aliases()
         self.hits: Dict[int, List[Tuple[ast.AST, str, str]]] = {}     # id of the unit (function, or statement outside one) -> finds
         self.units: Dict[int, Tuple[ast.AST, str]] = {}
         self.tops: Dict[str, List[ast.stmt]] = {}             # names set at the top of the file
@@ -227,14 +577,37 @@ class _Py:
                     if isinstance(nm, ast.Name):
                         self.tops.setdefault(nm.id, []).append(st)
         for n in self.nodes:
-            if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            if type(n) in (ast.FunctionDef, ast.AsyncFunctionDef):
                 self.defs.setdefault(n.name, []).append(n)
                 if isinstance(self.parents.get(id(n)), ast.ClassDef):
                     self.methods.add(id(n))
         self.passing: Dict[int, Tuple[str, List[str], Set[str], bool]] = {}     # functions that hand what they are given on to such a
         self.deciding: Dict[int, List[ast.AST]] = {}          # place: (name, what they take, which of it goes there, takes more)
         self.seen_refs: Set[Tuple[int, int]] = set()
+        self.top_classes: Set[str] = {st.name for st in self.tree.body if isinstance(st, ast.ClassDef)}
+        self.returns: Dict[int, List[ast.AST]] = {}           # of each function: what it hands back
+        for n in of(ast.Return):
+            if n.value is not None:
+                up = self.parents.get(id(n))
+                while up is not None and not isinstance(up, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+                    up = self.parents.get(id(up))
+                if up is not None and not isinstance(up, ast.Lambda):
+                    self.returns.setdefault(id(up), []).append(n.value)
+        self.calls: List[ast.Call] = of(ast.Call)          # type: ignore[assignment]
+        self.self_hits: Set[int] = set()
+        self.fns: Dict[int, ast.AST] = {id(d): d for ds in self.defs.values() for d in ds}
+        self.aliasing: List[ast.AST] = [n for n in self.nodes if type(n) is ast.ClassDef or type(n) in (ast.Assign, ast.AnnAssign, ast.NamedExpr)
+                                        and isinstance(n.value, (ast.Name, ast.Attribute))]
+
+    def find(self) -> None:
+        """Every place of this file that reaches out -- asked when all files are read (a name may lead through another one)."""
+        for mod, name in self.late:
+            full = "%s.%s" % (mod, name)
+            real, how = self._through(full)
+            if how == "name" or how and real.split(".")[0] not in self.local and (how == "whole" or self._risky_path(real)):
+                self._note("module", full, show="from %s import %s" % (mod, name))
         self._find()
+        self._writes()
 
     # -- what is imported -------------------------------------------------------------------------------------------------
     def _note(self, kind: str, what: str, content: str = "1", show: str = "") -> None:
@@ -262,20 +635,48 @@ class _Py:
                     full = "%s.%s" % (mod, a.name)
                     if a.name == "*" or not (_harmless_module(mod, self.local) or _harmless_module(full, self.local)) or self._risky_path(full):
                         self._note("module", full, show="from %s import %s" % (mod, a.name))
+                    elif mod.split(".")[0] in self.local:
+                        self.late.append((mod, a.name))
 
     # -- is this dotted name something that reaches out? ------------------------------------------------------------------
     def _risky_path(self, path: str) -> bool:
         parts = path.split(".")
         if PLAIN.match(path):
             return False
+        if parts[0] in self.local:                             # one of the program's own parts: only its insides and the parts of Python behind it
+            own = next((i for i in range(len(parts), 0, -1) if ".".join(parts[:i]) in self.world), 1)
+            return any(p in MODULE_NAMES or p in INSIDES or p in INSIDES_OF_MODULES for p in parts[own:])
         for i in range(len(parts), 0, -1):                     # the longest known part of Python at its start
             mod = ".".join(parts[:i])
             if mod in RISKY_IN and len(parts) > i and parts[i] in RISKY_IN[mod]:
                 return True
-            if _harmless_module(mod, self.local):
+            if mod in HARMLESS or mod in HARMLESS_SUB:
                 rest = parts[i:]
-                return any(p in MODULE_NAMES or p in INSIDES or p in INSIDES_OF_MODULES for p in rest)
+                return bool(rest) and (rest[0].startswith("_")          # what a part of Python keeps for itself (tempfile._os, os._execvpe)
+                                       or bool(mod in RISKY_START and RISKY_START[mod].match(rest[0]))
+                                       or any(p in MODULE_NAMES or p in INSIDES or p in INSIDES_OF_MODULES for p in rest)
+                                       or any(p in CODE_NAMES for p in rest[1:]))
         return True                                            # not a harmless part at all
+
+    def _through(self, path: str) -> Tuple[str, str]:
+        """A dotted name that starts with one of the program's own parts, followed through what that part itself imports or
+        keeps under a name: 'storage.subprocess.Popen' is 'subprocess.Popen'. With how it ends: '' (in the program's own
+        part), 'part' (in something of another part), 'whole' (it is another part, as a value), 'name' (the own part's name for
+        something that reaches out: a class built on such a part, x = subprocess.run)."""
+        parts, how = path.split("."), ""
+        for _ in range(8):
+            i = next((i for i in range(len(parts) - 1, 0, -1) if ".".join(parts[:i]) in self.world), 0)
+            if not i:
+                break
+            other, name = self.world[".".join(parts[:i])], parts[i]
+            if name in other.exports:
+                return ".".join(parts), "name"
+            target = other.bound.get(name)
+            if target is None or target.startswith("."):
+                break
+            how = "whole" if len(parts) == i + 1 and name in other.modules else "part"
+            parts = target.split(".") + parts[i + 1:]
+        return ".".join(parts), how
 
     def _chain(self, node: ast.AST) -> Tuple[Optional[str], List[str]]:
         parts: List[str] = []
@@ -290,6 +691,8 @@ class _Py:
         inside = [p for p in parts if p in INSIDES]
         if inside:
             return "detour", inside[0]
+        if root in TYPE_NAMES and "__dict__" in parts and root not in self.assigned and root not in self.bound:
+            return "detour", root + ".__dict__"                # the table of names of a kind of value every Python has
         if root is None:
             hidden = [p for p in parts if p in MODULE_NAMES]
             return ("detour", hidden[0]) if hidden else None
@@ -304,6 +707,12 @@ class _Py:
                 return None
             if not parts and root in self.modules and self.bound[root].split(".")[0] not in self.local:
                 return "detour", root                          # a part of Python handed on as a value (f(os), x = os)
+            real, how = self._through(path)                    # ... or reached through one of the program's own parts
+            if how == "name":
+                return "call", path
+            if how and real.split(".")[0] not in self.local:
+                return ("detour", path) if how == "whole" or self._risky_path(real) else None
+            path = real
             own = path.split(".")[0] + ".py"
             if own in OWN and self.rel not in OWN and ".".join(path.split(".")[:2]) not in OWN_OPEN:
                 return "detour", path                          # the update check, touched from outside
@@ -340,21 +749,56 @@ class _Py:
         root, parts = self._chain(node)
         return root is not None and (root in self.bound and not self.bound[root].startswith(".") or root in MODULE_NAMES or root in self.risky_names)
 
-    def _aliases(self) -> None:
-        """Other names for what reaches out: a class built on such a part, a name such a part is put into (x = subprocess.run)."""
-        changed = True
+    def aliases(self) -> bool:
+        """Other names for what reaches out: a class built on such a part, a name such a part is put into (x = subprocess.run);
+        other names for one of the program's own parts (m = storage); names that lead to the program's own folder. True when
+        something was added (asked again then, for every file: a name may lead through another file)."""
+        added, changed = False, True
         while changed:
             changed = False
-            for n in self.nodes:
+            for n in self.aliasing:
                 name = None
-                if isinstance(n, ast.ClassDef) and any(self._risk(b) for b in n.bases):
-                    name = n.name
-                elif isinstance(n, (ast.Assign, ast.AnnAssign, ast.NamedExpr)) and isinstance(n.value, (ast.Name, ast.Attribute)) and self._risk(n.value):
+                if isinstance(n, ast.ClassDef):
+                    if any(self._risk(b) for b in n.bases):
+                        name = n.name
+                elif self._risk(n.value):
                     t = n.targets[0] if isinstance(n, ast.Assign) else n.target
                     name = t.id if isinstance(t, ast.Name) else (t.attr if isinstance(t, ast.Attribute) else None)
+                else:
+                    root, parts = self._chain(n.value)
+                    t = n.targets[0] if isinstance(n, ast.Assign) else n.target
+                    if root in self.bound and not self.bound[root].startswith(".") and isinstance(t, ast.Name) and t.id not in self.bound:
+                        real, _how = self._through(".".join([self.bound[root]] + parts))
+                        if real in self.world:                 # another name for one of the program's own parts
+                            self.bound[t.id] = real
+                            self.modules.add(t.id)
+                            changed = True
                 if name and name not in self.risky_names:
                     self.risky_names.add(name)
+                    if name in self.tops or name in self.top_classes:
+                        self.exports.add(name)
                     changed = True
+            seeds = self.home | {HOME_NAME}
+            for name, sts in self.tops.items():                # HERE = os.path.dirname(os.path.abspath(__file__)), WEB = os.path.join(HERE, "web")
+                if name not in self.home and any(getattr(st, "value", None) is not None and self._leads(st.value, seeds) for st in sts):
+                    self.home.add(name)
+                    changed = True
+            for fid, values in self.returns.items():           # def here(): return os.path.dirname(__file__)
+                fn = self.fns[fid]
+                if fn.name not in (self.home_attrs if fid in self.methods else self.home):
+                    names = self._spread(fn, seeds)
+                    if any(self._leads(v, names) for v in values):
+                        (self.home_attrs if fid in self.methods else self.home).add(fn.name)
+                        changed = True
+                if fid not in self.methods:                    # def same(p): return p -- gives back what it is given
+                    given = [a.arg for a in fn.args.posonlyargs + fn.args.args]
+                    for i, g in enumerate(given):
+                        if i not in self.echo.get(fn.name, ()) and any(self._leads(v, self._spread(fn, {g})) for v in values):
+                            self.echo.setdefault(fn.name, set()).add(i)
+                            self.echo_names.setdefault(fn.name, set()).add(g)
+                            changed = True
+            added = added or changed
+        return added
 
     # -- where -----------------------------------------------------------------------------------------------------------
     def _unit(self, node: ast.AST) -> Tuple[ast.AST, str]:
@@ -408,16 +852,47 @@ class _Py:
                 r = self._risk(n)
                 if r:
                     self._hit(n, r[0], r[1])
+        words = WORDS.get(self.rel, ())
+        joins = (ast.BinOp, ast.JoinedStr, ast.Call, ast.Subscript)
         for n in self.nodes:
             if id(n) in notes or isinstance(n, (ast.Name, ast.Attribute)):
                 continue
             if isinstance(n, ast.Global):
                 self._hit(n, "detour", "global " + ", ".join(n.names))
             elif isinstance(n, ast.Constant) and isinstance(n.value, str):
-                self._text(n)
-            elif isinstance(n, ast.Subscript) and isinstance(n.slice, ast.Constant) and isinstance(n.slice.value, str) \
-                    and (n.slice.value in INSIDES or n.slice.value in MODULE_NAMES):
-                self._hit(n, "detour", "[%r]" % n.slice.value)
+                self._text(n, n.value)
+            elif isinstance(n, ast.keyword) and n.arg in words:
+                self._hit(n, "detour", n.arg + "=")
+            if isinstance(n, ast.Subscript):
+                key = _text_of(self._fixed(n.slice))
+                if key is not None and (key in INSIDES or key in MODULE_NAMES):
+                    self._hit(n, "detour", "[%r]" % key)
+                elif self._table(n.value) and (key is None or key.startswith("__")):
+                    self._hit(n, "detour", "__dict__[…]")     # a table of names, asked by a name that is not fixed (or an inner one)
+            elif isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and n.func.attr in ("get", "pop", "setdefault", "__getitem__") \
+                    and self._table(n.func.value) and n.args:
+                key = _text_of(self._fixed(n.args[0]))
+                if key is None or key.startswith("__"):
+                    self._hit(n, "detour", "__dict__.%s(…)" % n.func.attr)
+            # text put together from pieces: read as the whole it makes ('Launch' + 'Agents', "%s%s" % ..., f"...", "".join(...))
+            if isinstance(n, joins) and not isinstance(self.parents.get(id(n)), (ast.BinOp, ast.JoinedStr, ast.FormattedValue)) \
+                    and not isinstance(n, ast.Constant):
+                whole = _text_of(_value(n, self.consts, True))
+                if whole and whole.strip(HOLE):
+                    for piece in whole.split(HOLE) if HOLE * 2 in whole else [whole]:
+                        if piece:
+                            self._text(n, piece.replace(HOLE, "…"), True)
+
+    def _fixed(self, node: ast.AST):
+        """The fixed value of a piece of code (see _value), or None."""
+        if id(node) not in self.folded:
+            self.folded[id(node)] = _value(node, self.consts)
+        return self.folded[id(node)]
+
+    def _table(self, node: ast.AST) -> bool:
+        """x.__dict__ or vars(x): the names of something as a table."""
+        return isinstance(node, ast.Attribute) and node.attr == "__dict__" or \
+            isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "vars"
 
     def _hit(self, node: ast.AST, kind: str, what: str, given: Optional[List[ast.AST]] = None) -> None:
         unit, qual = self._unit(node)
@@ -444,8 +919,9 @@ class _Py:
             args, kws = args[:1], [k for k in kws if k.arg not in ("data", "method")]
         return args + [k.value for k in kws]
 
-    def _text(self, node: ast.Constant) -> None:
-        s = node.value
+    def _text(self, node: ast.AST, s: str, joined: bool = False) -> None:
+        """A text of the program (joined: one put together from pieces): the addresses and places it names; an inner name of
+        Python as a text; a word that carries an approval."""
         for a in ADDRESS.findall(s):
             m = HOST.search(a)
             host = (m.group(1) if m else a).lower()
@@ -454,6 +930,245 @@ class _Py:
         m = PLACES.search(s)
         if m:
             self._hit(node, "place", m.group(0))
+        if s in INSIDES:
+            self._hit(node, "detour", repr(s))
+        if s in WORDS.get(self.rel, ()):
+            self._hit(node, "detour", repr(s))
+
+    # -- writing into the program's own folder -------------------------------------------------------------------------------
+    @staticmethod
+    def _pairs(st: ast.AST) -> List[Tuple[Set[str], ast.AST]]:
+        pairs: List[Tuple[ast.AST, ast.AST]] = []
+        if isinstance(st, ast.Assign):
+            pairs = [(t, st.value) for t in st.targets]
+        elif isinstance(st, (ast.AnnAssign, ast.AugAssign, ast.NamedExpr)) and st.value is not None:
+            pairs = [(st.target, st.value)]
+        elif isinstance(st, (ast.For, ast.AsyncFor, ast.comprehension)):
+            pairs = [(st.target, st.iter)]
+        elif isinstance(st, (ast.With, ast.AsyncWith)):
+            pairs = [(i.optional_vars, i.context_expr) for i in st.items if i.optional_vars is not None]
+        out = []
+        for t, v in pairs:
+            names = {x.id for x in ast.walk(t) if isinstance(x, ast.Name)}
+            if names:
+                out.append((names, v))
+        return out
+
+    def _assigned(self, unit: ast.AST) -> List[Tuple[Set[str], ast.AST]]:
+        """Of a function (or a statement): every place a name gets a value -- (the names, what is put into them)."""
+        if not self.assigns:                                  # once for the file: each such place under every function around it
+            self.assigns[0] = []
+            for st in self.nodes:
+                if type(st) not in _PLACES_OF_VALUES:
+                    continue
+                pairs = self._pairs(st)
+                up = st if pairs else None
+                while up is not None:
+                    if isinstance(up, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                        self.assigns.setdefault(id(up), []).extend(pairs)
+                    up = self.parents.get(id(up))
+        if id(unit) not in self.assigns:
+            if isinstance(unit, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                return []
+            self.assigns[id(unit)] = [p for st in ast.walk(unit) for p in self._pairs(st)]
+        return self.assigns[id(unit)]
+
+    def _spread(self, unit: ast.AST, seeds: Set[str]) -> Set[str]:
+        """The names of a function whose value comes from these names (again and again)."""
+        key = (id(unit), frozenset(seeds))
+        if key not in self.spreads:
+            names, grown = set(seeds), True
+            while grown:
+                grown = False
+                for targets, value in self._assigned(unit):
+                    if not targets <= names and self._leads(value, names):
+                        names |= targets
+                        grown = True
+            self.spreads[key] = names
+        return self.spreads[key]
+
+    def _leads(self, x: Optional[ast.AST], names: Set[str], depth: int = 0) -> bool:
+        """Does the value of this piece of code come from one of these names -- or from something that leads to the program's
+        folder: such a name of another part of the program (updates.HERE), a value an object keeps for it (self.base), where
+        the program was started from (sys.argv)? Followed through what builds a path or hands a value on (joining, cutting,
+        putting into a list and taking out again, a function that gives back what it is given) -- not through a call that
+        makes something else of it (reading the file, asking whether it exists)."""
+        if x is None or depth > 40:
+            return False
+        go = lambda y: self._leads(y, names, depth + 1)       # noqa: E731
+        if isinstance(x, ast.Name):
+            return x.id in names
+        if isinstance(x, ast.Attribute):
+            if x.attr in self.home_attrs:
+                return True
+            root, parts = self._chain(x)
+            if root in self.bound and not self.bound[root].startswith("."):
+                path = ".".join([self.bound[root]] + parts).split(".")
+                if path[:2] in (["sys", "argv"], ["sys", "path"]):
+                    return True
+                for i in range(len(path) - 1, 0, -1):
+                    other = self.world.get(".".join(path[:i]))
+                    if other is not None:
+                        return other is not self and path[i] in other.home
+                return False
+            return x.attr in PATH_ATTRS and go(x.value)
+        if isinstance(x, ast.Call):
+            f = x.func
+            args = list(x.args) + [k.value for k in x.keywords]
+            if isinstance(f, ast.Name):
+                if f.id in PATH_CALLS and f.id not in self.defs:
+                    return any(go(a) for a in args)
+                if f.id in names and f.id in self.defs:          # a function of this file that leads there (def here(): return HERE)
+                    return True
+                return any(go(a) for i, a in enumerate(x.args) if i in self.echo.get(f.id, ())) or \
+                    any(go(k.value) for k in x.keywords if k.arg in self.echo_names.get(f.id, ()))
+            if isinstance(f, ast.Lambda):
+                return any(go(a) for a in args)
+            if isinstance(f, ast.Attribute):
+                root, parts = self._chain(f)
+                if root in self.bound and not self.bound[root].startswith("."):
+                    path = ".".join([self.bound[root]] + parts)
+                    if path.startswith("os.path.") and path[8:] in PATH_FUNCS or path in ("os.fspath", "os.fsdecode", "os.fsencode", "pathlib.Path",
+                                                                                           "pathlib.PurePath", "pathlib.PosixPath", "pathlib.PurePosixPath"):
+                        return any(go(a) for a in args)
+                    real = self._through(path)[0].split(".")
+                    other = self.world.get(".".join(real[:-1]))
+                    if other is not None:                      # a function of another part of the program
+                        return real[-1] in other.home or any(go(a) for i, a in enumerate(x.args) if i in other.echo.get(real[-1], ())) or \
+                            any(go(k.value) for k in x.keywords if k.arg in other.echo_names.get(real[-1], ()))
+                    return False
+                if f.attr in self.home_attrs:                  # self.here()
+                    return True
+                return f.attr in PATH_METHODS and (go(f.value) or any(go(a) for a in args))
+            return False
+        if isinstance(x, ast.BinOp):
+            return go(x.left) or go(x.right)
+        if isinstance(x, ast.JoinedStr):
+            return any(go(v.value) for v in x.values if isinstance(v, ast.FormattedValue))
+        if isinstance(x, (ast.Subscript, ast.Starred, ast.NamedExpr, ast.Await)):
+            return go(x.value)
+        if isinstance(x, (ast.Tuple, ast.List, ast.Set)):
+            return any(go(e) for e in x.elts)
+        if isinstance(x, ast.Dict):
+            return any(go(e) for e in x.values)
+        if isinstance(x, ast.IfExp):
+            return go(x.body) or go(x.orelse)
+        if isinstance(x, ast.BoolOp):
+            return any(go(e) for e in x.values)
+        if isinstance(x, (ast.ListComp, ast.GeneratorExp, ast.SetComp)):
+            return go(x.elt) or any(go(g.iter) for g in x.generators)
+        return False
+
+    def _written(self, call: ast.Call) -> Optional[List[ast.AST]]:
+        """Of a call that (may) write a file: the pieces that say where. None: it does not write."""
+        f, args = call.func, list(call.args)
+        kws = {k.arg: k.value for k in call.keywords if k.arg}
+
+        def reads(mode: Optional[ast.AST]) -> bool:
+            if mode is None:
+                return True
+            v = self._fixed(mode)
+            return isinstance(v, str) and bool(READ_MODE.match(v))
+
+        if isinstance(f, ast.Name):
+            if f.id == "open" and f.id not in self.bound and f.id not in self.defs:
+                return None if reads(args[1] if len(args) > 1 else kws.get("mode")) else args[:1] + [v for k, v in kws.items() if k == "file"]
+            return None
+        if not isinstance(f, ast.Attribute):
+            return None
+        root, parts = self._chain(f)
+        if root in self.bound and parts and not self.bound[root].startswith("."):
+            path = ".".join([self.bound[root]] + parts)
+            for mod, names in WRITERS.items():
+                if path.startswith(mod + ".") and path[len(mod) + 1:] in names:
+                    if path in WRITER_MODES and reads(args[1] if len(args) > 1 else kws.get("mode")):
+                        return None
+                    return args + [v for k, v in kws.items() if k != "mode"]
+            if path.split(".")[0] in HARMLESS and not path.startswith("pathlib."):
+                return None                                    # another function of a harmless part (os.path.join, json.dump ...)
+        if f.attr not in WRITE_METHODS:
+            return None
+        if f.attr == "open":                                   # x.open("w"), x.open(name, "w") -- not x.open() or x.open(name)
+            modes = [a for a in args[:2] + [kws[k] for k in ("mode",) if k in kws] if isinstance(self._fixed(a), str) and re.fullmatch(r"[rwxabt+U]{1,4}", self._fixed(a))]
+            if not modes and not any(self._fixed(a) is None for a in args[:1] + [kws[k] for k in ("mode",) if k in kws]) or modes and all(reads(m) for m in modes):
+                return None
+        if f.attr in ("replace", "rename") and (len(args) != 1 or kws):
+            return None                                        # (a text's replace takes two)
+        return [f.value] + args + list(kws.values())
+
+    def _writes(self) -> None:
+        seeds = self.home | {HOME_NAME}
+        for st in self.nodes:                                  # self.base = HERE: a value an object keeps for the program's folder
+            if isinstance(st, ast.Assign) and self._leads(st.value, seeds):
+                self.home_attrs.update(t.attr for t in st.targets if isinstance(t, ast.Attribute))
+        self.written: List[Tuple[ast.Call, List[ast.AST]]] = []
+        for call in self.calls:
+            where = self._written(call)
+            if where:
+                self.written.append((call, where))
+        for call, where in self.written:
+            self._write_at(call, where, "")
+
+    def _fn(self, node: ast.AST) -> Optional[ast.AST]:
+        """The function a piece of code stands in (of functions inside functions the outermost), or None."""
+        fn, up = None, self.parents.get(id(node))
+        while up is not None:
+            if isinstance(up, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                fn = up
+            up = self.parents.get(id(up))
+        return fn
+
+    def _write_at(self, call: ast.Call, where: List[ast.AST], through: str) -> bool:
+        """One place that writes (through: by way of a function that writes where it is told): a find when the path leads to
+        the program's folder; and when it comes from what the function around it is given, that function writes where it is
+        told, too. True when the latter is new."""
+        fn = self._fn(call)
+        scope: ast.AST = fn if fn is not None else self._unit(call)[0]
+        seeds = self.home | {HOME_NAME}
+        if id(call) not in self.self_hits and any(self._leads(e, self._spread(scope, seeds)) for e in where):
+            self.self_hits.add(id(call))
+            self._hit(call, "self", through or "write", [])
+        if fn is None:
+            return False
+        a = fn.args
+        given = [x.arg for x in a.posonlyargs + a.args]
+        if id(fn) in self.methods and given and given[0] in ("self", "cls"):
+            given = given[1:]
+        every = given + [x.arg for x in a.kwonlyargs] + [x.arg for x in (a.vararg, a.kwarg) if x]
+        goes = {g for g in every if any(self._leads(e, self._spread(scope, {g})) for e in where)}
+        old = self.writers.get(id(fn))
+        if goes and (old is None or not goes <= old[2]):
+            self.writers[id(fn)] = (fn.name, given, goes | (old[2] if old else set()))
+            return True
+        return False
+
+    def written_through(self, writers: Dict[str, Dict[str, list]], methods: Dict[str, list]) -> bool:
+        """Finds where this file calls a function (of any file) that writes where it is told, and treats that call as a place
+        that writes there. True when a function of this file turned out to be such a function, too."""
+        added = False
+        mine = writers.get(self.rel, {})
+        for call in self.calls:
+            f = call.func
+            defs: list = []
+            if isinstance(f, ast.Name):
+                defs = mine.get(f.id, [])
+            elif isinstance(f, ast.Attribute):
+                root, parts = self._chain(f)
+                if root in self.bound and parts and not self.bound[root].startswith("."):
+                    path = self._through(".".join([self.bound[root]] + parts))[0].split(".")
+                    if len(path) >= 2:
+                        defs = writers.get("/".join(path[:-1]) + ".py", {}).get(path[-1], [])
+                elif f.attr in methods:
+                    defs = methods[f.attr]
+            if not defs:
+                continue
+            where: List[ast.AST] = []
+            for _name, given, goes in defs:
+                where += [x for i, x in enumerate(call.args) if isinstance(x, ast.Starred) or i < len(given) and given[i] in goes or i >= len(given)]
+                where += [k.value for k in call.keywords if k.arg is None or k.arg in goes]
+            if where and self._write_at(call, where, "→ " + defs[0][0]):
+                added = True
+        return added
 
     # -- what reaches a place ------------------------------------------------------------------------------------------------
     def _feeding(self, unit: ast.AST, nodes: List[ast.AST], exact: bool = False) -> Tuple[List[ast.AST], Set[str]]:
@@ -468,9 +1183,10 @@ class _Py:
         names = {n.id for st in feeding for n in ast.walk(st) if isinstance(n, ast.Name)}
         seen: Set[int] = set()
         grown = True
+        places = [st for st in ast.walk(unit) if isinstance(st, (ast.Assign, ast.AnnAssign, ast.AugAssign, ast.For, ast.NamedExpr, ast.With))]
         while grown:
             grown = False
-            for st in ast.walk(unit):
+            for st in places:
                 targets = st.targets if isinstance(st, ast.Assign) else [st.target] if isinstance(st, (ast.AnnAssign, ast.AugAssign, ast.For, ast.NamedExpr)) else \
                     [i.optional_vars for i in st.items if i.optional_vars is not None] if isinstance(st, ast.With) else []
                 if id(st) not in seen and any(isinstance(x, ast.Name) and x.id in names for t in targets for x in ast.walk(t)):
@@ -492,7 +1208,7 @@ class _Py:
             unit, qual = self.units[uid]
             if not isinstance(unit, (ast.FunctionDef, ast.AsyncFunctionDef)) or id(unit) in self.heads or unit.name in CHECKED.get(self.rel, ()):
                 continue
-            exprs = [e for n, k, _w in found if k != "place" for e in self.deciding.get(id(n), [])]
+            exprs = [e for n, k, _w in found if k not in ("place", "self") for e in self.deciding.get(id(n), [])]
             if not exprs:
                 continue
             _feed, names = self._feeding(unit, exprs, exact=True)
@@ -559,7 +1275,7 @@ class _Py:
         for uid, found in self.hits.items():
             unit, qual = self.units[uid]
             kinds = sorted({k for _n, k, _w in found})
-            kind = "detour" if "detour" in kinds else "place" if kinds == ["place"] else "call"
+            kind = "detour" if "detour" in kinds else "place" if kinds == ["place"] else "self" if set(kinds) <= {"place", "self"} else "call"
             first = min(found, key=lambda f: (getattr(f[0], "lineno", 0), getattr(f[0], "col_offset", 0)))
             call = first[0]
             while isinstance(self.parents.get(id(call)), (ast.Attribute, ast.Call)) and getattr(self.parents[id(call)], "func", call) is call:
@@ -600,8 +1316,53 @@ class _Py:
         for name in RULES.get(self.rel, ()):                   # rules that keep Kontor to itself: each as a whole
             for d in defs.get(name, []):
                 self._note("rule", name, _same(d), "%s()" % name)
-        if self.rel in OWN:
+            for st in tops.get(name, []):                      # ... a setting at the top of the file
+                self._note("rule", name, _same(st), _show(st))
+        self._sources()
+        if _own(self.rel):
             self._note("guard", "", _same(self.tree), self.rel)
+
+
+    def _sources(self) -> None:
+        """Where something is fetched from: each fixed text given to a key or a name like "repo" -- in a table ({"repo": ..}), set
+        to a name (RUNTIME_REPO = ..), handed over (repo=..), as the default of an argument, or as what stands in for a value
+        read under that key (x.get("repo") or ..). Kept as an address: another one is new, the same one again is not."""
+        def named(t: Optional[ast.AST]) -> bool:
+            if isinstance(t, ast.Name):
+                return bool(SOURCE.search(t.id))
+            if isinstance(t, ast.Attribute):
+                return bool(SOURCE.search(t.attr))
+            if isinstance(t, ast.Subscript):
+                return bool(SOURCE.search(_text_of(self._fixed(t.slice)) or ""))
+            return isinstance(t, ast.Constant) and isinstance(t.value, str) and bool(SOURCE.search(t.value))
+
+        def read(v: ast.AST) -> bool:                        # x.get("repo"), x["repo"]
+            if isinstance(v, ast.Call) and isinstance(v.func, ast.Attribute) and v.func.attr in ("get", "pop", "setdefault") and v.args:
+                return named(v.args[0]) or bool(SOURCE.search(_text_of(self._fixed(v.args[0])) or ""))
+            return isinstance(v, ast.Subscript) and named(v)
+
+        given: List[ast.AST] = []
+        for n in self.nodes:
+            if type(n) not in _SOURCE_PLACES:
+                continue
+            if isinstance(n, ast.Dict):
+                given += [v for k, v in zip(n.keys, n.values) if k is not None and named(k)]
+            elif isinstance(n, (ast.Assign, ast.AnnAssign)) and n.value is not None:
+                if any(named(t) for t in (n.targets if isinstance(n, ast.Assign) else [n.target])):
+                    given.append(n.value)
+            elif isinstance(n, ast.keyword) and n.arg and SOURCE.search(n.arg):
+                given.append(n.value)
+            elif isinstance(n, ast.arguments):
+                pos = n.posonlyargs + n.args
+                given += [d for a, d in zip(pos[len(pos) - len(n.defaults):], n.defaults) if SOURCE.search(a.arg)]
+                given += [d for a, d in zip(n.kwonlyargs, n.kw_defaults) if d is not None and SOURCE.search(a.arg)]
+            elif isinstance(n, ast.BoolOp) and any(read(v) for v in n.values):
+                given += [v for v in n.values if not read(v)]
+        for v in given:
+            for leaf in (v.values if isinstance(v, ast.BoolOp) else [v.body, v.orelse] if isinstance(v, ast.IfExp) else [v]):
+                where = _text_of(self._fixed(leaf))
+                if where:
+                    self._note("address", where, show="repo: " + where)
 
 
 def _analyse(files: Dict[str, bytes], names: List[str], local: Set[str]) -> Tuple[List[_Py], List[str], List[str]]:
@@ -610,11 +1371,18 @@ def _analyse(files: Dict[str, bytes], names: List[str], local: Set[str]) -> Tupl
     parsed: List[_Py] = []
     unreadable: List[str] = []
     common: List[str] = []
+    world: Dict[str, _Py] = {}
     for rel in names:
         try:
-            parsed.append(_Py(rel, ast.parse(files[rel].decode("utf-8")), local))
+            parsed.append(_Py(rel, ast.parse(files[rel].decode("utf-8")), local, world))
+            world[_module(rel)] = parsed[-1]
         except (SyntaxError, ValueError, UnicodeDecodeError, RecursionError, MemoryError):
             unreadable.append(rel)
+    for _ in range(20):                                        # names for what reaches out, also through other files
+        if not any([p.aliases() for p in parsed]):
+            break
+    for p in parsed:
+        p.find()
     # a function that hands what it is given on to a place that reaches out: whoever uses it is such a place too -- in any
     # file, and so on, until nothing new is found
     for _ in range(40):
@@ -635,7 +1403,26 @@ def _analyse(files: Dict[str, bytes], names: List[str], local: Set[str]) -> Tupl
         found = [p.refer(passing, methods) for p in parsed]
         if not any(grown) and not any(found):
             break
+    # a function that writes where it is told: a call that tells it the program's own folder is such a place, too
+    for _ in range(8):
+        writers: Dict[str, Dict[str, list]] = {}
+        told: Dict[str, list] = {}
+        for p in parsed:
+            for fid, entry in p.writers.items():
+                if fid in p.methods:
+                    if entry[0] not in COMMON:
+                        told.setdefault(entry[0], []).append(entry)
+                else:
+                    writers.setdefault(p.rel, {}).setdefault(entry[0], []).append(entry)
+        if not any([p.written_through(writers, told) for p in parsed]):
+            break
     return parsed, unreadable, common
+
+
+def _module(rel: str) -> str:
+    """The name a program file is imported with: a.py -> a, pkg/__init__.py -> pkg, pkg/b.py -> pkg.b."""
+    parts = rel[:-3].split("/")
+    return ".".join(parts[:-1] if parts[-1] == "__init__" and len(parts) > 1 else parts)
 
 
 def _python(files: Dict[str, bytes], names: List[str], local: Set[str], out: dict, shown: dict) -> None:
@@ -655,7 +1442,8 @@ def handing_on(files: Dict[str, bytes]) -> Dict[str, object]:
     names = sorted(r for r in files if installable(r) and r.lower().endswith(".py"))
     parsed, _unreadable, common = _analyse(files, names, _local(names))
     return {"functions": {p.rel: {e[0]: sorted(e[2]) for e in p.passing.values()} for p in parsed if p.passing}, "common": sorted(common),
-            "names": {p.rel: sorted(p.defs) + sorted(n.name for n in p.nodes if isinstance(n, ast.ClassDef)) for p in parsed}}
+            "names": {p.rel: sorted(p.defs) + sorted(n.name for n in p.nodes if isinstance(n, ast.ClassDef)) + sorted(p.tops) for p in parsed},
+            "writers": {p.rel: {e[0]: sorted(e[2]) for e in p.writers.values()} for p in parsed if p.writers}}
 
 
 def _local(names: Iterable[str]) -> Set[str]:
@@ -664,8 +1452,557 @@ def _local(names: Iterable[str]) -> Set[str]:
 
 
 # ---------------------------------------------------------------------------
+# helpers and scripts: their lines without comments
+# ---------------------------------------------------------------------------
+
+class _Unclean(Exception):
+    """A helper or script that could not be followed to its end as its language reads it: then its comments stay (every
+    line counts -- rather a finding too many than code taken for a comment)."""
+
+
+class _Lines:
+    """The lines of a helper or script as they are compared: code with its spaces put together and without comments, the
+    text of a string as it is written (a line inside a text over several lines keeps its indentation)."""
+
+    def __init__(self) -> None:
+        self.lines: List[str] = []
+        self.cur: List[str] = []
+        self.inside = False                                   # the line began inside a text over several lines
+
+    def code(self, c: str) -> None:
+        if c == "\n":
+            self.end(False)
+        elif c.isspace():
+            if self.cur and self.cur[-1] != " ":
+                self.cur.append(" ")
+        else:
+            self.cur.append(c)
+
+    def text(self, chars: str) -> None:
+        for c in chars:
+            if c == "\n":
+                self.end(True)
+            elif c != "\r":
+                self.cur.append(c)
+
+    def end(self, inside: bool) -> None:
+        line = "".join(self.cur)
+        line = line.rstrip() if self.inside else line.strip()
+        if line or self.inside:
+            self.lines.append(line)
+        self.cur, self.inside = [], inside
+
+    def done(self) -> List[str]:
+        self.end(False)
+        return self.lines
+
+
+def _swift_lines(t: str) -> List[str]:
+    """Swift: // and /* */ (nested) are comments; texts in quotes (one or three, raw ones with #) are kept as written, with
+    what is put into them (a backslash and parentheses) code again."""
+    o, i, n = _Lines(), 0, len(t)
+    back: List[Tuple[int, bool, int]] = []                    # the texts around an interpolation: (#s, over lines, parentheses)
+    mode, hashes, multi, parens = "code", 0, False, 0
+    while i < n:
+        c = t[i]
+        if mode == "code":
+            if t.startswith("//", i) and (i == 0 or t[i - 1] != "\\"):
+                j = t.find("\n", i)
+                i = n if j < 0 else j
+                continue
+            if t.startswith("/*", i):
+                start, depth, i = i, 1, i + 2
+                while i < n and depth:
+                    if t.startswith("/*", i):
+                        depth, i = depth + 1, i + 2
+                    elif t.startswith("*/", i):
+                        depth, i = depth - 1, i + 2
+                    else:
+                        i += 1
+                if depth:
+                    raise _Unclean()
+                o.code("\n" if "\n" in t[start:i] else " ")      # (a comment over lines still ends the line)
+                continue
+            if c in "#\"":
+                k = i
+                while k < n and t[k] == "#":
+                    k += 1
+                if k < n and t[k] == '"':
+                    hashes, multi = k - i, t.startswith('"""', k)
+                    end = k + (3 if multi else 1)
+                    o.text(t[i:end])
+                    i, mode = end, "text"
+                    continue
+            if back and c == "(":
+                parens += 1
+            elif back and c == ")":
+                if parens == 0:
+                    hashes, multi, parens = back.pop()
+                    o.text(c)
+                    i, mode = i + 1, "text"
+                    continue
+                parens -= 1
+            o.code(c)
+            i += 1
+            continue
+        close = ('"""' if multi else '"') + "#" * hashes
+        if t.startswith(close, i):
+            o.text(close)
+            i, mode = i + len(close), "code"
+            continue
+        esc = "\\" + "#" * hashes
+        if t.startswith(esc, i):
+            j = i + len(esc)
+            if j < n and t[j] == "(":
+                back.append((hashes, multi, parens))
+                o.text(t[i:j + 1])
+                i, mode, parens = j + 1, "code", 0
+                continue
+            if hashes == 0 or j < n:
+                o.text(t[i:j + 1])
+                i = j + 1
+                continue
+        if c == "\n" and not multi:
+            raise _Unclean()                                 # a text that does not end on its line
+        o.text(c)
+        i += 1
+    if mode != "code" or back:
+        raise _Unclean()
+    return o.done()
+
+
+_JS_BEFORE_PATTERN = frozenset("(,=:[!&|?{};+-*%<>~^")
+_JS_WORDS = frozenset(("return", "typeof", "case", "do", "else", "in", "of", "new", "delete", "void", "throw", "instanceof", "yield", "await"))
+
+
+def _js_walk(t: str, i: int = 0):
+    """JavaScript, character by character as the language reads it: (position, character, whether it is code). Comments come
+    as one space; texts ('..', "..", `..` with ${...} code again inside) and patterns (/../) as they are written."""
+    n = len(t)
+    open_tpl: List[int] = []                                 # template texts waiting for their ${...} to close: braces then
+    braces, last, word = 0, "", ""
+    mode, quote = "code", ""
+    while i < n:
+        c = t[i]
+        if mode == "code":
+            if t.startswith("//", i) and (i == 0 or t[i - 1] != "\\"):
+                j = t.find("\n", i)
+                i = n if j < 0 else j
+                continue
+            if t.startswith("/*", i):
+                j = t.find("*/", i + 2)
+                if j < 0:
+                    raise _Unclean()
+                yield i, "\n" if "\n" in t[i:j] else " ", True       # (a comment over lines still ends the line)
+                i = j + 2
+                continue
+            if c in "'\"`":
+                mode, quote, word = ("tpl" if c == "`" else "text"), c, ""
+                yield i, c, False
+                i += 1
+                continue
+            if c == "/" and (last == "" or last in _JS_BEFORE_PATTERN or last in _JS_WORDS):
+                j, inside = i + 1, False
+                while j < n:
+                    d = t[j]
+                    if d == "\\":
+                        j += 2
+                        continue
+                    if d == "\n":
+                        raise _Unclean()
+                    if d == "[":
+                        inside = True
+                    elif d == "]":
+                        inside = False
+                    elif d == "/" and not inside:
+                        break
+                    j += 1
+                if j >= n:
+                    raise _Unclean()
+                for k in range(i, j + 1):
+                    yield k, t[k], False
+                i, last, word = j + 1, "x", ""
+                continue
+            if c == "{":
+                braces += 1
+            elif c == "}":
+                if open_tpl and braces == open_tpl[-1]:
+                    open_tpl.pop()
+                    mode, quote = "tpl", "`"
+                    yield i, c, False
+                    i += 1
+                    continue
+                braces -= 1
+            yield i, c, True
+            if c.isalnum() or c in "_$":
+                word += c
+                last = word
+            elif not c.isspace():
+                word, last = "", c
+            else:
+                word = ""
+            i += 1
+        elif c == "\\":
+            yield i, c, False
+            if i + 1 < n:
+                yield i + 1, t[i + 1], False
+            i += 2
+        elif mode == "text":
+            if c == "\n":
+                raise _Unclean()
+            yield i, c, False
+            i += 1
+            if c == quote:
+                mode, last = "code", "x"
+        else:                                                # a template text
+            if c == "`":
+                yield i, c, False
+                i, mode, last = i + 1, "code", "x"
+            elif t.startswith("${", i):
+                yield i, "$", False
+                yield i + 1, "{", False
+                open_tpl.append(braces)
+                i, mode, last, word = i + 2, "code", "{", ""
+            else:
+                yield i, c, False
+                i += 1
+    if mode != "code" or open_tpl:
+        raise _Unclean()
+
+
+def _js_lines(t: str) -> List[str]:
+    o = _Lines()
+    for _i, c, code in _js_walk(t):
+        (o.code if code else o.text)(c)
+    return o.done()
+
+
+def _js_definition(t: str, start: int) -> int:
+    """Where the definition starting here ends: a function at the brace that closes its body, anything else (const x = ...)
+    at the semicolon after it -- both outside any bracket, text or comment."""
+    depth, body = 0, t.startswith("function", start) or t.startswith("async", start)
+    for i, c, code in _js_walk(t, start):
+        if not code:
+            continue
+        if c in "([{":
+            depth += 1
+        elif c in ")]}":
+            depth -= 1
+            if body and c == "}" and depth == 0:
+                return i + 1
+        elif c == ";" and depth == 0 and not body:
+            return i + 1
+    raise _Unclean()
+
+
+def _page_rules(rel: str, text: str) -> Dict[str, List[str]]:
+    """The functions and settings of a page named in PAGE_RULES: {name: [each definition, without comments and space]}."""
+    out: Dict[str, List[str]] = {}
+    for name in PAGE_RULES.get(rel, ()):
+        for m in re.finditer(r"(?m)^[ \t]*(?:(?:async[ \t]+)?function[ \t]*\*?[ \t]*%s[ \t]*\(|(?:const|let|var)[ \t]+%s[ \t]*=)" % (name, name), text):
+            start = m.start() + len(m.group(0)) - len(m.group(0).lstrip())
+            try:
+                end = _js_definition(text, start)
+                body = "\n".join(_js_lines(text[start:end]))
+            except _Unclean:
+                body = text[start:]                          # not to be followed: everything from here on counts
+            out.setdefault(name, []).append(body)
+    return out
+
+
+def _sh_lines(t: str) -> List[str]:
+    """A shell script: # at the start of a word is a comment (not the first line's #!); '..', "..", `..`, $'..', ${..} and the
+    text of a here-document (<<WORD ... WORD) are kept as written, $( ... ) inside "..." is code again."""
+    o, i, n = _Lines(), 0, len(t)
+    if t.startswith("#!"):
+        j = t.find("\n")
+        j = n if j < 0 else j
+        for c in t[:j]:
+            o.code(c)
+        i = j
+    back: List[Tuple[str, str, int]] = []                    # (what was opened, the mode to go back to, parentheses then)
+    mode, parens = "code", 0
+    later: List[Tuple[str, bool]] = []                       # here-documents that begin after this line: (word, tabs left out)
+
+    def upto(close: str, j: int, escapes: bool = True) -> int:
+        while j < n:
+            if escapes and t[j] == "\\":
+                j += 2
+                continue
+            if t[j] == close:
+                return j
+            j += 1
+        raise _Unclean()
+
+    def braced(j: int) -> int:                               # ${ ... } with what is nested in it
+        depth = 0
+        while j < n:
+            if t[j] == "\\":
+                j += 2
+                continue
+            if t.startswith("${", j):
+                depth, j = depth + 1, j + 2
+                continue
+            if t[j] in "'\"":
+                j = upto(t[j], j + 1, t[j] == '"') + 1
+                continue
+            if t[j] == "}":
+                depth -= 1
+                if depth == 0:
+                    return j
+            j += 1
+        raise _Unclean()
+
+    while i < n:
+        c = t[i]
+        if mode == "code":
+            if c == "\n":
+                o.code(c)
+                i += 1
+                for word, tabs in later:                     # the here-documents, kept as they are
+                    while True:
+                        if i >= n:
+                            raise _Unclean()
+                        j = t.find("\n", i)
+                        j = n if j < 0 else j
+                        line = t[i:j]
+                        i = j + 1
+                        if (line.lstrip("\t") if tabs else line) == word:
+                            for d in line + "\n":
+                                o.code(d)
+                            break
+                        o.text(line + "\n")
+                later = []
+                continue
+            if c == "#" and (i == 0 or t[i - 1] in " \t\n;&|()<>"):
+                j = t.find("\n", i)
+                i = n if j < 0 else j
+                continue
+            if c == "\\":
+                o.text(t[i:i + 2])
+                i += 2
+                continue
+            if c == "'" or t.startswith("$'", i):
+                k = i + (2 if c == "$" else 1)
+                j = upto("'", k, c == "$")
+                o.text(t[i:j + 1])
+                i = j + 1
+                continue
+            if c == "`":
+                j = upto("`", i + 1)
+                o.text(t[i:j + 1])
+                i = j + 1
+                continue
+            if t.startswith("${", i):
+                j = braced(i)
+                o.text(t[i:j + 1])
+                i = j + 1
+                continue
+            if c == '"':
+                back.append(('"', "code", parens))
+                o.text(c)
+                i, mode = i + 1, "dq"
+                continue
+            if t.startswith("$(", i):
+                arith = t.startswith("$((", i)
+                back.append(("((" if arith else "(", "code", parens))
+                o.text(t[i:i + (3 if arith else 2)])
+                i, parens = i + (3 if arith else 2), 1 if arith else 0
+                continue
+            if c == "(":
+                parens += 1
+            elif c == ")":
+                if parens > 0:
+                    parens -= 1
+                elif back and back[-1][0] in ("(", "(("):
+                    _what, mode, parens = back.pop()
+                    o.text(c)
+                    i += 1
+                    continue
+            elif t.startswith("<<", i) and not t.startswith("<<<", i) and not any(b[0] == "((" for b in back):
+                j = i + 2
+                tabs = t.startswith("-", j)
+                j += tabs
+                while j < n and t[j] in " \t":
+                    j += 1
+                if j < n and t[j] in "'\"":
+                    k = upto(t[j], j + 1, False)
+                    word, j = t[j + 1:k], k + 1
+                else:
+                    m = re.match(r"[^\s;&|<>()]+", t[j:])
+                    if not m:
+                        raise _Unclean()
+                    word, j = m.group(0).replace("\\", "").replace("'", "").replace('"', ""), j + len(m.group(0))
+                later.append((word, tabs))
+                for d in t[i:j]:
+                    o.code(d)
+                i = j
+                continue
+            o.code(c)
+            i += 1
+            continue
+        # inside "..."
+        if c == "\\":
+            o.text(t[i:i + 2])
+            i += 2
+        elif c == '"':
+            o.text(c)
+            _what, mode, parens = back.pop()
+            i += 1
+        elif t.startswith("$(", i):
+            arith = t.startswith("$((", i)
+            back.append(("((" if arith else "(", "dq", parens))
+            o.text(t[i:i + (3 if arith else 2)])
+            i, mode, parens = i + (3 if arith else 2), "code", 1 if arith else 0
+        elif c == "`":
+            j = upto("`", i + 1)
+            o.text(t[i:j + 1])
+            i = j + 1
+        elif t.startswith("${", i):
+            j = braced(i)
+            o.text(t[i:j + 1])
+            i = j + 1
+        else:
+            o.text(c)
+            i += 1
+    if mode != "code" or back or later:
+        raise _Unclean()
+    return o.done()
+
+
+LINES = "lines:"                    # the content kept of a helper or script: its lines (not only a fingerprint), to say what changed
+
+
+def _script(rel: str, data: bytes) -> str:
+    """What is kept of a helper or script: its lines without comments and empty space (LINES first); a file that is no text
+    by its fingerprint."""
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError:
+        return _sha(data)
+    low = rel.lower()
+    read = _swift_lines if low.endswith(".swift") else _js_lines if low.endswith(".jxa") else _sh_lines
+    try:
+        lines = read(text)
+    except (_Unclean, RecursionError):
+        lines = [x.rstrip() for x in text.splitlines() if x.strip()]
+    return LINES + "\n" + "\n".join(lines)
+
+
+def _script_change(rel: str, before: Optional[str], after: str) -> Dict[str, object]:
+    """How a helper or script changes: lines added and taken away (in any order), how many of the changed lines reach out as
+    far as fixed patterns can tell, and one of them to show (+ new, - taken away)."""
+    a = before.split("\n")[1:] if before and before.startswith(LINES) else []
+    b = after.split("\n")[1:]
+    added, removed = sum((Counter(b) - Counter(a)).values()), sum((Counter(a) - Counter(b)).values())
+    now, gone = [], []
+    for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(None, a, b, autojunk=False).get_opcodes():
+        if tag != "equal":
+            gone += a[i1:i2]
+            now += b[j1:j2]
+    out = OUT[next(e for e in SCRIPTS if rel.lower().endswith(e))]
+    shown = next(("+ " + x for x in now if out.search(x)), None) or next(("- " + x for x in gone if out.search(x)), None) or \
+        next(("+ " + x for x in now), None) or next(("- " + x for x in gone), "")
+    return {"added": added, "removed": removed, "out": sum(1 for x in now + gone if out.search(x)), "what": shown[:160]}
+
+
+# ---------------------------------------------------------------------------
+# files that take the place of others, and the rest of a git clone
+# ---------------------------------------------------------------------------
+
+LOADED = re.compile(r"(?i)\.(?:py|pyc|pyo|pyw|so|pyd|dylib|pth)$")     # what Python loads as a part, by the name before the first dot
+
+
+def _shadows(names: Iterable[str], before: Iterable[str] = ()) -> Dict[Tuple[str, str, str], str]:
+    """Files and folders that take the place of another part: a folder named like a part of the program or of Python (it is
+    loaded instead of the file), a file named like a part of Python, a translated or compiled part beside its text, what
+    Python loads by itself (sitecustomize, *.pth, the folder's own __init__/__main__), and names that differ only in their
+    letters' case or composition (the Mac's disks take them for one file: one overwrites the other)."""
+    names = sorted(names)
+    out: Dict[Tuple[str, str, str], str] = {}
+    stems = {r[:-3] for r in names if "/" not in r and r.endswith(".py")} | {k[:-3] for k in kept() if "/" not in k and k.endswith(".py")}
+    alike_stems = {_alike(x) for x in stems}
+    alike_lib = {_alike(x) for x in STDLIB}
+    for rel in names:
+        parts = rel.split("/")
+        base = parts[-1]
+        if len(parts) == 1:
+            low, stem = base.lower(), base.split(".")[0]
+            if low in STARTUP or low.endswith(".pth") or re.match(r"__(?:init|main)__\.", low):
+                out[("shadow", rel, "")] = base
+            elif LOADED.search(base) and _alike(stem) in alike_lib:
+                out[("shadow", rel, "")] = "%s (Python: %s)" % (base, stem)
+            elif LOADED.search(base) and not low.endswith(".py") and _alike(stem) in alike_stems:
+                out[("shadow", rel, "")] = "%s → %s.py" % (base, stem)
+        elif _alike(parts[0]) in alike_stems or _alike(parts[0]) in alike_lib:
+            out[("shadow", parts[0] + "/", "")] = "%s/ → %s" % (parts[0], parts[0] + (".py" if _alike(parts[0]) in alike_stems else " (Python)"))
+    groups: Dict[str, Set[str]] = {}
+    for rel in list(names) + sorted(kept()) + list(before):
+        groups.setdefault(_alike(rel), set()).add(rel)
+    mine = set(names)
+    for group in groups.values():
+        if len(group) > 1 and group & mine:
+            out[("shadow", min(group & mine), "")] = " = ".join(sorted(group))
+    return out
+
+
+# what a helper or Python itself makes beside the program while it runs, as the repository's list (.gitignore) writes it
+def ignored(rel: str, patterns: Iterable[str]) -> bool:
+    """Does a list in the manner of .gitignore take in this path? (The last pattern that fits decides; !pattern lets go.)"""
+    parts, hit = rel.split("/"), False
+    for raw in patterns:
+        p = raw.strip()
+        if not p or p.startswith("#"):
+            continue
+        keep = p.startswith("!")
+        p = p[1:] if keep else p
+        folder = p.endswith("/")
+        p = p.strip("/")
+        if not p:
+            continue
+        if "/" in raw.strip().lstrip("!").rstrip("/"):       # with a slash: from the top of the repository
+            fits = any(fnmatch.fnmatchcase("/".join(parts[:k]), p) and (k < len(parts) or not folder) for k in range(1, len(parts) + 1))
+        else:
+            fits = any(fnmatch.fnmatchcase(x, p) and (k < len(parts) - 1 or not folder) for k, x in enumerate(parts))
+        if fits:
+            hit = not keep
+    return hit
+
+
+def beside(rel: str, data: bytes, patterns: Iterable[str] = ()) -> Optional[str]:
+    """A file of a git clone that is no part of the program: None when it is an ordinary file of the repository's tests and
+    development (text with an ordinary ending in one of those folders -- Kontor never runs it), else what it is (shown).
+    Never ordinary: what a program or helper makes (caches, translated Python, apps, the helpers' folders, whatever the
+    repository's own list of such files takes in), anything that is no text, git's own hooks."""
+    parts = rel.split("/")
+    if ignored(rel, MADE_HERE.splitlines()) or ignored(rel, patterns):
+        return "%s (%s)" % (rel, "made by a program")
+    if parts[0] == ".githooks":
+        return rel
+    if not (parts[0] in BESIDE and len(parts) > 1 or rel in BESIDE_FILES):
+        return rel
+    if rel not in BESIDE_FILES and not parts[-1].lower().endswith(BESIDE_ENDS):
+        return rel
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError:
+        return "%s (%s)" % (rel, "no text")
+    return "%s (%s)" % (rel, "no text") if "\0" in text else None
+
+
+# ---------------------------------------------------------------------------
 # pages and everything else
 # ---------------------------------------------------------------------------
+
+def _joined(text: str) -> str:
+    """A page's text with pieces of text put together ('htt' + 'ps://' is read as 'https://')."""
+    for _ in range(12):
+        more = JS_JOIN.sub(lambda m: '"' + m.group(2) + m.group(4) + '"', text)
+        if more == text:
+            break
+        text = more
+    return text
+
 
 def _page(rel: str, data: bytes, out: dict, shown: dict) -> None:
     try:
@@ -674,6 +2011,11 @@ def _page(rel: str, data: bytes, out: dict, shown: dict) -> None:
         out[("unreadable", rel, "")] = _sha(data)
         shown[("unreadable", rel, "")] = rel
         return
+    for name, bodies in _page_rules(rel, text).items():     # what the update page shows and sends: each as a whole
+        out[("rule", rel, name)] = "+".join(_sha(b.encode("utf-8")) for b in bodies)
+        shown[("rule", rel, name)] = name
+    if rel.lower().endswith((".js", ".mjs", ".html", ".htm")):
+        text = _joined(text)
     for a in ADDRESS.findall(text):
         m = HOST.search(a)
         host = (m.group(1) if m else a).lower()
@@ -701,13 +2043,16 @@ def _page(rel: str, data: bytes, out: dict, shown: dict) -> None:
         shown[key] = s[:110]
 
 
-def scan(files: Dict[str, bytes]) -> Tuple[Dict[Tuple[str, str, str], str], Dict[Tuple[str, str, str], str]]:
-    """What a set of program files holds of the things named above: ({(kind, file, what): content}, {the same: a line to show})."""
+def scan(files: Dict[str, bytes], before: Iterable[str] = ()) -> Tuple[Dict[Tuple[str, str, str], str], Dict[Tuple[str, str, str], str]]:
+    """What a set of program files holds of the things named above: ({(kind, file, what): content}, {the same: a line to show}).
+    before: the names of the files there are now (a new name that takes the place of one of them is shown)."""
     out: Dict[Tuple[str, str, str], str] = {}
     shown: Dict[Tuple[str, str, str], str] = {}
     names = [r for r in files if installable(r)]
     local = _local(names)
     _python(files, sorted(r for r in names if r.lower().endswith(".py")), local, out, shown)
+    for key, what in _shadows(names, [r for r in before if installable(r)]).items():
+        out[key], shown[key] = "1", what
     for rel in sorted(names):
         data, low, base = files[rel], rel.lower(), rel.rsplit("/", 1)[-1]
         if low.endswith(".py"):
@@ -716,22 +2061,26 @@ def scan(files: Dict[str, bytes]) -> Tuple[Dict[Tuple[str, str, str], str], Dict
             _page(rel, data, out, shown)
         elif low.endswith(PASSIVE) or base in PASSIVE_NAMES:
             continue
-        else:                                                  # a helper in Swift, a script, anything Kontor cannot read this way
+        elif low.endswith(SCRIPTS):                            # a helper in Swift, a script: its lines without comments
+            out[("file", rel, "")] = _script(rel, data)
+            shown[("file", rel, "")] = rel
+        else:                                                  # anything else Kontor cannot read this way
             out[("file", rel, "")] = _sha(data)
             shown[("file", rel, "")] = rel
     return out, shown
 
 
-def compare(old_files: Dict[str, bytes], new_files: Dict[str, bytes], limit: int = 200) -> List[Dict[str, str]]:
+def compare(old_files: Dict[str, bytes], new_files: Dict[str, bytes], limit: int = 200) -> List[Dict[str, object]]:
     """What the new files hold of those things that the old ones do not hold the same way: [{kind, file, what, new}] -- "new":
-    it was not there at all (else: it is changed). Empty: nothing to ask about."""
-    return differences(scan(old_files)[0], scan(new_files), set(new_files), limit)
+    it was not there at all (else: it is changed); of a helper or script also how many lines are added and taken away and how
+    many of the changed ones reach out ("added", "removed", "out"). Empty: nothing to ask about."""
+    return differences(scan(old_files)[0], scan(new_files, set(old_files)), set(new_files), limit)
 
 
-def differences(old: Dict[Tuple[str, str, str], str], scanned: tuple, new_files: Set[str], limit: int = 200) -> List[Dict[str, str]]:
+def differences(old: Dict[Tuple[str, str, str], str], scanned: tuple, new_files: Set[str], limit: int = 200) -> List[Dict[str, object]]:
     new, shown = scanned
     known = {k[2] for k in old if k[0] == "address"}           # an address the program names already, written in another file too
-    found: List[Dict[str, str]] = []
+    found: List[Dict[str, object]] = []
     for key in sorted(new, key=lambda k: (KINDS.index(k[0]) if k[0] in KINDS else 99, k[1], k[2])):
         if old.get(key) == new[key]:
             continue
@@ -740,10 +2089,13 @@ def differences(old: Dict[Tuple[str, str, str], str], scanned: tuple, new_files:
             continue                                           # the same line fewer times
         if kind == "address" and what in known:
             continue
-        found.append({"kind": kind, "file": rel, "what": shown.get(key, "")[:160], "new": key not in old})
-    for key in sorted(old):                                    # a rule that is no longer there
-        if key[0] == "rule" and key not in new and (key[1] in new_files):
-            found.insert(0, {"kind": "rule", "file": key[1], "what": key[2] + "()", "new": False, "gone": True})
+        f: Dict[str, object] = {"kind": kind, "file": rel, "what": shown.get(key, "")[:160], "new": key not in old}
+        if kind == "file" and new[key].startswith(LINES):     # a helper or script: what of it changes
+            f.update(_script_change(rel, old.get(key), new[key]))
+        found.append(f)
+    for key in sorted(old, reverse=True):                      # a rule, or the check itself, that is no longer there
+        if key not in new and key[0] in ("rule", "guard") and (key[0] == "guard" or key[1] in new_files):     # (a rule of a file that is gone: the file tells)
+            found.insert(0, {"kind": key[0], "file": key[1], "what": (key[2] + ("" if key[2].isupper() else "()")) if key[0] == "rule" else key[1], "new": False, "gone": True})
     return found[:limit]
 
 

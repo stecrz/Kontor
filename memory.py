@@ -21,8 +21,11 @@ A note that replaces another names it (replaces); the older one stays, marked as
 the newer one away brings it back. Forgetting deletes: the note is gone from its file at once.
 
 Never remembered: passwords, PINs, TANs, keys, card numbers (secret_problem) -- Kontor stores no credentials.
-A backup is a file from outside: what comes back from one says so (how "backup"), is told to the log, and can replace
-nothing that was there.
+A backup is a file from outside: what comes back from one says so (how "backup"), is told to the log, is never pinned and can
+replace nothing that was there.
+Forgotten holds: what was forgotten is kept in a list of its own (Forgotten: ids of notes and keys of turns of saved
+conversations, never a text), written before the note goes -- the search in saved conversations (Talks) follows it whatever
+happens to its own files.
 """
 from __future__ import annotations
 
@@ -61,6 +64,8 @@ PART, SLIP = 0.7, 0.6                              # how well a part of a compou
 VEC_FILE = "memory-vectors-%04d.json"              # beside each file of notes: their embeddings (finding by meaning; encrypted, made anew when needed)
 SEM_FLOOR, SEM_MIN = 0.3, 0.5                      # likeness of a note's and a question's embeddings: below the floor it counts nothing; found by meaning alone from SEM_MIN
 TALKS_FILE = "memory-chats-%04d.json"              # what the saved conversations said, to search them (Talks; encrypted, a few conversations per file)
+GONE_FILE = "memory-forgotten.json"                # what was forgotten, so that it stays forgotten there (Forgotten; encrypted): ids of notes, keys of turns -- never a text
+GONE_MAX = 50000                                   # of each at most (the oldest go first)
 TALKS_PER_FILE = 10
 TALK_Q, TALK_A = 800, 900                          # characters of a question, of an answer kept for searching
 LIB_FILE = "memory-%s-%04d.json"                   # embeddings of other texts (Library: kind "help", "tx"), a few files each
@@ -273,15 +278,61 @@ def clean(text: Any) -> str:
 
 _L = "A-Za-zÄÖÜäöüß"
 _NOT_IN_A_WORD = r"(?<![%s])" % _L, r"(?![%s])(?!-[%s])" % (_L, _L)       # not the middle of a word, not the first part of one (TAN-Verfahren, PIN-Brief)
-# a secret word and its value: after ":", "=" or "is" (within the sentence) -- a value with a digit or of eight characters and more
-_WORD_SECRET = re.compile(_NOT_IN_A_WORD[0] + r"(?:(?:[%s]+[\s-]?)?(?:passwort|passw(?:ö|oe)rter|passwords?|passphrase|kennwort|kennw(?:ö|oe)rter)|pw|passcode|secret|"
-                          r"token|api[\s_-]?(?:keys?|schl(?:ü|ue)ssel)|private[\s_-]?key|zugangscode|login)" % _L + _NOT_IN_A_WORD[1]
-                          + r"[^.!?]{0,60}?(?::|=|\blautet\b|\bist\b|\bis\b|\bhei(?:ß|ss)t\b)\s*[\"'„“‚‘«»]?(\S{3,})", re.I)
-# a number that is a secret: a few digits after its word, with or without "is" (PIN 4711, CVV: 123, Geheimzahl ist die 0815)
-_NUMBER_SECRET = re.compile(_NOT_IN_A_WORD[0] + r"(?:(?:karten|handy|sim|konto|online|banking|ec|giro|app)[\s-]?)?(?:pins?|pin[\s-]?codes?|puks?|tans?|cvv2?|cvc2?|"
-                            r"geheimzahl(?:en)?|sicherheitscodes?|pr(?:ü|ue)fziffern?)" + _NOT_IN_A_WORD[1] + r"[^.!?\d]{0,24}?(?<![\d.,])(\d{3,8})(?![\d%s]|[.,]\d|-[%s])" % (_L, _L), re.I)
+# Words that name a secret, of three kinds (the first part of a hyphenated word may stand before the first two: Depot-Passwort):
+#   p  a password by any name: its value can be anything -- a number, a word with digits or a capital inside, what follows "ist" or ":"
+#   n  a number that is a secret (PIN, TAN, a card's check number, a door code): its value is digits or a word with digits
+#   w  Code, Schlüssel, Key by themselves -- everyday words: only what stands right behind them, or behind "ist" and ":", counts
+_SECRET_P = (r"[%s]*(?:passwort(?:e|es|s)?|passw(?:ö|oe)rtern?|passwords?|passphrases?|kennwort(?:e|es|s)?|kennw(?:ö|oe)rtern?)" % _L
+             + r"|pw|pwd|passcodes?|secrets?|tokens?|log-?ins?|zugangscodes?|(?:zugangs|anmelde|log-?in)[\s-]?daten|credentials"
+             r"|(?:api|private|secret|recovery|security|licen[cs]e|product|activation|master|wi-?fi|wlan)[\s_-]?keys?|(?:recovery|seed)[\s-]?phrases?"
+             r"|(?:api[\s_-]?|wiederherstellungs|sicherheits|lizenz|produkt|aktivierungs|zugangs|geheim|privat|master|haupt|wlan-?|netzwerk|entsperr|krypto|verschl(?:ü|ue)sselungs)"
+             r"schl(?:ü|ue)ssel[ns]?")
+_SECRET_N = (r"(?:(?:karten|handy|sim|konto|online|banking|ec|giro|app|super|telefon|depot|m|i|sms|push|photo|chip|smart|flicker|qr)[\s-]?)?(?:pins?|pin[\s-]?codes?|puks?|tans?)"
+             r"|cvv2?|cvc2?|geheimzahl(?:en)?|pr(?:ü|ue)fziffern?|kartenpr(?:ü|ue)fnummern?|(?:kredit|bank|giro|ec-?)?kartennummern?|card[\s-]?numbers?"
+             r"|(?:sicherheits|entsperr|freischalt|aktivierungs|best(?:ä|ae)tigungs|t(?:ü|ue)r|tresor|alarm|geheim|master|backup|recovery|log-?in|einmal|sms-?|security|access|unlock|door)"
+             r"[\s-]?codes?")
+_SECRET = re.compile(r"(?:%s(?:[%s]+-)*(?:(?P<p>%s)|(?P<n>%s))|(?<![%s-])(?P<w>codes?|schl(?:ü|ue)ssel[ns]?|keys?))%s"
+                     % (_NOT_IN_A_WORD[0], _L, _SECRET_P, _SECRET_N, _L, _NOT_IN_A_WORD[1]), re.I)
+_QUOTE = "\"'„“‚‘«»"
+_FILLER = (r"jetzt|nun|neu|neuerdings|ab\s+sofort|aktuell|derzeit|momentan|k(?:ü|ue)nftig|wieder|immer|noch|weiterhin|seit\s+heute|now|currently|still|again"
+           r"|die|der|das|the|nr\.?|nummer|number")                    # words between "ist" and the value that say nothing (ist jetzt ..., lautet wieder ...)
+_LINK = re.compile(r"(?:[:=]|(?<![%s])(?:lautet|ist|is|war|was|hei(?:ß|ss)t)(?![%s]))(?:\s*(?<![%s])(?:%s)(?![%s])[,:]?)*\s*[%s]?" % (_L, _L, _L, _FILLER, _L, _QUOTE), re.I)
+_LINKED = re.compile(r"(?:[:=]|(?<![%s])(?:lautet|ist|is|war|was|hei(?:ß|ss)t))$" % _L, re.I)
+_FILLED = re.compile(r"(?<![%s])(?:%s)$" % (_L, _FILLER), re.I)
+_TOKEN = re.compile(r"[^\s%s(),;]+" % _QUOTE)
+_COUNT = re.compile(r"\d{1,2}(?:-?[%s]+)+|[qQ][1-4](?:[-/]?(?:19|20)?\d\d)?|(?:19|20)\d\der" % _L)       # 4-stellig, 2-Faktor, 30-Tage-Frist, 2x, Q3-2026, 2025er: no value
+_NO_VALUE = frozenset("wpa2 wpa3 fido2 u2f oauth2 sha256 aes256 mp3 mp4 3ds a4".split())
+# written with a capital inside and no password for all that
+_BRANDS = frozenset("paypal iphone ipad imac icloud macbook macos moneymoney filevault youtube whatsapp linkedin github onedrive keepass keepassxc lastpass touchid faceid "
+                    "hypovereinsbank diba phototan pushtan chiptan mtan smstan itan datev elster mastercard girocard".split())
+_UNIT = re.compile(r"\s*(?:%|€|eur\b|euro\b|uhr\b|stellig|stellen\b|ziffern\b|zeichen\b|digits?\b|characters?\b|jahre?n?\b|monate?n?\b|tage?n?\b|wochen\b|stunden\b|minuten\b|mal\b|x\b"
+                   r"|km\b|kg\b|m²|qm\b|years?\b|months?\b|weeks?\b|days?\b|hours?\b|times\b|k\b|mio\b|tsd\b|versuche?n?\b|attempts?\b)", re.I)
+_SERVICE = re.compile(r"(?<![%s])(?:f(?:ü|ue)r|bei|beim|von|vom|for|at|of)(?:\s+(?:der|die|das|dem|den|des|the|mein\w*|unser\w*|my|our))?\s+[%s]?$" % (_L, _QUOTE), re.I)
+# a password's value after "ist", "lautet", ":" without a digit: a word by itself, a capitalised one or a long one -- not a word
+# that tells how it is (Das Passwort ist sicher verwahrt, Passwort: regelmäßig ändern)
+_SOFT = frozenset("sicher unsicher lang kurz neu alt gleich anders falsch richtig korrekt stark schwach gut schlecht weg bekannt unbekannt geheim privat "
+                  "wichtig egal schwer leicht einfach kompliziert sicherer besser gültig ungültig ok okay sehr zu nirgends überall hier dort "
+                  "safe secure strong weak long short new old same different fine good bad unknown known secret private hidden".split())
+_ADJ = re.compile(r"(?:ab|an|auf|aus|be|ein|mit|nach|um|vor|weg|zu|zurück|hinter|ver)?ge[a-zäöüß]{2,}(?:t|en)|[a-zäöüß]{3,}(?:lich|ig|bar|sam|los|haft|isch|iert|ed|ly)")
+_ALONE = re.compile(r"\s*(?:$|[,.;!?)%s]|(?:und|and|oder|or)(?![%s]))" % (_QUOTE, _L), re.I)
+_SAID_AS = re.compile(r"\s*(?:[:=]|lautet|hei(?:ß|ss)t)", re.I)            # links that name the value (Passwort: ..., lautet ..., heißt ...)
+_NUMBER_WORDS = re.compile(r"(?<![%s])(?:(?:null|eins?|zwei|drei|vier|f(?:ü|ue)nf|sechs|sieben|acht|neun|zero|one|two|three|four|five|six|seven|eight|nine)"
+                           r"(?:[\s,-]+|$)){3,}" % _L, re.I)                  # PIN: vier sieben eins eins
+_SENTENCE = re.compile(r"(?<=[a-zäöüß)\]%s]{2}[.!?])\s+(?=[%s(]?[A-ZÄÖÜ])|\n+" % (_QUOTE, _QUOTE))       # (not after "3." or "Nr.": rather a sentence too long than a value cut off from its word)
 _CODE_PART = re.compile(r"[A-Za-z0-9_+=]{20,}")      # a long random code: a part of twenty and more characters with small and capital letters and digits
 _DIGITS = re.compile(r"(?<!\w)\d(?:[ .\-]?\d)*(?!\w)")                # a run of digits, also in groups
+_CARD_WORD = re.compile(r"(?<![%s])(?:[%s]*karten?|cards?|visa|master(?:card)?|amex|american\s+express|maestro|girocard|giro|discover|diners|jcb|unionpay|debit|kredit\w*)(?![%s])" % (_L, _L, _L), re.I)
+# what says that a long number is no card (right before it): Vertragsnummer 1234 ..., Tel. ..., IMEI ...
+_NO_CARD = re.compile(r"(?<![%s])(?:vertrag\w*|kunden\w*|z(?:ä|ae)hler\w*|steuer\w*|rechnung\w*|bestell\w*|auftrag\w*|police\w*|versicherung\w*|mandant\w*|personal\w*|serien\w*"
+                      r"|ger(?:ä|ae)te\w*|akten\w*|vorgang\w*|buchung\w*|beleg\w*|sendung\w*|paket\w*|tracking\w*|telefon\w*|tel|mobil\w*|handy\w*|fax|imei|isbn|ean|gtin|konto\w*|depot\w*"
+                      r"|mitglied\w*|ausweis\w*|invoice\w*|order\w*|contract\w*|customer\w*|account\w*|policy\w*|serial\w*|phone|reference\w*|referenz\w*|flurst(?:ü|ue)ck\w*|grundbuch\w*)"
+                      r"(?:[\s-]*(?:nr|no|nummer|number|id))?[\s.:#]*$" % _L, re.I)
+
+
+def sentences(text: Any) -> List[str]:
+    """A text by its sentences -- cut only where one surely ends (a line break; ".", "!" or "?" after a word, a capital
+    behind it): not after "3." or "Nr.". Rather a sentence too long than a word cut off from what belongs to it."""
+    return [s for s in _SENTENCE.split(str(text or "")) if s.strip()]
 
 
 def _luhn(digits: str) -> bool:
@@ -299,22 +350,14 @@ def _card(d: str) -> bool:
     return ((len(d) == 16 and (d[0] == "4" or 51 <= int(d[:2]) <= 55 or 2221 <= int(d[:4]) <= 2720)) or (len(d) == 15 and d[:2] in ("34", "37"))) and _luhn(d)
 
 
-def secret_problem(text: str) -> bool:
-    """Whether a text holds a credential: a password or key with its value, a PIN, TAN or card check number, a long random
-    code, a card number (also with its expiry date or check number behind it). In doubt yes -- the user is told and can
-    say it without the value."""
-    for m in _WORD_SECRET.finditer(text):
-        v = m.group(1).strip("\"'„“‚‘«».,;")
-        if any(c.isdigit() for c in v) or len(v) >= 8:
-            return True
-    if _NUMBER_SECRET.search(text):
-        return True
-    for m in _CODE_PART.finditer(text):
-        v = m.group(0)
-        if all(re.search(p, v) for p in (r"[a-z]", r"[A-Z]", r"\d")):
-            return True
+def _card_number(text: str) -> bool:
+    """A card number of any brand: twelve to nineteen digits (in one piece or in groups, with spaces or hyphens) that pass the
+    check digit -- as a whole, or its card-shaped part with an expiry date or check number behind it. Not an IBAN, a phone
+    number (+49 ...), a row of years, or a number the words before it name as something else (Vertragsnummer ..., unless the
+    sentence speaks of a card). Visa, Mastercard and Amex as before: wherever they stand, however they are grouped."""
     for m in _DIGITS.finditer(text):
-        if re.search(r"[A-Z]{2}\d{2} ?$", text[max(0, m.start() - 6):m.start()]):       # (the digits of an IBAN are no card)
+        before = text[max(0, m.start() - 40):m.start()]
+        if re.search(r"[A-Z]{2}\d{2} ?$", before[-6:]):                # (the digits of an IBAN are no card)
             continue
         groups = re.split(r"[ .\-]", m.group(0))
         for i in range(len(groups)):                     # the card's own groups, whatever stands before or behind them
@@ -325,6 +368,108 @@ def secret_problem(text: str) -> bool:
                     return True
                 if len(d) > 16:
                     break
+        if before.rstrip().endswith("+") or (_NO_CARD.search(before) and not _CARD_WORD.search(text)):
+            continue
+        for part in m.group(0).split("."):               # any other brand: spaces and hyphens only (a full stop: dates, amounts)
+            gs = [g for g in re.split(r"[ \-]", part) if g]
+            for i in range(len(gs)):
+                for j in range(i + 1, len(gs) + 1):
+                    run, d = gs[i:j], "".join(gs[i:j])
+                    if len(d) > 19:
+                        break
+                    whole = i == 0 and j == len(gs)
+                    shaped = len(run) == 1 or (all(len(g) == 4 for g in run[:-1]) and len(run[-1]) <= 4) or [len(g) for g in run] in ([4, 6, 5], [4, 6, 4])
+                    if len(d) >= 12 and (whole or shaped) and not all(re.fullmatch(r"(?:19|20)\d\d", g) for g in run) and _luhn(d):
+                        return True
+    return False
+
+
+def _behind(s: str, pos: int, ends: Set[int]) -> bool:
+    """Whether what stands at pos comes right behind a secret word or behind "ist", "lautet", ":" (words that say nothing skipped)."""
+    head = s[:pos]
+    while True:
+        head = head.rstrip(" \t" + _QUOTE)
+        m = _FILLED.search(head)
+        if m is None:
+            return len(head) in ends or _LINKED.search(head) is not None
+        head = head[:m.start()]
+
+
+def _secret_value(s: str, found: List[Tuple[int, int, str]]) -> bool:
+    """Whether a sentence that names a secret (found: where, and of which kind) also holds its value."""
+    ends = {b for _, b, _ in found}
+    own = lambda a, b: any(a < y and x < b for x, y, _ in found)       # (a part of the secret word itself: CVV2, FileVault-...)
+    code = lambda v: bool(v) and _COUNT.fullmatch(v) is None and v.lower() not in _NO_VALUE and any(c.isdigit() for c in v) and (any(c.isalpha() for c in v) or sum(c.isdigit() for c in v) >= 3)
+    if any(k != "w" for _, _, k in found):
+        for m in re.finditer(r"\d(?:[ \-]?\d)*", s):     # a number: three digits and more, also in groups -- no amount, date, length
+            before, after = s[:m.start()], s[m.end():]
+            if own(m.start(), m.end()) or (before[-1:] and (before[-1].isalnum() or before[-1] in ".,/§")) or re.match(r"[%s]|[.,/:]\d|-[%s]" % (_L, _L), after):
+                continue
+            if sum(c.isdigit() for c in m.group(0)) < 3 or _UNIT.match(after):
+                continue
+            if re.fullmatch(r"(?:19|20)\d\d", m.group(0)) and not _behind(s, m.start(), ends):      # a year in passing (seit 2024, 2024 geändert) -- "PIN 1987" is none
+                continue
+            return True
+        password = any(k == "p" for _, _, k in found)
+        for m in _TOKEN.finditer(s):                     # a word with letters and digits (Sommer2024), for a password also one with a capital inside (xKcdHase)
+            tok = m.group(0).strip(".:!?")
+            if own(m.start(), m.end()) or _SERVICE.search(s[:m.start()]) or any(p in _BRANDS for p in re.split(r"[-/]", tok.lower())):      # ("für PayPal", "bei N26": the service, not the value)
+                continue
+            if (any(c.isalpha() for c in tok) and code(tok)) or (password and re.search(r"[a-zäöüß][A-ZÄÖÜ]", tok)):
+                return True
+        if _NUMBER_WORDS.search(s):                      # digits written as words
+            return True
+    for a, b, kind in found:                             # what follows "ist", "lautet", ":" or "=" (within the sentence, soon after the word)
+        for m in _LINK.finditer(s, b):
+            if m.start() - b > 60:
+                break
+            got = _TOKEN.match(s, m.end())
+            v = got.group(0).strip(".:!?") if got else ""
+            if len(v) < 3 or _COUNT.fullmatch(v) is not None:
+                continue
+            if kind != "p":
+                if code(v):
+                    return True
+                continue
+            if any(c.isdigit() for c in v):
+                return True
+            gap = s[b:m.start()]                         # a word only close to its secret word (Passwort für die Bank ist ...; not "Passwort ändern, Termin: Montag")
+            if "," in gap or len(gap.split()) > 5 or _fold(v) in STOP:
+                continue
+            soft = v.lower() in _SOFT or (v[:1].islower() and _ADJ.fullmatch(v.lower()) is not None)
+            alone = _ALONE.match(s, got.end()) is not None if got else False
+            if _SAID_AS.match(m.group(0)):               # Passwort: geheim, lautet hunter, heißt Tulpe
+                if alone or (not soft and (v[:1].isupper() or len(v) >= 8)):
+                    return True
+            elif not soft and (v[:1].isupper() or len(v) >= 8 or alone):          # ist Tulpe, ist hunter -- not "ist sicher verwahrt"
+                return True
+        if kind == "w":                                  # Code 4711, Key ABCD-1234
+            got = _TOKEN.match(s, len(s) - len(s[b:].lstrip(" \t" + _QUOTE)))
+            if got and code(got.group(0).strip(".:!?")):
+                return True
+    return False
+
+
+def secret_problem(text: str) -> bool:
+    """Whether a text holds a credential: a long random code; a card number of any brand (also with its expiry date or check
+    number behind it); or a sentence that names a secret -- a password, PIN, TAN, key, code, a card's number or check number,
+    login data -- together with a value: a number of three digits and more (also in groups: 47 11), a word with digits or,
+    for a password, with a capital inside, or what follows "ist", "lautet", ":" (also with "jetzt", "wieder" between). A
+    sentence without a value ("Passwörter ändere ich jeden Monat") and an IBAN are none. In doubt yes -- the user is told
+    and can say it without the value."""
+    text = str(text or "")
+    for m in _CODE_PART.finditer(text):
+        v = m.group(0)
+        if all(re.search(p, v) for p in (r"[a-z]", r"[A-Z]", r"\d")):
+            return True
+    if sum(c.isdigit() for c in text) >= 12 and _card_number(text):
+        return True
+    if _SECRET.search(text) is None:
+        return False
+    for s in sentences(text):
+        found = [(m.start(), m.end(), m.lastgroup or "") for m in _SECRET.finditer(s)]
+        if found and _secret_value(s, found):
+            return True
     return False
 
 
@@ -372,6 +517,9 @@ def _valid(n: Any) -> Optional[dict]:
     if rep:
         out["replaces"] = rep[:20]
     names = [clean(x)[:60] for x in n.get("names") or [] if isinstance(x, str) and clean(x)] if isinstance(n.get("names"), list) else []
+    if names:                                           # only names that stand in the note (whoever named them: a look of the model, a backup)
+        inside = " %s " % _fold(text)
+        names = [x for x in names if _fold(x) and " %s " % _fold(x) in inside]
     if names:
         out["names"] = names[:12]
     if n.get("named") is True:                          # the model has named the names in it (with the note from a conversation, or later)
@@ -382,11 +530,14 @@ def _valid(n: Any) -> Optional[dict]:
 class Memory:
     """The notes, held in memory once read (lazily: nothing is read before the first use) and written file by file."""
 
-    def __init__(self, store, on_change: Optional[Callable[[str, dict, dict], None]] = None):
+    def __init__(self, store, on_change: Optional[Callable[[str, dict, dict], None]] = None, on_forget: Optional[Callable[[List[dict], bool], None]] = None):
         """on_change(what, note, more): told after "remember", "replace", "edit", "forget", "forget_all", "restore", "backup"
-        -- for the log of changes (assistant.py). Called after the memory's lock is released."""
+        -- for the log of changes (assistant.py). Called after the memory's lock is released.
+        on_forget(notes, everything): called before notes are forgotten (everything: all of them, also what could not be
+        read) -- what must hold for good is written there first; when it raises, nothing is forgotten."""
         self.store = store
         self.on_change = on_change
+        self.on_forget = on_forget
         self.lock = threading.RLock()
         self._notes: Optional[Dict[str, dict]] = None      # id -> note, in the order they were made
         self._seg: Dict[str, int] = {}                     # id -> number of its file
@@ -529,6 +680,12 @@ class Memory:
         with self.lock:
             n = self._load().get(str(nid))
             return dict(n) if n else None
+
+    def whole(self) -> bool:
+        """Whether every file of notes could be read: only then a note that is not there is gone -- and not just unreadable now."""
+        with self.lock:
+            self._load()
+            return not self._broken
 
     def active(self) -> List[dict]:
         """The notes that count (not replaced), the latest first."""
@@ -828,6 +985,11 @@ class Memory:
     def delete(self, nid: str, quiet: bool = False, by: str = "") -> dict:
         """Forgets a note: gone from its file at once. Returns it (the caller may keep it in memory for a while, to bring it
         back with restore). A note it had replaced counts again."""
+        if self.on_forget is not None:                   # first what makes it last (outside the lock: it reads the saved conversations)
+            before = self.get(nid)
+            if before is None:
+                raise NoteError(tr("s_ki_g_weg"))
+            self.on_forget([before], False)
         with self.lock:
             notes = self._load()
             n = notes.get(str(nid))
@@ -893,6 +1055,10 @@ class Memory:
 
     def forget_all(self, quiet: bool = False, by: str = "") -> int:
         """Everything remembered is deleted -- every file of notes, also one that cannot be read."""
+        if self.on_forget is not None:                   # every note there is, also the replaced ones
+            with self.lock:
+                every = [dict(n) for n in self._load().values()]
+            self.on_forget(every, True)
         with self.lock:
             count = len(self._load())
             folder = self.store.data_dir
@@ -900,12 +1066,13 @@ class Memory:
                 names = os.listdir(folder)
             except OSError:
                 names = []
-            for name in names:
-                if _SEG_NAME.fullmatch(name) or re.fullmatch(r"memory-(?:notes-\d{4,6}|vectors-\d{4,6}|used)\.json(?:\.enc)?(?:\.tmp|\.renew)?", name):
-                    try:
-                        os.remove(os.path.join(folder, name))
-                    except OSError as e:
-                        log.warning("Memory: a file of notes not removed (%s)", e)
+            with self.store.held():                       # not while the key is renewed: it would write them again
+                for name in names:
+                    if _SEG_NAME.fullmatch(name) or re.fullmatch(r"memory-(?:notes-\d{4,6}|vectors-\d{4,6}|used)\.json(?:\.enc)?(?:\.tmp|\.renew)?", name):
+                        try:
+                            os.remove(os.path.join(folder, name))
+                        except OSError as e:
+                            log.warning("Memory: a file of notes not removed (%s)", e)
             self._notes, self._seg, self._by_seg, self._broken, self._replaced, self._used, self._vec = {}, {}, {}, set(), {}, {}, {}
             self._rev += 1
             self.epoch += 1
@@ -922,8 +1089,9 @@ class Memory:
 
     def merge(self, data: Any, quiet: bool = False) -> int:
         """Notes of a backup back into the memory: those not there (by their id, or with the same text) are added, nothing
-        there is changed or removed. A backup is a file from outside, so what it brings says so (how "backup"), and a note of
-        it can replace only another note of the same backup -- never one that was there. Told to the log (how many). Returns
+        there is changed or removed. A backup is a file from outside, so what it brings says so (how "backup"), is never
+        pinned (it would push the user's own notes out of the profile), and a note of it can replace only another note of
+        the same backup -- never one that was there. Told to the log (how many). Returns
         how many were added; a file that cannot be written ends it there (what was written stays, the rest is not there)."""
         if not isinstance(data, dict) or not isinstance(data.get("notes"), list) or not isinstance(data.get("v"), int) or data["v"] > FORMAT:
             return 0
@@ -938,6 +1106,7 @@ class Memory:
                 if n is None or n["id"] in notes or n["id"] in ids or same_text(n["text"]) in have or secret_problem(n["text"]):
                     continue
                 n["source"]["how"] = "backup"
+                n.pop("pinned", None)
                 have.add(same_text(n["text"]))
                 ids.add(n["id"])
                 fresh.append(n)
@@ -981,13 +1150,14 @@ class Memory:
     def unnamed(self, limit: int) -> List[dict]:
         """Notes that count whose names nobody has named yet: typed in the settings or back from a backup (a note from a
         conversation is named when it is made; changed in the settings, its names are gone) -- the latest first."""
-        with self.lock:                                  # (a note from a conversation with names, before 3.16.99: named then)
-            return [dict(n) for n in self.active() if not n.get("named") and (n["source"]["how"] != "chat" or not n.get("names"))][:max(0, int(limit))]
+        with self.lock:
+            return [dict(n) for n in self.active() if not n.get("named")][:max(0, int(limit))]
 
     def set_names(self, got: Dict[str, Tuple[str, List[str]]]) -> int:
         """Names the model named: id -> (the text it was shown, its names). Kept only for a note still there with that text,
-        and only names that stand in it (folded: Müller is Mueller) -- the model's answer is input like any other. The note
-        counts as named either way (asked once). Not a change the profile follows. Returns how many names were kept."""
+        and only names that stand in it (folded: Müller is Mueller) -- the model's answer is input like any other. Each note
+        given counts as named from now on (the caller gives only those the model answered for in full). Not a change the
+        profile follows. Returns how many names were kept."""
         with self.lock:
             notes = self._load()
             segs, kept = set(), 0
@@ -1010,32 +1180,41 @@ class Memory:
     # -- nothing of it into an internet search -------------------------------------------------------------------------------
     def own_words(self, common: Set[str]) -> Tuple[Set[str], Set[str]]:
         """(words, phrases) of the notes that must not go out in an internet search: the names Kontor can tell in them.
-        A name is what the note names as one (names); the capitalised words after a form of address (Frau Dr. Ottilie von
-        Nebelhorn) or after "heißt", "namens", "called"; a word with a capital inside (a brand) or all in capitals -- the
-        last two unless Kontor's own texts use the word (common: no name). Free text has no sure sign of a name, and
-        blocking every noun of every note would end all searching: this is the second line -- the first is the card that
-        shows every search before it goes out."""
+        A name is what the note names as one (names: the model named them, each stands in its note); the capitalised words
+        after a form of address (Frau Dr. Ottilie von Nebelhorn) or after "heißt", "heiße", "namens", "called", "Name ist",
+        "name is"; a word with a capital inside (a brand) or all in capitals. Three letters and more. A name said so (after a
+        form of address, "heißt") blocks as a word and as the beginning of one, whatever it is. A name the model named does
+        too -- but one of three letters, or one Kontor's own texts use as a word (common: Klein, Mia), only as a whole word
+        (phrases), and a word for a kind of thing (GENERIC: Sparkasse) not at all. A brand or a word in capitals only
+        unless Kontor's own texts use it. Free text has no sure sign of a name, and blocking every noun of every note would
+        end all searching: this is the second line -- the first is the card that shows every search before it goes out."""
         words: Set[str] = set()
         phrases: Set[str] = set()
         short = {"dr", "prof", "mr", "mrs", "ms", "dipl", "ing", "med", "jur", "rer", "nat"}      # written with a full stop
         address = {"herr", "herrn", "frau", "familie"} | short
-        naming = {"heisst", "heissen", "namens", "called", "named"}
+        naming = {"heisst", "heissen", "heisse", "namens", "called", "named"}
+        name_is = {"name", "vorname", "nachname", "familienname", "surname"}, {"ist", "is", "lautet", "war", "was"}       # Mein Name ist ..., my name is ...
         particle = {"von", "van", "de", "der", "den", "zu", "zur", "vom", "la", "le", "di", "del"}
 
-        def telling(tok: str, known: bool) -> str:
-            f = _fold(tok).replace(" ", "")
-            return f if len(f) >= 3 and f.isalpha() and f not in LEGAL and f not in address and (known or (len(f) >= 4 and f not in GENERIC and f not in common)) else ""
-
-        def take(toks: List[str], known: bool) -> None:
-            got = [g for g in (telling(t, known) for t in toks) if g]
-            words.update(got)
+        def take(toks: List[str], how: str) -> None:
+            """how: "said" (after a form of address or "heißt"), "named" (by the model), "looks" (a brand, capitals)."""
+            got = []
+            for tok in toks:
+                f = _fold(tok).replace(" ", "")
+                if len(f) < 3 or not f.isalpha() or f in LEGAL or f in address or (how != "said" and f in GENERIC):
+                    continue
+                plain = len(f) < 4 or f in common        # no telling word by itself
+                if how == "looks" and plain:
+                    continue
+                got.append(f)
+                (phrases if how == "named" and plain else words).add(f)       # (phrases: found as a whole word only)
             if len(got) >= 2:
                 phrases.add("".join(got))
         with self.lock:
             notes = list(self._load().values())
         for n in notes:
             for name in n.get("names") or []:
-                take(re.findall(r"[^\W\d_]+", name), False)
+                take(re.findall(r"[^\W\d_]+", name), "named")
             found = list(re.finditer(r"[^\W\d_]+", n["text"]))
             toks = [m.group(0) for m in found]
             # two words belong together when only a space, a hyphen or the full stop of an abbreviation (Dr. med.) lies between them
@@ -1043,35 +1222,151 @@ class Memory:
             i = 0
             while i < len(toks):
                 tok, f = toks[i], _fold(toks[i])
+                first = i + 1
+                if f in name_is[0] and i + 2 < len(toks) and _fold(toks[i + 1]) in name_is[1] and joined(i + 1):
+                    f, first = "heisst", i + 2
                 if f in address or f in naming:          # what follows is a name: its capitalised words, particles between them
-                    j, run = i + 1, []
+                    j, run = first, []
                     while j < len(toks) and len(run) < 4 and joined(j) and (_fold(toks[j]) in address or _fold(toks[j]) in particle or toks[j][:1].isupper()):
+                        if f in naming and _fold(toks[j]) in STOP:       # (das heißt Sie ...: no name)
+                            break
                         if _fold(toks[j]) not in address and _fold(toks[j]) not in particle:
                             run.append(toks[j])
                         elif _fold(toks[j]) in address and run:      # the next person (Herr Klein, Frau Lange)
                             break
                         j += 1
-                    take(run, True)
+                    take(run, "said")
                     i = j if run else i + 1
                     continue
                 if re.search(r"[a-zäöüß][A-ZÄÖÜ]", tok) or (tok.isupper() and len(tok) >= 4):
-                    take([tok], False)
+                    take([tok], "looks")
                 i += 1
         return words, phrases
+
+
+_MAYBE_SECRET = re.compile(r"(?i)pass|kennw|pin|tan|code|schl(?:ü|ue)ssel|key|cvv|cvc|kart|card|log-?in|zugang|geheim|token|secret|credential|phrase"
+                           r"|\d{4}[ .-]?\d{4}[ .-]?\d{4}")
+
+
+def _answer_ok(text: str) -> bool:
+    """Whether an answer may be kept for the search in conversations: none that holds a credential (an answer that repeats
+    what the user said in it -- Was war meine PIN? -- is kept without its text). A quick look first: the whole check only
+    where a secret's word or a long number stands."""
+    return _MAYBE_SECRET.search(text) is None or not secret_problem(text)
+
+
+class Forgotten:
+    """What was forgotten, kept so that it stays forgotten in the search in saved conversations whatever happens to that
+    search's own files: the ids of forgotten notes and the keys of the turns hidden for them (Talks.key: a checksum of the
+    turn's text) -- never a text. One encrypted file in Kontor's data folder (GONE_FILE), written before a note goes: a
+    list that cannot be written means nothing is forgotten (the user is told). Deleted with all saved conversations
+    (nothing is left to hide then) and with a reset; never in the backup."""
+
+    def __init__(self, store):
+        self.store = store
+        self.lock = threading.RLock()
+        self._notes: Optional[Dict[str, None]] = None      # ids of forgotten notes, in the order they went
+        self._turns: Dict[str, None] = {}                  # keys of hidden turns
+
+    def _load(self) -> None:
+        if self._notes is not None:
+            return
+        if getattr(self.store, "is_open", True) is False:
+            raise StoreLocked("locked")
+        try:
+            doc = self.store.load(GONE_FILE, {})
+            if not isinstance(doc, dict):
+                raise ValueError("format")
+        except StoreLocked:
+            raise
+        except Exception as e:                           # (the turns hidden so far are in the search's own files too: taken from there, Talks._load)
+            log.warning("Memory: the list of what was forgotten is not readable (%s) -- begun anew", type(e).__name__)
+            doc = {}
+        self._notes = {x: None for x in doc.get("notes") or [] if isinstance(x, str) and _NOTE_ID.fullmatch(x)}
+        self._turns = {x: None for x in doc.get("turns") or [] if isinstance(x, str) and re.fullmatch(r"[0-9a-f]{12}", x)}
+
+    def _save(self) -> None:
+        self.store.save(GONE_FILE, {"v": FORMAT, "notes": list(self._notes or {})[-GONE_MAX:], "turns": list(self._turns)[-GONE_MAX:]})
+
+    def note(self, nid: str) -> bool:
+        """Whether a note was forgotten (and not brought back since)."""
+        with self.lock:
+            self._load()
+            return nid in (self._notes or {})
+
+    def turn(self, key: str) -> bool:
+        """Whether a turn of a saved conversation is hidden for good."""
+        with self.lock:
+            self._load()
+            return key in self._turns
+
+    def add(self, notes: Iterable[str] = (), turns: Iterable[str] = ()) -> None:
+        """Notes forgotten, turns hidden for them -- written at once; raises when that fails (then nothing was added)."""
+        with self.lock:
+            self._load()
+            assert self._notes is not None
+            new_n = [x for x in dict.fromkeys(notes) if _NOTE_ID.fullmatch(str(x)) and x not in self._notes]
+            new_t = [x for x in dict.fromkeys(turns) if re.fullmatch(r"[0-9a-f]{12}", str(x)) and x not in self._turns]
+            if not new_n and not new_t:
+                return
+            self._notes.update(dict.fromkeys(new_n))
+            self._turns.update(dict.fromkeys(new_t))
+            try:
+                self._save()
+            except Exception:
+                for x in new_n:
+                    self._notes.pop(x, None)
+                for x in new_t:
+                    self._turns.pop(x, None)
+                raise
+            for d in (self._notes, self._turns):
+                for x in list(d)[:max(0, len(d) - GONE_MAX)]:
+                    d.pop(x)
+
+    def back(self, notes: Iterable[str]) -> None:
+        """Notes brought back (taken back right after they were forgotten): they count again -- the turns hidden for them stay
+        hidden (they said what was to be forgotten)."""
+        with self.lock:
+            self._load()
+            assert self._notes is not None
+            had = [x for x in notes if x in self._notes]
+            if had:
+                for x in had:
+                    self._notes.pop(x)
+                self._save()
+
+    def clear(self) -> None:
+        """Nothing left to hide (every saved conversation deleted, Kontor reset): the list goes."""
+        with self.lock, self.store.held():
+            for name in (self.store.path(GONE_FILE), self.store.path(GONE_FILE) + ".tmp", self.store.path(GONE_FILE) + ".renew"):
+                try:
+                    os.remove(name)
+                except FileNotFoundError:
+                    pass
+                except OSError as e:
+                    log.warning("Memory: the list of what was forgotten not removed (%s)", e)
+            try:
+                self.store.delete(GONE_FILE)             # (and out of the store's own memory of it)
+            except (OSError, StoreLocked):
+                pass
+            self._notes, self._turns = ({}, {}) if getattr(self.store, "is_open", True) else (None, {})
 
 
 class Talks:
     """The search index of the saved conversations: for each, its questions and answers as the search needs them (cut, see
     TALK_Q/TALK_A) -- from a conversation with text from the internet or a receipt (or a file given) in it only the user's
-    questions (what came from outside never comes back through the search). Encrypted in Kontor's data folder
-    (memory-chats-0001.json, ...: a few conversations per file, so that an answer writes one small file; a file that cannot
-    be read goes, its conversations are put in again). A conversation deleted leaves it; a turn a forgotten note was made
-    from, rested on or says again is hidden for good (by a key of its text, never the text itself), so that forgetting holds
-    when the conversation is put in again. With the model for finding by meaning, each turn's embedding is kept with it.
-    Never in the backup (as the conversations themselves); a reset deletes it with them."""
+    questions (what came from outside never comes back through the search). A turn whose question holds a credential
+    (secret_problem) never comes in and never out; an answer that holds one, only without it. Encrypted in Kontor's data folder (memory-chats-0001.json, ...: a few
+    conversations per file, so that an answer writes one small file; a file that cannot be read goes, its conversations are
+    put in again). A conversation deleted leaves it; a turn a forgotten note was made from, rested on or says again when it
+    is forgotten is hidden for good (by a key of its text, never the text itself) -- in the list of what was forgotten
+    (Forgotten: gone), which holds when this index is lost, cannot be written or is made anew. With the model for finding
+    by meaning, each turn's embedding is kept with it. Never in the backup (as the conversations themselves); a reset
+    deletes it with them."""
 
     def __init__(self, store):
         self.store = store
+        self.gone = Forgotten(store)
         self.lock = threading.RLock()
         self._docs: Optional[Dict[str, dict]] = None        # id of a conversation -> {"day", "items": [...], "hidden": [...]}
         self._seg: Dict[str, int] = {}
@@ -1095,6 +1390,8 @@ class Talks:
             raise StoreLocked("locked")
         docs: Dict[str, dict] = {}
         self._seg = {}
+        hidden: List[str] = []
+        stale: Set[int] = set()
         for seg in self._names():
             try:
                 doc = self.store.load(TALKS_FILE % seg, {})
@@ -1102,6 +1399,18 @@ class Talks:
                     if _CID.fullmatch(str(cid)) and isinstance(d, dict) and isinstance(d.get("items"), list) and cid not in docs:
                         d = {"day": str(d.get("day") or "")[:10], "hidden": [str(k) for k in d.get("hidden") or [] if isinstance(k, str)][-1000:],
                              "items": [it for it in d["items"] if isinstance(it, dict) and isinstance(it.get("k"), str) and isinstance(it.get("q"), str)]}
+                        hidden += d["hidden"]
+                        # what must never come out, whoever wrote the file: a turn hidden for good (not taken out then: the file
+                        # could not be written), a question with a credential (taken in by a version before 3.17)
+                        keep = [it for it in d["items"] if not self.gone.turn(it["k"]) and not secret_problem(it["q"])]
+                        for it in keep:                  # ... and an answer that repeats one (Was war meine PIN?): only the question
+                            if it.get("a") and not _answer_ok(str(it["a"])):
+                                it["a"] = ""
+                                it.pop("v", None)
+                                stale.add(seg)
+                        if len(keep) != len(d["items"]):
+                            d["items"] = keep
+                            stale.add(seg)
                         docs[cid] = d
                         self._seg[cid] = seg
             except StoreLocked:
@@ -1114,6 +1423,14 @@ class Talks:
                     pass
         self._docs = docs
         self._rev += 1
+        try:                                             # turns hidden by a version before 3.17 (only here until then): into the list that lasts
+            self.gone.add(turns=hidden)
+            for seg in sorted(stale):
+                self._write(seg)
+        except StoreLocked:
+            raise
+        except Exception as e:                           # (tried again with the next start; nothing of it is handed out meanwhile)
+            log.warning("Memory: the search in conversations not brought up to date (%s)", type(e).__name__)
         return docs
 
     def _write(self, seg: int) -> None:
@@ -1171,9 +1488,11 @@ class Talks:
     def put(self, cid: str, day: str, turns: Iterable[Any], foreign: bool, gone: Optional[Callable[[str], bool]] = None) -> None:
         """A saved conversation as it is now (after each answer). foreign: text from the internet or a receipt came into it --
         only the user's questions are kept (also of the turns before; a file given with a question counts the same, also in
-        conversations saved before Kontor said so). gone(id): whether a note is forgotten -- a turn a forgotten note was made
-        from, forgotten in or rested on is hidden for good. The same turn twice: once. An embedding is kept for a turn that
-        stays the same."""
+        conversations saved before Kontor said so). gone(id): whether a note is forgotten (left out: by the list of what was
+        forgotten; a note that is only missing -- its file cannot be read -- is not) -- a turn a forgotten note was made from,
+        forgotten in or rested on is hidden for good, as is every turn the list of what was forgotten names. A turn whose
+        question holds a credential never comes in (one whose answer holds one: without the answer). The same turn twice: once. An embedding is kept for a turn that stays
+        the same."""
         if not _CID.fullmatch(cid or ""):
             return
         with self.lock:
@@ -1186,12 +1505,12 @@ class Talks:
             items, seen = [], set()
             for q, a, notes, _ in pairs:
                 k = self.key(q, a)
-                if gone is not None and any(gone(n) for n in notes) and k not in hidden:
+                if k not in hidden and (self.gone.turn(k) or any(gone(n) if gone is not None else self.gone.note(n) for n in notes)):
                     hidden.append(k)
-                if k in hidden or k in seen or not q.strip():
+                if k in hidden or k in seen or not q.strip() or secret_problem(q):
                     continue
                 seen.add(k)
-                it = {"k": k, "q": clean(q)[:TALK_Q], "a": "" if foreign else clean(a)[:TALK_A]}
+                it = {"k": k, "q": clean(q)[:TALK_Q], "a": "" if foreign or not _answer_ok(a) else clean(a)[:TALK_A]}
                 if notes:
                     it["n"] = list(dict.fromkeys(notes))[:20]
                 prev = had.get(k)
@@ -1209,45 +1528,72 @@ class Talks:
                     names = os.listdir(self.store.data_dir)
                 except OSError:
                     names = []
-                for name in names:
-                    if re.fullmatch(r"memory-chats-\d{4,6}\.json(?:\.enc)?(?:\.tmp|\.renew)?", name):
-                        try:
-                            os.remove(os.path.join(self.store.data_dir, name))
-                        except OSError as e:
-                            log.warning("Memory: a file of the search in conversations not removed (%s)", e)
+                with self.store.held():                   # not while the key is renewed: it would write them again
+                    for name in names:
+                        if re.fullmatch(r"memory-chats-\d{4,6}\.json(?:\.enc)?(?:\.tmp|\.renew)?", name):
+                            try:
+                                os.remove(os.path.join(self.store.data_dir, name))
+                            except OSError as e:
+                                log.warning("Memory: a file of the search in conversations not removed (%s)", e)
                 self._docs, self._seg, self._ix = None, {}, None
                 self._terms, self._vecs = {}, {}
                 self._rev += 1
+                self.gone.clear()                        # no conversation left: nothing to hide
                 return
             docs = self._load()
             segs = {self._seg.pop(c) for c in list(cids) if docs.pop(c, None) is not None and c in self._seg}
             self._writes(segs)
 
-    def forget(self, note_ids: Iterable[str] = (), texts: Iterable[str] = (), every_note: bool = False) -> List[str]:
-        """Notes were forgotten (their ids and texts): hidden for good -- the turns they were made from, forgotten in or rested
+    @staticmethod
+    def _says(words: Set[str], sets: List[Set[str]]) -> bool:
+        """Whether a turn of these words says one of the forgotten notes again (sets: the words of each): all of its words,
+        three quarters of them in a note of more than two."""
+        return any(len(w & words) * 4 >= len(w) * 3 and (len(w) > 2 or w <= words) for w in sets)
+
+    @staticmethod
+    def _note_words(texts: Iterable[str]) -> List[Set[str]]:
+        return [w for w in (set(terms(t)) for t in texts) if len(w) >= 2]      # (a note of one word: only where it was made)
+
+    def matching(self, turns: Iterable[Any], foreign: bool, note_ids: Iterable[str] = (), texts: Iterable[str] = (), every_note: bool = False) -> List[str]:
+        """The keys of the turns of a saved conversation that is not in the search yet (saved by an earlier version, being put
+        in right now) which forgetting these notes must hide -- as forget finds them in the search itself."""
+        ids, sets, out = set(note_ids), self._note_words(texts), []
+        pairs = self.pairs(turns)
+        foreign = foreign or any(f for _, _, _, f in pairs)
+        for q, a, notes, _ in pairs:
+            made = bool(notes) and (every_note or bool(ids & set(notes)))
+            if made or self._says(set(terms(clean(q)[:TALK_Q] + " " + ("" if foreign else clean(a)[:TALK_A]))), sets):
+                out.append(self.key(q, a))
+        return out
+
+    def forget(self, note_ids: Iterable[str] = (), texts: Iterable[str] = (), every_note: bool = False, turns: Iterable[str] = ()) -> List[str]:
+        """Notes are forgotten (their ids and texts): hidden for good -- the turns they were made from, forgotten in or rested
         on, and every turn that says one of them again (all of its words, three quarters of them in a note of more than two;
-        a note of one word only where it was made). every_note: every note was forgotten -- every turn a note was made from or
-        rested on. Returns the turns hidden (cid#key)."""
+        a note of one word only where it was made). every_note: every note is forgotten -- every turn a note was made from or
+        rested on. turns: keys of further turns to hide (of conversations not in the search yet: matching). First into the
+        list of what was forgotten (Forgotten) -- that failing, nothing is hidden and the failure goes on to the caller, who
+        then forgets nothing; this search's own files after it (one that cannot be written: said in the log, the list holds).
+        Returns the turns hidden (cid#key)."""
         with self.lock:
             docs = self._load()
             ids = set(note_ids)
-            sets = [w for w in (set(terms(t)) for t in texts) if len(w) >= 2]
+            sets = self._note_words(texts)
+            hit = [(cid, it) for cid, d in docs.items() for it in d["items"]
+                   if (bool(it.get("n")) and (every_note or bool(ids & set(it["n"])))) or self._says(self._words(cid, it), sets)]
+            self.gone.add(notes=ids, turns=[it["k"] for _, it in hit] + list(turns))
             segs, gone = set(), []
-            for cid, d in docs.items():
-                keep = []
-                for it in d["items"]:
-                    made = bool(it.get("n")) and (every_note or bool(ids & set(it["n"])))
-                    words = self._words(cid, it)
-                    says = any(len(w & words) * 4 >= len(w) * 3 and (len(w) > 2 or w <= words) for w in sets)
-                    if made or says:
-                        d["hidden"] = (d["hidden"] + [it["k"]])[-1000:]
-                        gone.append(cid + "#" + it["k"])
-                    else:
-                        keep.append(it)
-                if len(keep) != len(d["items"]):
-                    d["items"] = keep
-                    segs.add(self._seg[cid])
-            self._writes(segs)
+            for cid, it in hit:
+                d = docs[cid]
+                d["hidden"] = (d["hidden"] + [it["k"]])[-1000:]
+                d["items"] = [x for x in d["items"] if x is not it]
+                gone.append(cid + "#" + it["k"])
+                segs.add(self._seg[cid])
+            try:
+                self._writes(segs)
+            except StoreLocked:
+                raise
+            except Exception as e:                       # never handed out all the same (the list holds); out of the file with its next write
+                log.warning("Memory: a file of the search in conversations not written (%s) -- what was forgotten stays hidden by its list", type(e).__name__)
             return gone
 
     def known(self) -> Dict[str, str]:
@@ -1285,14 +1631,18 @@ class Talks:
             self._vecs[i] = hit
         return hit[1], hit[2]
 
-    def search(self, query: Any, limit: int = 4, exclude: Iterable[str] = (), meaning: Optional[Tuple[str, array]] = None) -> List[dict]:
+    def search(self, query: Any, limit: int = 4, exclude: Iterable[str] = (), meaning: Optional[Tuple[str, array]] = None,
+               gone: Optional[Callable[[str], bool]] = None) -> List[dict]:
         """Turns of saved conversations that fit a query (ranked as Memory.search ranks notes), not of the conversations in
-        exclude: [{"id": cid#key, "chat", "day", "question", "answer", "score"}] -- the best first, the later among equals."""
+        exclude: [{"id": cid#key, "chat", "day", "question", "answer", "score"}] -- the best first, the later among equals.
+        Never a turn the list of what was forgotten names, or one made from or resting on a forgotten note (gone(id), as for
+        put) -- whatever this search's own files say."""
         with self.lock:
             ix = self._index()
             items = self._items()
             out_of = set(exclude)
-            skip = {i for i, (cid, _, _) in items.items() if cid in out_of}
+            skip = {i for i, (cid, _, it) in items.items() if cid in out_of or self.gone.turn(it["k"])
+                    or any(gone(n) if gone is not None else self.gone.note(n) for n in it.get("n") or [])}
             like = None
             if meaning is not None:
                 q, qn, like = meaning[1], _norm(meaning[1]), {}
@@ -1443,10 +1793,11 @@ class Library:
                 names = os.listdir(self.store.data_dir)
             except OSError:
                 names = []
-            for name in names:
-                if re.fullmatch(r"memory-%s-\d{4,6}\.json(?:\.enc)?(?:\.tmp|\.renew)?" % re.escape(self.kind), name):
-                    try:
-                        os.remove(os.path.join(self.store.data_dir, name))
-                    except OSError as e:
-                        log.warning("Memory: a file of embeddings not removed (%s)", e)
+            with self.store.held():                       # not while the key is renewed: it would write them again
+                for name in names:
+                    if re.fullmatch(r"memory-%s-\d{4,6}\.json(?:\.enc)?(?:\.tmp|\.renew)?" % re.escape(self.kind), name):
+                        try:
+                            os.remove(os.path.join(self.store.data_dir, name))
+                        except OSError as e:
+                            log.warning("Memory: a file of embeddings not removed (%s)", e)
             self._vec, self._dirty = None, set()

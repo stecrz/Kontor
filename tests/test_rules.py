@@ -225,6 +225,116 @@ class RoundingTests(unittest.TestCase):
         zins = [p for p in res.proposals if p.kind == "interest"]
         self.assertEqual([abs(p.amount) for p in zins], [0.63], [(p.kind, p.amount) for p in res.proposals])
 
+    RATE = {"rate_list": [{"from_date": "2025-11-20", "percent": 4.1}], "booking_day": "ultimo"}
+
+    def loan(self, debt, today, booked=(), **cfg):
+        """A loan of `debt` since December 2025 at 4.1 %, with interest booked already ((day, amount, base written) ...)."""
+        txs = [F.tx("ga.vd", date(2025, 12, 1), -debt, "V", "Start")]
+        for d, amount, base in booked:
+            txs.append(F.tx("ga.vd", d, -amount, "Verkäufer", "Zinsen %02d/%d · 4,1 %% p.a. auf %s · #kontor-zins-%d-%02d" % (
+                d.month, d.year, base, d.year, d.month), "Zinsen"))
+        led = make_ledger({"ga.vd": round(-debt - sum(a for _, a, _ in booked), 2)}, txs)
+        return led, plan_loan(led, loan_cfg(source_accounts=[], expected_monthly=False, **cfg), today)
+
+    def test_interest_is_computed_exactly_and_then_rounded(self):
+        """Interest is multiplied out exactly (the rate as it is written: 4.1 is 4.1) and only then rounded. As floats half a
+        cent was lost on the way: 50,025.00 x 4.1 % = 2,051.025 gave 2,051.02, 50,100.00 x 4.1 % / 12 = 171.175 gave 171.17."""
+        from model import cents, part
+        self.assertEqual((cents(50025.0 * 4.1 / 100.0), cents(50100.0 * 4.1 / 1200.0)), (2051.02, 171.17))      # the floats' way
+        self.assertEqual((part(50025.0, 4.1, 100), part(50100.0, 4.1, 1200)), (2051.03, 171.18))
+        self.assertEqual([part(1234.57, 0.5), part(-1234.57, 0.5), part(100, 1, 3), part(200, 1, 3), part(2051.10, 1, 12), part(99999.99, 0.005)],
+                         [617.29, -617.29, 33.33, 66.67, 170.93, 500.0])
+        self.assertEqual(part(50024.999999999996, 4.1, 100), 2051.03)                # a balance summed up as floats: its cents count
+        # on the base of the year: the year's interest 2,051.03 -- eleven twelfths to the cent, December the rest
+        led, res = self.loan(50025.0, date(2027, 1, 5), interest=dict(self.RATE, model="yearly_base"))
+        z = [round(-p.amount, 2) for p in res.proposals if p.kind == "interest" and p.booking_date.year == 2026]
+        self.assertEqual((z[:11], z[11], round(sum(z), 2)), ([170.92] * 11, 170.91, 2051.03))
+        self.assertTrue(any("2.051,03" in i for i in res.info), res.info)
+        # on the remaining debt, month by month
+        led, res = self.loan(50100.0, date(2026, 11, 4), from_date="2026-10-01", interest=dict(self.RATE, model="remaining_debt_monthly"))
+        self.assertEqual([p.amount for p in res.proposals if p.kind == "interest"], [-171.18])
+        # a twelfth at half a cent goes up as well (2,051.10 / 12 = 170.925; as floats 170.92): the year still adds up
+        led, res = self.loan(68370.0, date(2027, 1, 5), interest={"model": "yearly_base", "rate_list": [{"from_date": "2025-11-20", "percent": 3.0}], "booking_day": "ultimo"})
+        z = [round(-p.amount, 2) for p in res.proposals if p.kind == "interest" and p.booking_date.year == 2026]
+        self.assertEqual((z[:11], z[11], round(sum(z), 2)), ([170.93] * 11, 170.87, 2051.10))
+
+    def test_interest_booked_as_floats_before_stays(self):
+        """Interest Kontor booked up to 3.16.99 (a cent less at half a cent) is its own: never booked again, no note for that
+        cent -- and still noted when the debt it was computed from really changed. A year begun with a twelfth a cent lower
+        goes on with it, so that its months add up to the year's interest."""
+        import rules
+        end = lambda m: date(2026, m + 1, 1) - timedelta(days=1) if m < 12 else date(2026, 12, 31)
+        # on the remaining debt: October booked as 171.17 -- nothing new, nothing noted
+        led, res = self.loan(50100.0, date(2026, 11, 4), [(end(10), 171.17, "50.100,00 €")], from_date="2026-10-01",
+                             interest=dict(self.RATE, model="remaining_debt_monthly"))
+        self.assertEqual((res.proposals, res.warnings), ([], []))
+        # ... on the base of the year: ten months of 2,051.02 booked -- November follows, the year's rest in December
+        booked = [(end(m), 170.92, "50.025,00 €") for m in range(1, 11)]
+        led, res = self.loan(50025.0, date(2027, 1, 5), booked, interest=dict(self.RATE, model="yearly_base"))
+        z = [(p.booking_date.month, round(-p.amount, 2)) for p in res.proposals if p.booking_date.year == 2026]
+        self.assertEqual((z, res.warnings), ([(11, 170.92), (12, 170.91)], []))
+        # the twelfth itself a cent lower as floats (170.92 instead of 170.93): the year goes on with it and adds up
+        self.assertEqual((rules._interest_floats("yearly_base", 68370.0, 3.0, 1), rules._interest_of("yearly_base", 68370.0, 3.0, 1)), (170.92, 170.93))
+        rate3 = {"model": "yearly_base", "rate_list": [{"from_date": "2025-11-20", "percent": 3.0}], "booking_day": "ultimo"}
+        cfg3 = dict(interest=rate3, booking={"counterparty": "Verkäufer", "interest_text": "Zinsen {month} · {percent} % p.a. auf {base} · {tag}"})
+        txs = [F.tx("ga.vd", date(2025, 12, 1), -68370.0, "V", "Start")] + [
+            F.tx("ga.vd", end(m), -170.92, "Verkäufer", "Zinsen %02d/2026 · 3 %% p.a. auf 68.370,00 € · #kontor-zins-2026-%02d" % (m, m), "Zinsen") for m in range(1, 11)]
+        led = make_ledger({"ga.vd": round(-68370.0 - 10 * 170.92, 2)}, txs)
+        res = plan_loan(led, loan_cfg(source_accounts=[], expected_monthly=False, **cfg3), date(2027, 1, 5))
+        z = [(p.booking_date.month, round(-p.amount, 2)) for p in res.proposals if p.booking_date.year == 2026]
+        self.assertEqual((z, res.warnings), ([(11, 170.92), (12, 170.98)], []))
+        self.assertEqual(round(10 * 170.92 + sum(a for _, a in z), 2), 2051.10)
+        # a whole year booked that way (its December the floats' rest): nothing new, nothing noted
+        txs += [F.tx("ga.vd", end(11), -170.92, "Verkäufer", "Zinsen 11/2026 · 3 % p.a. auf 68.370,00 € · #kontor-zins-2026-11", "Zinsen"),
+                F.tx("ga.vd", end(12), -170.98, "Verkäufer", "Zinsen 12/2026 · 3 % p.a. auf 68.370,00 € · #kontor-zins-2026-12", "Zinsen")]
+        led = make_ledger({"ga.vd": round(-68370.0 - 2051.10, 2)}, txs)
+        res = plan_loan(led, loan_cfg(source_accounts=[], expected_monthly=False, **cfg3), date(2027, 1, 5))
+        self.assertEqual(([p for p in res.proposals if p.booking_date.year == 2026], res.warnings), ([], []))
+        # booked a cent lower, and the debt it was computed from has changed since (a payment entered later): still noted
+        txs = [F.tx("ga.vd", date(2025, 12, 1), -50100.0, "V", "Start"),
+               F.tx("ga.vd", end(10), -171.17, "Verkäufer", "Zinsen 10/2026 · 4,1 % p.a. auf 50.100,00 € · #kontor-zins-2026-10", "Zinsen"),
+               F.tx("ga.vd", date(2026, 9, 20), 20000.0, "Ich", "Sondertilgung, nachgetragen")]
+        led = make_ledger({"ga.vd": round(-50100.0 - 171.17 + 20000.0, 2)}, txs)
+        res = plan_loan(led, loan_cfg(source_accounts=[], expected_monthly=False, from_date="2026-10-01",
+                                      interest=dict(self.RATE, model="remaining_debt_monthly")), date(2026, 11, 4))
+        self.assertEqual(res.proposals, [])
+        self.assertEqual(len(res.warnings), 1); self.assertIn("10/2026: -102,84 € statt -171,17 €", res.warnings[0])
+
+    def test_share_of_a_value_is_exact_and_what_is_booked_stays(self):
+        """A participation: share x value multiplied out exactly, then rounded (50 % of 1,234.57 = 617.285 -> 617.29; as floats
+        617.28). A balance Kontor booked the floats' way stays while nothing new came in the company -- no booking for that
+        cent; the next change brings the exact value."""
+        today = date(2026, 11, 4)
+        cfg = company_cfg()
+        cfg["areas"][1]["share"] = 0.5
+        raw = {"ga.kk": 1234.57, "ga.immo": 0.0, "ga.vd": 0.0, "ga.kap.a": 0.0, "ga.kap.b": 0.0}
+        self.assertEqual(round(0.5 * 1234.57, 2), 617.28)
+        led = make_ledger(dict(raw, **{"priv.bet.ga": 0.0}), [F.tx("ga.kk", date(2026, 10, 1), 1234.57, "Kunde", "Rechnung")])
+        res = plan_all(led, cfg, today)
+        self.assertEqual([(p.kind, p.amount) for p in res.proposals], [("value", 617.29)])
+        self.assertIn("= 617,29 €", res.proposals[0].purpose)
+        self.assertEqual(plan_all(led, cfg, today).proposals, [])
+        # booked as 617.28 by Kontor after the company's last transaction: stays, shown as settled
+        pay = F.tx("ga.kk", date(2026, 10, 1), 1234.57, "Kunde", "Rechnung")
+        old = F.tx("priv.bet.ga", date(2026, 10, 1), 617.28, "Alpha GbR", "Anteilswertanpassung: 50 % × 1.234,57 € (Wert Alpha GbR) = 617,28 € · #kontor-wert-20261001-1")
+        for start in ("", "all", "2026-09-01"):
+            for cycle in ("daily", "monthly"):
+                cfg["companies"][0].update(retroactive_from=start, cycle=cycle)
+                led = make_ledger(dict(raw, **{"priv.bet.ga": 617.28}), [pay, old])
+                res = plan_all(led, cfg, today)
+                self.assertEqual(([p.amount for p in res.proposals], res.warnings), ([], []), (start, cycle))
+                if cycle == "daily":
+                    self.assertEqual([(pv["ist"], pv["soll"], pv["diff"], pv["open"]) for pv in res.preview], [(617.28, 617.28, 0.0, 0)])
+        cfg["companies"][0].update(retroactive_from="", cycle="daily")
+        # something new in the company since (two cents more: 618.29 x 50 %... the exact value from now on)
+        more = F.tx("ga.kk", date(2026, 11, 3), 0.02, "Bank", "Habenzins")
+        led = make_ledger(dict(raw, **{"priv.bet.ga": 617.28, "ga.kk": 1234.59}), [pay, old, more])
+        self.assertEqual([p.amount for p in plan_all(led, cfg, today).proposals], [0.02])       # 617.30 (exactly 617.295 -> up)
+        # the balance at the floats' value without a booking of Kontor's after the last change (entered by hand, say): exact
+        hand = F.tx("priv.bet.ga", date(2026, 9, 1), 617.28, "Ich", "Anfangsstand")
+        led = make_ledger(dict(raw, **{"priv.bet.ga": 617.28}), [hand, F.tx("ga.kk", date(2026, 10, 1), 1234.57, "Kunde", "Rechnung")])
+        self.assertEqual([p.amount for p in plan_all(led, cfg, today).proposals], [0.01])
+
 
 class CompanyTests(unittest.TestCase):
     def test_participation_value(self):
@@ -751,7 +861,7 @@ class SecurityNameTests(unittest.TestCase):
 
 
 class SecurityHardeningTests(unittest.TestCase):
-    """No plain-text fallback, the key out of the data folder, sessions ended on a password change, external receipts limited."""
+    """No plain-text fallback, sessions ended on a password change, external receipts limited."""
 
     def test_no_plain_text_fallback(self):
         import tempfile, storage
@@ -760,32 +870,10 @@ class SecurityHardeningTests(unittest.TestCase):
         storage.selftest = lambda master: False
         try:
             with self.assertRaises(storage.StoreError):
-                storage.Store(d, b"k" * 32, "file")
+                storage.Store(d, b"k" * 32)
         finally:
             storage.selftest = orig
         self.assertFalse(storage.Store(d, None).encrypted)          # only without any key (tests, never the service)
-
-    def test_key_file_moved_into_keychain(self):
-        import tempfile, storage
-        d = tempfile.mkdtemp(); path = os.path.join(d, "master.key"); key = b"\x11" * 32
-        with open(path, "w") as f:
-            f.write(key.hex())
-        chain = {}
-
-        def fake(args, input_text=None):
-            if args[0] == "find-generic-password":
-                return (0, chain["w"] + "\n", "") if "w" in chain else (44, "", "not found")
-            if args[0] == "add-generic-password":
-                chain["w"] = args[args.index("-w") + 1]; return 0, "", ""
-            return 1, "", ""
-        orig = storage._security
-        storage._security = fake
-        try:
-            got, src = storage.load_or_create_master_key(d)
-        finally:
-            storage._security = orig
-        self.assertEqual((got, src), (key, "keychain"))       # the same key (data stays readable), now in the keychain
-        self.assertEqual(chain["w"], key.hex()); self.assertFalse(os.path.exists(path))
 
     def test_password_change_ends_other_sessions(self):
         import auth
@@ -819,34 +907,6 @@ class SecurityHardeningTests(unittest.TestCase):
             self.assertIsNone(receipts.pattern_problem(pat), pat)
         for pat in ("{jahr}", "{year", "year}", "{year:>4}", "{0}", "{jahr.__class__}", "{{year}}", "../{year}", "/etc/{year}", "~/x", "a/../b"):
             self.assertTrue(receipts.pattern_problem(pat), pat)
-
-    def test_key_file_besides_keychain(self):
-        import tempfile, storage
-        d = tempfile.mkdtemp(); path = os.path.join(d, "master.key")
-        kc, fk = b"\x22" * 32, b"\x33" * 32
-        with open(os.path.join(d, "config.json.enc"), "wb") as f:
-            f.write(storage.encrypt(fk, b"{}"))                         # the data belongs to the file's key
-        with open(path, "w") as f:
-            f.write(fk.hex())
-        chain = {"w": kc.hex()}
-
-        def fake(args, input_text=None):
-            if args[0] == "find-generic-password":
-                return 0, chain["w"] + "\n", ""
-            if args[0] == "add-generic-password":
-                chain["w"] = args[args.index("-w") + 1]; return 0, "", ""
-            return 1, "", ""
-        orig = storage._security
-        storage._security = fake
-        try:
-            got, src = storage.load_or_create_master_key(d)
-            self.assertEqual((got, src), (fk, "keychain")); self.assertFalse(os.path.exists(path))
-            # no keychain at all and no key file: no new key file next to the data -- Kontor does not start
-            storage._security = lambda args, input_text=None: (45, "", "denied")
-            with self.assertRaises(storage.StoreError):
-                storage.load_or_create_master_key(tempfile.mkdtemp())
-        finally:
-            storage._security = orig
 
 
 class KontorBookingsTests(unittest.TestCase):
@@ -1078,6 +1138,93 @@ class StaleInterestTests(unittest.TestCase):
         monthly = loan_cfg(interest={"model": "remaining_debt_monthly", "rate_list": rates, "booking_day": "ultimo"})
         self.assertFalse([f for f in core.check_config(led, [], {"loans": [monthly]}) if "Jahresbasis" in f["text"]])
         self.assertTrue(core.check_config(led, [], {"loans": [loan_cfg(interest="kaputt")]}))           # damaged settings: named, not crashed
+
+
+def _twice(led, tx):
+    """The ledger with `tx` a second time (duplicated in MoneyMoney: the same text and mark, a new number)."""
+    import dataclasses
+    accs = {u: dataclasses.replace(a) for u, a in led.accounts.items()}
+    accs[tx.account_uuid].balance = round(accs[tx.account_uuid].balance + tx.amount, 2)
+    return Ledger(accs, led.txs + [dataclasses.replace(tx, id=max(t.id for t in led.txs) + 1000)])
+
+
+class TwiceTests(unittest.TestCase):
+    """A booking of Kontor's duplicated in MoneyMoney (its mark twice in an account): a note with the account, the day and the
+    amount -- and Kontor goes on as if it were there once (it never deletes; interest twice is noted since 3.16.91)."""
+    today = date(2026, 11, 4)
+
+    def test_repayment_twice(self):
+        monthly = StaleInterestTests.monthly
+        real = StaleInterestTests.book(make_ledger({"ga.vd": -1200000.0}, F.ga_transactions(self.today)), monthly, self.today)
+        end = date(2026, 11, 30)
+        right = [p.amount for p in plan_loan(real.fork(), monthly, end).proposals if p.kind == "interest"]
+        self.assertEqual(len(right), 1)
+        tl = next(t for t in real.txs if "#kontor-tx-" in t.purpose and t.booking_date == date(2026, 10, 1))
+        res = plan_loan(_twice(real, tl).fork(), monthly, end)
+        self.assertEqual(res.warnings, ["Darlehen Verkäuferdarlehen: Kontors Buchung vom 01.10.2026 über 6.000,00 € steht doppelt in Verkäuferdarlehen "
+                                        "(dieselbe Markierung) – eine davon bitte in MoneyMoney löschen."])
+        # November's interest from the debt as if the repayment were there once (not 6,000.00 less), nothing booked for it again
+        self.assertEqual([(p.kind, p.amount) for p in res.proposals], [("interest", right[0])])
+        # on the base of the year: a repayment of last year twice -- the base as if once
+        cfg = loan_cfg(from_date="2025-12-01")
+        txs = F.ga_transactions(self.today, extra=[F.tx("ga.kk", date(2025, 12, 10), -6000.0, "Verkäufer", F.ANNUITY_TEXT, "", F.SELLER_IBAN)])
+        real = StaleInterestTests.book(make_ledger({"ga.vd": -1200000.0}, txs), cfg, self.today)
+        dec = next(t for t in real.txs if "#kontor-tx-" in t.purpose and t.booking_date == date(2025, 12, 10))
+        before = plan_loan(real.fork(), cfg, self.today)
+        res = plan_loan(_twice(real, dec).fork(), cfg, self.today)
+        new = [w for w in res.warnings if w not in before.warnings]
+        self.assertEqual(len(new), 1); self.assertIn("vom 10.12.2025 über 6.000,00 € steht doppelt", new[0])
+        self.assertTrue(any("Zinsbasis 2026 = 1.194.000,00" in i for i in res.info), res.info)
+        self.assertEqual(res.proposals, [])
+
+    def test_interest_twice_counts_once_for_the_debt(self):
+        monthly = StaleInterestTests.monthly
+        real = StaleInterestTests.book(make_ledger({"ga.vd": -1200000.0}, F.ga_transactions(self.today)), monthly, self.today)
+        end = date(2026, 11, 30)
+        right = [p.amount for p in plan_loan(real.fork(), monthly, end).proposals if p.kind == "interest"]
+        z = next(t for t in real.txs if "#kontor-zins-2026-10" in t.purpose)
+        res = plan_loan(_twice(real, z).fork(), monthly, end)
+        self.assertEqual(len(res.warnings), 1); self.assertIn("10/2026", res.warnings[0]); self.assertIn("eine davon", res.warnings[0])
+        self.assertEqual([p.amount for p in res.proposals if p.kind == "interest"], right)
+
+    def test_mirrored_booking_twice(self):
+        cfg = company_cfg(companies=[{"area": "b"}], account_mirrors=[
+            {"a": F.uid("priv.bet.gb") + " | Beteiligung an Beta GbR", "b": F.uid("gb.kap.a") + " | Kapitalkonto A", "from_date": "all"}])
+        led = make_ledger({}, [F.tx("gb.kap.a", date(2026, 9, 1), -5000.0, "Ich", "Einlage"), F.tx("gb.kap.a", date(2026, 10, 1), -70.0, "Ich", "Nachschuss")])
+        res = plan_all(led, cfg, self.today)
+        real = led.without_planned(keep=[p.key for p in res.proposals])
+        ok = plan_all(real.fork(), cfg, self.today)
+        self.assertEqual((ok.proposals, ok.warnings, ok.preview[0]["mirrored"]), ([], [], 2))
+        m = next(t for t in real.txs if "#kontor-gk-" in t.purpose and t.amount == 5000.0)
+        res = plan_all(_twice(real, m).fork(), cfg, self.today)
+        self.assertEqual(res.warnings, ["Kontenspiegel Beteiligung an Beta GbR: Kontors Buchung vom 01.09.2026 über 5.000,00 € steht doppelt in Beteiligung an Beta GbR "
+                                        "(dieselbe Markierung) – eine davon bitte in MoneyMoney löschen."])
+        self.assertEqual((res.proposals, res.preview[0]["mirrored"], res.preview[0]["open"]), ([], 2, 0))       # counted once, never mirrored back
+
+    def test_value_adjustment_twice(self):
+        cfg = company_cfg()
+        led = make_ledger({}, [])
+        res = plan_all(led, cfg, self.today)
+        real = led.without_planned(keep=[p.key for p in res.proposals])
+        self.assertEqual(plan_all(real.fork(), cfg, self.today).proposals, [])
+        v = next(t for t in real.txs if "#kontor-wert-" in t.purpose)
+        self.assertEqual(v.amount, 130000.0)
+        for start, cycle in (("", "daily"), ("all", "daily")):
+            cfg["companies"][0].update(retroactive_from=start, cycle=cycle)
+            res = plan_all(_twice(real, v).fork(), cfg, self.today)
+            self.assertEqual(res.warnings, ["Beteiligung Alpha GbR: Kontors Buchung vom 04.11.2026 über 130.000,00 € steht doppelt in Beteiligung an Alpha GbR "
+                                            "(dieselbe Markierung) – eine davon bitte in MoneyMoney löschen."], (start, cycle))
+            self.assertEqual(res.proposals, [], (start, cycle))                   # no booking against it: one of the two is to be deleted
+            pv = res.preview[0]
+            self.assertEqual((pv["ist"], pv["soll"], pv["diff"], pv["open"]), (170000.0, 40000.0, -130000.0, 0))
+        # the company's value moves on: booked from the balance as if the adjustment were there once
+        cfg["companies"][0].update(retroactive_from="", cycle="daily")
+        import dataclasses
+        moved = _twice(real, v)
+        moved = Ledger({u: dataclasses.replace(a, balance=a.balance + (1000.0 if u == F.uid("ga.kk") else 0.0)) for u, a in moved.accounts.items()},
+                       moved.txs + tx_from_export([F.tx("ga.kk", self.today, 1000.0, "Mieter", "Miete")]))
+        res = plan_all(moved.fork(), cfg, self.today)
+        self.assertEqual([(p.kind, p.amount) for p in res.proposals], [("value", 400.0)]); self.assertEqual(len(res.warnings), 1)
 
 
 def _replace_tx(led, tx, amount=None):
@@ -1524,6 +1671,45 @@ class WritePathTests(unittest.TestCase):
             if name.endswith((".py", ".jxa")):
                 self.assertNotIn("commentTo", open(os.path.join(root, name), encoding="utf-8").read(), name)
 
+    def test_the_bridge_counts_only_its_own_entries(self):
+        """The bridge's own check (the second lock, after Python's): only the names listed count -- nothing a list inherits
+        (constructor, toString, __proto__), as a command or as a field of setTransaction. Its script run with a stand-in for
+        MoneyMoney where node is there (GitHub compiles and asks it at the Mac)."""
+        import shutil
+        import subprocess
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        jxa = open(os.path.join(root, "mm_bridge.jxa"), encoding="utf-8").read()
+        body = jxa.split("function run(argv)")[1]
+        self.assertNotIn("ERLAUBT[params.method])", body); self.assertNotIn("!nur[k]", body)       # never by a plain lookup
+        self.assertIn("if (!eigen(ERLAUBT, params.method)) throw", body); self.assertIn("if (!eigen(nur, k)) throw", body)
+        self.assertIn("Object.prototype.hasOwnProperty.call(liste, name)", jxa)
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node not installed")
+        stand_in = ("const fs = require('fs'), vm = require('vm'); const calls = [];"
+                    "const mm = new Proxy({}, {get: (o, name) => (args) => { calls.push(String(name)); return 'ok'; }});"
+                    "const ctx = {Application: () => mm}; vm.createContext(ctx);"
+                    "vm.runInContext(fs.readFileSync(process.argv[1], 'utf8') + '\\nthis.run = run;', ctx);"
+                    "const out = JSON.parse(process.argv[2]).map(req => { const n = calls.length; let err = '';"
+                    "try { ctx.run([JSON.stringify(req)]); } catch (e) { err = String(e.message); } return [calls.length > n, err]; });"
+                    "console.log(JSON.stringify(out));")
+        asked = [({"method": "exportAccounts", "args": None}, True), ({"method": "addTransaction", "args": {"account": "x"}}, True),
+                 ({"method": "setTransaction", "args": {"id": 1, "categoryTo": "x"}}, True),
+                 ({"method": "constructor", "args": None}, False), ({"method": "toString", "args": None}, False),
+                 ({"method": "__proto__", "args": None}, False), ({"method": "hasOwnProperty", "args": "x"}, False),
+                 ({"method": "createBankTransfer", "args": {}}, False), ({"method": ["addTransaction"], "args": {}}, False),
+                 ({"method": "setTransaction", "args": {"id": 1, "toString": "x"}}, False),
+                 ({"method": "setTransaction", "args": {"id": 1, "constructor": "x"}}, False),
+                 ({"method": "setTransaction", "args": {"id": 1, "commentTo": "x"}}, False)]
+        got = subprocess.run([node, "-e", stand_in, os.path.join(root, "mm_bridge.jxa"), json.dumps([a for a, _ in asked])],
+                             capture_output=True, text=True, timeout=60)
+        self.assertEqual(got.returncode, 0, got.stderr[-400:])
+        for (req, through), (went, err) in zip(asked, json.loads(got.stdout)):
+            self.assertEqual(went, through, (req, err))
+            self.assertEqual(bool(err), not through, (req, err))
+            if err:
+                self.assertIn("nicht erlaubt", err)
+
 
 class MarkTests(unittest.TestCase):
     """Kontor's mark reads "#kontor-<kind>-..." (so MoneyMoney shows who made a booking). Nothing else is one -- also not the
@@ -1629,14 +1815,15 @@ class ReferenceTests(unittest.TestCase):
 
 
 class FileFormatTests(unittest.TestCase):
-    """Packages and backups from before 3.15.0 name their settings differently: refused with a clear message."""
+    """Packages and backups from before 3.17.0: refused with a clear message (nothing older is read or converted)."""
 
     def test_old_package_refused(self):
         import core
         cur = core.merged_config({})
-        for v in ("3.14.9", "2.0", "kaputt"):
-            with self.assertRaises(ValueError):
+        for v in ("3.16.99", "3.14.9", "2.0", "kaputt"):
+            with self.assertRaises(ValueError) as e:
                 core.import_package(cur, {"kontor_package": 1, "version": v, "config": {"areas": []}}, None, "replace")
-        cfg, _, _ = core.import_package(cur, {"kontor_package": 1, "version": "3.15.0", "config": {"areas": []}}, None, "merge")
+            self.assertIn("3.17.0", str(e.exception))
+        cfg, _, _ = core.import_package(cur, {"kontor_package": 1, "version": "3.17.0", "config": {"areas": []}}, None, "merge")
         self.assertEqual(cfg["areas"], [])
         core.import_package(cur, {"config": {"areas": []}}, None, "merge")          # written by hand, no version: current

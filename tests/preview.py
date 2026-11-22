@@ -16,7 +16,7 @@ sys.path.insert(0, os.path.join(HERE, "..")); sys.path.insert(0, HERE)
 
 import test_e2e as T          # noqa: E402
 import test_assistant as TA   # noqa: E402
-from storage import Store, load_or_create_master_key   # noqa: E402
+from fixtures import new_store   # noqa: E402
 from service import App, make_handler                  # noqa: E402
 from http.server import ThreadingHTTPServer            # noqa: E402
 from playwright.sync_api import sync_playwright        # noqa: E402
@@ -39,7 +39,7 @@ def main() -> None:
     themes = [t for t in ("dunkel", "hell") if not set(a.nur) & {"dunkel", "hell"} or t in a.nur]
     sizes = [s for s in SIZES if not set(a.nur) & set(SIZES) or s in a.nur]
     d = tempfile.mkdtemp(prefix="kontor-preview-")
-    store = Store(d, *load_or_create_master_key(d))
+    store = new_store(d)
     cfg = T.config_for_test(os.path.join(d, "Belege")); cfg.setdefault("ui", {})["language"] = a.lang
     store.save("config.json", cfg); store.save("state.json", dict(T.ALL_NEW))
     T.reset_mock(); T.patch_today()

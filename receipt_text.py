@@ -42,7 +42,7 @@ class TextUnavailable(Exception):
 def _profile(home: str, data_dir: str, work: str) -> str:
     """The sandbox of the helper: as llm_local's "strict", no connection at all, and writing only into its own folder of this run
     and the system's caches (text recognition keeps its models there) -- never into Kontor's temporary folders (kontor-..., where
-    e.g. the helper for MoneyMoney's password is built)."""
+    e.g. the helper for MoneyMoney's password is built) nor into the compilers' module caches among the caches."""
     q = lambda p: json.dumps(os.path.realpath(p), ensure_ascii=False)
     return "\n".join([
         "(version 1)", "(allow default)", "(deny network*)",
@@ -51,6 +51,7 @@ def _profile(home: str, data_dir: str, work: str) -> str:
         '(deny mach-lookup (global-name "com.apple.pasteboard.1"))',
         "(deny file-write*)",
         '(allow file-write* (subpath %s) (regex #"^/private/var/folders/[^/]+/[^/]+/C/") (literal "/dev/null"))' % q(work),
+        '(deny file-write* (regex #"^/private/var/folders/[^/]+/[^/]+/C/(clang|org\\.llvm\\.clang)"))',      # (the compilers' modules: Kontor's helpers are built from them)
         '(deny file-write* (regex #"/kontor-[^/]*(/|$)"))',
         "(deny file-read* (subpath %s) (subpath %s))" % (q(home), q(data_dir)),
         "(allow file-read* (subpath %s))" % q(HELPER_DIR),          # its own program (Kontor's folder may lie in the home folder)

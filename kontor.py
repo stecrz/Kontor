@@ -39,7 +39,7 @@ import updates  # noqa: E402
 import i18n  # noqa: E402
 from core import merged_config, version  # noqa: E402
 import storage  # noqa: E402
-from storage import Store, load_or_create_master_key  # noqa: E402
+from storage import Store  # noqa: E402
 from i18n import tr  # noqa: E402
 
 log = logging.getLogger("kontor")
@@ -93,35 +93,8 @@ def setup_logging(quiet: bool) -> None:
         root.addHandler(sh)
 
 
-def open_store(finish: Optional[bool] = None) -> Store:
-    """The encrypted store. An unfinished renewal of the data key is finished only under the service's lock: by the service
-    (finish=True, it holds the lock) or by a command that gets the lock while no service runs; two processes never finish it
-    at the same time. A command beside the running service leaves it to the service."""
-    lock = None
-    if finish is None:
-        try:
-            lock = open(os.path.join(DATA_DIR, "service.lock"), "a")
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            finish = True
-        except OSError:
-            finish = False
-    try:
-        key, source = load_or_create_master_key(DATA_DIR, finish=finish)
-    finally:
-        if lock:
-            lock.close()                    # releases the lock: launchd may start the service now
-    return Store(DATA_DIR, key, source)
-
-
-def load_config(store: Store) -> dict:
-    cfg = merged_config(store.load("config.json", {}) or {})
-    i18n.set_lang((cfg.get("ui") or {}).get("language") or "de")
-    return cfg
-
-
 def start_config() -> dict:
     """What the commands need without the data (they never read them): port, address, certificate, language."""
-    access.prepare(DATA_DIR)
     cfg = merged_config({"ui": access.start_settings(DATA_DIR)})
     i18n.set_lang((cfg.get("ui") or {}).get("language") or "de")
     return cfg
@@ -151,7 +124,6 @@ class Lock:
 def cmd_start(args) -> int:
     from service import App, serve
     with Lock("service.lock"):
-        access.prepare(DATA_DIR)
         app = App(Store.closed(DATA_DIR), DATA_DIR)         # locked: the data key comes with the first sign-in
         serve(app)
     return 0
@@ -177,59 +149,34 @@ def cmd_oeffnen(args) -> int:
     return 0
 
 
-def unlock_cli(read_only: bool = False) -> Optional[Store]:
+def unlock_cli() -> Optional[Store]:
     """The data key in the terminal -- only as in the interface: Touch ID where it is switched on and set up, else (or after a
-    cancel) the Kontor password, three tries. From before (no key file yet): the key in the keychain, confirmed the same way.
-    None: not confirmed. Nothing set up yet (no password, no data): an empty store without a key. read_only (uninstalling): a
-    key from before is only read, nothing finished or moved."""
+    cancel) the Kontor password, three tries. None: not confirmed. Nothing set up yet (no key file, no data): an empty store
+    without a key; encrypted data without their key file: refused (nothing to confirm with, nothing is touched)."""
     st = access.state(DATA_DIR)
     if st == "broken":
         raise storage.StoreError(tr("s_schluesseldatei_kaputt"))
     if st == "new":
+        if access.has_data(DATA_DIR):
+            raise storage.StoreError(tr("s_schluessel_passt_nicht"))
         return Store(DATA_DIR, None)
-    if st == "legacy":
-        store = Store(DATA_DIR, *storage.read_master_key(DATA_DIR)) if read_only else open_store()
-        return store if confirm_identity(store) else None
     cfg = start_config()
     if (cfg.get("ui") or {}).get("touchid", True) and access.touchid_ready(DATA_DIR):
         print(tr("s_cli_touchid"))
         got = access.unlock_touchid(DATA_DIR)
         if got:
-            return Store(DATA_DIR, got[0], "login")
+            return Store(DATA_DIR, got[0])
     for _ in range(3):
         try:
             pw = getpass.getpass(tr("s_cli_passwort"))
         except (EOFError, KeyboardInterrupt):
             return None
-        got = access.unlock_password(DATA_DIR, pw, finish=False)
+        got = access.unlock_password(DATA_DIR, pw)
         if got:
-            return Store(DATA_DIR, got[0], "login")
+            return Store(DATA_DIR, got[0])
         time.sleep(1)
         print(tr("s_passwort_falsch"))
     return None
-
-
-def confirm_identity(store: Store) -> bool:
-    """As in the interface: Touch ID where it is switched on, else (or after a cancel) the Kontor password, three tries. No
-    password set yet: nothing to confirm."""
-    rec = store.load("auth.json", None)
-    if not rec:
-        return True
-    cfg = merged_config(store.load("config.json", {}) or {})
-    if (cfg.get("ui") or {}).get("touchid", True) and auth.touchid_available():
-        print(tr("s_cli_touchid"))
-        if auth.touchid_verify():
-            return True
-    for _ in range(3):
-        try:
-            pw = getpass.getpass(tr("s_cli_passwort"))
-        except (EOFError, KeyboardInterrupt):
-            return False
-        if auth.verify_password(pw, rec):
-            return True
-        time.sleep(1)
-        print(tr("s_passwort_falsch"))
-    return False
 
 
 def cmd_passwort(args) -> int:
@@ -248,8 +195,7 @@ def cmd_passwort(args) -> int:
     if err:
         print(err); return 1
     try:
-        if access.state(DATA_DIR) == "login":   # the key wrapped with the new password (from before: the interface switches at the next sign-in)
-            access.change_password(DATA_DIR, store.master, pw)
+        access.change_password(DATA_DIR, store.master, pw)      # the key wrapped with the new password
         store.save("auth.json", auth.with_offline(auth.hash_password(pw), pw))
     except storage.StoreError as e:
         print(tr("s_fehler_s") % e); return 1
@@ -318,6 +264,11 @@ def service_loaded() -> bool:
     return subprocess.run(["launchctl", "print", "gui/%d/%s" % (os.getuid(), LAUNCHD_LABEL)], capture_output=True).returncode == 0
 
 
+def stop_service() -> None:
+    """Kontor's own background service ends (fixed label, this user's session) -- launchd does not start it again."""
+    subprocess.run(["launchctl", "bootout", "gui/%d/%s" % (os.getuid(), LAUNCHD_LABEL)], capture_output=True)
+
+
 def load_service() -> None:
     """-w: also lifts a 'launchctl disable'. Switched off under Login Items ('Allow in the Background'), macOS refuses the load
     (error 5) -- wait_for_service says so."""
@@ -370,23 +321,32 @@ def cmd_uninstall(args) -> int:
             return 1
     # the key first: encrypted data that cannot be opened stay, and so does everything else (the key might still be needed)
     try:
-        store = unlock_cli(read_only=True)  # as in the interface: only with the Kontor password (or Touch ID)
+        store = unlock_cli()                # as in the interface: only with the Kontor password (or Touch ID)
         if store is not None:
-            cfg = merged_config(store.load("config.json", {}) or {})
-    except Exception as e:                  # the settings do not open: nothing is deleted
+            # settings damaged for good (the key is right): Kontor goes all the same -- only the program folder stays then,
+            # as receipts or linked documents may lie in it and the settings would have said where
+            raw, why = store.read_record("config.json")
+            cfg = merged_config(raw)
+    except Exception as e:                  # the key or the settings cannot be read right now: nothing is deleted
         print(tr("s_fehler_s") % e)
         return 1
     if store is None:
         print(tr("s_cli_nicht_bestaetigt")); return 1
     if sys.platform == "darwin":            # stop the service: launchd would start it again
-        subprocess.run(["launchctl", "bootout", "gui/%d/%s" % (os.getuid(), LAUNCHD_LABEL)], capture_output=True)
+        stop_service()
     app = service.App.__new__(service.App)
     app.data_dir, app.program_dir, app.store, app.config = DATA_DIR, HERE, store, cfg
-    r = service.App.uninstall(app, program=args.program)
+    lost = bool(why) or service.App.settings_lost(app)
+    if why:
+        log.warning("Uninstall: the settings do not read -- going on with the factory settings, the program folder stays")
+    r = service.App.uninstall(app, program=args.program and not lost)
     if r.get("error"):
         print(r["error"])
         return 1
+    service.remove_stale_demos(0)           # the demo's folder (the service removes it only at its own end): receipts uploaded there are not encrypted
     print(tr("deinstalliert_text" if r["key_removed"] else "deinstalliert_ohne_schluessel"))
+    if lost and args.program:
+        print(tr("s_deinstall_programm_bleibt"))
     if r.get("receipts"):
         print(tr("deinstall_belege_bleiben", r["receipts"]))
     if r.get("foreign"):

@@ -152,3 +152,10 @@ def ga_transactions(until: date, with_manual_interest_until: date = None, annuit
     for e in (extra or []):
         out.append(e)
     return out
+
+
+def new_store(data_dir: str):
+    """Tests only: an open store in data_dir with a fresh made-up key and no key file yet -- the setup's first password wraps
+    this key (access.setup_key: the key in use), as the service does with a new one."""
+    import storage
+    return storage.Store(data_dir, os.urandom(32))

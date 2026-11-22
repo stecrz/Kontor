@@ -62,6 +62,7 @@ import table_text
 from decimal import ROUND_HALF_UP, Decimal
 from model import norm_cat
 from llm_local import CATALOG, EMBED, EMBED_CONTEXT, EMBED_IDS, SANDBOXES, SPEECH, Cancelled, LocalAI, ModelError, SPEECH_IDS, SPEECH_CONTEXT, MAX_AUDIO, fit, physical_ram
+from storage import StoreError, StoreLocked, selftest
 
 log = logging.getLogger("kontor.assistant")
 
@@ -82,9 +83,8 @@ def auto_context(ram: int) -> int:
 
 RIGHTS = ("figures", "transactions", "help", "page", "navigate", "enter_values", "categorize", "book", "rules", "receipts", "internet", "remote")
 READ_RIGHTS = ("figures", "transactions", "page")    # one switch in the settings: reading your data
-RIGHTS_VERSION = 2       # 3.16.28: changes on for everyone (each one only after your click), the help always readable
 SPEECH_STARTS = ("early", "click")                 # the speech model starts at once (with the model, when the assistant opens) or with the click on the microphone
-DEFAULTS: Dict[str, Any] = {"enabled": False, "model": "", "speech": "", "speech_start": "", "speech_filter": True, "effort": "balanced", "context": auto_context(physical_ram()), "context_auto": True,
+DEFAULTS: Dict[str, Any] = {"enabled": False, "model": "", "speech": "", "speech_start": "", "speech_filter": True, "context": auto_context(physical_ram()), "context_auto": True,
                             "idle_minutes": 30, "sandbox": "strict", "save_chats": True, "check_mode": "monthly",
                             "rights": {"figures": True, "transactions": True, "help": True, "page": True, "navigate": True,
                                        "enter_values": True, "categorize": True, "book": True, "rules": True, "receipts": True, "internet": False, "remote": False}}       # changes: each one only with your click on the card
@@ -94,6 +94,7 @@ CHECK_MODES = {"daily": 86400, "weekly": 7 * 86400, "monthly": 30 * 86400, "aus"
 NEWS_FILE = "news.json"                            # the last look and what it found, in the assistant's folder: a restart neither looks again nor forgets
 DEFAULTS["web_trusted"] = web_search.trusted_default()      # lookups there need no card once a conversation allows the internet
 DEFAULTS["memory"] = True                          # what it was told to remember (memory.py): used with every question
+DEMO_SETTINGS = ("enabled", "rights", "speech_filter", "save_chats", "memory")       # what the demo's panel is told of the settings (status)
 PAGES = ("overview", "balance", "cashflow", "planning", "properties", "tax", "transactions", "bookings", "categories", "accounts", "help")
 # its text is read only from these pages -- never settings, log, setup (nor its own conversation under "assistant")
 PLAN_LIMITS = {"horizon_months": (1, 240), "inflation_percent_pa": (-5, 20), "income_increase_percent_pa": (-20, 50), "expense_increase_percent_pa": (-20, 50),
@@ -118,7 +119,9 @@ NO_QUESTION = ("[Kontor: no question with it -- look at what was given for itsel
 TABLE_TYPES = {ext: "XLSX" for ext in table_text.TYPES}              # tables the assistant reads (table_text: a grid with Excel's addresses)
 RECEIPT_TEXT = 4000                                # characters of a receipt's text the model reads
 CHANGES_FILE = "assistant-changes.json"            # the log of changes the assistant carried out (in the data folder, encrypted)
-CHANGES_MAX = 500                                  # entries in it at most (the oldest go first)
+CHANGES_MAX = 500                                  # entries in it at most -- of each kind: changes, lookups, the memory (the oldest go first; a research never pushes changes out)
+CHANGES_ASIDE = "chats/assistant-changes.damaged"  # a log that could not be read, put aside as it was (in the folder of the saved conversations: gone with a reset and with Kontor)
+LOG_ROWS = 150                                     # rows of one entry at most (a card of bookings: each of them, with the other halves of pairs)
 WATCH_SECONDS = 30
 # Remembering (memory.py): after an answer a second, separate look at what the user said -- and only at that -- decides what is
 # worth keeping. It never sees what tools returned, pages, receipts, files or web text.
@@ -136,6 +139,7 @@ HELP_TASK = "Given a question about a private finance app, retrieve the help sec
 TX_TASK = "Given a search term, retrieve bank transactions (counterparty and purpose) that match it"
 TX_TEXT = 200                                      # characters of a transaction's counterparty and purpose made into an embedding
 NAMES_AT_ONCE = 10                                 # notes typed in the settings whose names the model names in one go
+NAMES_TRIES = 3                                    # ... asked again that often when its answer was cut off or no answer at all (then left until Kontor starts anew)
 BASIS_MAX = 5                                      # notes named under an answer as what it rests on
 # Said so -- the commanding form at the start of a sentence or after "bitte", "und" ...: "Merk dir ...", "Notiere: ...", "Remember that
 # ..." (not "ich merke, dass", "do you remember", "warum notieren die Aktien"). The look then comes before the answer, which so
@@ -148,8 +152,62 @@ FORGET = re.compile(_SAID_SO + r"(?:vergiss(?!\s+(?:bitte\s+)?(?:nicht|nie|niema
                                r"(?:l(?:ö|oe)sch|streich)(?:e|en\s+sie)?\s+(?:bitte\s+)?(?:die|diese|meine|deine)?\s*notiz|forget(?!\s+not)(?=[\s:,])|(?:delete|remove)\s+(?:the|that|this|my)\s+note)")
 
 
+# ... and never with a "nicht", "nie", "kein", "not", "never" anywhere in its sentence ("Vergiss das bitte nicht: ...", "Vergiss den Termin am Montag
+# nicht", "Lösch die Notiz bitte nicht" ask to remember): talk about not forgetting must never delete a note
+_NEGATED = re.compile(r"(?i)(?<![a-zäöüß])(?:nicht|nie|niemals|nimmer|keinesfalls|keineswegs|kein(?:e[mnrs]?)?|not|never|no|cannot)(?![a-zäöüß])|n['’]t(?![a-zäöüß])")
+
+
+def forget_said(text: str) -> List[str]:
+    """The sentences of a message that tell to forget something: the commanding form (FORGET) in a sentence that is no
+    question and holds no negation."""
+    return [s for s in memory_mod.sentences(text) if FORGET.search(s) and not _NEGATED.search(s) and not s.rstrip().endswith("?")]
+
+
+def asks_to_forget(text: str) -> bool:
+    return bool(forget_said(text))
+
+
 def said_so(text: str) -> bool:
-    return bool(REMEMBER.search(text) or FORGET.search(text))
+    return bool(REMEMBER.search(text) or asks_to_forget(text))
+
+
+# Numbers of a note against what was said, by their value: 1.500 = 1500 = 1.500,00 = 1,500.00 -- not 15,00; 2,5 = 2.5 -- not 25.
+_NUMBER = re.compile(r"\d{4}-\d\d-\d\d|\d[\d.,]*\d|\d")
+_AS_AMOUNT = re.compile(r"\s*(?:€|EUR\b|Euro\b|%|T€|Tsd\b|Mio\b|k\b)", re.I)
+_YEARS_ON = ((r"n(?:ä|ae)chste[snm]?\s+jahr|kommende[snm]?\s+jahr|next\s+year", 1), (r"(?:ü|ue)bern(?:ä|ae)chste[snm]?\s+jahr|year\s+after\s+next", 2),
+             (r"(?:letzte[snm]?|vorige[snm]?|vergangene[snm]?)\s+jahr|vorjahr|last\s+year", -1), (r"diese[smn]?\s+jahr|heuer|this\s+year", 0))
+_NOT_THE_USERS = frozenset(("nutzer", "nutzers", "nutzerin", "benutzer", "benutzers", "user", "users"))      # how a note names who said it
+
+
+def _value(tok: str) -> str:
+    """A number as written, by its value, the German and the English way: a point or comma before exactly three digits
+    groups thousands (1.500, 1,500, 2.500.000), any other is the decimal sign (15,00, 2.5, 0,500). Whatever is no number
+    written so (a date, 1.2.3) stands as it is."""
+    if tok.isdigit():
+        return str(int(tok))
+    m = re.fullmatch(r"([1-9]\d{0,2}(?:\.\d{3})+)(?:,(\d+))?|([1-9]\d{0,2}(?:,\d{3})+)(?:\.(\d+))?|(\d+)[.,](\d+)", tok)
+    if m is None:
+        return tok
+    whole, frac = (m.group(1).replace(".", ""), m.group(2)) if m.group(1) else (m.group(3).replace(",", ""), m.group(4)) if m.group(3) else (m.group(5), m.group(6))
+    frac = (frac or "").rstrip("0")
+    return (whole.lstrip("0") or "0") + ("." + frac if frac else "")
+
+
+def _values(text: str) -> set:
+    return {_value(t) for t in _NUMBER.findall(text)}
+
+
+def _years_meant(said: str, today: date) -> set:
+    """The years what was said speaks of without naming them: today's, "nächstes Jahr", "letztes Jahr", "in 3 Jahren"."""
+    out = {today.year}
+    for pattern, by in _YEARS_ON:
+        if re.search(pattern, said, re.I):
+            out.add(today.year + by)
+    for m in re.finditer(r"(?i)(?<![a-zäöüß])in\s+(\d{1,2})\s+(?:jahren|years)", said):
+        out.add(today.year + int(m.group(1)))
+    for m in re.finditer(r"(?i)(?<![a-zäöüß])vor\s+(\d{1,2})\s+jahren|(\d{1,2})\s+years\s+ago", said):
+        out.add(today.year - int(m.group(1) or m.group(2)))
+    return out
 
 
 def means_the_answer(text: str) -> bool:
@@ -228,7 +286,6 @@ def settings(config: dict) -> dict:
     # the microphone with the system's filters for speech (echo, noise, level: on a Mac it then hears only after about two
     # seconds) or without them (it hears at once; Kontor levels the recording itself)
     out["speech_filter"] = raw["speech_filter"] if isinstance(raw.get("speech_filter"), bool) else DEFAULTS["speech_filter"]
-    out["effort"] = raw["effort"] if raw.get("effort") in EFFORTS else DEFAULTS["effort"]
     out["context_auto"] = raw.get("context") not in CONTEXTS                           # not chosen: by the memory of this Mac
     out["context"] = raw["context"] if raw.get("context") in CONTEXTS else DEFAULTS["context"]
     idle = raw.get("idle_minutes")
@@ -243,8 +300,6 @@ def settings(config: dict) -> dict:
         if isinstance(rights.get(k), bool):
             out["rights"][k] = rights[k]
     out["rights"]["help"] = True                         # Kontor's own help: nothing of yours, always readable
-    if raw.get("rights_version") != RIGHTS_VERSION:      # saved before: changes on (each one waits for your click anyway)
-        out["rights"].update(enter_values=True, categorize=True)
     return out
 
 
@@ -252,7 +307,6 @@ def stored(st: dict) -> dict:
     """The settings as they go into the configuration: a context not chosen stays "automatic"."""
     out = {k: v for k, v in st.items() if k != "context_auto"}
     out["context"] = 0 if st.get("context_auto") else st["context"]
-    out["rights_version"] = RIGHTS_VERSION
     return out
 
 
@@ -438,12 +492,13 @@ class Assistant:
         self.undo: Dict[str, dict] = {}                # entries made, for "take back" (memory only)
         self.files: Dict[str, dict] = {}               # receipts given in the panel: memory only, never saved, logged or backed up
         self.files_lock = threading.Lock()
-        self.memory = memory_mod.Memory(app.store, self._memory_changed)     # what the user told it to remember (memory.py): only Kontor reads and writes it
+        self.memory = memory_mod.Memory(app.store, self._memory_changed, self._memory_forgetting)     # what the user told it to remember (memory.py): only Kontor reads and writes it
         self.talks = memory_mod.Talks(app.store)       # the search in saved conversations (memory.py)
         self.help_vecs = memory_mod.Library(app.store, "help")      # embeddings of the help's sections and of transactions' texts (finding by meaning)
         self.tx_vecs = memory_mod.Library(app.store, "tx")
         self._talking = False                          # saved conversations of before being put into it (in the background)
         self._common: Optional[set] = None             # the words of Kontor's own texts (no names: _own)
+        self._name_tries: Dict[str, int] = {}          # notes whose names the model could not name (a cut answer): how often asked (memory only)
         self.forgotten: Dict[str, dict] = {}           # notes just forgotten in a conversation, to bring back (memory only)
         self.offered: Dict[str, dict] = {}             # notes waiting for the user's click (a conversation with foreign text): memory only
         self.entry_lock = hooks.get("lock") or threading.RLock()      # an entry (or taking one back): checked and written in one go -- the lock the pages' own saves take
@@ -455,7 +510,6 @@ class Assistant:
         if peer is None:
             self.ai.on_loaded = self._loaded
             self.ai.on_change = self._files_go
-        self._chats_move()                             # saved conversations of earlier versions: into their folder
 
     def _files_go(self, mid: str) -> None:
         """Files are about to be replaced or removed (a model's, or llama.cpp's: ""): what runs on them ends first."""
@@ -550,6 +604,10 @@ class Assistant:
         out = {"settings": st, "ready": ready, "local": local, "busy": bool(self.job and not self.job.done), "question_limit": question_limit(st["context"]),
                "job": self.job.id if self.job and not self.job.done else "", "server": ai["server"], "tools": self.tool_list(st),
                "dictation": bool(ai["runtime"]["installed"] and any(m["installed"] for m in ai["speech"])), "speech_early": self.speech_early()}
+        if self.peer is not None or getattr(self.app, "DEMO", False):
+            # the demo: only what its panel needs (is the assistant on and ready, its rights, the effort, dictating) -- nothing
+            # about this Mac (memory, disk, folders), what is installed or newer, the model's name or the websites trusted here
+            return dict(out, settings={k: st[k] for k in DEMO_SETTINGS}, server={k: ai["server"].get(k) for k in ("state", "tps")})
         if local:                                       # what is installed, sizes, downloads: only on the Mac
             out.update({k: ai[k] for k in ("platform", "runtime", "models", "speech", "embed", "recommended", "checked", "check_error", "disk_free")}, load=ai["job"],
                        newer=self.newer(), updating=self.updating(),
@@ -558,18 +616,15 @@ class Assistant:
                        speech_in_use=self.speech_model(), speech_early_auto=self._speech_fits(), context_auto_value=DEFAULTS["context"],
                        embed_state=self.embedder.state, embed_error=self.embedder.error if self.embedder.state == "error" else "",
                        folder=self.ai.base, folder_exists=os.path.isdir(self.ai.base))          # llama.cpp and every model (also for dictating)
-        if self.peer is not None:                       # the demo: nothing about this Mac's folders or keys
-            for k in ("folder", "folder_exists", "web"):
-                out.pop(k, None)
         return out
 
     def set(self, body: dict) -> dict:
-        """Changes settings (only from the Mac, see service.py): any of enabled, model, speech, effort, context (0: automatic),
+        """Changes settings (only from the Mac, see service.py): any of enabled, model, speech, context (0: automatic),
         idle_minutes, sandbox, save_chats, memory, rights{...} ("read": figures, transactions and the page together),
         web_trusted{sources, hosts} (hosts: a list or a text of websites; one that is no website: refused, nothing saved)."""
         cur = self.settings()
-        new = stored(cur)
-        for k in ("enabled", "model", "speech", "speech_start", "speech_filter", "effort", "context", "idle_minutes", "sandbox", "save_chats", "check_mode"):
+        new = json.loads(json.dumps(stored(cur)))        # a copy: nothing of the settings in use changes before all is checked
+        for k in ("enabled", "model", "speech", "speech_start", "speech_filter", "context", "idle_minutes", "sandbox", "save_chats", "check_mode"):
             if k in body:
                 new[k] = body[k]
         if "memory" in body:
@@ -609,6 +664,8 @@ class Assistant:
             self.speech.stop()                           # the other speech model with the next dictation
         if "speech_start" in changed:
             self.speech_warm()                           # ready at once from now on: started now
+        if not (new["enabled"] and new["rights"].get("transactions")):
+            self._tx_forget()                            # reading transactions (or the assistant) off: the embeddings of their texts go
         return self.settings()
 
     def set_web(self, body: dict) -> dict:
@@ -872,8 +929,7 @@ class Assistant:
                         rec = self._chat_read(cid)
                         if rec is None:
                             continue
-                        self.talks.put(cid, str(rec.get("updated") or ""), rec["turns"], bool(rec.get("web") or rec.get("receipt_text")),
-                                       lambda nid: self.memory.get(nid) is None)
+                        self.talks.put(cid, str(rec.get("updated") or ""), rec["turns"], bool(rec.get("web") or rec.get("receipt_text")), self._note_gone)
                     done += 1
             except Exception as e:
                 log.warning("Assistant: saved conversations not put into the search (%s)", type(e).__name__)
@@ -900,10 +956,28 @@ class Assistant:
                 out.setdefault(memory_mod.Library.key(text), text)
         return out
 
+    def _tx_readable(self) -> bool:
+        """Whether the texts of transactions may be made into embeddings: only while the assistant may read them (the right
+        "transactions": the switch "Zahlen und Umsätze lesen") and is switched on."""
+        st = self.settings()
+        return bool(st["enabled"] and st["rights"].get("transactions"))
+
+    def _tx_forget(self) -> None:
+        """Reading transactions (or the assistant) is off: the embeddings made of their texts go (and what is being made is not kept)."""
+        try:
+            if getattr(self.app.store, "is_open", True) and any(n.startswith("memory-tx-") for n in os.listdir(self.app.store.data_dir)):
+                self.tx_vecs.drop_all()
+                log.info("Assistant: embeddings of transactions removed (reading them is switched off)")
+        except OSError as e:
+            log.warning("Assistant: embeddings of transactions not removed (%s)", type(e).__name__)
+
     def index_notes(self) -> None:
         """Notes without an embedding of the model in use get one -- in the background, a few at a time (the first time all of
-        them: for thousands a while); then saved conversations, the help's sections and the texts of transactions (those two
-        also with the memory off). Never before the sign-in; ends when the model or the assistant is off."""
+        them: for thousands a while); then saved conversations (both only with the memory on), the help's sections and --
+        only with the right to read them -- the texts of transactions (those two also with the memory off). Never before
+        the sign-in; ends when the model or the assistant is off."""
+        if not self._tx_readable():
+            self._tx_forget()
         with self.lock:
             if self._indexing or not self._meaning_key(memory=False) or not getattr(self.app.store, "is_open", True):
                 return
@@ -920,8 +994,11 @@ class Assistant:
                     todo = self.memory.vectors_missing(key, 16) if key else []
                     if not todo and key:                 # the notes are done: the saved conversations
                         store, todo = self.talks, self.talks.vectors_missing(key, 16)
-                    if not todo and any_key:             # ... then the help and the transactions
+                    if not todo and any_key:             # ... then the help and, with the right to read them, the transactions
                         for lib, texts in ((self.help_vecs, self._help_texts), (self.tx_vecs, self._tx_texts)):
+                            if lib is self.tx_vecs and not self._tx_readable():
+                                lib_texts.pop(lib.kind, None)        # (switched off meanwhile: nothing of them is read or made)
+                                continue
                             if lib.kind not in lib_texts:
                                 lib_texts[lib.kind] = texts()
                             keys = lib.missing(any_key, lib_texts[lib.kind])[:16]
@@ -1070,6 +1147,12 @@ class Assistant:
         self._qvecs.clear()
         for lib in (self.help_vecs, self.tx_vecs):
             lib.drop_all()
+        self.talks.gone.clear()                          # the list of what was forgotten (nothing is left that it hides)
+        try:                                             # ... and a log of changes that was put aside
+            os.remove(os.path.join(self.app.store.data_dir, CHANGES_ASIDE))
+        except OSError:
+            pass
+        self._name_tries.clear()
         self.conv, self.undo, self.page = _new_conv(), {}, {}
         self.forgotten.clear()
         self.offered.clear()
@@ -1105,6 +1188,8 @@ class Assistant:
         ext = ext.lower()
         if ext not in RECEIPT_TYPES and ext not in TABLE_TYPES:
             raise ValueError(tr("s_ki_beleg_typ") % ", ".join(sorted(set(RECEIPT_TYPES) | set(TABLE_TYPES))))
+        if ext in RECEIPT_TYPES and getattr(self.app, "DEMO", False):       # the demo starts no helper at the Mac (text recognition)
+            raise ValueError(tr("s_demo_beleg_nicht"))
         if not data:
             raise ValueError(tr("s_leere_datei"))
         if len(data) > ATTACH_BYTES:
@@ -1115,6 +1200,12 @@ class Assistant:
             while len(self.files) > ATTACH_MAX:              # the oldest go first
                 self.files.pop(next(iter(self.files)))
         return {"id": fid, "name": name, "size": len(data)}
+
+    def _no_helper_in_demo(self) -> None:
+        """The demo starts (and builds) no helper at the Mac: a PDF or a picture is not read there -- attach refuses it, and
+        should one get this far all the same, it counts as not readable."""
+        if getattr(self.app, "DEMO", False):
+            raise receipt_text.TextUnavailable(tr("s_demo_beleg_nicht"))
 
     def _given(self, ids: Any, conv: dict) -> List[dict]:
         """The receipts given with a question: from now on they belong to its conversation (in no other one can they be read)."""
@@ -1155,6 +1246,7 @@ class Assistant:
                 if f["type"] in TABLE_TYPES.values():
                     f["book"] = table_text.read_xlsx(f["data"])
                 else:
+                    self._no_helper_in_demo()
                     book = pdf_tables.book(self.hooks["receipt_layout"](f["data"]))
                     f["book"] = book if any(sh["cells"] for sh in book["sheets"]) else {"unreadable": "no text found in it"}
             except table_text.Unreadable as e:
@@ -1170,6 +1262,7 @@ class Assistant:
         """What the receipt says (once per receipt): its text by macOS's text recognition, and what fixed rules find in it."""
         if "read" not in f:
             try:
+                self._no_helper_in_demo()
                 got = self.hooks["receipt_text"](f["data"])           # always in its own sandbox, whatever is set for the model
                 f["read"] = {"text": got["text"], "how": got["how"], "fields": receipt_text.read_fields(got["text"])}
             except receipt_text.TextUnavailable as e:
@@ -1187,35 +1280,6 @@ class Assistant:
         except OSError:
             return {}
         return {m.group(1): CHAT_FILE % m.group(1) for m in (_CHAT_NAME.fullmatch(n) for n in names) if m}
-
-    def _chats_move(self) -> None:
-        """Saved conversations of earlier versions (beside all other files of the data folder) into their folder -- moved as
-        they are (the same key opens them), each only where its place is free: nothing is overwritten or lost."""
-        data = self.app.store.data_dir
-        try:
-            old = [n for n in os.listdir(data) if _CHAT_NAME.fullmatch(n) or n in ("assistant-chats.json", "assistant-chats.json.enc")]
-        except OSError:
-            return
-        if not old:
-            return
-        moved = 0
-        try:
-            os.makedirs(os.path.join(data, CHAT_DIR), mode=0o700, exist_ok=True)
-        except OSError as e:
-            log.warning("Assistant: no folder for saved conversations (%s)", e)
-            return
-        for n in old:                                    # each on its own: one that fails does not hold up the others
-            dest = os.path.join(data, CHAT_DIR, n)
-            if os.path.exists(dest):
-                log.warning("Assistant: saved conversation %s is in both places -- the one in the folder counts, the other stays until all are deleted", n[:40])
-                continue
-            try:
-                os.replace(os.path.join(data, n), dest)
-                moved += 1
-            except OSError as e:
-                log.warning("Assistant: saved conversation not moved into its folder (%s)", e)
-        if moved:
-            log.info("Assistant: %d file(s) of saved conversations moved into their folder", moved)
 
     def chat_stats(self) -> dict:
         """How many saved conversations, how large together, how many not continued for a year -- and whether that is much."""
@@ -1277,11 +1341,15 @@ class Assistant:
             for p in (m.get("parts") or []) if isinstance(m, dict) else []:
                 if isinstance(p, dict) and p.get("k") == "entry" and p.get("state") == "done" and p.get("id") not in self.undo:
                     p["fixed"] = True
-                if isinstance(p, dict) and p.get("k") == "memory":
-                    if (p.get("state") == "ask" and p.get("id") not in self.offered) or (p.get("state") in ("remembered", "restored") and self.memory.get(str(p.get("id") or "")) is None):
-                        p["state"], p["text"], p["replaces"] = "undone", "", []      # forgotten since (or never answered): its text is not shown again
-                    elif any(self.memory.get(r) is None for r in p.get("rids") or []):
-                        p["replaces"] = []                   # what it replaced was forgotten since: not quoted again
+                if isinstance(p, dict) and p.get("k") == "memory":         # a note kept, offered or forgotten: saved by its id, its text from the memory as it is now
+                    mid = str(p.get("id") or "")
+                    note = self.memory.get(mid) if p.get("state") in ("remembered", "restored") else None
+                    offer = self.offered.get(mid) if p.get("state") == "ask" else None
+                    olds = [self.memory.get(str(r)) for r in p.get("rids") or []]
+                    p["text"] = note["text"] if note else str(offer["text"]) if offer else ""
+                    p["replaces"] = [o["text"] for o in olds] if (note or offer) and all(olds) else []      # what it replaced was forgotten since: not quoted again
+                    if p.get("state") in ("ask", "remembered", "restored") and not (note or offer):
+                        p["state"] = "undone"                # forgotten since (or never answered): nothing of it is shown again
                 if isinstance(p, dict) and p.get("k") == "basis":         # the notes it rested on, as they are now: what was forgotten since is not shown again
                     now = [(x, self.memory.get(str(x.get("id") or ""))) for x in p.get("notes") or [] if isinstance(x, dict)]
                     p["notes"] = [dict(x, text=n["text"]) for x, n in now if n is not None]
@@ -1305,10 +1373,11 @@ class Assistant:
         with self.chat_lock:
             if conv.get("deleted"):                      # deleted while it was being answered: stays deleted
                 return
+            _notes_by_id(turns)                          # (a conversation saved by a version before 3.17: no text of a note stays in its file)
             self.app.store.save(CHAT_FILE % conv["id"], rec)
             self.app.store.update(CHATS_FILE, lambda idx: idx.__setitem__(conv["id"], self._chat_meta(rec)), {})
             try:                                         # ... and into the search in conversations (from outside text: only the questions)
-                self.talks.put(conv["id"], now, turns, bool(rec.get("web") or rec.get("receipt_text")), lambda nid: self.memory.get(nid) is None)
+                self.talks.put(conv["id"], now, turns, bool(rec.get("web") or rec.get("receipt_text")), self._note_gone)
             except Exception as e:
                 log.warning("Assistant: conversation not put into the search (%s)", type(e).__name__)
         log.debug("Assistant: conversation saved (%d question(s))", self._chat_meta(rec)["questions"])
@@ -1327,6 +1396,7 @@ class Assistant:
         with self.chat_lock:
             rec = self._chat_read(cid)
             if rec is not None and mark(rec["turns"]):
+                _notes_by_id(rec["turns"])
                 self.app.store.save(CHAT_FILE % cid, rec)
 
     def delete_chats(self, cid: str = "", everything: bool = False, older_days: int = 0) -> int:
@@ -1345,12 +1415,6 @@ class Assistant:
                 self.app.store.delete(CHAT_FILE % c)
             if everything:
                 self.app.store.delete(CHATS_FILE)
-                try:                                     # what an earlier version left beside everything else (not moved): gone too
-                    for n in os.listdir(self.app.store.data_dir):
-                        if _CHAT_NAME.fullmatch(n) or n in ("assistant-chats.json", "assistant-chats.json.enc"):
-                            os.remove(os.path.join(self.app.store.data_dir, n))
-                except OSError as e:
-                    log.warning("Assistant: an old file of saved conversations not removed (%s)", e)
             elif gone:
                 self.app.store.update(CHATS_FILE, lambda idx: [idx.pop(c, None) for c in gone], {})
             try:                                         # gone from the search in conversations too
@@ -1385,13 +1449,13 @@ class Assistant:
         if what == "forget_all":                         # nothing of it comes back: neither what was just forgotten nor what waited for a click
             self.forgotten.clear()
             self.offered.clear()
-        if gone:
+        if gone:                                         # (never found again in the saved conversations: made sure before it went, _memory_forgetting)
             self._scrub(nid, str(note.get("text") or "")) if what == "forget" else self._scrub()
-            try:                                         # ... and never found again in the saved conversations
-                hidden = self.talks.forget([nid], [str(note.get("text") or "")]) if what == "forget" else self.talks.forget(every_note=True)
-                self._scrub_talks(hidden)
+        if what == "restore":                            # brought back: it counts again (what rests on it from now on is found)
+            try:
+                self.talks.gone.back([nid])
             except Exception as e:
-                log.warning("Assistant: a forgotten note not taken out of the search in conversations (%s)", type(e).__name__)
+                log.warning("Assistant: a note brought back still listed as forgotten (%s)", type(e).__name__)
         rec = {"id": secrets.token_hex(6), "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "kind": "memory", "what": what,
                "title": "" if gone else str(note.get("text") or "")[:memory_mod.TEXT_MAX], "sub": "", "reason": "", "state": "done",
                "chat": str(src.get("chat") or ""), "by": str(more.get("by") or ""), "note": nid, **({"count": int(more.get("count") or 0)} if what in ("forget_all", "backup") else {}),
@@ -1399,8 +1463,6 @@ class Assistant:
                "rows": [] if gone else [{"text": str(o)[:memory_mod.TEXT_MAX]} for o in more.get("old") or []]}
 
         def add(lst: list) -> None:
-            if not isinstance(lst, list):
-                raise TypeError("not a list")
             for r in lst if gone else []:
                 if isinstance(r, dict) and r.get("kind") == "memory":
                     if what == "forget_all" or r.get("note") == nid:
@@ -1408,12 +1470,43 @@ class Assistant:
                     elif nid in (r.get("olds") or []):       # it had been replaced: the entry of its replacement no longer quotes it
                         r["rows"], r["olds"] = [], []
             lst.append(rec)
-            del lst[:max(0, len(lst) - CHANGES_MAX)]
-        with self.chat_lock:
-            try:
-                self.app.store.update(CHANGES_FILE, add, [])
-            except Exception as e:
-                log.warning("Assistant: change of the memory not logged (%s)", type(e).__name__)
+        try:
+            self._log_write(self, add)
+        except Exception as e:
+            log.warning("Assistant: change of the memory not logged (%s)", type(e).__name__)
+
+    def _note_gone(self, nid: str) -> bool:
+        """Whether a note a turn of a conversation was made from or rested on is forgotten: not there any more and named by
+        the list of what was forgotten -- or, forgotten before that list was kept (before 3.17), not there while every file
+        of notes can be read. A note that is only missing because its file cannot be read just now is not forgotten: its
+        turns stay in the search in conversations."""
+        if self.memory.get(nid) is not None:
+            return False
+        return self.talks.gone.note(nid) or self.memory.whole()
+
+    def _memory_forgetting(self, notes: List[dict], everything: bool = False) -> None:
+        """Notes are about to be forgotten (memory.Memory.on_forget; everything: all of them): first what makes it last in the
+        search in saved conversations -- the turns they were made from or rested on and every turn that says one of them
+        again are hidden for good, in the conversations of the search and in those not in it yet (saved by an earlier
+        version, still being put in), written into the list of what was forgotten. Raises when that cannot be written:
+        then nothing is forgotten (the user is told, as with a file of notes that cannot be written)."""
+        if not notes and not everything:
+            return
+        files = self._chat_files()
+        known = self.talks.known()
+        if not files and not known:                      # no saved conversation: nothing to hide
+            return
+        ids, texts = [str(n.get("id") or "") for n in notes], [str(n.get("text") or "") for n in notes]
+        meta = {c["id"]: c for c in self.chats()} if files else {}
+        more: List[str] = []
+        for cid in sorted(files):                        # not in the search yet (or further on than it): looked at here
+            if cid in known and known[cid] >= str((meta.get(cid) or {}).get("updated") or "")[:10]:
+                continue
+            with self.chat_lock:
+                rec = self._chat_read(cid)
+            if rec is not None:
+                more += self.talks.matching(rec["turns"], bool(rec.get("web") or rec.get("receipt_text")), ids, texts, everything)
+        self._scrub_talks(self.talks.forget(ids, texts, every_note=everything, turns=more))
 
     def _profile(self, st: dict, conv: dict) -> str:
         """The notes every question is given (memory.profile), as a part of the system text -- built once for a conversation and
@@ -1591,13 +1684,8 @@ class Assistant:
             self.memory.pin(nid, body.get("pinned") is True)
         elif act == "delete":
             self.memory.delete(nid, by="settings")
-        elif act == "forget_all":
-            texts = [n["text"] for n in self.memory.active()]
+        elif act == "forget_all":                        # (what says one of them again -- also a replaced one -- is not found in saved conversations either: _memory_forgetting)
             self.memory.forget_all(by="settings")
-            try:                                         # what says one of them again: not found in saved conversations either
-                self._scrub_talks(self.talks.forget(texts=texts))
-            except Exception as e:
-                log.warning("Assistant: forgotten notes not taken out of the search in conversations (%s)", type(e).__name__)
         else:
             raise ValueError("unbekannt")
         log.info("Assistant: memory changed in the settings (%s)", act)       # never what a note says
@@ -1619,19 +1707,36 @@ class Assistant:
 
     @staticmethod
     def _rests_on(note: str, sources: List[str], share: float = 0.5) -> bool:
-        """Whether a note rests on what was said: that share of its words (by their beginnings) is there, and every number
-        in it (but a year around today: "next year" written out). A filter against what a model makes up -- not a proof: a
-        word left out ("nie") it cannot see. What it lets through stands under the answer, to be taken back."""
+        """Whether a note rests on what was said:
+          numbers   every number in it was said -- by its value (1.500 = 1500 = 1.500,00, not 15,00; 2,5 = 2.5, not 25). A
+                    year only if it was said, is today's, or is what "nächstes Jahr", "in 3 Jahren" means -- never written as
+                    an amount (2027 €); today's date goes.
+          words     at least half of its words that say something are there (by their beginnings and forms; share: more, for
+                    a note that must be the user's own words) -- also when the user asked to remember: one word in common
+                    is not enough;
+          nothing added   no three such words in a row that were not said (a sentence of its own slipped into the note).
+        A filter against what a model makes up -- not a proof: a word left out ("nie") it cannot see. Rather nothing noted
+        than something wrong; what it lets through stands under the answer, to be taken back."""
         said = " ".join(sources)
-        num = lambda t: {re.sub(r"[.,]", "", x) for x in re.findall(r"\d[\d.,]*\d|\d", t)}
-        year = date.today().year
-        if any(not (len(x) == 4 and year - 1 <= int(x) <= year + 5) for x in num(note) - num(said)):
-            return False
-        words = [w for w in web_search._fold(note).split() if len(w) >= 3 and not w.isdigit() and w not in memory_mod.STOP]
+        today = date.today()
+        have = _values(said) | _values("%s %s %d.%d.%d" % (today.strftime("%d.%m.%Y"), today.isoformat(), today.day, today.month, today.year))
+        years = _years_meant(said, today)
+        for m in _NUMBER.finditer(note):
+            if _value(m.group(0)) in have:
+                continue
+            a_year = re.fullmatch(r"(?:19|20)\d\d", m.group(0)) and int(m.group(0)) in years
+            if not a_year or _AS_AMOUNT.match(note, m.end()) or re.search(r"(?:€|EUR)\s*$", note[:m.start()]):
+                return False
+        fold = web_search._fold
+        words = [w for w in fold(note).split() if len(w) >= 3 and not w.isdigit() and w not in memory_mod.STOP and w not in _NOT_THE_USERS]
         if not words:
-            return bool(web_search._fold(note)) and web_search._fold(note) in web_search._fold(said)
-        have = {w[:5] for w in web_search._fold(said).split() if len(w) >= 3}
-        return sum(1 for w in words if w[:5] in have) >= max(1.0, len(words) * share)
+            return bool(fold(note)) and fold(note) in fold(said)
+        heard = [w for w in fold(said).split() if len(w) >= 3]
+        known = {w[:5] for w in heard} | {memory_mod.stem(w) for w in heard}
+        there = [w[:5] in known or memory_mod.stem(w) in known for w in words]
+        if sum(there) < max(1.0, len(words) * max(share, 0.5)):
+            return False
+        return not any(not any(there[i:i + 3]) for i in range(len(there) - 2))
 
     def _notice(self, job: Job, conv: dict, st: dict, said: List[dict], answer: str = "") -> List[str]:
         """The look at what the user said (said: [{"text", "pasted"}] -- usually one message, more when earlier looks were
@@ -1646,8 +1751,7 @@ class Assistant:
         pasted = any(m.get("pasted") for m in said)
         mine = [str(m.get("text") or "") for m in conv.get("turns") or [] if isinstance(m, dict) and m.get("role") == "user" and m.get("text")]
         earlier = [t[:NOTICE_EARLIER_TEXT] for t in mine if t not in [m.get("text") for m in said]][-NOTICE_EARLIER:]
-        asked = any(REMEMBER.search(t) for t in texts)
-        may_forget = any(FORGET.search(t) for t in texts)
+        may_forget = any(asks_to_forget(t) for t in texts)
         answer = answer[:NOTICE_ANSWER] if answer and means_the_answer(texts[-1]) else ""
         known = self._known(texts + earlier + ([answer] if answer else []), str(conv.get("id") or ""))
         ids = {n["id"]: n for n in known}
@@ -1673,8 +1777,8 @@ class Assistant:
         told: List[str] = []
         for n in notes:
             text = memory_mod.clean(n.get("text"))
-            # asked to remember: anything of what was said (or of the answer meant); noted by itself: at least half of it
-            if not text or len(text) > memory_mod.TEXT_MAX or not self._rests_on(text, texts + earlier + ([answer] if answer else []), 0.0 if asked else 0.5):
+            # of what was said (or of the answer meant): every number, at least half of its words, nothing added (_rests_on) -- also when asked to remember
+            if not text or len(text) > memory_mod.TEXT_MAX or not self._rests_on(text, texts + earlier + ([answer] if answer else [])):
                 continue
             if memory_mod.secret_problem(text):
                 if "ki_g_n_zugangsdaten" not in job.notices:
@@ -1711,7 +1815,10 @@ class Assistant:
             job.emit("memory", id=note["id"], state="remembered", text=note["text"], replaces=old, rids=rep, pasted=pasted)
             told.append("noted: %s" % note["text"])
             self._gave(conv, note["id"], note["text"], job)
+        may_go = self._may_go(conv, texts) if may_forget and forget else set()
         for nid in forget if may_forget else []:         # only when the user said so: talk alone never deletes a note
+            if nid not in may_go:                        # ... and only what they named ("Ok, vergiss die Frage" takes no note that has nothing to do with it)
+                continue
             try:
                 gone = self.memory.delete(nid, by="chat")
             except memory_mod.NoteError:
@@ -1726,47 +1833,73 @@ class Assistant:
             self.index_notes()
         return told
 
+    def _may_go(self, conv: dict, texts: List[str]) -> set:
+        """The notes a message that tells to forget may take: those the search finds for what it names (by words and
+        meaning: "Vergiss, dass ich umziehen will"); naming nothing ("Vergiss das wieder"), those noted with the answer just
+        before it in this conversation. The look names which of them -- never one outside."""
+        about = " ".join(FORGET.sub(" ", s) for t in texts for s in forget_said(t))
+        if memory_mod.terms(about):
+            return {n["id"] for n in self.memory.search(about, NOTICE_KNOWN, meaning=self._meaning_of(about))}
+        last = next((m for m in reversed(conv.get("turns") or []) if isinstance(m, dict) and m.get("role") == "assistant"), {})
+        return {str(p.get("id") or "") for p in last.get("parts") or [] if isinstance(p, dict) and p.get("k") == "memory" and p.get("state") in ("remembered", "restored")}
+
     def _name_notes(self, job: Job) -> None:
         """Notes typed in the settings (or back from a backup) whose names nobody has named: the model names them -- a separate
         look like _notice, given only those notes -- so that they stay out of an internet search too (memory.own_words). Its
-        answer is checked: only names that stand in their note (memory.set_names). Asked once per note."""
-        todo = self.memory.unnamed(NAMES_AT_ONCE)
+        answer is checked: only names that stand in their note (memory.set_names), and only a whole answer counts -- one
+        that was cut off, is no JSON or leaves a note out names nothing for that note: asked again with a later answer
+        (fewer notes at once; NAMES_TRIES times, then left until Kontor starts anew)."""
+        tries = self._name_tries
+        todo = [n for n in self.memory.unnamed(NAMES_AT_ONCE + len(tries)) if tries.get(n["id"], 0) < NAMES_TRIES]
+        todo = todo[:max(1, NAMES_AT_ONCE >> (2 * max([tries.get(n["id"], 0) for n in todo] or [0])))]       # (10, then 2, then 1: a long answer is cut off sooner)
         if not todo:
             return
         given = {"notes": [{"id": n["id"], "text": n["text"]} for n in todo]}
         body = {"messages": [{"role": "system", "content": NAMES_SYSTEM}, {"role": "user", "content": json.dumps(given, ensure_ascii=False)}],
                 "stream": True, "temperature": 0.0, "max_tokens": 800, "cache_prompt": True, "response_format": {"type": "json_object", "schema": NAMES_SCHEMA},
                 "reasoning_effort": "none", "chat_template_kwargs": {"enable_thinking": False}}
-        out = ""
+        out, cut = "", False
         for piece in self.ai.chat(body, job.cancel):
             ch = (piece.get("choices") or [{}])[0] if isinstance(piece.get("choices"), list) and piece.get("choices") else {}
+            if ch.get("finish_reason") == "length":
+                cut = True                               # it ran into its limit: the end is missing
             d = ch.get("delta") if isinstance(ch.get("delta"), dict) else {}
             if isinstance(d.get("content"), str):
                 out += d["content"]
         try:
-            got = json.loads(out[out.index("{"):out.rindex("}") + 1])
+            got = json.loads(out[out.index("{"):out.rindex("}") + 1]) if not cut else None
         except ValueError:
-            got = {}                                     # (a broken answer: they count as asked -- once per note, never again and again)
-        res: Dict[str, Tuple[str, List[str]]] = {n["id"]: (n["text"], []) for n in todo}
-        for x in got.get("notes") or [] if isinstance(got, dict) and isinstance(got.get("notes"), list) else []:
-            if isinstance(x, dict) and isinstance(x.get("id"), str) and x["id"] in res and isinstance(x.get("names"), list):
-                res[x["id"]] = (res[x["id"]][0], [str(y) for y in x["names"] if isinstance(y, str)][:12])
-        kept = self.memory.set_names(res)
-        log.info("Assistant: names of %d note(s) named (%d name(s))", len(todo), kept)
+            got = None
+        texts = {n["id"]: n["text"] for n in todo}
+        res: Dict[str, Tuple[str, List[str]]] = {}
+        for x in got["notes"] if isinstance(got, dict) and isinstance(got.get("notes"), list) else []:
+            if isinstance(x, dict) and isinstance(x.get("id"), str) and x["id"] in texts and isinstance(x.get("names"), list):
+                res[x["id"]] = (texts[x["id"]], [str(y) for y in x["names"] if isinstance(y, str)][:12])
+        for n in todo:
+            if n["id"] in res:
+                tries.pop(n["id"], None)
+            else:
+                tries[n["id"]] = tries.get(n["id"], 0) + 1
+        while len(tries) > 2000:
+            tries.pop(next(iter(tries)))
+        kept = self.memory.set_names(res) if res else 0
+        log.info("Assistant: names of %d of %d note(s) named (%d name(s))", len(res), len(todo), kept)
 
     def _chat_memory(self, cid: str, mid: str, state: str, new_id: str = "", text: str = "") -> None:
         """A note of a conversation taken back, brought back or kept after the click: so it shows there -- in the answer being
-        written, in the conversation in memory and in the saved one. What is not kept loses its text there too."""
+        written, in the conversation in memory and in the saved one (there by its id: its text is never in the file). What
+        is not kept loses its text in the answer being written too."""
         def mark(p: dict) -> bool:
             if not (isinstance(p, dict) and p.get("id") == mid and (p.get("k") == "memory" or p.get("type") == "memory")):
                 return False
             p["state"] = state
             if new_id:
                 p["id"] = new_id
-            if state in ("undone", "declined"):
-                p["text"], p["replaces"] = "", []
-            elif text:
-                p["text"] = text
+            if p.get("type") == "memory":                # (an event of the answer being written: the page shows it)
+                if state in ("undone", "declined"):
+                    p["text"], p["replaces"] = "", []
+                elif text:
+                    p["text"] = text
             return True
 
         def turns(lst: list) -> bool:
@@ -1781,6 +1914,7 @@ class Assistant:
         with self.chat_lock:
             rec = self._chat_read(cid)
             if rec is not None and turns(rec["turns"]):
+                _notes_by_id(rec["turns"])
                 self.app.store.save(CHAT_FILE % cid, rec)
 
     def memory_undo(self, mid: str) -> dict:
@@ -2379,13 +2513,18 @@ class Assistant:
             ps = [waiting[i] for i in dict.fromkeys(ids)]
             keys = [str(p_["key"]) for p_ in ps]
             total = round(sum(float(p_.get("amount") or 0) for p_ in ps), 2)
+            # each booking on the card (the page unfolds a long list), and each in the log: nothing is booked that was not shown
+            rows = {str(p_["key"]): {"label": p_.get("date"), "text": str(p_.get("text") or "")[:400], "new": _num(p_.get("amount")),
+                                     "account": str(p_.get("account_name") or "")[:120], "counterparty": str(p_.get("counterparty") or "")[:120]} for p_ in ps}
             card = {"kind": what, "title": ", ".join(dict.fromkeys(str(p_.get("account_name") or "") for p_ in ps))[:80],
-                    "count": len(ps), "sum": total,
-                    "rows": [{"label": p_.get("date"), "text": str(p_.get("text") or "")[:70], "new": _num(p_.get("amount"))} for p_ in ps[:8]]}
+                    "count": len(ps), "sum": total, "rows": list(rows.values())}
             if what == "book":
-                shown = {str(p_["key"]): float(p_.get("amount") or 0) for p_ in ps}
+                # booked only as it waits here: amount, day, counterparty, text (its account is part of the key)
+                shown = {str(p_["key"]): {"amount": round(float(p_.get("amount") or 0), 2), "date": str(p_.get("date") or ""),
+                                          "counterparty": str(p_.get("counterparty") or ""), "text": str(p_.get("text") or ""),
+                                          "category": str(p_.get("category") or "")} for p_ in ps}
 
-                def apply(shown=shown, job=job, total=total) -> dict:
+                def apply(shown=shown, job=job, rows=rows) -> dict:
                     if not job.click_local:
                         raise ValueError(tr("s_buchen_nur_von_diesem_mac"))
                     res = self.hooks["approve_bookings"](shown)
@@ -2395,7 +2534,7 @@ class Assistant:
                     note = " · ".join(x for x in ((tr("ki_e_noch_offen_1") if len(left) == 1 else tr("ki_e_noch_offen") % len(left)) if left else "",
                                                   str(res.get("error") or "")[:160] if left else "") if x)
                     return {"booked": len(booked), "still_waiting": len(left), "note": note,
-                            "log": {"count": len(booked), "sum": round(sum(shown[k] for k in booked), 2)}}
+                            "log": {"count": len(booked), "sum": round(sum(shown[k]["amount"] for k in booked), 2), "rows": [rows[k] for k in booked if k in rows]}}
                 out.append(self._propose(job, card, apply, None, right="book", also=("figures", "transactions"), reason=a.get("reason"),
                                          targets={"booking " + k for k in keys}))
             else:
@@ -2776,13 +2915,19 @@ class Assistant:
             raise ToolError("fields not readable (%s) -- see the tool's description" % type(e).__name__)
         if old is not None and json.dumps(old, sort_keys=True, default=str) == json.dumps(dict(new, **({"review": True} if old.get("review") else {})), sort_keys=True, default=str):
             raise ToolError("nothing changed")
+        # what the card shows: every setting that changes, before and after -- accounts by what they are, not by their names
+        # (another account of the same name is another account: named with its whole path). No row: nothing to propose
+        named = _account_names(ds.get("accounts") or [], refname)
+        rows = _rule_rows(section, old, new, named, area_names)
+        if not rows:
+            raise ToolError("nothing changed")
         pv = self.hooks["rule_preview"](section, old, new)
         if pv.get("errors"):
             raise ToolError("Kontor would not save it: " + " | ".join(pv["errors"][:4]))
-        title = {"loans": lambda x: str(x.get("name") or refname(x.get("loan_account"))), "companies": lambda x: str(area_names.get(str(x.get("area")), "")),
-                 "account_mirrors": lambda x: "%s ⇄ %s" % (refname(x.get("a")), refname(x.get("b")))}[section](new)
+        title = {"loans": lambda x: str(x.get("name") or named(x.get("loan_account"))[1]), "companies": lambda x: str(area_names.get(str(x.get("area")), "")),
+                 "account_mirrors": lambda x: "%s ⇄ %s" % (named(x.get("a"))[1], named(x.get("b"))[1])}[section](new)
         card = {"kind": "rule", "rule_kind": kind, "title": title[:80], "sub": tr("ki_e_regel_neu" if old is None else "ki_e_regel_geaendert"),
-                "rows": _rule_rows(section, old, new, refname, area_names), "count": pv.get("bookings", 0), "dropped": pv.get("dropped", 0)}
+                "rows": rows, "count": pv.get("bookings", 0), "dropped": pv.get("dropped", 0)}
         job, did = ctx["job"], {}
 
         def apply(section=section, old=old, new=new, did=did) -> dict:
@@ -2931,21 +3076,26 @@ class Assistant:
             keys = {memory_mod.Library.key(s["title"] + "\n" + "\n".join(s["parts"])): str(i) for i, s in enumerate(secs)}
             like = {keys[k]: c for k, c in self.help_vecs.likeness(mv[0], mv[1], keys).items()}
         ranked = dict((i, sc) for sc, i in memory_mod._rank(self._help_ix[1], query, "", set(), docs, like))
+        by_words = dict((i, sc) for sc, i in memory_mod._rank(self._help_ix[1], query, "", set(), docs, None)) if like else ranked
         top = max(ranked.values(), default=0.0) or 1.0
         scored = []
         for i, s in enumerate(secs):
             title = s["title"].lower()
             parts = [(sum(p.lower().count(w) for w in words), p) for p in s["parts"]]
-            score = sum(5 for w in words if w in title) + sum(min(n, 4) for n, _ in parts) + 6 * ranked.get(str(i), 0.0) / top
+            lit = sum(5 for w in words if w in title) + sum(min(n, 4) for n, _ in parts)
+            score = lit + 6 * ranked.get(str(i), 0.0) / top
             if score:
-                scored.append((score, s, parts))
+                scored.append((score, s, parts, not lit and not by_words.get(str(i))))
         scored.sort(key=lambda x: -x[0])
         out = []
-        for score, s, parts in scored[:4]:
+        for score, s, parts, meant in scored[:4]:
             best = sorted(parts, key=lambda x: -x[0])[:3] if any(n for n, _ in parts) else parts[:2]
             keep = [p for _, p in parts if any(p is b for _, b in best)]
-            out.append({"section": s["title"], "anchor": s["anchor"], "text": "\n".join(keep)[:1700]})
-        return {"found": out, "note": "open_page(page='help', anchor=...) shows a section"} if out else {"found": [], "note": "nothing in the help about that"}
+            out.append(dict({"section": s["title"], "anchor": s["anchor"], "text": "\n".join(keep)[:1700]}, **({"by_meaning": True} if meant else {})))
+        note = "open_page(page='help', anchor=...) shows a section"
+        if any(x.get("by_meaning") for x in out):
+            note += "; by_meaning: found by meaning, none of the words in it -- check that it really answers the question"
+        return {"found": out, "note": note} if out else {"found": [], "note": "nothing in the help about that"}
 
     def t_recall(self, a: dict, ctx: dict) -> Any:
         """The user's notes found by words (memory.search) -- what they said, never anything Kontor read elsewhere. What it
@@ -2969,7 +3119,7 @@ class Assistant:
         talks: List[dict] = []
         try:                                             # earlier saved conversations (not the one on screen: it is in view)
             here = str((ctx.get("conv") or {}).get("id") or "")
-            for c in self.talks.search(q, RECALL_TALKS, exclude=[here] if here else [], meaning=meaning):
+            for c in self.talks.search(q, RECALL_TALKS, exclude=[here] if here else [], meaning=meaning, gone=self._note_gone):
                 piece = dict({"day": c["day"], "question": c["question"][:600]}, **({"answer": c["answer"][:900]} if c["answer"] else {}))
                 size = len(json.dumps(piece, ensure_ascii=False)) + 2
                 if size > room:
@@ -3325,7 +3475,9 @@ class Assistant:
         job.decided = True
         rights = self.settings()["rights"]
         done, failed, left = [], [], []
-        for p in job.batch:
+        # in the order proposed -- but booking rules first: a booking approved on the same card is planned from the rules as
+        # they are after it (one of a rule just changed waits for the user's confirmation of that rule, it is not booked here)
+        for p in sorted(job.batch, key=lambda p: p["card"].get("kind") != "rule"):
             what = "%s: %s" % (p["card"].get("kind"), p["card"].get("title") or "")
             if p["id"] not in chosen or not all(rights.get(r) for r in p["rights"]):          # not approved (or a right switched off meanwhile)
                 job.emit("entry_state", id=p["id"], state="declined")
@@ -3590,6 +3742,13 @@ class Assistant:
         t0 = time.time()
         fetched: List[str] = []
         sent = [False]
+        try:                                             # no entry in the log, no fetch: written before anything goes out (as failed -- until it came back)
+            logged = self._log_web(p, reason, job.chat, "failed", must=True)
+        except Exception as e:
+            log.warning("Assistant: web access not made -- the log of changes cannot be written (%s)", type(e).__name__)
+            job.emit("web_item", id=wid, item=iid, state="failed", text=tr("ki_w_f_protokoll"))
+            told["error"] = "Not fetched, nothing was sent: Kontor could not write its log of lookups. Tell the user so -- do not try again."
+            return -1
 
         def fetch(req: dict) -> dict:                    # what is really fetched: only these addresses become links on the page
             if job.cancel.is_set():                      # stopped: no further request (GLEIF: four one after the other)
@@ -3609,14 +3768,14 @@ class Assistant:
         try:
             res, hits = web_search.run(p, fetch, x.get("key") or "")
         except Cancelled:
-            if sent[0]:                                  # stopped while it was on its way: it did go out -- said on the card, noted in the log
+            if sent[0]:                                  # stopped while it was on its way: it did go out -- said on the card, noted in the log (its entry stays)
                 job.emit("web_item", id=wid, item=iid, state="failed", text=tr("ki_w_f_stopp"))
-                self._log_web(p, reason, job.chat, "failed")
+            else:
+                self._log_web(p, reason, job.chat, "", entry=logged)       # stopped before anything went out: no entry
             raise
-        except Exception as e:                           # (anything unexpected: the card says it, the answer goes on)
+        except Exception as e:                           # (anything unexpected: the card says it, the answer goes on; its entry in the log stays as failed)
             code = e.code if isinstance(e, web_search.WebError) else "format"
             job.emit("web_item", id=wid, item=iid, state="failed", text=tr("ki_w_f_%s" % code))
-            self._log_web(p, reason, job.chat, "failed")
             log.info("Assistant: web access failed (%s, %s, %.1f s)", p["source"], code, time.time() - t0)
             told["error"] = "Nothing could be fetched: %s." % (e if isinstance(e, web_search.WebError) else type(e).__name__)
             return -1
@@ -3630,7 +3789,7 @@ class Assistant:
         n = len(res.get("results") or res.get("series") or res.get("cells") or res.get("series_groups") or []) if p["what"] == "search" else 1
         links = list(dict.fromkeys(([p["query"]] if p["what"] == "read" else []) + fetched + web_search.link_hits(p["source"], hits, res)))   # what was fetched, a page read over its source's interface, results of a source with fixed hosts
         job.emit("web_item", id=wid, item=iid, state="done", count=n, links=[str(u)[:500] for u in links[:20]])     # the page links these (and no other address)
-        self._log_web(p, reason, job.chat, "fetched", n)
+        self._log_web(p, reason, job.chat, "fetched", n, entry=logged)
         log.info("Assistant: web access approved and made (%s, %s, %.1f s)", p["source"], p["what"], time.time() - t0)
         told.update({k: v for k, v in res.items() if k not in ("untrusted_web_text", "fetched", "note", "source", "query", "read")})
         return n
@@ -3681,55 +3840,96 @@ class Assistant:
             res["note_more"] = "Only the first %d pages were taken: at most that many in one call." % web_search.READS_MAX
         return res
 
-    def _log_web(self, p: dict, reason: str, chat: str, state: str, count: int = 0) -> None:
+    def _log_web(self, p: dict, reason: str, chat: str, state: str, count: int = 0, entry: str = "", must: bool = False) -> str:
         """A fetch from the internet, for the log of changes and lookups: when, which source, which words or address, why --
-        never what came back."""
-        rec = {"id": secrets.token_hex(6), "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "kind": "web", "what": p["what"],
+        never what came back. Returns its entry's id. entry: the entry made before the fetch (its id) is brought up to date
+        instead -- state "": taken out again (nothing went out after all). must: raises when the entry cannot be written (no
+        entry, no fetch: _web_fetch); else a failure is only said in Kontor's log."""
+        rec = {"id": entry or secrets.token_hex(6), "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "kind": "web", "what": p["what"],
                "title": str(p["query"])[:300], "sub": "%s · %s" % (_web_label_of(p), tr("ki_w_stufe", p["tier"])), "reason": reason or "",
                "state": state, "chat": chat, **({"count": count} if count else {}), "rows": []}
 
-        def add(lst: list) -> None:
-            if not isinstance(lst, list):
-                raise TypeError("not a list")
-            lst.append(rec)
-            del lst[:max(0, len(lst) - CHANGES_MAX)]
-        with self.chat_lock:
-            try:
-                self.app.store.update(CHANGES_FILE, add, [])
-            except Exception as e:
-                log.warning("Assistant: lookup not logged (%s)", type(e).__name__)
+        def put(new: dict) -> Callable[[list], None]:
+            def change(lst: list) -> None:
+                old = next((r for r in lst if isinstance(r, dict) and r.get("id") == entry and r.get("kind") == "web"), None) if entry else None
+                if old is not None and not state:
+                    lst.remove(old)
+                elif old is not None:
+                    old.pop("count", None)
+                    old.update(state=state, **({"count": count} if count else {}))
+                elif state:
+                    lst.append(new)
+            return change
+        logs = [(self, rec, "lookup")]
         if self.peer is not None and self._web_store() is not self.app.store:      # from the demo: in the real Kontor's log too (it went out from this Mac)
-            rec = dict(rec, sub="%s · %s" % (tr("demo_badge"), rec["sub"]), chat="", demo=True)
-            with self.peer.chat_lock:
-                try:
-                    self.peer.app.store.update(CHANGES_FILE, add, [])
-                except Exception as e:
-                    log.warning("Assistant: lookup of the demo not logged (%s)", type(e).__name__)
+            logs.append((self.peer, dict(rec, sub="%s · %s" % (tr("demo_badge"), rec["sub"]), chat="", demo=True), "lookup of the demo"))
+        done = []
+        for who, new, what in logs:
+            try:
+                self._log_write(who, put(new))
+                done.append(who)
+            except Exception as e:
+                if must:                                 # not in every log it belongs in: in none (nothing goes out)
+                    for other in done:
+                        try:
+                            self._log_write(other, lambda lst: [lst.remove(r) for r in list(lst) if isinstance(r, dict) and r.get("id") == rec["id"]])
+                        except Exception:  # pragma: no cover - the first log wrote a moment ago
+                            pass
+                    raise
+                log.warning("Assistant: %s not logged (%s)", what, type(e).__name__)
+        return rec["id"]
 
     # -- the log of changes ----------------------------------------------------------------------------------------------------
+    @staticmethod
+    def _log_write(who: "Assistant", change: Callable[[list], None]) -> None:
+        """One change of the log of changes and lookups (who: this Kontor's assistant -- or the real Kontor's, for a lookup of
+        the demo): read, changed, cut to its length, written; raises when it cannot be written. A log that cannot be read
+        or is no list is put aside as it is (CHANGES_ASIDE) and a new one begun, so that what happens from now on is logged
+        again. Each kind keeps its own CHANGES_MAX entries -- changes, lookups, the memory: a research with many lookups
+        never pushes a change out of the log."""
+        store = who.app.store
+        with who.chat_lock:
+            try:
+                lst = store.load(CHANGES_FILE, [])
+                damaged = not isinstance(lst, list)
+            except StoreLocked:
+                raise
+            except StoreError:                           # not readable: the file is damaged -- unless nothing can be read right now (then that is the failure)
+                if store.encrypted and not selftest(store.master):
+                    raise
+                damaged = True
+            if damaged:
+                aside = os.path.join(store.data_dir, CHANGES_ASIDE)
+                os.makedirs(os.path.dirname(aside), mode=0o700, exist_ok=True)
+                os.replace(store.path(CHANGES_FILE), aside)
+                store.delete(CHANGES_FILE)               # (out of the store's own memory of it)
+                log.warning("Assistant: log of changes not readable -- put aside (%s), a new one begun", CHANGES_ASIDE)
+                lst = []
+            change(lst)
+            seen: Dict[str, int] = {}
+            keep = []
+            for r in reversed(lst):                      # of each kind the latest CHANGES_MAX
+                kind = r.get("kind") if isinstance(r, dict) and r.get("kind") in ("web", "memory") else "change"
+                seen[kind] = seen.get(kind, 0) + 1
+                if seen[kind] <= CHANGES_MAX:
+                    keep.append(r)
+            lst[:] = reversed(keep)
+            store.save(CHANGES_FILE, lst)
+
     def _log_change(self, p: dict, chat: str, note: str = "", extra: Optional[dict] = None) -> None:
-        """A change carried out, for the log: what, when, why -- its rows as the card showed them."""
+        """A change carried out, for the log: what, when, why -- its rows as the card showed them (a rule: each setting before
+        and after; bookings: each one booked -- extra["rows"]: only those of the card that were carried out)."""
         c = p["card"]
+        rows = (extra or {}).get("rows") if isinstance((extra or {}).get("rows"), list) else c.get("rows") or []
         rec = {"id": p["id"], "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "kind": c.get("kind"), "title": str(c.get("title") or "")[:160],
                "sub": str(c.get("sub") or "")[:160], "reason": c.get("reason") or "", "final": bool(c.get("final")), "state": "done", "chat": chat,
                **({"category": str(c["category"])[:160]} if c.get("category") else {}), **({"note": note} if note else {}),
                **{k: v for k, v in (extra or {}).items() if k in ("count", "sum") and isinstance(v, (int, float))},
-               "rows": [{k: r.get(k) for k in ("label", "old", "shown", "new", "text") if k in r} for r in (c.get("rows") or [])[:40] if isinstance(r, dict)]}
-
-        def add(lst: list) -> None:
-            if not isinstance(lst, list):
-                raise TypeError("not a list")
-            lst.append(rec)
-            del lst[:max(0, len(lst) - CHANGES_MAX)]
-        with self.chat_lock:
-            try:
-                self.app.store.update(CHANGES_FILE, add, [])
-            except Exception as e:                       # damaged (not readable, not a list): started anew, so that changes are logged again
-                log.warning("Assistant: log of changes not readable (%s), started anew", type(e).__name__)
-                try:
-                    self.app.store.save(CHANGES_FILE, [rec])
-                except Exception as e2:  # pragma: no cover - a full disk: the change stands, only its log entry is missing
-                    log.warning("Assistant: change not logged (%s)", type(e2).__name__)
+               "rows": [{k: r.get(k) for k in ("label", "old", "shown", "new", "text", "old_text", "new_text", "account", "counterparty") if k in r} for r in rows[:LOG_ROWS] if isinstance(r, dict)]}
+        try:
+            self._log_write(self, lambda lst: lst.append(rec))
+        except Exception as e:                           # a full disk: the change stands, only its log entry is missing
+            log.warning("Assistant: change not logged (%s)", type(e).__name__)
 
     def _change_state(self, aid: str, state: str, note: str = "") -> None:
         def mark(lst: list) -> None:
@@ -3739,8 +3939,7 @@ class Assistant:
                     if note:
                         r["undo_note"] = note
         try:
-            with self.chat_lock:
-                self.app.store.update(CHANGES_FILE, mark, [])
+            self._log_write(self, mark)
         except Exception as e:  # pragma: no cover
             log.warning("Assistant: log of changes not updated (%s)", type(e).__name__)
 
@@ -4019,8 +4218,7 @@ class Assistant:
         st = self.settings()
         if not st["enabled"]:
             raise ValueError(tr("s_ki_aus"))
-        if body.get("effort") in EFFORTS:               # for this question only (chosen in the panel); the setting stays
-            st["effort"] = body["effort"]
+        st["effort"] = body["effort"] if body.get("effort") in EFFORTS else "balanced"     # chosen in the panel, for this question
         quick = body.get("quick") is True                # a quick explanation (right click): at once, read-only, not in a conversation
         if quick:
             st = dict(st, effort="fast", rights=dict(st["rights"], enter_values=False, categorize=False, book=False, rules=False, receipts=False, navigate=False, internet=False))
@@ -4064,7 +4262,8 @@ class Assistant:
                     given = body.get("history") if isinstance(body.get("history"), list) else []
                     hist = [{"role": m.get("role"), "content": str(m.get("text") or "")[:6000]} for m in given[-12:]
                             if isinstance(m, dict) and m.get("role") in ("user", "assistant") and m.get("text")]
-                    self.conv = _new_conv(cid if _CHAT_ID.fullmatch(cid) else secrets.token_hex(8), hist, web=bool(hist) and body.get("web") is True)
+                    self.conv = _new_conv(cid if _CHAT_ID.fullmatch(cid) else secrets.token_hex(8), hist, web=bool(hist) and body.get("web") is True,
+                                          receipt_text=bool(hist) and body.get("receipt_text") is True)      # (a file's text was in it: a note from an answer waits for the click, other changes come unticked)
             job.chat, job.conv = self.conv["id"], self.conv
             if old is not None and old.conv is not None and old.conv is not self.conv and old.conv.get("unnoticed") and not old.conv.get("deleted"):
                 self.conv.setdefault("unnoticed", []).extend(old.conv.pop("unnoticed"))       # said in the conversation before, not looked at yet: with this one
@@ -4679,10 +4878,9 @@ def _shown(events: List[dict]) -> dict:
                 it.update({k: ev.get(k) for k in ("state", "count", "text", "links") if ev.get(k) is not None})
         elif t == "notice":
             parts.append({"k": "note", "key": str(ev.get("key") or "")[:60]})
-        elif t == "memory":                              # a note kept, offered or forgotten (what was forgotten is not written down again)
-            parts.append({"k": "memory", "id": str(ev.get("id") or ""), "state": str(ev.get("state") or ""), "pasted": bool(ev.get("pasted")),
-                          "text": "" if ev.get("state") == "forgotten" else str(ev.get("text") or "")[:memory_mod.TEXT_MAX],
-                          "replaces": [str(x)[:memory_mod.TEXT_MAX] for x in ev.get("replaces") or []][:20], "rids": [str(x)[:16] for x in ev.get("rids") or []][:20]})
+        elif t == "memory":                              # a note kept, offered or forgotten: by its id (its text comes from the memory when shown -- forgotten: gone)
+            parts.append({"k": "memory", "id": str(ev.get("id") or "")[:16], "state": str(ev.get("state") or "")[:20], "pasted": bool(ev.get("pasted")),
+                          "rids": [str(x)[:16] for x in ev.get("rids") or []][:20]})
         elif t == "basis":                               # the notes the answer rests on: by their ids (their texts come from the memory when shown -- forgotten: gone)
             parts.append({"k": "basis", "notes": [{"id": str(x.get("id") or "")[:16], "day": str(x.get("day") or "")[:10]} for x in ev.get("notes") or [] if isinstance(x, dict)][:BASIS_MAX]})
         elif t == "batch":
@@ -4711,6 +4909,16 @@ def _shown(events: List[dict]) -> dict:
     if m["state"] == "done" and "meta" not in m and not any(p["k"] in ("text", "entry") for p in parts):
         m["state"] = "stopped"                           # ended without an answer (Kontor stopped it)
     return m
+
+
+def _notes_by_id(turns: Any) -> None:
+    """The notes named in a conversation's record, by their ids alone: no text of a note is written into its file (a record
+    saved by a version before 3.17 held it -- gone with its next save)."""
+    for m in turns if isinstance(turns, list) else []:
+        for p in (m.get("parts") or []) if isinstance(m, dict) else []:
+            if isinstance(p, dict) and p.get("k") == "memory":
+                p.pop("text", None)
+                p.pop("replaces", None)
 
 
 def _listed(v: Any) -> list:
@@ -4807,25 +5015,58 @@ def _group_name(z: dict) -> str:
     return name if name and name != _row_name(z) and name != z.get("row") else ""
 
 
-def _rule_rows(section: str, old: Optional[dict], new: dict, refname, area_names: dict) -> List[dict]:
-    """What a rule card shows: each setting that is new or changed, before and after, in words."""
+def _account_names(accounts: List[dict], refname) -> Callable[[Any], Tuple[str, str]]:
+    """For a rule card: an account a rule names ("id | name", or its path or name) -> (which account it is, how the card names
+    it): its name -- or, where another account has the same name, its whole path (area / position / account), so that a
+    change to the account of the same name elsewhere is seen. An account Kontor does not know: as the rule has it."""
+    accts = [a for a in accounts if isinstance(a, dict) and not a.get("group")]
+    count: Dict[str, int] = {}
+    for a in accts:
+        count[str(a.get("name"))] = count.get(str(a.get("name")), 0) + 1
+    by_id = {str(a.get("uuid")): a for a in accts}
+
+    def named(ref: Any) -> Tuple[str, str]:
+        raw = str(ref or "").strip()
+        a = by_id.get(raw.split("|", 1)[0].strip())
+        if a is None:
+            hits = [x for x in accts if raw and raw in (x.get("path"), x.get("name"))]
+            a = hits[0] if len(hits) == 1 else None
+        if a is None:
+            return raw, refname(ref)
+        return str(a.get("uuid")), str(a.get("path") or a.get("name")) if count[str(a.get("name"))] > 1 else str(a.get("name"))
+    return named
+
+
+def _rule_rows(section: str, old: Optional[dict], new: dict, named: Callable[[Any], Tuple[str, str]], area_names: dict) -> List[dict]:
+    """What a rule card shows: each setting that is new or changed, before and after, in words -- an account by which account
+    it is (named: its id and the name shown), so that another one of the same name is a change."""
     def get(d: Optional[dict], path: str):
         v: Any = d or {}
         for k in path.split("."):
             v = v.get(k) if isinstance(v, dict) else None
         return v
 
+    def ident(path: str, v: Any) -> Any:
+        """What a setting is, where its text alone does not say it (accounts: which ones)."""
+        if v in (None, "", []):
+            return ""
+        if path in ("loan_account", "participation", "a", "b"):
+            return named(v)[0]
+        if path == "source_accounts":
+            return [named(x)[0] for x in v]
+        return None
+
     def text(path: str, v: Any) -> str:
         if v in (None, "", []):
             return ""
         if path in ("loan_account", "participation", "a", "b"):
-            return refname(v)
+            return named(v)[1]
         if path == "source_accounts":
-            return ", ".join(refname(x) for x in v)
+            return ", ".join(named(x)[1] for x in v)
         if path == "area":
             return str(area_names.get(str(v), v))
         if path == "interest.rate_list":
-            return "; ".join("%s: %s %%" % (r.get("from_date"), str(r.get("percent")).replace(".", ",")) for r in v if isinstance(r, dict))
+            return "; ".join("%s: %s %%" % (r.get("from_date"), _percent_text(r.get("percent"))) for r in v if isinstance(r, dict))
         if isinstance(v, bool):
             return tr("ja") if v else tr("nein")
         if isinstance(v, list):
@@ -4844,11 +5085,20 @@ def _rule_rows(section: str, old: Optional[dict], new: dict, refname, area_names
     out = []
     dflt = {"kind": "liability", "active": True}       # what a rule is without the field (as rules.py reads it)
     for path, label in fields:
-        o = text(path, get(old, path) if get(old, path) is not None or old is None else dflt.get(path))
-        n = text(path, get(new, path) if get(new, path) is not None else dflt.get(path) if old is not None else None)
-        if n != o:
+        vo = get(old, path) if get(old, path) is not None or old is None else dflt.get(path)
+        vn = get(new, path) if get(new, path) is not None else dflt.get(path) if old is not None else None
+        o, n = text(path, vo), text(path, vn)
+        if n != o or ident(path, vo) != ident(path, vn):
             out.append({"label": tr(label), "old_text": o, "new_text": n})
     return out[:16]
+
+
+def _percent_text(v: Any) -> str:
+    """A rate as the card writes it: 3 and 3.0 alike (a page sends 3.0 back as 3)."""
+    try:
+        return str(float(v)).replace(".", ",")
+    except (TypeError, ValueError):
+        return str(v)
 
 
 def _booking_id(p: dict) -> str:

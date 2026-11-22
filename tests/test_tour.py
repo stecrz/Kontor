@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, os.path.dirname(__file__))
 from test_e2e import MockBridge, config_for_test, patch_today, reset_mock  # noqa: E402
 from service import App, make_handler  # noqa: E402
-from storage import Store, load_or_create_master_key  # noqa: E402
+from fixtures import new_store  # noqa: E402
 
 PASSWORD = "sehr-geheimes-passwort"
 # (device, appearance, language); English last: it switches the language of the service
@@ -150,8 +150,7 @@ class PageTourTest(unittest.TestCase):
     def setUpClass(cls):
         _playwright()
         cls.dir = tempfile.mkdtemp(prefix="kontor-tour-")
-        key, src = load_or_create_master_key(cls.dir)
-        store = Store(cls.dir, key, src); store.save("config.json", config_for_test(os.path.join(cls.dir, "Belege")))
+        store = new_store(cls.dir); store.save("config.json", config_for_test(os.path.join(cls.dir, "Belege")))
         reset_mock(); patch_today()
         cls.app = App(store, cls.dir, bridge_factory=MockBridge)
         cls.app.do_run(False, True)

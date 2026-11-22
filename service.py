@@ -60,7 +60,7 @@ from model import Ledger, Tx, accounts_from_export, ledger_from_bytes, ledger_to
 from report import ROLES, account_balance_series, account_months, account_roles, apply_plan, role_label
 from model import marks_in
 from rules import Seen, TAG_RE, bkey as rules_bkey, plan_all as plan_rules
-from storage import Store, StoreError, StoreLocked, _names as storage_names
+from storage import DAMAGED as storage_damaged, Store, StoreDamaged, StoreError, StoreLocked, _names as storage_names, _remove as _remove_quietly
 from excel import Sheet, workbook
 from i18n import tr
 
@@ -241,18 +241,21 @@ def assistant_unfile_receipt(app: "App", did: dict) -> None:
     e = next((x for x in bl.entries() if x.get("id") == did.get("id")), None)
     if e is None or any(e.get(k) != did.get(k) for k in ("tx_id", "note", "path", "name", "date", "amount")):
         raise ValueError(tr("s_ki_inzwischen_geaendert"))
-    bl.remove(e["id"], delete_file=True)
+    bl.remove(e["id"], delete_file=True, like={k: did.get(k) for k in ("tx_id", "note", "path", "name", "date", "amount")})      # exactly this one
     log.info("Receipt filed by the assistant taken back")
 
 
-def approve_bookings(app: "App", shown: Dict[str, float]) -> dict:
-    """Waiting bookings approved (the assistant's card, after the click at the Mac): a live run that books only these, each only if
-    its amount is still the one shown (else nothing is booked). Returns which were booked and which still wait, or why not."""
+def approve_bookings(app: "App", shown: Dict[str, dict]) -> dict:
+    """Waiting bookings approved (the assistant's card, after the click at the Mac): a live run -- MoneyMoney read and the rules
+    planned afresh, as they are now -- that books only these, each only if it waits exactly as the card showed it (amount, day,
+    counterparty, text; core.not_as_shown) and Kontor does not want it checked first (the rule it comes from is the assistant's
+    and not confirmed by you yet): the others are left, with the reason. Returns which were booked and which still wait, and why."""
     if app.running:
         return {"booked": [], "left": list(shown), "error": tr("s_ein_abgleich_laeuft_bereits")}
     marks = lambda: {rules_bkey(b["account_id"], b["mark"]) for b in kontor_bookings(app.ledger)}
     before = marks()                                     # in MoneyMoney already (e.g. approved on the page meanwhile): not this click's
-    res = app.do_run(False, True, approve={k: {"shown": round(float(v), 2)} for k, v in shown.items()})
+    res = app.do_run(False, True, approve={k: {"shown": dict(v)} for k, v in shown.items()})
+    refused = res.pop("_refused", None) or {}            # not (or no longer) as shown, or to be checked first: why
     if res.get("status") == "error" and app.ledger is not None:
         try:                                             # something failed after writing (the run's state not kept): MoneyMoney read again
             if app.refresh_ledger()[0] is None:
@@ -263,14 +266,52 @@ def approve_bookings(app: "App", shown: Dict[str, float]) -> dict:
     # booked by this click: what carries its mark in MoneyMoney now and did not before -- whatever the run says (it may stop midway)
     after = marks()
     booked = [k for k in shown if k in after and k not in before]
+    left = [k for k in shown if k not in booked]
     warn = [w for w in res.get("warnings") or [] if w]
-    if len(booked) == len(shown):
+    reasons = list(dict.fromkeys(str(refused[k]) for k in left if k in refused))
+    if not left:
         why = None
+    elif reasons and all(k in refused for k in left):    # left on purpose: each reason once
+        why = " · ".join(reasons)[:300]
     elif tr("s_betraege_geaendert") in warn:            # an amount changed meanwhile: nothing booked
         why = tr("s_betraege_geaendert")
     else:                                                # MoneyMoney stopped, the rules failed, ...: said as the run says it
-        why = res.get("text") or res.get("error") or (warn[0] if warn else None) or tr("s_ki_nicht_gebucht")
-    return {"booked": booked, "left": [k for k in shown if k not in booked], "error": why}
+        why = " · ".join(reasons + [res.get("text") or res.get("error") or (warn[0] if warn else None) or tr("s_ki_nicht_gebucht")])[:300]
+    return {"booked": booked, "left": left, "error": why}
+
+
+def replan_waiting(app: "App", later: bool = True) -> None:
+    """The approval list planned again from the rules as they are now and the state last read (nothing is written to
+    MoneyMoney): after a rule was saved -- by you or by the assistant's card -- the list is never the old one. A booking of a
+    rule not confirmed carries its note, one that changed its new text, one no longer needed is gone. During a sync (planned
+    from the rules as they were): once more when it has ended."""
+    if app.ledger is None or not app.store.is_open:
+        return
+    if app.running and later:
+        def after() -> None:
+            for _ in range(3000):
+                if not app.running:
+                    break
+                time.sleep(0.2)
+            try:
+                replan_waiting(app, later=False)
+            except Exception as e:                       # (signed out or ended meanwhile: the next sync plans it)
+                log.info("Approval list not planned again after the sync (%s)", type(e).__name__)
+        threading.Thread(target=after, name="kontor-replan", daemon=True).start()
+    config, ledger = app.config, app.ledger
+
+    def upd(cur: dict) -> None:
+        lr = cur.get("last_run")
+        if not isinstance(lr, dict):
+            return                                       # no check yet: the first one plans it
+        try:
+            rows = plan_pending(ledger, config, cur, date.today())
+        except Exception as e:                           # the list stays as it was; the next check plans it again
+            log.warning("Approval list not recalculated after the rules changed (%s)", type(e).__name__)
+            return
+        if rows or lr.get("dry_run"):                    # (nothing waits and nothing did: the last run's bookings stay listed)
+            lr["proposals"], lr["dry_run"] = rows, bool(rows)
+    app.store.update("state.json", upd, {})
 
 
 RULE_SECTIONS = ("loans", "companies", "account_mirrors")
@@ -477,9 +518,15 @@ def balance_lookup(ledger: Ledger) -> Callable[[str, date, bool], Optional[float
     return balance_at
 
 
+DAMAGED_KEY = "set_aside"                     # in state.json: files that did not read at a sign-in and were set aside (App.unlock)
+TID_RE = re.compile(r"[0-9a-f]{32}")          # the id of the sign-in page's Touch ID request (random, made by the page)
+TID_LOCK = threading.Lock()
+
+
 class App:
     DEMO = False                                     # the demo (DemoApp): made-up data, its own sign-in, only some requests
     _demo_box: Optional["DemoBox"] = None
+    _tid: Optional[dict] = None                      # the sign-in page's Touch ID request running (touchid_begin; under TID_LOCK)
 
     @property
     def demo_box(self) -> Optional["DemoBox"]:
@@ -570,11 +617,21 @@ class App:
         with self._open_lock:
             if self.store.is_open:
                 return
-            self.store.unlock(key, "login" if how in ("password", "touchid") else how)
+            self.store.unlock(key)
             try:
-                cfg = merged_config(self.store.load("config.json", {}) or {})
-                st = self.store.load("state.json", {}) or {}
-            except Exception:                            # the settings do not read: locked again, nothing runs on defaults
+                # the settings, the state, the password record (the sign-in reads it right after): all read before any is set
+                # aside -- what may pass (the disk, openssl) raises here, with nothing changed
+                docs = {n: self.store.read_record(n) for n in ("config.json", "state.json", "auth.json")}
+                aside = [self._set_aside(n) for n, (_, why) in docs.items() if why]
+                raw, st = docs["config.json"][0], docs["state.json"][0]
+                if docs["config.json"][1]:               # the settings are gone: the factory's -- with the access as this service was started
+                    raw = {"ui": access.start_settings(self.data_dir)}       # (port, address, certificate, Touch ID, lock)
+                cfg = merged_config(raw)
+                if aside:
+                    if docs["config.json"][1]:
+                        self.store.save("config.json", cfg)
+                    self.store.update("state.json", lambda cur: cur.__setitem__(DAMAGED_KEY, (cur.get(DAMAGED_KEY) or []) + aside), {})
+            except Exception:                            # the settings cannot be read right now (the disk, openssl): locked again, nothing runs on defaults
                 self.store.close()
                 raise
             self.config = cfg
@@ -586,6 +643,29 @@ class App:
             access.write_start(self.data_dir, self.config)
             log.info("Data opened after sign-in (%s) -- schedule and auto bookings go on", how)
 
+    def _set_aside(self, name: str) -> dict:
+        """The settings, the state or the password record after a sign-in, damaged for good -- the key is right (access checked
+        it), yet the file does not open with it or holds no such record: it must not lock you out for ever. Set aside under
+        another name (never deleted, never changed) and noted (the page says so until you restore a backup or close the
+        notice); Kontor goes on without it -- the factory settings (nothing books by itself with them), an empty state. Never a
+        new key, never a new setup."""
+        kept = self.store.set_aside(name)
+        log.error("%s does not read after the sign-in -- set aside as %s, going on without it", name, kept)
+        return {"file": name, "kept": kept or "", "time": datetime.now().strftime("%Y-%m-%d %H:%M")}
+
+    def settings_lost(self) -> bool:
+        """The settings did not read and were set aside, and no backup was restored since: where your receipts and linked
+        documents lie is not known for sure."""
+        try:
+            return any(x.get("file") == "config.json" for x in self.set_aside()) or bool(self.store.read_record("config.json")[1])
+        except Exception:                                # neither the state nor the settings read right now: not known
+            return True
+
+    def set_aside(self) -> List[dict]:
+        """The files that did not read at a sign-in and were set aside (unlock), until the note is closed or a backup restored."""
+        st = self.store.load_shared("state.json", {}) or {}
+        return [x for x in (st.get(DAMAGED_KEY) or [] if isinstance(st, dict) else []) if isinstance(x, dict)]
+
     def password_set(self) -> bool:
         if not self.store.encrypted:                     # without encryption (tests only): Kontor's password in its record
             return bool(self.auth_record())
@@ -595,43 +675,76 @@ class App:
         """Kontor's password: opens the data key (the store is locked) or checks it against the key in use."""
         if self.store.is_open:
             return self.check_password(password)
-        got = access.unlock_password(self.data_dir, password, finish=True)
+        got = access.unlock_password(self.data_dir, password)
         if got is None:
             return False
         self.unlock(*got)
-        self.key_complete(password)
+        self.sync_touchid()
         return True
 
-    def sign_in_touchid(self) -> bool:
+    def sign_in_touchid(self, demo: bool = False, tid: str = "") -> bool:
         """Touch ID (at the Mac): with the key in memory the macOS window confirms you; otherwise the Secure Enclave's key opens
-        the data key -- after Touch ID or the Mac's password."""
+        the data key -- after Touch ID or the Mac's password. The window says what the sign-in opens (demo: the demo, else your
+        data); tid: the sign-in page's request (its window closes when the page switches, touchid_switch)."""
+        reason = tr(auth.TOUCHID_REASON_DEMO if demo else auth.TOUCHID_REASON)
         if self.store.is_open:
-            return auth.touchid_verify()
-        got = access.unlock_touchid(self.data_dir)
+            return auth.touchid_verify(reason, tid=tid)
+        got = access.unlock_touchid(self.data_dir, reason, tid=tid)
         if got is None:
             return False
         self.unlock(*got)
-        self.key_complete(None)
+        self.sync_touchid()
         return True
+
+    # The sign-in page's Touch ID request: one at a time. What it opens (the demo or your data) is decided once its window is
+    # confirmed -- as the page then wants it, not as it was when the window opened (the page may switch meanwhile).
+    def touchid_begin(self, tid: str, demo: bool) -> dict:
+        """A new request (tid: its random id; demo: what it opens) -- the one running from now on. One before it is replaced:
+        it opens nothing, whatever its window gets, and its window closes."""
+        req = {"id": tid, "demo": demo, "switched": False, "over": False}
+        with TID_LOCK:
+            old, self._tid = self._tid, req
+            if old is not None:
+                old["over"] = True
+        if old is not None:
+            auth.touchid_close(old["id"])
+        return req
+
+    def touchid_switch(self, tid: str, demo: bool) -> bool:
+        """The page switched between the demo and your data while its request runs: confirmed, the request opens that now -- its
+        window (which says the other) closes, the page asks anew. Only with the id of the request running."""
+        with TID_LOCK:
+            req = self._tid
+            if req is None or not TID_RE.fullmatch(tid or "") or not secrets.compare_digest(req["id"], tid):
+                return False
+            if req["demo"] == demo:
+                return True
+            req["demo"], req["switched"] = demo, True
+        auth.touchid_close(tid)
+        return True
+
+    def touchid_cancel(self) -> None:
+        """Signed in another way (the password): the request running opens nothing, its window closes."""
+        with TID_LOCK:
+            old, self._tid = self._tid, None
+            if old is not None:
+                old["over"] = True
+        if old is not None:
+            auth.touchid_close(old["id"])
+
+    def touchid_end(self, req: dict) -> Tuple[bool, bool, bool]:
+        """The request answered: (what it opens now -- the demo?, switched meanwhile, replaced) -- no longer the one running."""
+        with TID_LOCK:
+            if self._tid is req:
+                self._tid = None
+            return req["demo"], req["switched"], req["over"]
 
     def check_password(self, password: str) -> bool:
         """Kontor's password while signed in (something weighty): does it open the key in use?"""
         if not self.store.encrypted:
             rec = self.auth_record()
             return bool(rec) and auth.verify_password(password, rec)
-        ok = access.verify_password(self.data_dir, self.store.master, password)
-        if ok and access.state(self.data_dir) != "login":
-            self.key_complete(password)                  # from before: the key file follows with this password
-        return ok
-
-    def key_complete(self, password: Optional[str]) -> None:
-        """After a sign-in: the key file (from before: made with the password), the key from before gone once the key file
-        provably opens every file, Touch ID's entry as switched. A failure is logged -- the next sign-in tries again."""
-        try:
-            access.complete(self.data_dir, self.store.master, password)
-        except Exception:
-            log.exception("Key file not completed -- tried again at the next sign-in")
-        self.sync_touchid()
+        return access.verify_password(self.data_dir, self.store.master, password)
 
     def sync_touchid(self) -> None:
         if not self.store.encrypted or not self.store.is_open:
@@ -642,14 +755,14 @@ class App:
             log.exception("Touch ID's key not set up")
 
     def first_password(self, password: str) -> None:
-        """The first password (setup): the key in use -- or from before, or a new one where no data are -- wrapped with it."""
+        """The first password (setup): the key in use -- or a new one where no data are -- wrapped with it."""
         if self.store.encrypted or not self.store.is_open:
             key = access.setup_key(self.data_dir, self.store)
             opened = not self.store.is_open
             if opened:
                 self.unlock(key, "password")
             try:
-                if not access.complete(self.data_dir, key, password) and access.state(self.data_dir) != "login":
+                if not access.complete(self.data_dir, key, password):
                     raise StoreError(tr("s_schluessel_passt_nicht"))
             except Exception:
                 if opened:                               # a key kept nowhere: not used (nothing was written with it)
@@ -695,7 +808,8 @@ class App:
                     "restore_bookings": lambda keys: restore_bookings(self, keys),
                     "assign": lambda ids, path, local: assistant_assign_categories(self, ids, path, local),
                     "unassign": lambda ids, path, local: unassign_categories(self, ids, path, local),
-                    "own_data": lambda: (self.ledger, self.config, self.dataset(), self.umsatzliste(), self.categories_raw),        # what never goes out in an internet search
+                    "own_data": lambda: (self.ledger, self.config, self.dataset(), self.umsatzliste(), self.categories_raw,          # what never goes out in an internet search
+                                         {k: (self.store.load("state.json", {}) or {}).get(k) for k in ("last_run", "history")}),         # (bookings waiting, balances typed in)
                     "bookings": lambda: {"made": kontor_bookings(self.ledger)[:500], "held_back": len(self.config.get("not_book") or []),
                                          "runs": list(reversed((self.store.load("state.json", {}) or {}).get("history_source", [])))[:6]}})
             return self._assistant
@@ -717,6 +831,8 @@ class App:
         self.config = new
         self.store.save("config.json", self.config)
         log.info("Configuration saved (changed: %s)", ", ".join(changed) or "nothing")
+        if any(k in changed for k in RULE_SECTIONS):          # a rule saved: what waits for approval is planned again from it
+            replan_waiting(self)
         access.write_start(self.data_dir, self.config)          # what the service needs before the next sign-in
         if "ui" in changed:
             self.sync_touchid()
@@ -1694,7 +1810,7 @@ class App:
     def uninstall(self, program: bool = True) -> dict:
         """Removes Kontor from this Mac: the background service (its launchd file), Kontor's own files in the data folder
         (settings, data, log, certificate -- nothing else that may lie there; the folder itself only when empty then), the data
-        key in the keychain (only when no encrypted file is left: a key is never deleted while data it opens remain) and, if
+        key (only when no encrypted file is left: a key is never deleted while data it opens remain) and, if
         wanted, the program folder. The receipts folder and linked documents stay, also inside the program folder; MoneyMoney is
         not touched. Refuses folders that do not look like Kontor's."""
         from receipts import _canon
@@ -1712,6 +1828,8 @@ class App:
         if under(cprog, cdata):                       # the program inside the data folder: only together with the program
             if not program:
                 return {"error": tr("s_deinstall_ordner_unklar") % prog}
+        if program and self.settings_lost():          # receipts or linked documents may lie in the program folder -- which, is not known
+            return {"error": tr("s_deinstall_einstellungen_fehlen")}
         done, left = [], []
         plist = updates.plist_path()
         if os.path.exists(plist):
@@ -1752,8 +1870,7 @@ class App:
         return [os.path.expanduser(p) for p in out if isinstance(p, str)]
 
     def uninstall_key(self) -> bool:
-        """Deletes Kontor's data key: the key file and a key from before (only Kontor's own keychain entries, master.key) --
-        only when no encrypted file is left. True when no key is left."""
+        """Deletes Kontor's data key (the key file) -- only when no encrypted file is left. True when no key is left."""
         return access.remove_keys(self.data_dir)
 
     def uninstall_finish(self) -> None:
@@ -1786,7 +1903,7 @@ class App:
             "moneymoney": {"running": is_running(), "locked": self.moneymoney_gesperrt(max_age=3.0 if frisch else 45.0), "from_cache": self.ledger_from_cache,
                            "as_of": self.ledger_time.strftime("%Y-%m-%d %H:%M") if self.ledger_time else None,
                            "bank_fetch": self.bankabruf(), "gaps": len(st.get("gaps") or []), "problem_text": st.get("sync_problem"), "history": st.get("mm_history_src")},
-            "storage": {"encrypted": self.store.encrypted, "key_source": access.key_source(self.data_dir, self.store), "folder": self.data_dir,
+            "storage": {"encrypted": self.store.encrypted, "folder": self.data_dir,
                         "program_folder": self.program_dir, "touchid_unlock": access.touchid_ready(self.data_dir)},
             "receipts": {"folder": os.path.expanduser(bcfg.get("folder") or "~/Documents/Kontor-Belege")},
             "dry_run": self.config.get("dry_run", True),
@@ -1803,6 +1920,11 @@ class App:
 # ---------------------------------------------------------------------------
 # Demo: Kontor with made-up data, to show it to someone without showing your data
 # ---------------------------------------------------------------------------
+def _demo_no_helper(data: bytes) -> dict:
+    """The demo starts (and builds) no helper at the Mac: a PDF or a picture is not read there (text recognition)."""
+    raise receipt_text.TextUnavailable(tr("s_demo_beleg_nicht"))
+
+
 DEMO_LOCK = threading.Lock()
 DEMO_PREFIX = "kontor-demo-"           # its data folder: a temporary folder of its own, gone at its end (or at the next start)
 # What the demo answers -- everything else is refused (a new request is refused there until it is put into one of these lists;
@@ -1823,11 +1945,11 @@ DEMO_POST = frozenset(("/api/lock", "/api/config", "/api/rules/preview", "/api/c
                        "/api/assistant/listen", "/api/assistant/transcribe", "/api/assistant/attach", "/api/assistant/chats/delete", "/api/assistant/undo",
                        "/api/assistant/memory/undo", "/api/assistant/memory/offer"))          # (notes of the demo's own memory, under its answers)
 # ... and what it never answers (named, so that a request is never in no list at all)
-DEMO_NEVER = frozenset(("/api/setup", "/api/login", "/api/touchid", "/api/password", "/api/offline/verifier", "/api/log",
+DEMO_NEVER = frozenset(("/api/setup", "/api/login", "/api/touchid", "/api/touchid/switch", "/api/password", "/api/offline/verifier", "/api/log",
                         "/api/remote", "/api/remote/acl", "/api/timemachine", "/api/timemachine-exclusion", "/api/diagnostics", "/api/update/status",
                         "/api/update/check", "/api/update/install", "/api/language", "/api/securities/lookup", "/api/history/mm-status",
                         "/api/history/mm-import", "/api/history/mm-reveal", "/api/file/choose", "/api/file/open", "/api/file/reveal",
-                        "/api/backup", "/api/backup/restore", "/api/reset", "/api/uninstall", "/api/key/renew", "/api/mac-app/open",
+                        "/api/backup", "/api/backup/restore", "/api/reset", "/api/uninstall", "/api/key/renew", "/api/storage/notice", "/api/mac-app/open",
                         "/api/package/import", "/api/receipts/link", "/api/receipts/open", "/api/receipts/export",
                         "/api/assistant/settings", "/api/assistant/check", "/api/assistant/runtime/install", "/api/assistant/runtime/remove",
                         "/api/assistant/model/files", "/api/assistant/model/download", "/api/assistant/model/cancel", "/api/assistant/model/delete",
@@ -1860,7 +1982,7 @@ class DemoApp(App):
     def __init__(self, real: "App", box: "DemoBox"):
         d = tempfile.mkdtemp(prefix=DEMO_PREFIX)
         try:
-            store = Store(d, secrets.token_bytes(32), "demo")
+            store = Store(d, secrets.token_bytes(32))
             std = sorted(categorize.STANDARD)                   # MoneyMoney's default category: named as in the real one
             self.world = demo.World(date.today(), std[0] if len(std) == 1 else "Unkategorisiert")
             store.save("config.json", demo.config(self.world, real.config, os.path.join(d, "Belege")))
@@ -1890,6 +2012,14 @@ class DemoApp(App):
         self.config = dict(self.config, assistant=copy.deepcopy(rc.get("assistant") or {}), ui=ui)
         self.sessions.set_idle(int(ui.get("lock_minutes", 15)))
 
+    @property
+    def assistant(self) -> "assistant_mod.Assistant":
+        """Its own assistant -- it starts (and builds) no helper at the Mac: a PDF or a picture is not read in the demo."""
+        a = App.assistant.fget(self)
+        if a.hooks.get("receipt_text") is not _demo_no_helper:
+            a.hooks.update(receipt_text=_demo_no_helper, receipt_layout=_demo_no_helper)
+        return a
+
     def assistant_peer(self) -> Optional["assistant_mod.Assistant"]:
         """The real Kontor's assistant: its model is the one the demo's assistant asks (assistant.Assistant) -- none while nobody
         signed in to the real Kontor since its start (its settings are data): the demo's assistant is then switched off."""
@@ -1914,6 +2044,16 @@ class DemoApp(App):
             else:
                 cfg.pop(k, None)
         super().save_config(cfg)
+
+    def shown(self, obj: Any) -> Any:
+        """An answer of the demo: its settings go out without the assistant's (they are the real Kontor's -- the model set up
+        on this Mac, the websites trusted there; the demo's pages need none of it)."""
+        bare = lambda c: {k: v for k, v in c.items() if k != "assistant"}
+        if isinstance(obj, dict) and isinstance(obj.get("config"), dict):
+            return dict(obj, config=bare(obj["config"]))
+        if obj is self.config or (isinstance(obj, dict) and "assistant" in obj and "ui" in obj):     # (also settings saved meanwhile)
+            return bare(obj)
+        return obj
 
     def tailscale(self, fresh: bool = False) -> dict:
         return {"found": False}
@@ -2070,6 +2210,8 @@ def account_history(app: "App", uuid: str, quelle: Optional[str] = None) -> dict
     explizit = next((v for ref, v in vcfg.items() if ref.split("|")[0].strip() == uuid and v in ("transactions", "balances")), None)
     ledger = app.ledger
     acc = ledger.accounts.get(uuid) if ledger is not None else None
+    if acc is not None and acc.group:                    # a group of accounts has no balances of its own
+        raise ValueError(tr("s_verlauf_nur_konto"))
     ds = app.store.load_shared("dataset.json", {}) or {}
     kinfo = next((x for x in ds.get("accounts", []) if x.get("uuid") == uuid), {})
     depot = bool(acc.portfolio) if acc else bool(kinfo.get("depot"))
@@ -2613,6 +2755,8 @@ def make_handler(app: App):
                              "img-src 'self' data: blob:; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'")
 
         def _json(self, code: int, obj: Any, extra: Optional[Dict[str, str]] = None) -> None:
+            if app.DEMO:
+                obj = app.shown(obj)                     # its settings without the assistant's setup (model, trusted websites)
             body = json.dumps(obj, ensure_ascii=False, default=str).encode("utf-8")
             self._raw(code, body, "application/json; charset=utf-8", extra)
 
@@ -2755,11 +2899,10 @@ def make_handler(app: App):
                 return self._json(200, {"signed_in": s is not None, "csrf": s["csrf"] if s else None,
                                         "setup_needed": setup and self._loopback(),
                                         "setup_local_only": setup and not self._loopback(),
-                                        # after a restart Touch ID opens the data only with its key in the key file (not from before)
+                                        # after a restart Touch ID opens the data only with its key in the key file
                                         "touchid": auth.touchid_available() and self._loopback() and app.touchid_on() and not setup
                                                    and (not locked or access.touchid_ready(app.data_dir)),
                                         "waiting": locked and not setup,           # the schedule and auto bookings wait for a sign-in
-                                        "switch": locked and access.state(app.data_dir) == "legacy",     # from before: once with the password
                                         "touchid_available": auth.touchid_available() and self._loopback(),
                                         "locked_seconds": app.sessions.locked(self._remote()), "local": self._loopback(), "instance": app.instance,
                                         "offline_copy": app.offline_copy(), "version": version()})
@@ -2779,7 +2922,9 @@ def make_handler(app: App):
 
         def _get(self, path: str, q: dict, s: dict):
             if path == "/api/status":
-                return self._json(200, app.status(self._loopback(), frisch=q.get("fresh") == "1"))
+                st = app.status(self._loopback(), frisch=q.get("fresh") == "1")
+                st["storage"]["damaged"] = app.set_aside()       # files that did not read at a sign-in and were set aside (App.unlock)
+                return self._json(200, st)
             if path == "/api/dataset":
                 return self._json(200, app.dataset())
             if path == "/api/config":
@@ -3026,7 +3171,7 @@ def make_handler(app: App):
             u = urlparse(self.path)
             if not u.path.startswith("/api/") or not self._origin_ok() or not self._host_ok():
                 return self._json(403, {"error": "rejected"})
-            before = u.path in ("/api/setup", "/api/login", "/api/touchid")           # the ways in: a password, nothing large
+            before = u.path in ("/api/setup", "/api/login", "/api/touchid", "/api/touchid/switch")      # the ways in: a password, nothing large
             if app.DEMO and not demo_allowed("POST", u.path):     # (the ways in too: the demo knows no password)
                 return self._refuse_unread(403, tr("s_demo_nicht_moeglich"))
             if not before and self._session() is None:          # not signed in: nothing is read (a small body only, so the answer arrives)
@@ -3086,9 +3231,11 @@ def make_handler(app: App):
                 if ok is None:
                     return self._json(429, {"error": tr("s_zu_viele_fehlversuche") % app.sessions.locked(remote)})
                 if ok:
+                    app.touchid_cancel()                 # a Touch ID window still open: it opens nothing any more
                     rec = app.auth_record()
-                    if not rec.get("offline"):
-                        app.store.save("auth.json", auth.with_offline(rec, str(body.get("password", ""))))
+                    if not rec.get("offline"):                # (none: it was damaged and set aside at this sign-in)
+                        pw = str(body.get("password", ""))
+                        app.store.save("auth.json", auth.with_offline(rec if rec.get("alg") else auth.hash_password(pw), pw))
                         log.info("Offline verifier for the iPhone view created")
                     log.info("Login with password from %s", remote)
                     return self._signed_in(remote, "password", body)
@@ -3101,18 +3248,39 @@ def make_handler(app: App):
                     return self._json(403, {"error": tr("s_touch_id_ist_in_den")})
                 if not app.password_set():
                     return self._json(403, {"error": tr("s_zuerst_ein_passwort_festlegen")})
+                tid = str(body.get("tid") or "")
+                # the one request running (a newer one replaces it); the demo or your data: decided once it is confirmed, as
+                # the page wants it then (/api/touchid/switch) -- its window says what it opens
+                req = app.touchid_begin(tid if TID_RE.fullmatch(tid) else secrets.token_hex(16), body.get("demo") is True)
                 try:
-                    ok = app.sign_in_touchid()
+                    ok = app.sign_in_touchid(req["demo"], req["id"])
                 except StoreError as e:
                     log.error("Sign-in with Touch ID: %s", e)
                     return self._json(409, {"error": str(e)})
                 except Exception as e:
                     log.exception("Sign-in with Touch ID")
                     return self._json(500, {"error": tr("s_interner_fehler_s") % e})
-                if ok:
-                    log.info("Login with Touch ID")
-                    return self._signed_in(remote, "touchid", body)
-                return self._json(401, {"error": tr("s_touch_id_nicht_bestaetigt")})
+                finally:
+                    demo, switched, over = app.touchid_end(req)
+                if over:                                  # replaced (a newer request, a sign-in with the password): opens nothing
+                    return self._json(409, {"error": tr("s_touch_id_nicht_bestaetigt"), "superseded": True})
+                if switched:                              # switched meanwhile -- before or after its window was confirmed: nothing signs in,
+                    return self._json(409, {"switched": True})      # the page asks anew, for what it wants now (its window says so)
+                if not ok:
+                    return self._json(401, {"error": tr("s_touch_id_nicht_bestaetigt")})
+                if demo and app.sessions.get(self._cookie(), touch=False) is not None:
+                    return self._json(409, {"error": tr("s_demo_angemeldet"), "signed_in": True})      # (switched to the demo meanwhile)
+                log.info("Login with Touch ID")
+                return self._signed_in(remote, "touchid", {"demo": demo})
+            if u.path == "/api/touchid/switch":
+                # the sign-in page switched between the demo and your data while its Touch ID window is open: only at this Mac,
+                # only with the id of the request running; nothing signs in here
+                if not self._loopback():
+                    return self._json(403, {"error": tr("s_touch_id_nur_an_diesem")})
+                if not isinstance(body.get("demo"), bool) or not app.touchid_switch(str(body.get("tid") or ""), body["demo"]):
+                    return self._json(409, {"error": tr("s_touchid_keine_abfrage")})
+                log.info("Touch ID: the sign-in switched to %s", "the demo" if body["demo"] else "the real Kontor")
+                return self._json(200, {"ok": True})
 
             s = self._session()
             if s is None:
@@ -3148,6 +3316,19 @@ def make_handler(app: App):
 
         def _is_local(self, s: dict) -> bool:
             return auth.is_loopback(s.get("remote", "")) and self._loopback()
+
+        def _update_install(self, body: dict, s: dict):
+            """Installs an update: only at the Mac; with findings in the new version's files it waits -- installed only with your
+            approval for exactly those files, as the page sent it (update_guard keeps this function as a whole)."""
+            if not self._is_local(s):
+                return self._json(403, {"error": tr("s_updates_nur_von_diesem_mac")})
+            res = updates.install((app.config.get("updates") or {}).get("repo") or "stecrz/Kontor", restart=True, approved=str(body.get("approved") or ""))
+            if res.get("ok"):
+                log.info("Update installed: %s", res.get("version"))
+            elif res.get("needs_approval"):                    # shown under Updates (and marked in the menu) until you decide
+                app.update_info = dict(app.update_info or {"current": version(), "newer": True, "error": None, "notes": "", "date": "", "source": "main"},
+                                       available=res.get("version"), newer=True, review=res.get("review"))
+            return self._json(200, res)
 
         def _assistant_ok(self, s: dict) -> bool:
             """The assistant answers at the Mac -- and from other devices only with its right "remote"."""
@@ -3272,6 +3453,9 @@ def make_handler(app: App):
                 cfg = body.get("config")
                 if not isinstance(cfg, dict):
                     return self._json(400, {"error": tr("s_config_fehlt")})
+                if app.DEMO:                              # nothing beyond the demo is taken or even tried (no port asked for, no address checked):
+                    cfg = {k: v for k, v in cfg.items() if k not in DEMO_FIXED}         # port, address, certificate, access ... as they are
+                    cfg.update({k: copy.deepcopy(app.config[k]) for k in DEMO_FIXED if k in app.config})
                 cfg = dict(cfg, not_book=copy.deepcopy(app.config.get("not_book") or []),     # changed only under Auto bookings
                            assistant=copy.deepcopy(app.config.get("assistant") or {}))       # and only under Einstellungen -> Assistent
                 b = (cfg.get("ui") or {}).get("bind", "127.0.0.1") or "127.0.0.1"
@@ -3485,16 +3669,7 @@ def make_handler(app: App):
                 app.update_checked = time.time()
                 return self._json(200, {"info": app.update_info, "version": version()})
             if path == "/api/update/install":
-                if not local:
-                    return self._json(403, {"error": tr("s_updates_nur_von_diesem_mac")})
-                # with findings in the new version's files it waits: installed only with your approval for exactly those files
-                res = updates.install((app.config.get("updates") or {}).get("repo") or "stecrz/Kontor", restart=True, approved=str(body.get("approved") or ""))
-                if res.get("ok"):
-                    log.info("Update installed: %s", res.get("version"))
-                elif res.get("needs_approval"):                # shown under Updates (and marked in the menu) until you decide
-                    app.update_info = dict(app.update_info or {"current": version(), "newer": True, "error": None, "notes": "", "date": "", "source": "main"},
-                                           available=res.get("version"), newer=True, review=res.get("review"))
-                return self._json(200, res)
+                return self._update_install(body, s)
             if path == "/api/history":
                 return self._json(200, self._historie_set(body))
             if path == "/api/history/import":
@@ -3563,25 +3738,8 @@ def make_handler(app: App):
                 if not isinstance(sich, dict) or not sich.get("kontor_backup") or not isinstance(sich.get("config"), dict):
                     raise ValueError(tr("s_keine_kontor_sicherung"))
                 check_file_version(sich)
-                teile = []
-                app.save_config(restored_config(app.config, sich["config"], app.data_dir))
-                teile.append(tr("s_teil_einstellungen"))
-                if isinstance(sich.get("plan"), dict):
-                    app.store.save("plan.json", sich["plan"]); teile.append(tr("s_teil_planung"))
-                if isinstance(sich.get("categories"), dict):
-                    categorize.save(app.store, sich["categories"]); teile.append(tr("s_teil_kategorien"))
-                def _merge(st):
-                    if isinstance(sich.get("history"), dict):
-                        st["history"] = sich["history"]
-                    if isinstance(sich.get("snapshots"), dict) and sich["snapshots"]:
-                        st["snapshots"] = {**sich["snapshots"], **(st.get("snapshots") or {})}
-                app.store.update("state.json", _merge, {})
-                if isinstance(sich.get("history"), dict):
-                    teile.append(tr("s_teil_verlauf"))
-                if isinstance(sich.get("receipts"), dict) and sich["receipts"] and body.get("with_receipts", True):
-                    app.store.save("receipts.json", sich["receipts"]); teile.append(tr("s_teil_belegindex"))
-                if isinstance(sich.get("mm_history_src"), dict) and sich["mm_history_src"]:
-                    app.store.save(MM_HISTORY_FILE, sich["mm_history_src"]); teile.append(tr("s_teil_mm_verlauf"))
+                listened = (app.config.get("ui") or {}).get("bind") or "127.0.0.1"
+                teile = restore_backup(app, sich, bool(body.get("with_receipts", True)))      # checked first, then written: whole or not at all
                 try:                                     # notes not there yet are added (marked as from a backup, told to the log of changes); nothing there is changed
                     if app.assistant.memory.merge(sich.get("memory")):
                         teile.append(tr("s_teil_gedaechtnis"))
@@ -3589,7 +3747,12 @@ def make_handler(app: App):
                     log.warning("Backup: the assistant's memory not restored in full (%s)", type(e).__name__)
                 log.info("Backup restored: %s", ", ".join(teile))
                 ok, err = app.rebuild_report(wait=bool(body.get("wait")), grund="backup restored") if app.ledger is not None else (False, None)
-                return self._json(200, {"ok": True, "parts": teile, "report": ok, "config": app.config})
+                narrower = ((app.config.get("ui") or {}).get("bind") or "127.0.0.1") != listened      # the backup says: only this Mac
+                if narrower:
+                    log.info("Backup: access only at this Mac from now on -- restarting")
+                    app.request_restart()
+                return self._json(200, {"ok": True, "parts": teile, "report": ok, "config": app.config, "restart": narrower and app.restart_allowed,
+                                        "port": int((app.config.get("ui") or {}).get("port") or 8765), "instance": app.instance})
             if path == "/api/reset":
                 if not local:
                     return self._json(403, {"error": tr("s_zuruecksetzen_nur_von_diesem_mac")})
@@ -3600,6 +3763,9 @@ def make_handler(app: App):
                     dateien.append("auth.json")
                 for name in dateien:
                     app.store.delete(name)
+                for name in storage_names(app.data_dir):             # ... and a file once set aside as damaged (App.unlock)
+                    if storage_damaged in name:
+                        _remove_quietly(os.path.join(app.data_dir, name))
                 app.assistant.delete_chats(everything=True)          # the saved conversations go with the data
                 app.store.delete(assistant_mod.CHANGES_FILE)         # ... and the log of what the assistant changed
                 app.assistant.memory.forget_all(quiet=True)          # ... and what it was told to remember
@@ -3636,7 +3802,13 @@ def make_handler(app: App):
                     n = access.renew(app.store, str(body.get("password") or ""))
                 except StoreError as e:
                     return self._json(409, {"error": str(e)})
-                return self._json(200, {"ok": True, "files": n})
+                return self._json(200, {"ok": True, "files": n, "left": list(app.store.renew_left)})      # left: no key opens them (damaged) -- they stay as they are
+            if path == "/api/storage/notice":
+                # "a file was damaged and set aside" (App.unlock): read and closed -- the file itself stays where it is
+                if not local:
+                    return self._json(403, {"error": tr("s_nur_von_diesem_mac_aus")})
+                app.store.update("state.json", lambda cur: cur.pop(DAMAGED_KEY, None), {})
+                return self._json(200, {"ok": True})
             if path == "/api/remote":
                 return self._remote_setup(body, local)
             if path == "/api/mac-app/open":                 # Kontor's own app on this Mac: built if needed, then opened
@@ -3764,6 +3936,9 @@ def make_handler(app: App):
             return self._json(404, {"error": "unknown"})
 
         def _historie_set(self, body: dict) -> dict:
+            acc = app.ledger.accounts.get(str(body.get("account") or "")) if app.ledger is not None else None
+            if acc is not None and acc.group:            # a group of accounts has no balances of its own
+                raise ValueError(tr("s_verlauf_nur_konto"))
             return account_history_set(app, body)
 
         def _historie_import(self, body: dict) -> dict:
@@ -3999,6 +4174,7 @@ def make_handler(app: App):
 
 
 BACKUP_ITER = 600_000
+BACKUP_ITER_MIN, BACKUP_ITER_MAX = 100_000, 5_000_000      # what a backup to restore may name (backup_decrypt)
 
 
 def port_free(port: int) -> bool:
@@ -4050,41 +4226,54 @@ def backup_decrypt(wrapper: dict, password: str) -> dict:
     from storage import StoreError, decrypt
     try:
         salt = base64.b64decode(wrapper["salt"]); blob = base64.b64decode(wrapper["data"])
-        key = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, int(wrapper.get("iter") or BACKUP_ITER), 32)
+        rounds = wrapper.get("iter") or BACKUP_ITER
+        # a file names its own rounds: only a whole number in a range Kontor ever wrote (or might soon) -- a made-up one must
+        # not keep the service computing for minutes
+        if isinstance(rounds, bool) or not isinstance(rounds, int) or not BACKUP_ITER_MIN <= rounds <= BACKUP_ITER_MAX:
+            raise ValueError("iter")
+        key = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, rounds, 32)
         return json.loads(decrypt(key, blob).decode("utf-8"))
-    except (KeyError, ValueError, StoreError, binascii.Error):
+    except (KeyError, TypeError, ValueError, StoreError, binascii.Error):
         raise ValueError(tr("s_sicherung_passwort_falsch"))
 
 
-def restored_config(current: dict, incoming: dict, data_dir: str = "") -> dict:
+def restored_config(current: dict, incoming: dict) -> dict:
     """The settings of a backup as they are taken over. A backup is a file -- it may be old, changed or not Kontor's own (one
     without a password is read too, and a password proves nothing: anyone can encrypt a file). What decides whose code runs
-    on this Mac, where Kontor listens, which address it shows for the iPhone and whether it writes into MoneyMoney without
-    asking never comes from the file alone:
+    on this Mac, who gets in and how, and whether Kontor writes into MoneyMoney without asking never comes from the file alone:
     - where updates come from stays as set here (as with a settings package: an update is installed with one click);
-    - an address Kontor may not listen on and a sub-folder pattern that leads out of the receipts folder are not taken over;
-    - a certificate only if it is one of Kontor's own (both files exist in the data folder's tls) -- its name is the address
-      shown for the iPhone; otherwise the one set here stays;
-    - booking without asking and the reference written into MoneyMoney's comments can be switched off by a backup, never on
-      (on: as set here -- you switch them on yourself);
+    - the access never gets wider: the address Kontor listens on, port and certificate stay as set on this Mac, and so do
+      Touch ID, "from elsewhere only look", the minutes until it locks and the offline copy -- unless the backup is stricter
+      (Touch ID off, only look on, fewer minutes, no offline copy, only this Mac: 127.0.0.1), then the stricter one holds;
+    - a sub-folder pattern that leads out of the receipts folder is not taken over;
+    - booking without asking can be switched off by a backup, never on (on: as set here -- you switch it on yourself). Where
+      it stays on, nothing of the backup books by itself: a booking rule that is not here already as it is in the file waits
+      for your confirmation under Konten & Regeln (marked for review, like a rule from the assistant), and what you set
+      here not to be booked stays so;
     - the assistant's rights stay as they are here."""
     cfg = dict(copy.deepcopy(incoming), assistant=copy.deepcopy(current.get("assistant") or {}))
     upd = dict(cfg["updates"]) if isinstance(cfg.get("updates"), dict) else {}
     upd["repo"] = (current.get("updates") or {}).get("repo") or "stecrz/Kontor"
     cfg["updates"] = upd
     old_ui = current.get("ui") if isinstance(current.get("ui"), dict) else {}
-    if isinstance(cfg.get("ui"), dict):
-        ui = cfg["ui"]
-        bind = ui.get("bind")
-        if bind and not (isinstance(bind, str) and bind_allowed(bind.strip())):
-            ui["bind"] = old_ui.get("bind") or "127.0.0.1"
-        tls = os.path.realpath(os.path.join(data_dir, "tls")) if data_dir else ""
-        own = lambda p: bool(tls) and isinstance(p, str) and os.path.realpath(p).startswith(tls + os.sep) and os.path.isfile(p)
-        if (ui.get("tls_cert") or ui.get("tls_key")) and not (own(ui.get("tls_cert")) and own(ui.get("tls_key"))):
-            for k in ("tls_cert", "tls_key"):
-                ui.pop(k, None)
-                if old_ui.get(k):
-                    ui[k] = old_ui[k]
+    ui = dict(cfg["ui"]) if isinstance(cfg.get("ui"), dict) else {}
+    said = dict(ui)                                      # what the file says about the access
+    for k in ("bind", "port", "tls_cert", "tls_key", "touchid", "remote_read_only", "offline_copy", "lock_minutes"):
+        ui.pop(k, None)
+        if k in old_ui:
+            ui[k] = copy.deepcopy(old_ui[k])
+    if said.get("bind") == "127.0.0.1" and (old_ui.get("bind") or "127.0.0.1") != "127.0.0.1":
+        ui["bind"] = "127.0.0.1"                         # only this Mac
+    if said.get("touchid") is False:
+        ui["touchid"] = False
+    if said.get("remote_read_only", True) is True and old_ui.get("remote_read_only", True) is not True:
+        ui["remote_read_only"] = True                    # (not named in the file: only look, as from the factory)
+    if said.get("offline_copy") is False:
+        ui["offline_copy"] = False
+    here, there = old_ui.get("lock_minutes", 15), said.get("lock_minutes")
+    if isinstance(there, int) and not isinstance(there, bool) and 1 <= there and (not isinstance(here, int) or isinstance(here, bool) or there < here):
+        ui["lock_minutes"] = there
+    cfg["ui"] = ui
     old_r = current.get("receipts") if isinstance(current.get("receipts"), dict) else {}
     if isinstance(cfg.get("receipts"), dict):
         sub = cfg["receipts"].get("subfolder")
@@ -4092,16 +4281,239 @@ def restored_config(current: dict, incoming: dict, data_dir: str = "") -> dict:
             cfg["receipts"]["subfolder"] = old_r.get("subfolder") or "{year}"
     if cfg.get("dry_run", True) is not True and current.get("dry_run", True):       # anything but a clear "ask first" (also a missing or odd value)
         cfg["dry_run"] = True
+    if cfg.get("dry_run", True) is not True:             # booking without asking stays on: nothing of the file books by itself
+        for sec in RULE_SECTIONS:
+            have = {_rule_form(sec, r) for r in current.get(sec) or [] if isinstance(r, dict) and r.get("review") is not True}    # (one still to confirm here stays so)
+            for r in cfg.get(sec) if isinstance(cfg.get(sec), list) else []:
+                if isinstance(r, dict) and _rule_form(sec, r) not in have:
+                    r["review"] = True
+        mine = [x for x in current.get("not_book") or [] if isinstance(x, dict)]
+        keys = {x.get("key") for x in mine}
+        cfg["not_book"] = [x for x in (cfg.get("not_book") if isinstance(cfg.get("not_book"), list) else [])
+                           if isinstance(x, dict) and x.get("key") not in keys] + copy.deepcopy(mine)
     return cfg
+
+
+# A backup read back: every part in the form the program reads it in, checked before anything is written (backup_parts) --
+# a part in another form would stop the pages that read it (a sync, the transactions, the receipts) until a reset.
+_MONTH_KEY = re.compile(r"(?:19|20|21)\d\d-(?:0[1-9]|1[0-2])")
+
+
+def _is_num(v: Any) -> bool:
+    return isinstance(v, (int, float)) and not isinstance(v, bool) and v == v and abs(v) != float("inf")
+
+
+def _reads_as_num(v: Any, comma: bool = False) -> bool:
+    """A number -- or a text the program reads as one (float(...))."""
+    if isinstance(v, str):
+        try:
+            return _is_num(float(v.replace(",", ".") if comma else v))
+        except ValueError:
+            return False
+    return _is_num(v)
+
+
+def _opt(v: Any, kind: type) -> bool:
+    return v is None or isinstance(v, kind)
+
+
+def _per_month(v: Any, empty: bool = True) -> bool:
+    """{month: balance} (a month without one: None, where the program expects that)."""
+    return isinstance(v, dict) and all(isinstance(k, str) and _MONTH_KEY.fullmatch(k) is not None and (_is_num(x) or (empty and x is None))
+                                       for k, x in v.items())
+
+
+def _plan_form(plan: Any) -> bool:
+    """plan.json as report.apply_plan and the planning page read it."""
+    if not isinstance(plan, dict) or not _opt(plan.get("areas"), dict):
+        return False
+    for a in (plan.get("areas") or {}).values():
+        if not isinstance(a, dict):
+            return False
+        h = a.get("horizon_months")                      # (int(...): a number, or a text of digits)
+        if "horizon_months" in a and not (_is_num(h) and abs(h) < 1e9 or isinstance(h, str) and h.strip().lstrip("+-").isdigit()):
+            return False
+        if not _opt(a.get("default_method"), str):
+            return False
+        if any(a.get(k) is not None and not _reads_as_num(a[k]) for k in PLAN_PARAMS if k not in ("horizon_months", "default_method")):
+            return False
+        rows, loans, appr, events = (a.get(k) for k in ("rows", "loans", "appreciation", "events"))
+        if not (_opt(rows, dict) and _opt(loans, dict) and _opt(appr, dict) and _opt(events, list)):
+            return False
+        for r in (rows or {}).values():
+            if not isinstance(r, dict) or not _opt(r.get("method"), str) or (r.get("amount") is not None and not _is_num(r["amount"])) \
+                    or ("increase_percent_pa" in r and not _is_num(r["increase_percent_pa"])) \
+                    or not (r.get("amounts") is None or (isinstance(r["amounts"], dict) and all(_is_num(x) for x in r["amounts"].values()))):
+                return False
+        for d in (loans or {}).values():
+            if not isinstance(d, dict) or not _opt(d.get("model"), str) or "rate_list" in d \
+                    or any(d.get(k) not in (None, "") and not _reads_as_num(d[k]) for k in ("interest_percent_pa", "payment")):
+                return False
+        for w in (appr or {}).values():
+            if not isinstance(w, dict) or not _opt(w.get("area"), str) or ("share" in w and not _is_num(w["share"])) \
+                    or any(w.get(k) not in (None, "") and not _reads_as_num(w[k]) for k in ("percent_pa", "base")):
+                return False
+        for e in events or []:
+            if not isinstance(e, dict) or (e.get("amount") not in (None, "") and not _reads_as_num(e["amount"], comma=True)) \
+                    or not all(_opt(e.get(k), str) for k in ("text", "kind", "date_from", "after", "recurrence", "date_to", "month")) \
+                    or (e.get("month") and _MONTH_KEY.fullmatch(e["month"][:7]) is None) or not _opt(e.get("id"), (str, int, float)):
+                return False
+    return True
+
+
+def _categories_form(d: Any) -> bool:
+    """categories.json (categorize): the learned patterns and the proposals for rules you ticked off."""
+    if not isinstance(d, dict) or not _opt(d.get("assignment"), dict) or not _opt(d.get("rules"), list) or not _opt(d.get("learned_at"), str):
+        return False
+    for r in d.get("rules") or []:
+        if not isinstance(r, dict) or not all(_opt(r.get(k), str) for k in ("id", "category", "iban", "name_is", "purpose_contains", "source")) \
+                or not (r.get("hits") is None or _is_num(r["hits"])):
+            return False
+    return d.get("rule_done") is None or (isinstance(d["rule_done"], list) and all(isinstance(x, str) for x in d["rule_done"]))
+
+
+def _receipts_form(d: Any) -> bool:
+    """receipts.json (receipts.Belege): the list of receipts, each with its id and its file."""
+    if not isinstance(d, dict) or not _opt(d.get("entry_list"), list):
+        return False
+    for e in d.get("entry_list") or []:
+        if not isinstance(e, dict) or not (isinstance(e.get("id"), str) and e["id"]) or not (isinstance(e.get("path"), str) and e["path"]) \
+                or not (e.get("tx_id") is None or (isinstance(e["tx_id"], int) and not isinstance(e["tx_id"], bool))) \
+                or not all(_opt(e.get(k), str) for k in ("account", "entity", "date", "name", "note", "original", "added")) \
+                or not all(e.get(k) is None or _is_num(e[k]) for k in ("amount", "size_bytes")) or not _opt(e.get("external"), bool):
+            return False
+    return True
+
+
+def _mm_history_form(d: Any) -> bool:
+    """mm-history.json: the balances and securities read from MoneyMoney's database."""
+    if not isinstance(d, dict) or not _opt(d.get("as_of"), str) or not all(_opt(d.get(k), dict) for k in ("accounts", "opening", "securities")):
+        return False
+    if not all(isinstance(k, str) and _per_month(v) for k, v in (d.get("accounts") or {}).items()):
+        return False
+    if not all(isinstance(k, str) and (v is None or _is_num(v)) for k, v in (d.get("opening") or {}).items()):
+        return False
+    for rows in (d.get("securities") or {}).values():
+        if not isinstance(rows, list) or not all(isinstance(w, dict) and _opt(w.get("name"), str) and _opt(w.get("isin"), str)
+                                                 and (w.get("amounts") is None or _per_month(w["amounts"])) for w in rows):
+            return False
+    return True
+
+
+def backup_parts(backup: dict) -> Dict[str, Any]:
+    """The parts of a backup besides the settings, each as it is taken over -- checked before anything is written: one part
+    in a form the program does not read (ValueError naming it), and nothing of the file is restored. A part that is missing
+    or empty is simply not there. Never comes back: an assignment of a category that still waited to be written into
+    MoneyMoney when the backup was made -- a file never makes Kontor write there."""
+    out: Dict[str, Any] = {}
+
+    def part(name: str, label: str, ok: Callable[[Any], bool]) -> Any:
+        v = backup.get(name)
+        if v is None:
+            return None
+        if not ok(v):
+            raise ValueError(tr("s_sicherung_teil_form") % tr(label))
+        return v
+    plan = part("plan", "s_teil_planung", _plan_form)
+    if plan is not None:
+        out["plan"] = plan
+    cats = part("categories", "s_teil_kategorien", _categories_form)
+    if cats is not None and cats.get("version") == 3:   # (another version: categorize.load would take it for empty anyway)
+        out["categories"] = {k: v for k, v in cats.items() if k != "assignment" and not k.startswith("_")}
+    hist = part("history", "s_teil_verlauf", lambda v: isinstance(v, dict) and all(isinstance(k, str) and _per_month(x) for k, x in v.items()))
+    if hist is not None:
+        out["history"] = hist
+    snaps = part("snapshots", "s_teil_verlauf", lambda v: isinstance(v, dict) and all(
+        isinstance(k, str) and _MONTH_KEY.fullmatch(k) is not None and isinstance(x, dict) and all(isinstance(u, str) and _is_num(b) for u, b in x.items())
+        for k, x in v.items()))
+    if snaps:
+        out["snapshots"] = snaps
+    rec = part("receipts", "s_teil_belegindex", _receipts_form)
+    if rec:
+        out["receipts"] = {"entry_list": list(rec.get("entry_list") or [])}
+    mmh = part("mm_history_src", "s_teil_mm_verlauf", _mm_history_form)
+    if mmh:
+        out["mm_history_src"] = mmh
+    mem = backup.get("memory")                           # each note is checked by the memory itself (memory.merge)
+    if mem is not None and not (isinstance(mem, dict) and isinstance(mem.get("notes"), list)):
+        raise ValueError(tr("s_sicherung_teil_form") % tr("s_teil_gedaechtnis"))
+    return out
+
+
+def restore_backup(app: "App", backup: dict, with_receipts: bool = True) -> List[str]:
+    """A backup read back, whole or not at all: first every part is checked (backup_parts) and the settings are made as they
+    are taken over (restored_config) -- a part in the wrong form refuses the file before anything changes; then all is
+    written, and a write that fails puts back what was there. Returns the names of the parts taken over. The memory follows
+    (the caller: notes are only added, each checked by the memory)."""
+    parts = backup_parts(backup)
+    old_cfg = copy.deepcopy(app.config)
+    cfg = restored_config(app.config, backup["config"])
+    merged_config(cfg)                                   # (as it is saved below: whatever it cannot shape stops here)
+    names = [tr("s_teil_einstellungen")]
+    back: List[Callable[[], Any]] = []
+
+    def put(name: str, save: Callable[[], Any]) -> None:
+        before = app.store.read_raw(name)                # as it lies on the disk -- also a damaged one (the backup replaces it)
+        back.append(lambda: app.store.put_raw(name, before))
+        save()
+    try:
+        if "plan" in parts:
+            put("plan.json", lambda: app.store.save("plan.json", parts["plan"])); names.append(tr("s_teil_planung"))
+        if "categories" in parts:
+            with categorize.LOCK:                        # what waits here to be written into MoneyMoney is yours: it stays
+                try:
+                    waits = categorize.load(app.store).get("assignment") or {}
+                except StoreDamaged:                     # (damaged: nothing of it can be written any more anyway)
+                    waits = {}
+                put(categorize.FILE, lambda: categorize.save(app.store, dict(parts["categories"], version=3, assignment=waits)))
+            names.append(tr("s_teil_kategorien"))
+        was = app.store.load("state.json", {}) or {}
+        kept = {k: copy.deepcopy(was[k]) for k in ("history", "snapshots", DAMAGED_KEY) if k in was}
+
+        def state_back(st: dict) -> None:
+            for k in ("history", "snapshots", DAMAGED_KEY):
+                st.pop(k, None)
+            st.update(copy.deepcopy(kept))
+
+        def merge(st: dict) -> None:
+            if "history" in parts:
+                st["history"] = parts["history"]
+            if "snapshots" in parts:
+                st["snapshots"] = {**parts["snapshots"], **(st.get("snapshots") or {})}
+            st.pop(DAMAGED_KEY, None)                    # a file set aside as damaged: the backup is what was advised
+        back.append(lambda: app.store.update("state.json", state_back, {}))
+        app.store.update("state.json", merge, {})
+        if "history" in parts:
+            names.append(tr("s_teil_verlauf"))
+        if "receipts" in parts and with_receipts:
+            put("receipts.json", lambda: app.store.save("receipts.json", parts["receipts"])); names.append(tr("s_teil_belegindex"))
+        if "mm_history_src" in parts:
+            put(MM_HISTORY_FILE, lambda: app.store.save(MM_HISTORY_FILE, parts["mm_history_src"])); names.append(tr("s_teil_mm_verlauf"))
+        as_saved = app.store.read_raw("config.json")
+
+        def settings_back() -> None:
+            app.save_config(old_cfg)                     # (what follows the settings: the lock, Touch ID, the language)
+            if as_saved is not None:
+                app.store.put_raw("config.json", as_saved)
+        back.append(settings_back)
+        app.save_config(cfg)
+    except Exception:
+        for undo in reversed(back):
+            try:
+                undo()
+            except Exception as e:
+                log.error("Backup: a file could not be put back as it was (%s)", type(e).__name__)
+        raise
+    return names
 
 
 # Kontor's own files in its data folder (the store, its log and service files, a key file, the certificate): only these go
 ASSISTANT_ASK = ("/api/assistant/ask", "/api/assistant/stop", "/api/assistant/reset", "/api/assistant/page", "/api/assistant/confirm", "/api/assistant/listen",
                  "/api/assistant/transcribe", "/api/assistant/attach")
 
-_KONTOR_FILE = re.compile(r"(?:^|\s)(?:(?:auth|cf-ids|config|dataset|plan|receipts|state|transactions|categories|mm-history|offline[\w-]*|assistant-chats|assistant-changes|assistant-web|memory-[a-z]+(?:-\d{4,6})?"
-                          r"|assistant-chat-[0-9a-f]{8,32})\.json(?:\.enc)?(?:\.tmp|\.renew)?"
-                          r"|moneymoney-ledger\.bin(?:\.enc)?(?:\.tmp|\.renew)?|kontor\.log[\w.]*|service\.(?:out\.log|err\.log|lock)|master\.key|key\.json(?:\.tmp)?|key\.lock"
+_KONTOR_FILE = re.compile(r"(?:^|\s)(?:(?:auth|cf-ids|config|dataset|plan|receipts|state|transactions|categories|mm-history|assistant-changes|assistant-web|memory-[a-z]+(?:-\d{4,6})?)"
+                          r"\.json(?:\.enc)?(?:\.tmp|\.renew|\.left|\.damaged-[\d-]+)?"
+                          r"|moneymoney-ledger\.bin(?:\.enc)?(?:\.tmp|\.renew|\.left)?|kontor\.log[\w.]*|service\.(?:out\.log|err\.log|lock)|key\.json(?:\.tmp)?|key\.lock"
                           r"|start\.json(?:\.tmp)?|tls|assistant|chats)(?=\s|$)")
 
 
@@ -4110,8 +4522,8 @@ def _remove_own_files(data: str, keep: List[str]) -> Tuple[List[str], List[str]]
     are not Kontor's -- they stay, names of Kontor's files that could not be removed); kept ones (receipts) stay silently."""
     from receipts import _canon
     foreign, failed, kept = [], [], False
-    # a key in a file goes last, and only when no encrypted file is left (a key is never deleted while data it opens remain)
-    keys = ("master.key", "key.json")
+    # the key file goes last, and only when no encrypted file is left (a key is never deleted while data it opens remain)
+    keys = ("key.json",)
     for name in sorted(os.listdir(data), key=lambda n: (n in keys, n)):
         full = os.path.join(data, name)
         if name in keys and any(n.endswith((".enc", ".enc.tmp", ".enc.renew")) for n in storage_names(data)):
@@ -4163,7 +4575,7 @@ def _remove_tree(path: str, keep: List[str]) -> bool:
 # Everything the pages can have this Mac do outside Kontor goes through the four small functions below -- each takes a path (or
 # a text for a window) and nothing else, and none can start a program, open a page or an address:
 DOCUMENTS = frozenset((".pdf", ".png", ".jpg", ".jpeg", ".heic", ".gif", ".tif", ".tiff", ".bmp", ".webp", ".txt", ".csv", ".rtf", ".md", ".xlsx", ".xls",
-                       ".docx", ".doc", ".pptx", ".ppt", ".numbers", ".pages", ".key", ".eml", ".msg", ".zip"))
+                       ".docx", ".doc", ".pptx", ".ppt", ".numbers", ".pages", ".key", ".eml", ".msg"))      # (an archive unpacks itself: shown)
 
 
 def show_in_finder(path: str, select: bool = False) -> None:

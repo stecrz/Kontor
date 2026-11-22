@@ -73,6 +73,7 @@ class Recognition(unittest.TestCase):
         self.assertIn('(allow file-write* (subpath "/private/var/folders/ab/cd/T/rcpt-1")', p)
         self.assertNotIn('(subpath "/private/tmp")', p); self.assertNotIn('(allow file-write* (subpath "/private/var/folders")', p)
         self.assertGreater(p.index('(deny file-write* (regex #"/kontor-'), p.index("(allow file-write*"))
+        self.assertGreater(p.index('C/(clang|org'), p.index("(allow file-write*"))                # nor into the compilers' modules among the caches
 
     def test_dates_in_words_amounts_and_the_newest_first(self):
         f = R.read_fields("Händler\n1 150,00 150,00\nRechnung vom 3. Oktober 2026\nGesamt 150,00 €")

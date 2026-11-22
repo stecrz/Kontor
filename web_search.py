@@ -107,9 +107,9 @@ GENERIC = {"bank", "banken", "sparkasse", "volksbank", "konto", "konten", "girok
            "kinder", "gebuehren", "umbuchung", "umbuchungen", "transfer", "abonnements", "medien", "drogerie", "essen", "trinken", "kultur",
            "einkaufen", "shopping", "haustiere", "arbeit", "beruf", "sonstige", "allgemein", "privatentnahme", "kapitalertraege", "dividenden",
            "erstattung", "erstattungen", "food", "travel", "health", "insurance", "salary", "rent", "utilities", "other", "misc"}
-# legal forms and what goes with them: left out when a name is compared (Beispiel GmbH = Beispiel)
+# legal forms and what goes with them: left out when a name is compared (Beispiel GmbH = Beispiel; Müller und Söhne = Müller u. Söhne)
 LEGAL = {"gbr", "egbr", "gmbh", "mbh", "kg", "ug", "ag", "e", "v", "ev", "ohg", "se", "kgaa", "co", "haftungsbeschraenkt", "partg", "partgmbb",
-         "eg", "ek", "inc", "ltd", "llc", "plc", "sa", "sarl", "bv", "nv", "und", "i", "gr", "gruendung"}
+         "eg", "ek", "inc", "ltd", "llc", "plc", "sa", "sarl", "bv", "nv", "und", "i", "gr", "gruendung", "u", "and", "cie"}
 _LAST_GDELT = [0.0]                       # GDELT answers one request per five seconds
 _LOCK = threading.Lock()
 
@@ -281,20 +281,80 @@ def oecd_spend(store) -> bool:
 
 
 # -- your own data: never in a search ---------------------------------------------------------------------------------------
-_INVISIBLE = re.compile(r"[\u00ad\u034f\u061c\u115f\u1160\u17b4\u17b5\u180e\u200b-\u200f\u202a-\u202e\u2060-\u206f\u3164\ufe00-\ufe0f\ufeff\uffa0]")
+# signs nobody sees, and blanks that are no space (soft hyphen, zero width, writing direction, fillers, a blank braille cell)
+_INVISIBLE = re.compile(r"[\u00ad\u034f\u061c\u115f\u1160\u17b4\u17b5\u180b-\u180e\u200b-\u200f\u202a-\u202e\u2060-\u206f\u2800\u3164\ufe00-\ufe0f\ufeff\uffa0"
+                        r"\ufff9-\ufffc\U0001d159\U0001d173-\U0001d17a\U000e0000-\U000e0fff]")
+# What goes out is written in the Latin alphabet with the accented letters of European names (Latin-1, Latin Extended-A, the
+# Romanian s and t with a comma, the capital sharp s), digits and the usual signs -- nothing else: a letter of another kind
+# could stand in for a plain one (small capitals, IPA, squared letters) and carry a name past the comparison. Each of these
+# letters is compared as its plain letter (_fold).
+_LETTERS = (frozenset(chr(c) for c in range(0xC0, 0x17F)) - frozenset("\u00d7\u00f7\u013f\u0140\u0149")) | frozenset("\u0218\u0219\u021a\u021b\u1e9e")
+_SIGNS = frozenset("\u00a7\u20ac\u00a3\u00a5\u00a2\u00b0\u00b1\u00d7\u00f7\u00b7\u2022\u2026\u2013\u2014\u2010\u2011\u2012\u2212\u2018\u2019\u201a\u201c\u201d\u201e"
+                   "\u00ab\u00bb\u2039\u203a\u2032\u2033\u00b4\u2030\u00a9\u00ae\u00bf\u00a1\u00b2\u00b3")     # § € £ ¥ ¢ ° ± × ÷ · • … dashes, quotes, ′ ″ ´ ‰ © ® ¿ ¡ ² ³ (none that stands for letters)
+_BASE = str.maketrans({"ø": "o", "đ": "d", "ð": "d", "ł": "l", "ħ": "h", "ı": "i", "ĸ": "k", "ŋ": "n", "ŧ": "t", "þ": "th", "æ": "ae", "œ": "oe"})     # letters no accent can be taken from
+_PERCENT = re.compile(r"%[0-9A-Fa-f]{2}")
+_LEET = (str.maketrans("0134578", "oieastb"), str.maketrans("0134578", "oleastb"))       # digits written for letters (Must3rmann, 1 as i or l)
+_PLAIN_LEAST = 6                                         # a name read another way (Must3rmann, Muller for Müller, backwards) counts from six letters on
 
 
-def _fold(s: Any) -> str:
+def _fold(s: Any, umlauts: bool = True) -> str:
     """A text as it is compared: lower case, without invisible characters, ä/ö/ü as ae/oe/ue and ß as ss (so Müller and Mueller
-    are the same), other accents dropped, and everything that is no letter or digit a space."""
+    are the same), other accents dropped (ø, ł, đ ... as o, l, d), and everything that is no letter or digit a space.
+    umlauts=False: ä/ö/ü and ae/oe/ue all as a/o/u (Müller, Mueller and Muller the same: a name written without the dots)."""
     t = _INVISIBLE.sub("", unicodedata.normalize("NFKC", str(s or ""))).casefold()
-    t = t.replace("ä", "ae").replace("ö", "oe").replace("ü", "ue").replace("ß", "ss")
+    if umlauts:
+        t = t.replace("ä", "ae").replace("ö", "oe").replace("ü", "ue")
+    t = t.replace("ß", "ss").translate(_BASE)
     t = "".join(c for c in unicodedata.normalize("NFKD", t) if not unicodedata.combining(c))
-    return " ".join(re.findall(r"[a-z0-9]+", t))
+    t = " ".join(re.findall(r"[a-z0-9]+", t))
+    return t if umlauts else re.sub(r"([aou])e", r"\1", t)
 
 
 def _words(s: Any) -> str:
     return _fold(s)
+
+
+def _name_tokens(s: Any, umlauts: bool = True) -> List[str]:
+    """The words of a name as names are compared -- in your data and in a search alike: folded, without legal forms and what
+    goes with them (GmbH, e.V., & Co., und) and without a postcode."""
+    return [t for t in _fold(s, umlauts).split() if t not in LEGAL and not re.fullmatch(r"\d{5}", t)]
+
+
+def _readings(raw: str) -> List[Tuple[List[str], int]]:
+    """The ways a search is read against your names, each with the least length of a name it counts for: as written, and
+    without legal forms, "und" and postcodes (_name_tokens, as the names were made); and -- for names of six letters or more,
+    so that a short one does not end the search for a common word -- with the digits in a word read as the letters they stand
+    for (Must3rmann), ä/ö/ü without their dots (Muller for Müller or Mueller) and backwards (nnamretsuM)."""
+    out: List[Tuple[List[str], int]] = []
+
+    def add(toks: List[str], least: int) -> None:
+        for t in (toks, [x for x in toks if x not in LEGAL and not re.fullmatch(r"\d{5}", x)]):
+            if t and (t, least) not in out:
+                out.append((t, least))
+    plain = _fold(raw).split()
+    add(plain, 0)
+    for table in _LEET:
+        add([x.translate(table) if re.search(r"[a-z]", x) and re.search(r"\d", x) else x for x in plain], _PLAIN_LEAST)
+    add(_fold(raw, umlauts=False).split(), _PLAIN_LEAST)
+    add(_fold(raw[::-1]).split(), _PLAIN_LEAST)
+    return out
+
+
+def _not_plain(text: str) -> str:
+    """Why a text is not plainly written ("" if it is): a sign nobody sees; a letter of another alphabet, or a sign that only
+    looks like a Latin letter or a digit (IPA, small capitals, circled, squared, full width ...); signs of other kinds."""
+    for c in text:
+        if " " <= c <= "~" or c in _LETTERS or c in _SIGNS:
+            continue
+        cat = unicodedata.category(c)
+        if cat == "Zs" or c in "\t\n\r":
+            continue
+        if cat[0] in "CMZ" or _INVISIBLE.match(c):
+            return "it contains signs nobody sees (plain words only)"
+        if cat[0] in "LN" or "LETTER" in unicodedata.name(c, "") or any(x.isalnum() for x in unicodedata.normalize("NFKC", c)):
+            return "it contains letters of another alphabet or signs that stand for letters or digits (only plain Latin letters and digits go out)"
+        return "it contains signs other than letters, digits and common punctuation (plain words only)"
+    return ""
 
 
 def _iban(s: str) -> bool:
@@ -322,28 +382,40 @@ _IBAN_RUN = re.compile(r"(?<![A-Za-z0-9])([A-Za-z]{2}\d{2}(?:[ \-]?[A-Za-z0-9]){
 _CODE = re.compile(r"[A-Za-z0-9]*\d[A-Za-z0-9]*")
 
 
-def own_index(ledger, config: dict, ds: dict, txs: Optional[list] = None, categories: Optional[list] = None) -> dict:
+# names in Kontor's figures and settings under which no amount stands: a year, a count, a share, a rate, an index, a price per piece
+_NO_AMOUNT = re.compile(r"year|years|exit_year|\w+_years|months|\w+_months|count|\w+_count|n|n_\w+|ord|depth|ids?|\w+_ids?|uuid|\w*percent\w*|\w*cpi\w*|\w*factor"
+                        r"|share|\w+_share|quote|\w+_rate|\w+_ratio|\w+_yield|irr|ltv|dscr\w*|cash_on_cash|return_on_equity|price|quantity|units|active_limit"
+                        r"|inactive_list|area_sqm")
+_NO_FIGURES = frozenset(("accounts_activity", "ids", "area_info"))      # tables of counts and marks: not read
+_PERIOD = re.compile(r"(19|20)\d\d(-\d\d){0,2}")         # a year, a month or a day as the name of a value (amounts: {"2026-03": ...})
+_NUMBER = re.compile(r"-?\d{1,12}(?:[.,]\d{1,2})?")      # a figure typed as text (a calculation's inputs)
+
+
+def own_index(ledger, config: dict, ds: dict, txs: Optional[list] = None, categories: Optional[list] = None, more: Any = None) -> dict:
     """What of yours must never go out -- everything the model can read too, from MoneyMoney's data where Kontor has read it
     and from Kontor's own saved figures and settings (they are there after a restart too):
       words    the telling words of your own names (accounts and their paths, owners, areas, properties, calculations, partners,
                loans and other rules) -- each blocks alone and as the start of a word;
-      phrases  whole names, also of counterparties, categories, the notes of a property -- compared as a whole (folded, also run
-               together), never word by word (Techniker Krankenkasse blocks itself, not "Krankenkassenbeitrag");
+      phrases  whole names, also of counterparties, categories, the notes of a property, what a rule looks for in a booking --
+               compared as a whole (folded, also run together, without legal forms: _name_tokens), never word by word
+               (Techniker Krankenkasse blocks itself, not "Krankenkassenbeitrag");
       ibans    IBANs, account and contract numbers (codes of five or more characters with a digit, from the purposes too);
-      amounts  transactions, balances, month ends, in cents.
+      amounts  in cents: transactions, balances and every figure of the saved report -- balance sheets, cash flow, planning,
+               tax, depots, the calculations of your properties with what you typed into them -- and of the rules.
+    more: anything else the model can read that is in none of these (the bookings waiting for approval, older balances):
+    lists and tables of plain values -- every amount in it counts, and the names under "counterparty", "account_name", "name".
     empty: nothing of yours is known at all (then nothing is searched)."""
     phrases, words, numbers, amounts = set(), set(), set(), set()
 
     def name(s: Any, own: bool = True) -> None:
-        toks = [t for t in _fold(s).split() if t not in LEGAL and not re.fullmatch(r"\d{5}", t)]       # without its legal form and postcode
-        if not toks:
-            return
-        if len("".join(toks)) >= 4 and not (len(toks) == 1 and toks[0] in GENERIC):
-            phrases.add("".join(toks))
-        if own:
-            for t in toks:
-                if len(t) >= 4 and t.isalpha() and t not in GENERIC:
-                    words.add(t)
+        std = _name_tokens(s)                            # without its legal form and postcode -- and without the dots (Müller, Mueller: Muller)
+        for toks, least in ((std, 4), (_name_tokens(s, umlauts=False), _PLAIN_LEAST)):
+            if len("".join(toks)) >= least and not (len(std) == 1 and std[0] in GENERIC):
+                phrases.add("".join(toks))
+            if own:
+                for t, t0 in zip(toks, std):             # (the same words: only ä/ö/ü differ)
+                    if len(t) >= least and t.isalpha() and t0 not in GENERIC:
+                        words.add(t)
 
     def ref(v: Any) -> None:                             # an account in a rule: "UUID | Name"
         name(str(v).split("|", 1)[1] if "|" in str(v or "") else "" if re.fullmatch(r"[0-9A-Fa-f-]{30,}", str(v or "").strip()) else v)
@@ -367,6 +439,27 @@ def own_index(ledger, config: dict, ds: dict, txs: Optional[list] = None, catego
     def amount(v: Any) -> None:
         if isinstance(v, (int, float)) and not isinstance(v, bool) and v == v and 1 <= abs(v) < 1e13:
             amounts.add(int(round(abs(v) * 100)))
+
+    def texts(v: Any) -> List[str]:                      # one text or a list of them
+        return [x for x in (v if isinstance(v, (list, tuple)) else [v]) if isinstance(x, str) and x]
+
+    def figures(v: Any, key: str = "", typed: bool = False, depth: int = 0) -> None:
+        """Every amount in a table of Kontor's figures, whatever it is called -- but not what stands under the name of a
+        year, a count, a share or a rate (_NO_AMOUNT). typed: figures written as text count too (what you typed in)."""
+        if isinstance(v, dict):
+            for k, x in v.items() if depth < 16 else ():
+                if str(k) not in _NO_FIGURES:
+                    figures(x, key if _PERIOD.fullmatch(str(k)) else str(k), typed, depth + 1)
+        elif isinstance(v, (list, tuple)):
+            for x in v if depth < 16 else ():
+                figures(x, key, typed, depth + 1)
+        elif _NO_AMOUNT.fullmatch(key):
+            return
+        elif isinstance(v, str):
+            if typed and _NUMBER.fullmatch(v.strip()):
+                amount(float(v.strip().replace(",", ".")))
+        else:
+            amount(v)
     for a in (getattr(ledger, "accounts", None) or {}).values():
         name(a.name)
         for part in str(a.path or "").split(" / "):
@@ -393,137 +486,187 @@ def own_index(ledger, config: dict, ds: dict, txs: Optional[list] = None, catego
         name(path, own=False)
         for part in re.split(r"\s*[/›]\s*", path):
             name(part, own=False)
-    cfg = config or {}
-    for b in cfg.get("areas") or []:
+    cfg = config if isinstance(config, dict) else {}
+    dicts = lambda v: [x for x in v if isinstance(x, dict)] if isinstance(v, list) else []
+    for b in dicts(cfg.get("areas")):
         name(b.get("name"))
-    for im in cfg.get("real_estate") or []:              # properties: name, notes, calculations with their partners and loans
+        for x in texts(b.get("accounts")):               # its groups of accounts
+            ref(x)
+    for im in dicts(cfg.get("real_estate")):             # properties: name, notes, calculations with their partners and loans
         name(im.get("name"))
         note(im.get("notes"))
         ref(im.get("property_account"))
-        for k in im.get("calcs") or []:
-            if isinstance(k, dict):
-                name(k.get("name"))
-                inp = k.get("inputs") if isinstance(k.get("inputs"), dict) else {}
-                name(inp.get("name"))
-                for g in inp.get("partners") or []:
-                    if isinstance(g, dict):
-                        name(g.get("name"))
-                for d in inp.get("loans") or []:
-                    if isinstance(d, dict):
-                        name(d.get("name"))
-                        ref(d.get("account"))
-    for d in cfg.get("loans") or []:                     # booking rules: their names, accounts, counterparties
-        if isinstance(d, dict):
-            name(d.get("name"))
-            ref(d.get("loan_account"))
-            for x in d.get("source_accounts") or []:
-                ref(x)
-            name(d.get("counterparty"), own=False)
-            name((d.get("texts") or {}).get("counterparty") if isinstance(d.get("texts"), dict) else "", own=False)
-    for c in cfg.get("companies") or []:
-        if isinstance(c, dict):
-            ref(c.get("participation"))
-            name(c.get("counterparty"), own=False)
-    for m in cfg.get("account_mirrors") or []:
-        if isinstance(m, dict):
-            name(m.get("name"))
-            for k in ("account", "mirror", "source", "target"):
-                ref(m.get(k))
-    ds = ds or {}
+        for k in dicts(im.get("calcs")):
+            name(k.get("name"))
+            inp = k.get("inputs") if isinstance(k.get("inputs"), dict) else {}
+            name(inp.get("name"))
+            for g in dicts(inp.get("partners")):
+                name(g.get("name"))
+            for d in dicts(inp.get("loans")):
+                name(d.get("name"))
+                ref(d.get("account"))
+    for d in dicts(cfg.get("loans")):                    # booking rules as core.merged_config shapes them: names, accounts, counterparties,
+        name(d.get("name"))                              # and what they look for in a booking
+        ref(d.get("loan_account"))
+        for x in texts(d.get("source_accounts")):
+            ref(x)
+        booking = d.get("booking") if isinstance(d.get("booking"), dict) else {}
+        name(booking.get("counterparty"), own=False)
+        for k in ("category_repayment", "category_interest"):
+            name(booking.get(k), own=False)
+        for k in ("repayment_text", "interest_text"):    # the texts it writes: their contract numbers
+            codes(booking.get(k))
+        found = d.get("detection") if isinstance(d.get("detection"), dict) else {}
+        for k in ("text_contains", "exclude_text"):
+            for x in texts(found.get(k)):
+                name(x, own=False)
+                codes(x)
+        for x in texts(found.get("counter_iban")):
+            number(x)
+    for c in dicts(cfg.get("companies")):
+        ref(c.get("participation"))
+        name(c.get("counterparty"), own=False)
+        name(c.get("category"), own=False)
+    for m in dicts(cfg.get("account_mirrors")):          # {"a", "b", "from_date", "category"}
+        ref(m.get("a"))
+        ref(m.get("b"))
+        name(m.get("category"), own=False)
+    for k in ("real_estate", "loans", "companies", "tax", "not_book"):       # the figures you typed in: purchase price, rent, loans, a year's interest base ...
+        figures(cfg.get(k), typed=True)
+    ds = ds if isinstance(ds, dict) else {}
     for v in (ds.get("area_names") or {}).values():
         name(v)
-    for a in ds.get("accounts") or []:
-        if isinstance(a, dict):
-            name(a.get("name"))
-            for part in str(a.get("path") or "").split(" / "):
-                name(part)
-            amount(a.get("balance_amount"))
-    for im in ds.get("real_estate") or []:
-        if isinstance(im, dict):
-            name(im.get("name"))
-            for k in im.get("calcs") or []:
-                if isinstance(k, dict):
-                    name(k.get("name"))
-    for b in (ds.get("areas") or {}).values():           # the balance sheets: names of rows, their month-end amounts
-        for r in ((b or {}).get("balance") or {}).get("rows") or [] if isinstance(b, dict) else []:
-            if isinstance(r, dict):
+    for a in dicts(ds.get("accounts")):
+        name(a.get("name"))
+        for part in str(a.get("path") or "").split(" / "):
+            name(part)
+    for im in dicts(ds.get("real_estate")):
+        name(im.get("name"))
+        for k in dicts(im.get("calcs")):
+            name(k.get("name"))
+    for b in (ds.get("areas") or {}).values() if isinstance(ds.get("areas"), dict) else ():     # the balance sheets: the accounts in their rows
+        for r in dicts(((b or {}).get("balance") or {}).get("rows")) if isinstance(b, dict) else []:
+            if not (str(r.get("id") or "").startswith("pos:") or r.get("transit")):       # (a position, money in transit: Kontor's own words, not a name of yours)
                 name(r.get("name"))
-                for v in list((r.get("amounts") or {}).values())[-36:]:
-                    amount(v)
+    figures({k: v for k, v in ds.items() if k != "categories"})      # every figure of the saved report (its "categories" hold counts only)
+
+    def further(v: Any, depth: int = 0) -> None:         # what else the model can read: its names beside its figures
+        if isinstance(v, dict):
+            name(v.get("counterparty"), own=False)
+            name(v.get("name"), own=False)
+            name(v.get("account_name"))
+            for k in ("text", "purpose"):
+                codes(v.get(k))
+        for x in (v.values() if isinstance(v, dict) else v if isinstance(v, (list, tuple)) else ()) if depth < 8 else ():
+            further(x, depth + 1)
+    further(more)
+    figures(more, typed=True)
     return {"phrases": phrases, "words": words, "ibans": numbers, "amounts": amounts, "empty": not (phrases or words or numbers or amounts)}
 
 
-_RUN = re.compile(r"\d(?:[\d.,\-\s]*\d)?")                # digits, also with . , - or spaces between them (1.234,56 · 0006-8201-01)
+_YEAR = re.compile(r"(19|20)\d\d")
+_RUN = re.compile(r"\d(?:[\d.,'\u2019\-\s]*\d)?")              # one number as written: digits, also with . , ' - or spaces between them (1.234,56 · 0006-8201-01)
+_CHAIN = re.compile(r"\d(?:[\W_\d]*\d)?")                 # digits with no letter between them, whatever stands there instead (1/2/3 · 12_345 · 25 % 2025)
 
 
-def _foreign(raw: str) -> bool:
-    """Letters of another alphabet (a Cyrillic М looks like a Latin M -- a name could slip through that way)."""
-    for c in unicodedata.normalize("NFKC", raw):
-        if c.isalpha() and not unicodedata.name(c, "").startswith("LATIN"):
-            return True
-    return False
+def _figure(piece: str) -> Tuple[int, int]:
+    """A number as it is written, in cents, and how many decimals it shows (0, 1 or 2): 1.234,56 · 1,234.56 · 234,5 · 1.950 · 1950
+    (-1: longer than any amount)."""
+    m = re.fullmatch(r"(.*\d)[.,](\d{1,2})", piece, re.S)
+    whole, frac = (re.sub(r"\D", "", m.group(1)), m.group(2)) if m else (re.sub(r"\D", "", piece), "")
+    return (int(whole or 0) * 100 + int(frac.ljust(2, "0") or 0) if len(whole) <= 15 else -1), len(frac)
 
 
-def privacy_problem(text: str, idx: dict, strict: bool = True, source: str = "") -> str:
-    """Why these words must not go out ("" if they may) -- in doubt they may not (the card shows the words anyway): letters of
-    another alphabet; an IBAN as written (in one piece or in groups, a valid country, its length and check digits) or one of your
-    account or contract numbers; an e-mail address; one of your names as a whole (folded, run together, with or without
-    separators, without its legal form) or a telling word of your own names (also as the start of a word: Mustermanns); an
-    amount of yours, any number with cents, any run of five digits or more (separators left out). Years, sections of a law
-    (§ 7) and codes of a statistic (EXR/M.USD.EUR.SP00.A) pass; a Wikidata id only to Wikidata, a company's LEI only to GLEIF.
-    strict=False for the address of a result a search gave (its numbers are the source's own: only your names, account numbers
-    and amounts with cents count there)."""
-    raw = str(text or "")
-    if _foreign(raw):
-        return "it contains letters of another alphabet (only Latin letters go out)"
-    for m in _IBAN_RUN.finditer(raw):
+def _own_in(raw: str, idx: dict, strict: bool, source: str) -> str:
+    """Which of your own data a plainly written text holds ("" if none) -- see privacy_problem."""
+    text = unicodedata.normalize("NFKC", raw)            # (² as 2: what stands for a digit counts as one)
+    for m in _IBAN_RUN.finditer(text):
         g = re.sub(r"[ \-]", "", m.group(1)).upper()
         n = IBAN_LENGTH.get(g[:2])
         if n and len(g) >= n and _iban(g[:n]):
             return "it contains an IBAN"
-    flat = re.sub(r"[^A-Za-z0-9]", "", raw).upper()
-    chunks = [re.sub(r"[^A-Za-z0-9]", "", c).upper() for c in raw.split()]
+    flat = re.sub(r"[^A-Za-z0-9]", "", text).upper()
+    chunks = [re.sub(r"[^A-Za-z0-9]", "", c).upper() for c in text.split()]
     for code in idx.get("ibans") or ():
         if (len(code) >= 6 and code in flat) or any(code in c for c in chunks):
             return "it contains one of the user's account or contract numbers"
-    if re.search(r"[\w.+-]+@[\w-]+\.[\w.]+", raw):
+    if re.search(r"[\w.+-]+@[\w-]+\.[\w.]+", text):
         return "it contains an e-mail address"
-    toks = _fold(raw).split()
     phrases, own = idx.get("phrases") or set(), idx.get("words") or ()
-    for i in range(len(toks)):                           # names as a whole: any run of words (also single letters) read together
-        run = ""
-        for t in toks[i:i + 40]:
-            run += t
-            if run in phrases:
-                return "it contains a name from the user's own data (an account, area, owner, property, category or counterparty)"
-            if len(run) > 120:
-                break
-        rest = "".join(toks[i:])
-        for w in own:
-            if rest.startswith(w) or (len(w) >= 6 and w in toks[i]):
-                return "it contains a word of the user's own names (an account, area, owner, property or rule)"
+    for toks, least in _readings(raw):                   # as written, as names are made, digits for letters, without dots, backwards
+        words = [w for w in own if len(w) >= least]
+        for i in range(len(toks)):                       # names as a whole: any run of words (also single letters) read together
+            run = ""
+            for t in toks[i:i + 40]:
+                run += t
+                if run in phrases and len(run) >= least:
+                    return "it contains a name from the user's own data (an account, area, owner, property, category or counterparty)"
+                if len(run) > 120:
+                    break
+            rest = "".join(toks[i:])
+            for w in words:
+                if rest.startswith(w) or (len(w) >= 6 and w in toks[i]):
+                    return "it contains a word of the user's own names (an account, area, owner, property or rule)"
     amounts = idx.get("amounts") or set()
-    rest = raw
+    rest = text
     if source == "wikidata":                             # public codes, only to their own source
         rest = re.sub(r"\bQ[1-9]\d{0,10}\b", " ", rest)
     if source == "gleif":
         rest = re.sub(r"\b[A-Z0-9]{18}\d{2}\b", lambda m: " " if _lei_ok(m.group(0)) else m.group(0), rest)
-    for m in _RUN.finditer(rest):
-        run = m.group(0).strip(" .,-")
-        digits = re.sub(r"\D", "", run)
-        if not digits:
-            continue
-        years = all(re.fullmatch(r"(19|20)\d\d", g) for g in re.split(r"[\s\-]+", run) if g)       # 2025 · 2020-2025
-        cents = re.search(r"\d[.,]\d\d$", run) is not None and not re.search(r"[.,]\d{3}$", run)
-        value = int(re.sub(r"\D", "", run[:-3] if cents else run) or 0) * 100 + (int(run[-2:]) if cents else 0)
-        if not years and value >= 10000 and value in amounts and (strict or cents):
-            return "it contains an amount from the user's own data"
-        if not strict:
-            continue
-        if cents:
-            return "it contains a particular amount (a number with cents)"
-        if len(digits) >= 5 and not years:
-            return "it contains a long number (an amount, an account, a postcode, a date or a phone number)"
+    for chain in _CHAIN.findall(rest):
+        runs = _RUN.findall(chain)
+        for run in runs:
+            pieces = [x for x in re.split(r"(?:[.,]?\s+|-)+", run) if x]         # 2020-2025 · 2024, 2025 · 1 950 · 850 12
+            years = all(_YEAR.fullmatch(x) for x in pieces)              # 2025 · 2020-2025
+            cents = False
+            for piece in ([run] if len(pieces) > 1 and not years else []) + pieces:
+                value, decimals = _figure(piece)
+                cents = cents or decimals == 2
+                if value >= 10000 and value in amounts and (strict or decimals):     # (a year too, if it is exactly an amount of yours)
+                    return "it contains an amount from the user's own data"
+            if not strict:
+                continue
+            if cents:
+                return "it contains a particular amount (a number with cents)"
+            if len(re.sub(r"\D", "", run)) >= 5 and not years:
+                return "it contains a long number (an amount, an account, a postcode, a date or a phone number)"
+        if strict and len(runs) > 1:                     # digits set apart by other signs (1/2/3/4/5/6 · 12_345_678): one number -- what is a year aside
+            groups = re.findall(r"\d+", chain)
+            if len("".join(g for g in groups if not _YEAR.fullmatch(g))) >= 5:
+                return "it contains a long number (digits with only signs between them count as one number)"
+            if _figure("".join(groups))[0] >= 10000 and _figure("".join(groups))[0] in amounts:
+                return "it contains an amount from the user's own data"
+    return ""
+
+
+def privacy_problem(text: str, idx: dict, strict: bool = True, source: str = "") -> str:
+    """Why these words must not go out ("" if they may) -- in doubt they may not (the card shows the words anyway): anything
+    not plainly written -- letters of another alphabet or signs that only look like Latin letters or digits, signs nobody
+    sees, characters written as %XX; an IBAN as written (in one piece or in groups, a valid country, its length and check
+    digits) or one of your account or contract numbers; an e-mail address; one of your names as a whole (folded, run together,
+    with or without separators, with or without its legal form or an "und" in it) or a telling word of your own names (also as
+    the start of a word: Mustermanns); an amount of yours (also written with one decimal, and also when it looks like a
+    year), any number with cents, any run of five digits or more (whatever stands between the digits, as long as it is no
+    letter). Years, sections of a law (§ 7) and codes of a statistic (EXR/M.USD.EUR.SP00.A) pass; a Wikidata id only to
+    Wikidata, a company's LEI only to GLEIF.
+    strict=False for the address of a result a search gave (its numbers are the source's own: only your names, account numbers
+    and amounts with decimals count there; what it writes as %XX is read as the characters it stands for)."""
+    raw = unicodedata.normalize("NFC", str(text or ""))
+    forms = [raw]
+    if _PERCENT.search(raw):
+        if strict:
+            return "it contains characters written as %XX (plain words only)"
+        for _ in range(3):                               # an address: also as its %XX read (again, if it was written twice over)
+            more = unquote(forms[-1])
+            if "\ufffd" in more and "\ufffd" not in forms[-1]:
+                more = unquote(forms[-1], encoding="latin-1")      # (written in the old way: %FC for \u00fc)
+            if more == forms[-1]:
+                break
+            forms.append(unicodedata.normalize("NFC", more))
+    for form in forms:
+        why = _not_plain(form) or _own_in(form, idx, strict, source)
+        if why:
+            return why
     return ""
 
 
@@ -538,7 +681,7 @@ def _q(text: Any, longest: int = 160) -> str:
     q = unicodedata.normalize("NFC", re.sub(r"\s+", " ", str(text or "")).strip())
     if not q:
         raise WebError("query is empty: the search words (general words only, never the user's own data).")
-    if any(unicodedata.category(c)[0] in "CM" for c in q):     # signs nobody sees (zero width, writing direction, control, variation marks): the card could not show what goes out
+    if any(unicodedata.category(c)[0] in "CM" for c in q) or _INVISIBLE.search(q):     # signs nobody sees (zero width, writing direction, control, variation marks, blanks that are no space): the card could not show what goes out
         raise WebError("query: plain words only -- no invisible, combining or control characters.")
     if len(q) > longest:
         raise WebError("query is too long (at most %d characters)." % longest)
@@ -546,8 +689,18 @@ def _q(text: Any, longest: int = 160) -> str:
 
 
 def _month(v: Any) -> str:
-    s = str(v or "").strip()
-    return s if re.fullmatch(r"(19|20)\d\d(-(0[1-9]|1[0-2]))?(-\d\d)?", s) else ""
+    """From when a series is asked for: a year or a month (2020, 2020-03), "" if not said -- never a day (a date is refused:
+    it could be one of yours)."""
+    s = str(v).strip() if v and not isinstance(v, bool) else ""
+    if s and not re.fullmatch(r"(19|20)\d\d(-(0[1-9]|1[0-2]))?", s):
+        raise WebError("from: a year or a month (2020 or 2020-03) -- no day, nothing else.")
+    return s
+
+
+def _since(key: str, frm: str) -> str:
+    """What is checked against your data of a series' request: its key and the year it starts with (a year that is exactly an
+    amount of yours does not go out either)."""
+    return key + (" from " + frm[:4] if frm else "")
 
 
 def _last(v: Any, default: int = 12, most: int = 60) -> int:
@@ -574,7 +727,7 @@ def prepare(source: str, a: dict, lang: str) -> dict:
             url = "https://data-api.ecb.europa.eu/service/data/%s/%s?format=csvdata&detail=full&%s" % (flow, k, "startPeriod=" + frm if frm else "lastNObservations=%d" % last)
         else:
             url = "https://api.statistiken.bundesbank.de/rest/data/%s/%s?format=sdmx_csv&%s" % (flow, k, "startPeriod=" + frm if frm else "lastNObservations=%d" % last)
-        p.update(query=key, url=url, check=key)
+        p.update(query=key, url=url, check=_since(key, frm))
     elif source in ("oecd", "bis", "worldbank"):
         key = str(a.get("query") or "").strip()
         frm, last = _month(a.get("from")), _last(a.get("last"))
@@ -595,7 +748,7 @@ def prepare(source: str, a: dict, lang: str) -> dict:
                 raise WebError("query for worldbank: COUNTRIES/INDICATOR, e.g. DEU;FRA/NY.GDP.MKTP.KD.ZG.")
             url = "https://api.worldbank.org/v2/country/%s/indicator/%s?format=json&per_page=1000&%s" % (m.group(1).lower(), m.group(2),
                                                                                                       "date=%s:%d" % (frm[:4], date.today().year) if frm else "mrv=%d" % last)
-        p.update(query=key, url=url, check=key)
+        p.update(query=key, url=url, check=_since(key, frm))
     elif source == "feeds":                              # a fixed feed; the words only pick its items here (never sent)
         parts = str(a.get("query") or "").strip().split(None, 1)
         if not parts or parts[0].lower() not in FEEDS:
@@ -619,7 +772,7 @@ def prepare(source: str, a: dict, lang: str) -> dict:
         frm = _month(a.get("from"))
         tail = "sinceTimePeriod=%s" % frm[:7 if len(frm) >= 7 else 4] if frm else "lastTimePeriod=%d" % _last(a.get("last"))
         url = "https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/%s?format=JSON&lang=%s&%s" % (ds, "DE" if lg == "de" else "EN", "&".join(parts + [tail]))
-        p.update(query=ds + ("" if not parts else " (" + ", ".join(parts) + ")"), url=url, check=" ".join([ds] + parts))
+        p.update(query=ds + ("" if not parts else " (" + ", ".join(parts) + ")"), url=url, check=_since(" ".join([ds] + parts), frm))
     else:
         q = _q(a.get("query"))
         p.update(query=q, check=q)
@@ -1134,7 +1287,8 @@ def _read(p: dict, fetch: Callable[[dict], dict]) -> dict:
 def reader_profile(data_dir: str, home: Optional[str] = None) -> str:
     """The rules for the reader in the Mac's sandbox (later rules win): connections out only to port 443 of other machines (and
     the system's name lookup), none to this Mac; it starts no other program, sends no Apple events, opens nothing through the
-    system, reads nothing in the home folder nor in Kontor's data (only itself and Python's own files), writes temporary files only.
+    system, reads nothing in the home folder nor in Kontor's data (only itself and Python's own files), writes temporary files only --
+    never into Kontor's temporary folders (kontor-...) nor into the compilers' module caches.
     Started may be only Python itself: its program file -- and, in a framework build of macOS, the program in its app bundle
     that the file hands over to."""
     q = lambda p: json.dumps(os.path.realpath(p), ensure_ascii=False)
@@ -1148,6 +1302,8 @@ def reader_profile(data_dir: str, home: Optional[str] = None) -> str:
              '(deny mach-lookup (global-name "com.apple.pasteboard.1"))',
              "(deny file-write*)",
              '(allow file-write* (subpath "/private/var/folders") (subpath "/private/tmp") (literal "/dev/null") (literal "/dev/dtracehelper"))',
+             '(deny file-write* (regex #"^/private/var/folders/[^/]+/[^/]+/C/(clang|org\\.llvm\\.clang)"))',     # (the compilers' modules: Kontor's helpers are built from them)
+             '(deny file-write* (regex #"/kontor-[^/]*(/|$)"))',                         # never into Kontor's temporary folders
              "(deny file-read* (subpath %s) (subpath %s))" % (q(home or os.path.expanduser("~")), q(data_dir)),
              "(allow file-read* (literal %s) (literal %s) (subpath %s))" % (q(READER), q(exe), q(base)),          # (the certificates: macOS's or Python's own)
              "(deny file-read* (subpath %s))" % q(data_dir),

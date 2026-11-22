@@ -4,7 +4,7 @@ Reihenfolge = Priorität. Jeder Punkt ist fertig, wenn alle Kriterien erfüllt s
 veröffentlicht ist (Skill `release`). Geprüfte Seiten verlieren die Markierung „Alpha“.
 
 Geprüft: Bilanz, Synchronisierung, Einrichtung, Einstellungen, Updates, Protokoll, Hilfe, Auto-Buchungen, Buchungsregeln (3.13),
-Kategorien und Cashflow (3.13.4: jeder Monat stimmt mit der Bilanz überein, Abweichungen mit Grund; 3.13.6: feste Positionen für alle Bereiche, ohne Kategorie geschätzt); 3.13.10: Kontenspiegel als eigene Regel zwischen beliebigen Konten; 3.13.11: Cashflow in drei Stufen mit Diagrammen, Cashflow-Positionen unter Verwaltung; 3.13.13: Kapitalflussrechnung mit Brücke); Übersicht (3.15.0: vier Grafiken aus Bilanz und Cashflow, ohne eigene Rechnung; 3.15.1: offene Punkte darunter); Kategorisieren (3.15.1: ohne Schalter, Eingetragenes rückgängig machbar; 3.15.2: umbenannt, anfangs nur private Bereiche); Drucken (3.15.1); Übersicht in drei Spalten mit Bilanz-Kacheln (3.15.2).
+Kategorien und Cashflow (3.13.4: jeder Monat stimmt mit der Bilanz überein, Abweichungen mit Grund; 3.13.6: feste Positionen für alle Bereiche, ohne Kategorie geschätzt); 3.13.10: Kontenspiegel als eigene Regel zwischen beliebigen Konten; 3.13.11: Cashflow in drei Stufen mit Diagrammen, Cashflow-Positionen unter Verwaltung; 3.13.13: Kapitalflussrechnung mit Brücke); Übersicht (3.15.0: vier Grafiken aus Bilanz und Cashflow, ohne eigene Rechnung; 3.15.1: offene Punkte darunter); Kategorisieren (3.15.1: ohne Schalter, Eingetragenes rückgängig machbar; 3.15.2: umbenannt, anfangs nur private Bereiche); Drucken (3.15.1); Übersicht in drei Spalten mit Bilanz-Kacheln (3.15.2); Gesamtprüfung 3.17.0: Schritte 3.16.1–3.16.100 gegen Changelog, Regeln und die Aufträge aller Chats geprüft, fünf unabhängige Sicherheitsprüfungen, 1000 Zufallsfälle, Hilfe und Bilder neu.
 
 ## Ziel: dein digitaler CFO
 Kontor ist eine Finanzplattform für eine Person, deren Vermögen zu großen Teilen aus Beteiligungen besteht: ein Überblick über
@@ -127,7 +127,7 @@ anhängen – nie löschen.
   Grafikkarte, Zugang je Konto über einen sicheren Kanal, gemeinsames Gedächtnis; widerspricht heute „alles auf diesem Mac“ –
   erst nach ausdrücklicher Entscheidung. (Ein Gedächtnis über Finanzen hinaus, nur auf diesem Mac: entschieden, siehe Gedächtnis.)
 
-## 1. Daten erst nach Anmeldung (Sicherheit) – umgesetzt in 3.16.83
+## 1. Daten erst nach Anmeldung (Sicherheit) – umgesetzt in 3.16.83 (3.17.0: Umstellung von früher entfernt, nur Neueinrichtung)
 Ziel: Wer den entsperrten Mac hat, aber nicht bei Kontor angemeldet ist, kommt an keine Kontor-Daten.
 
 Fertig, wenn
@@ -323,10 +323,19 @@ Vier Grafiken aus Bilanz und Cashflow auf einer Bildschirmseite, jede verlinkt a
   und als Ereignis in den Zufallswelten (`tests/test_worlds.py`), damit sie nachts in allen Kombinationen laufen.
 - Oberfläche nach Apples Human Interface Guidelines, hell und dunkel, Mac und iPhone.
 
-## Beim nächsten großen Versionssprung (Bilder; ältere Lücken in Hilfe und README)
-- Hilfe: Rechtsklick → KI-Assistent „Kurz erklären“ / „Im Chat fragen“ (Bezug, Sprung zurück), Kopieren, „Grafik drucken …“ bei allen Grafiken (3.16.23, 3.16.27).
-- README und Hilfe: Ziel „dein digitaler CFO“ (siehe oben) als Einleitung; Netzverbindungen nach dem Stand dann.
-- Hilfe: eigener Abschnitt „Assistent“ (einrichten, Rechte, was er nie darf, Abschirmung) mit Bildern; README (Netzverbindungen).
-- Hilfe Assistent: Änderungen nur noch über die Sammelkarte am Ende einer Antwort (statt „Eintragen“ je Karte), Änderungsrechte ab Werk an (bisher „anfangs aus“), Protokoll der Änderungen unter Einstellungen → KI-Assistent.
-- Hilfe Assistent: Diagramme im Chat und „Verläufe“ (gespeicherte Unterhaltungen, Einstellung „Verläufe speichern“) mit Bild (3.16.11).
-- Hilfe-Bilder und -Texte neu: Übersicht (drei Spalten, Kennzahlen), Kategorisieren, Cashflow-Positionen (Empfehlung), Buchungsregeln (Bereich + Konto) – 3.15.2 hat nur die Texte angepasst.
+## ~~Beim nächsten großen Versionssprung~~ (erledigt in 3.17.0)
+Hilfe und README als Ganzes auf den Stand gebracht (Ziel „dein digitaler CFO“, Mac-App, Rechtsklick, Sammelkarte des Assistenten,
+Gedächtnis, Internet, Daten erst nach Anmeldung, Netzverbindungen), Hilfe-Bilder neu.
+
+## Offen nach der Gesamtprüfung 3.17.0
+- Am Mac mit echter Hardware prüfen: Touch ID nach Neustart (Secure Enclave), Diktieren mit echtem Mikrofon, Sandbox-Profile der
+  Modelle und des Lesers, echte Modelle (was das Gedächtnis merkt, Wartezeit), echte Auswertungen (BWA, SuSa) als PDF.
+- Prüfung vor dem Update: engt untergeschobene Änderungen ein, schließt sie nicht aus; nächster Schritt wäre der Dienst selbst in
+  macOS' Sandbox ohne ausgehendes Netz.
+- Filter der Internetsuche: Ziffern statt Buchstaben, rückwärts Geschriebenes und Umlaut-Schreibweisen erkennt er erst ab sechs
+  Buchstaben (kürzere Namen gingen so durch); „Q3 2025“ lehnt er als lange Ziffernfolge ab – jede Suche steht vorher auf einer Karte im Chat.
+- Abschirmung: harte Links im eigenen Zwischenordner könnten pfadbasierte Regeln umgehen – am Mac prüfen, dann `(deny file-link*)`.
+- Beschädigte Dateien: Planung, Kategorien und Belegindex nennen die Seiten mit Dateinamen (nicht beiseitegelegt); sind Einstellungen,
+  Stand und Anmeldedaten zugleich beschädigt, sperrt die Anmeldung („Schlüssel passt nicht“) – ein falscher Schlüssel sieht gleich aus.
+- Planung: Zinsen und Anteile in der Vorschau noch mit gerundeten Kommazahlen (gebucht wird exakt).
+- Suchfelder der Hilfe- und der Umsatzseite suchen nach Wörtern (nach Bedeutung nur im Assistenten).

@@ -9,7 +9,7 @@ import dataclasses
 import re
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
-from decimal import ROUND_HALF_UP, Decimal
+from decimal import ROUND_HALF_UP, Context, Decimal
 from functools import lru_cache
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
@@ -476,10 +476,25 @@ def months_between(start: date, end: date) -> List[Tuple[int, int]]:
     return out
 
 
-def cents(x: float) -> float:
+def _dec(x) -> Decimal:
+    """A number as it is written: 4.1 is 4.1, not the binary fraction nearest to it."""
+    return x if isinstance(x, Decimal) else Decimal(repr(float(x)))
+
+
+_EXACT = Context(prec=60)              # products and quotients of amounts: nothing is lost before the cent
+
+
+def cents(x) -> float:
     """An amount rounded to the cent, half a cent away from zero (as in commerce). round() alone goes by the binary form of the
     number and to the even cent: 0.625 becomes 0.62."""
-    return float(Decimal(repr(float(x))).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+    return float(_dec(x).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+
+
+def part(amount: float, factor: float, per: float = 1) -> float:
+    """amount x factor / per to the cent (interest: debt x percent / 100, a share: value x share): computed exactly -- the
+    amount in cents, factor and divisor as they are written -- and only then rounded, half a cent away from zero. With floats
+    half a cent is lost before rounding: 50,025.00 x 4.1 / 100 is 2,051.025 (2,051.03), as floats 2,051.0249999… (2,051.02)."""
+    return cents(_EXACT.divide(_EXACT.multiply(_dec(cents(amount)), _dec(factor)), _dec(per)))
 
 
 def fmt_eur(x: float) -> str:

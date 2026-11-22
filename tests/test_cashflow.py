@@ -520,6 +520,34 @@ class CashflowCases(Reconciles):
                           (4, "giro", date(2026, 2, 13), -10000.0, {"iban": "DE21"}), (5, "kk", date(2026, 2, 13), 10000.0, {"iban": "DE11"})])
         self.assertAddsUp(d); self.assertNotIn("unclear\u001fUmbuchung ohne erkannten Partner", d["Privat"]["cashflow"]["cf_ids"])
 
+    def test_two_bookings_by_hand_beside_one_payment_from_the_area(self):
+        # paid into the company by transfer (IBAN) and the same amount in cash (no IBAN) on one day, both booked by hand on the
+        # capital account: one booking belongs to the transfer, the other pairs with the cash by amount -- no revenue, no
+        # change in value (3.16.58 to 3.16.99 kept both bookings for the one transfer: the cash was taken for income, the second
+        # booking for a change in value of the capital account)
+        for cat in ("", "Umbuchung"):
+            d = build([(1, "giro", date(2026, 2, 10), -250.0, {"iban": "DE21"}), (2, "kk", date(2026, 2, 10), 250.0, {"iban": "DE11", "cat": cat}),
+                       (3, "kk", date(2026, 2, 10), 250.0, {"name": "Bareinzahlung", "cat": cat}),
+                       (4, "kap", date(2026, 2, 10), -250.0, {"purpose": "Einlage Privat"}), (5, "kap", date(2026, 2, 10), -250.0, {"purpose": "Einlage Privat bar"})])
+            self.assertAddsUp(d)
+            g = {k: z["amounts"]["2026-02"] for k, z in rows(d["Muster GbR"]).items() if any(z["amounts"].values())}
+            self.assertEqual(g, {"Kapitalkonto / Aufnahme": 250.0, "Einlage/Entnahme Privat / Kapitalkonto": 250.0}, cat)
+        # two transfers from the area beside two bookings: both kept for them, as before
+        d = build([(1, "kk", date(2026, 2, 10), 250.0, {"iban": "DE11"}), (2, "kk", date(2026, 2, 10), 250.0, {"iban": "DE11"}),
+                   (3, "giro", date(2026, 2, 10), -250.0, {"iban": "DE21"}), (4, "giro", date(2026, 2, 10), -250.0, {"iban": "DE21"}),
+                   (5, "kap", date(2026, 2, 10), -250.0, {"purpose": "Einlage Privat"}), (6, "kap", date(2026, 2, 10), -250.0, {"purpose": "Einlage Privat"})])
+        self.assertAddsUp(d)
+        g = {k: z["amounts"]["2026-02"] for k, z in rows(d["Muster GbR"]).items() if any(z["amounts"].values())}
+        self.assertEqual(g, {"Einlage/Entnahme Privat / Kapitalkonto": 500.0})
+        # the transfer a day before the bookings, the cash on their day: the cash is nearer to both -- nothing is kept for the
+        # transfer (it is a plain payment from the other area, the bookings pair by amount: one with the cash)
+        d = build([(1, "giro", date(2026, 2, 9), -250.0, {"iban": "DE21"}), (2, "kk", date(2026, 2, 9), 250.0, {"iban": "DE11"}),
+                   (3, "kk", date(2026, 2, 10), 250.0, {"name": "Bareinzahlung"}),
+                   (4, "kap", date(2026, 2, 10), -250.0, {"purpose": "Einlage Privat"}), (5, "kap", date(2026, 2, 10), -250.0, {"purpose": "Einlage Privat bar"})])
+        self.assertAddsUp(d)
+        g = {k: z["amounts"]["2026-02"] for k, z in rows(d["Muster GbR"]).items() if any(z["amounts"].values())}
+        self.assertEqual(g, {"Kapitalkonto / Aufnahme": 250.0, "Einlage/Entnahme Privat / Kapitalkonto": 250.0})
+
     def test_transfer_to_a_card_moved_to_another_bank(self):
         # the debit names the old card's IBAN, the payment arrives on the new card: paired all the same (same IBAN on both, or
         # an outdated IBAN with the transfer category on both sides) -- no "without counterpart"
@@ -1192,9 +1220,9 @@ class MockData(Reconciles):
         # the made-up sample of the end-to-end tests (loans with Kontor's bookings, participations, contributions)
         import tempfile
         import test_e2e as T
-        from storage import Store, load_or_create_master_key
+        from fixtures import new_store
         d = tempfile.mkdtemp()
-        store = Store(d, *load_or_create_master_key(d))
+        store = new_store(d)
         cfg = core.merged_config(T.config_for_test(os.path.join(d, "B")))
         store.save("config.json", cfg); store.save("state.json", dict(T.ALL_NEW))
         T.reset_mock(); T.patch_today()

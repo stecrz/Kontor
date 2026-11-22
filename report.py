@@ -37,7 +37,7 @@ from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 from categorize import party_key, suggest as suggest_category
 from model import Account, Ledger, Tx, add_months, month_end, month_key, months_between, norm_cat, legacy_cat
 from model import MARK, marks_in
-from i18n import tr
+from i18n import tr, trn
 
 ROLES = ["cash", "securities", "term_investments", "real_estate", "participations", "tangibles", "receivables", "other", "liabilities",
          "contingent", "ignore"]
@@ -45,6 +45,11 @@ ROLE_KEYS = {"cash": "pos_bankguthaben", "securities": "pos_wertpapiere", "term_
              "participations": "beteiligungen", "tangibles": "sachwerte", "receivables": "pos_forderungen", "other": "sonstiges",
              "liabilities": "pos_verbindlichkeiten", "contingent": "role_eventual",
              "ignore": "nicht_bilanzieren"}       # Schluessel in web/i18n.js
+
+
+def month_text(key: str) -> str:
+    """A month key YYYY-MM as the user reads it in a note: MM/YYYY (as the other notes write months)."""
+    return "%s/%s" % (key[5:7], key[:4]) if re.fullmatch(r"\d{4}-\d{2}", key or "") else str(key)
 
 
 def role_label(role: str) -> str:
@@ -286,13 +291,13 @@ def account_balance_series(ledger: Ledger, acc: Account, months: List[Tuple[int,
                     and all(abs(v) < 0.005 for v in before.values()):
                 opened = min(before)
         for k in mkeys:
-            h[k] = acc.balance if k >= cur_key else (None if opened and k < opened else ends[k])
+            h[k] = acc.balance if k >= cur_key else (None if opened and k < opened else ends.get(k))      # (a group without accounts: unknown)
         t = (acc.type or "").lower()
         if any(x in t for x in NO_NEGATIVE_TYPES):
             neg = [k for k in mkeys if (h[k] or 0) < -1.0]
             if neg:
                 hinweis = (tr("s_s_die_rueckrechnung_aus_den")
-                           % (acc.name, neg[0], neg[-1]))
+                           % (acc.name, month_text(neg[0]), month_text(neg[-1])))
         return h, hinweis, [cur_key]
     if not acc.portfolio:
         # Anker: eigene Werte + heutiger Saldo; dazwischen mit den Buchungen gerechnet (Saldo = Anker - Buchungen danach)
@@ -328,7 +333,7 @@ def account_balance_series(ledger: Ledger, acc: Account, months: List[Tuple[int,
             prev = max((kk for kk in known if kk < k), default=first_known)
             h[k] = known[prev]
     if before is None and mkeys and mkeys[0] < first_known and abs(known[first_known]) > 0.005:
-        hinweis = (tr("s_s_kontostaende_vor_s_sind") % (acc.name, first_known))
+        hinweis = (tr("s_s_kontostaende_vor_s_sind") % (acc.name, month_text(first_known)))
     return h, hinweis, sorted(known)
 
 
@@ -1270,6 +1275,7 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
         if says(t):
             marked_tr[int(round(t.amount * 100))].append(t)
     kept: Set[int] = set()
+    wants: List[Tuple[int, int, int]] = []               # (days apart, payment, booking): the booking may be kept for that payment
     for o in in_root:
         k = -int(round(o.amount * 100))
         if not claimable(o) or k not in to_area:
@@ -1277,9 +1283,15 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
         gap = lambda t: abs((t.booking_date - o.booking_date).days)
         rival = lambda t: not (says(t) and any(u.id != o.id and u.account_uuid != t.account_uuid and abs((u.booking_date - t.booking_date).days) <= PAIR_DAYS_CAT
                                                for u in marked_tr.get(-k, ())))
-        area_gap = min((gap(t) for t, name in to_area[k] if tied_word(o, name)), default=None)
-        if area_gap is not None and area_gap <= COUNTER_DAYS and area_gap <= min((gap(t) for t in by_amount.get(k, ()) if rival(t)), default=area_gap):
-            kept.add(o.id)
+        near = min((gap(t) for t in by_amount.get(k, ()) if rival(t)), default=COUNTER_DAYS)
+        wants.extend((gap(t), t.id, o.id) for t, name in to_area[k] if gap(t) <= min(near, COUNTER_DAYS) and tied_word(o, name))
+    # one booking per payment to the area, the closest first: of two bookings by hand beside one such payment (lent by transfer
+    # and the same amount in cash on that day) only one is kept -- the other still pairs by amount with the payment without
+    # an IBAN (kept as well, it stayed a change in value, and the cash "without category")
+    paid: Set[int] = set()
+    for _gap, t_id, o_id in sorted(wants):
+        if t_id not in paid and o_id not in kept:
+            paid.add(t_id); kept.add(o_id)
     mate, partner, by_cat = pair_transfers(ledger, in_root, flows, roles, is_transfer, cost_words, kf, pairable, keep=kept)
     # An account that starts within these months with a balance of its own (its opening balance in MoneyMoney: before its first
     # booking the balance sheet has none): a transfer where a bank account of the area shows the opposite amount that month
@@ -1622,7 +1634,7 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
                   lbl=("cf_anlage_ohne_ziel",), glbl=("cf_anlage_ohne_ziel",))
 
     if unclear:
-        warnings.append(tr("s_d_umbuchung_en_ohne_erkennbaren") % unclear)
+        warnings.append(trn("s_n_umbuchungen_unklar", unclear))
     R.pairs = pairs
     R.paired = paired
     R.reasons = {"ignored": dict(ignored), "ignored_ids": dict(ignored_ids)}

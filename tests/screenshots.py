@@ -17,7 +17,7 @@ import test_e2e as T          # noqa: E402
 import test_assistant as TA   # noqa: E402
 import llm_local              # noqa: E402
 import fixtures as F          # noqa: E402
-from storage import Store, load_or_create_master_key   # noqa: E402
+from fixtures import new_store   # noqa: E402
 from service import App, make_handler                  # noqa: E402
 from http.server import ThreadingHTTPServer            # noqa: E402
 from playwright.sync_api import sync_playwright        # noqa: E402
@@ -79,7 +79,7 @@ def assistant(app):
 
 def main():
     d = tempfile.mkdtemp(prefix="kontor-shots-")
-    store = Store(d, *load_or_create_master_key(d))
+    store = new_store(d)
     cfg = T.config_for_test(os.path.join(d, "Belege")); cfg.setdefault("ui", {})["language"] = LANG
     store.save("config.json", cfg)
     store.save("state.json", dict(T.ALL_NEW))          # everything booked on the first sync (nothing older waits)
@@ -129,8 +129,8 @@ def main():
                     pg.evaluate("window.scrollTo(0, document.querySelector('.cf-charts').getBoundingClientRect().top + window.scrollY - 70)"); pg.wait_for_timeout(400)
                 if special == "immo":
                     pg.click(".card[data-im]"); pg.wait_for_timeout(1500)
-                if name == "backup":                   # the folders as on a Mac (not the test machine's paths), the key in the keychain
-                    pg.evaluate("""Object.assign(S.STATUS.storage, {folder: '~/Library/Application Support/Kontor', program_folder: '~/Applications/Kontor', key_source: 'keychain'});
+                if name == "backup":                   # the folders as on a Mac (not the test machine's paths)
+                    pg.evaluate("""Object.assign(S.STATUS.storage, {folder: '~/Library/Application Support/Kontor', program_folder: '~/Applications/Kontor'});
                       S.STATUS.receipts.folder = '~/Documents/Kontor-Belege'; S.CFG.receipts.folder = '~/Documents/Kontor-Belege'; route()""")
                     pg.wait_for_timeout(800)
                 save(pg, name)

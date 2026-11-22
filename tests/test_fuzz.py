@@ -28,7 +28,7 @@ import fixtures as F  # noqa: E402
 import core  # noqa: E402
 import rules  # noqa: E402
 from model import TAG_RE, marks_in  # noqa: E402
-from storage import Store, load_or_create_master_key  # noqa: E402
+from fixtures import new_store  # noqa: E402
 from test_e2e import TODAY, MockBridge, config_for_test, patch_today, reset_mock  # noqa: E402
 
 BET, MINE, THEIRS, LOAN = "priv.bet.ga", "priv.bet.gb", "gb.kap.a", "ga.vd"
@@ -38,8 +38,7 @@ TARGETS = {F.uid(k) for k in (BET, MINE, THEIRS, LOAN)}             # the only a
 class FuzzTests(unittest.TestCase):
     def setUp(self):
         self.dir = tempfile.mkdtemp(prefix="kontor-fuzz-")
-        key, src = load_or_create_master_key(self.dir)
-        self.store = Store(self.dir, key, src)
+        self.store = new_store(self.dir)
         reset_mock(); patch_today()
 
     def tearDown(self):

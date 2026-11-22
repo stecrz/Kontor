@@ -24,6 +24,7 @@ from typing import Dict, List, Optional
 from model import Ledger, Tx, norm_cat
 from report import ASSET_ROLES, COST_WORDS, account_roles, _is_cost
 from model import MARK, marks_in
+from i18n import tr
 
 POSITION_HINTS = [
     ("gehalt", "Anlage N (Arbeitslohn)"), ("lohn", "Anlage N (Arbeitslohn)"), ("tantieme", "Anlage N (Arbeitslohn)"),
@@ -47,6 +48,8 @@ POSITION_HINTS = [
     ("internet", "nicht abziehbar (privat)"), ("rundfunk", "nicht abziehbar (privat)"),
 ]
 
+GENERIC = {"nicht abziehbar (privat)": "tax_nicht_abziehbar", "Umschichtung (nicht relevant)": "tax_umschichtung"}   # shown in the user's language
+
 
 def _entity_type(name: str) -> str:
     low = name.lower()
@@ -67,8 +70,8 @@ def _position_for(path: str, mapping: Dict[str, str]) -> str:
             return v
     for hint, pos in POSITION_HINTS:
         if hint in low:
-            return pos
-    return "ohne Zuordnung"
+            return tr(GENERIC[pos]) if pos in GENERIC else pos       # the tax forms' names stay German
+    return tr("tax_ohne_zuordnung")
 
 
 def build_tax(ledger: Ledger, config: dict, today: date, bereiche: Optional[List[dict]] = None, roles: Optional[Dict[str, str]] = None,
@@ -150,7 +153,7 @@ def build_tax(ledger: Ledger, config: dict, today: date, bereiche: Optional[List
                 parts = path.split(" / ")
                 if parts[0].lower() == verm:
                     obj = parts[1] if len(parts) >= 3 else "(allgemein)"
-                    art = parts[-1] if len(parts) >= 2 else "(ohne Art)"
+                    art = parts[-1] if len(parts) >= 2 else tr("tax_ohne_art")
                     o = objekte.setdefault(obj, {"kinds": defaultdict(float), "debt_interest": {}, "depreciation": 0.0})
                     o["kinds"][art] += t.amount
             # Schuldzinsen den Objekten zuordnen
@@ -161,7 +164,7 @@ def build_tax(ledger: Ledger, config: dict, today: date, bereiche: Optional[List
                 if target is None and len(obj_names) == 1:
                     target = obj_names[0]
                 if target is None:
-                    target = "(Darlehen ohne Objekt)"
+                    target = tr("tax_darlehen_ohne_objekt")
                 o = objekte.setdefault(target, {"kinds": defaultdict(float), "debt_interest": {}, "depreciation": 0.0})
                 o["debt_interest"][loan_name] = round(amt, 2)
             # AfA (manuell) und Ergebnis je Objekt

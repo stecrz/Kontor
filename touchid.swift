@@ -124,5 +124,16 @@ DispatchQueue.main.async {
         }
     }
 }
+// the sign-in page switched between your data and the demo while the window is open: Kontor deletes the answer file
+// (auth.touchid_close) -- the window closes without an answer. Only when the output is a file from the start, never a pipe.
+var started = stat()
+if fstat(1, &started) == 0 && (started.st_mode & S_IFMT) == S_IFREG && started.st_nlink > 0 {
+    func watchOutput() {
+        var now = stat()
+        if fstat(1, &now) == 0 && now.st_nlink == 0 { ctx.invalidate(); exit(1) }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2, execute: watchOutput)
+    }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2, execute: watchOutput)
+}
 DispatchQueue.main.asyncAfter(deadline: .now() + 90) { exit(1) }
 app.run()

@@ -120,6 +120,28 @@ jobs:
         run: |
           # the assistant's reader process starts inside its sandbox profile and refuses a host it was not given (no network used)
           python3 -c "import tempfile, web_search as W; r = W.Reader(tempfile.mkdtemp(), lambda: 'strict'); assert r.command()[0] == W.SANDBOX; out = r({'url': 'https://example.org/x', 'hosts': ['de.wikipedia.org'], 'as': 'json', 'timeout': 5}); print(out); assert out == {'ok': False, 'error': 'host'}, out"
+      - name: Model and reader in the sandbox (own temporary folder; never Kontor's, never the compilers' modules)
+        run: |
+          python3 - <<'EOF'
+          import os, shutil, subprocess as S, tempfile
+          import llm_local as L, web_search as W
+          os.environ["TMPDIR"] = S.run(["getconf", "DARWIN_USER_TEMP_DIR"], capture_output=True, text=True).stdout.strip()
+          tempfile.tempdir = None
+          d = os.path.realpath(tempfile.mkdtemp()); os.makedirs(d + "/assistant/runtime")
+          x = shutil.copy("/usr/bin/touch", d + "/assistant/runtime/touch")          # "strict" starts only programs of the runtime folder
+          own, mine = L.own_tmp(), os.path.realpath(tempfile.mkdtemp(prefix="kontor-"))
+          c = os.path.realpath(S.run(["getconf", "DARWIN_USER_CACHE_DIR"], capture_output=True, text=True).stdout.strip())
+          os.makedirs(c + "/clang", exist_ok=True)
+          t = lambda lv, f: S.run(["/usr/bin/sandbox-exec", "-p", L.sandbox_profile(d, d + "-prog", d + "/assistant", lv), x, f]).returncode == 0
+          assert t("strict", own + "/ok") and t("strict", c + "/llm-run-ok") and t("basic", os.path.dirname(own) + "/llm-run-ok"), "allowed"
+          assert not any(t(lv, f) for lv in ("strict", "basic") for f in (mine + "/no", own + "/kontor-x")), "kontor-"
+          assert not t("strict", os.path.dirname(own) + "/llm-run-no") and not t("strict", c + "/clang/llm-run-no"), "strict"
+          r = lambda f: S.run(["/usr/bin/sandbox-exec", "-p", W.reader_profile(d), W.python_exe(), "-I", "-S", "-c", "open(%r, 'w').close()" % f]).returncode == 0
+          assert r(os.path.dirname(own) + "/reader-ok"), "reader: its temporary files"
+          assert not r(mine + "/no") and not r(c + "/clang/no"), "reader"
+          assert not os.path.exists(mine + "/no")
+          print("ok")
+          EOF
       - name: Swift helpers
         run: |
           swiftc -O -o "$RUNNER_TEMP/touchid" touchid.swift
@@ -214,21 +236,15 @@ jobs:
           echo "$out" | grep -q "Angabe nicht erlaubt" || { echo "unexpected: $out"; exit 1; }
       - name: Install and service
         run: |
-          # a keychain of its own for the data key (the runner's own one may ask); removed with the machine
-          security create-keychain -p ci "$RUNNER_TEMP/ci.keychain-db"
-          security set-keychain-settings "$RUNNER_TEMP/ci.keychain-db"
-          security unlock-keychain -p ci "$RUNNER_TEMP/ci.keychain-db"
-          security list-keychains -d user -s "$RUNNER_TEMP/ci.keychain-db"
-          security default-keychain -d user -s "$RUNNER_TEMP/ci.keychain-db"
           bash install.sh < /dev/null
           curl -fsS -o /dev/null http://127.0.0.1:8765/ && echo "service answers"
           # the app shows Kontor, as an app: the page sees the app (and the app's name in the browser's name), the app has the
           # words of its menu, its commands with their keys (Find works through the menu) and the theme from the page, the page's
           # printing and Dock badge go to the app; no title bar of its
-          # own (clicks in the strip at the top reach the page -- else the app would keep its title bar), its buttons level with
-          # the page's title row
+          # own (clicks in the strip at the top reach the page -- else the app would keep its title bar), its buttons where macOS
+          # puts them: as close to the top edge as to the left one
           out=$(Kontor.app/Contents/MacOS/Kontor --check http://127.0.0.1:8765/) && echo "$out"
-          echo "$out" | python3 -c "import json, sys; d = json.load(sys.stdin); assert d['title'] == 'Kontor' and d['bridge'] and d['shell'] and d['app'] and d['agent'] and d['print'] and d['badge'] and d['dark'], d; assert d['capture'] in ('stream', 'NotFoundError') if d['mic'] == 'granted' else d['capture'] == 'NotAllowedError', d; assert d['menu'] == ['Kontor', 'Ablage', 'Bearbeiten', 'Darstellung', 'Fenster', 'Hilfe'], d; assert d['chrome']['full'] and d['chrome']['band'] > 0 and abs(d['chrome']['middle'] - 30) <= 2, d; assert ['Mit MoneyMoney abgleichen', '⇧r'] in d['commands'] and ['Suchen …', 'f'] in d['commands'] and ['Rückwärts suchen', '⇧g'] in d['commands'], d; assert d['reload'] == 'r' and d['findBar'], d"
+          echo "$out" | python3 -c "import json, sys; d = json.load(sys.stdin); assert d['title'] == 'Kontor' and d['bridge'] and d['shell'] and d['app'] and d['agent'] and d['print'] and d['badge'] and d['dark'], d; assert d['capture'] in ('stream', 'NotFoundError') if d['mic'] == 'granted' else d['capture'] == 'NotAllowedError', d; assert d['menu'] == ['Kontor', 'Ablage', 'Bearbeiten', 'Darstellung', 'Fenster', 'Hilfe'], d; assert d['chrome']['full'] and d['chrome']['band'] > 0 and 0 <= d['chrome']['top'] < 20 and abs(d['chrome']['top'] - d['chrome']['left']) <= 4 and d['chrome']['middle'] < 26, d; assert ['Mit MoneyMoney abgleichen', '⇧r'] in d['commands'] and ['Suchen …', 'f'] in d['commands'] and ['Rückwärts suchen', '⇧g'] in d['commands'], d; assert d['reload'] == 'r' and d['findBar'], d"
           ! Kontor.app/Contents/MacOS/Kontor --check http://127.0.0.1:8766/ && echo "another address refused"
           python3 kontor.py uninstall --yes
           ! curl -fsS -o /dev/null http://127.0.0.1:8765/ 2>/dev/null && echo "service gone"

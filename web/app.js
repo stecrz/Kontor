@@ -36,7 +36,7 @@ const SHELL_MENU = {about: 'mac_m_ueber', settings: 'mac_m_einstellungen', hide:
   reload: 'mac_m_neu_laden', actualSize: 'mac_m_original', zoomIn: 'mac_m_groesser', zoomOut: 'mac_m_kleiner', fullScreen: 'mac_m_vollbild', window: 'mac_m_fenster',
   minimize: 'mac_m_dock', zoom: 'mac_m_zoomen', help: 'hilfe', kontorHelp: 'mac_m_kontor_hilfe', ok: 'mac_ok', cancel: 'abbrechen', find: 'mac_m_suchen_menu'};
 shellPost({labels: Object.fromEntries(Object.entries(SHELL_MENU).map(([k, v]) => [k, t(v)]))});
-// its window has no title bar of its own: the page as in the browser, the window buttons level with the title row (above
+// its window has no title bar of its own: the page as in the browser, the window buttons small in the top left corner (above
 // Kontor's name), and the strip at the top moves the window -- the app says how high it is and where the buttons are (tb, tl,
 // ly, lb: right end, middle, bottom; this page's px, 0 in full screen), the page tells it where it has something to click in
 // that strip (those spots stay clicks)
@@ -44,8 +44,6 @@ const CHROME = {tb: 0, tl: 0, ly: 0, lb: 0, sent: ''};
 const CHROME_CLICK = 'button, a[href], input, select, textarea, label, summary, [role=button], [tabindex]:not([tabindex="-1"]), .seg, .hq';
 function chromeApply(c) {
   if (!c || typeof c !== 'object') return;
-  // an app from before 3.16.73 (an update does not restart the open app) gives no bottom: its buttons are 14px high
-  c = Object.assign({}, c, c.lb == null ? {lb: +c.ly ? +c.ly + 7 : 0} : {});
   for (const k of ['tb', 'tl', 'ly', 'lb']) { CHROME[k] = Math.max(0, +c[k] || 0); document.documentElement.style.setProperty('--' + k, CHROME[k] + 'px'); }
   document.body.classList.toggle('mac-chrome', CHROME.tb > 0);
   chromeHoles();
@@ -111,7 +109,6 @@ const CP = p => String(p || '').split(' / ').join(' › ');
 const DEC = (fmt.formatToParts(1.5).find(p => p.type === 'decimal') || {value: ','}).value, GRP = (fmt.formatToParts(12345).find(p => p.type === 'group') || {value: '.'}).value;
 // a figure in a table: its cents small beside the euros -- there when you look for them, otherwise out of the way
 const FC = v => { const s = F(v), i = s.lastIndexOf(DEC); return i < 0 ? s : `${s.slice(0, i)}<small class="ct">${s.slice(i)}</small>`; };
-const parseF = s => String(s).split(GRP).join('').replace(DEC, '.');        // a figure as shown, back to a number's text
 // what you typed, as a number -- in the notation of the language (1.234,56 or 1,234.56). null: nothing typed; NaN: no number.
 // The sign that groups thousands is one only before exactly three digits; where it cannot be that ("12.5" in German) it can
 // only be the decimal sign. Nothing is read two ways.
@@ -250,7 +247,8 @@ const H = {
   bch: t('bch_hinweis'),
   geld_unterwegs: t('geld_unterwegs_tip'),
 };
-const HELP_AT = {area: 'areas', main_area: 'areas', share: 'areas', gruppenwahl: 'areas', anzeige: 'accounts', position_kurz: 'accounts', position: 'accounts',
+const HELP_AT = {als_app: 'app', berechtigung: 'setup', immo_abrechnung: 'properties', immo_abziehbar: 'properties', immo_afa: 'properties', immo_aussch: 'properties', immo_darlehen_art: 'properties', immo_darlehen_konten: 'properties', immo_faellig: 'properties', immo_geb: 'properties', immo_ges: 'properties', immo_index: 'properties', immo_kategorie: 'properties', immo_kosten: 'properties', immo_nk: 'properties', immo_objektkonto: 'properties', immo_ruecklage: 'properties', immo_sonder: 'properties', immo_uebergang: 'properties', immo_verkauf: 'properties', immo_wert: 'properties', immo_zinsbindung: 'properties',
+  area: 'areas', main_area: 'areas', share: 'areas', gruppenwahl: 'areas', anzeige: 'accounts', position_kurz: 'accounts', position: 'accounts',
   inactive: 'accounts', verlauf_kurz: 'history', history_source: 'history', verlauf_import: 'history', depotverlauf: 'history', mmhist: 'balances',
   zuordnen: 'categories', regeln_mm: 'categories-rules', kz_eingetragen: 'categories-write-back', position_kat: 'categories-positions', zielkonto: 'positions-recipients', anl_empfaenger: 'positions-recipients', sicherung: 'backup',
   cf_operativ: 'cash-flow', cf_invest: 'cash-flow', cf_finanz: 'cash-flow', cf_unklar: 'cash-flow', cf_wert: 'cash-flow',
@@ -264,7 +262,7 @@ const HELP_AT = {area: 'areas', main_area: 'areas', share: 'areas', gruppenwahl:
   h_co_rueck: 'rules-back', h_co_takt: 'rules-companies', h_co_schwelle: 'rules-companies', h_co_gp: 'rules-companies', method: 'planning', inflation: 'planning', steig_ein: 'planning',
   rendite: 'planning', event: 'planning', wert_bereich: 'planning', fern: 'iphone', fern_was: 'iphone', offline: 'iphone', bind: 'iphone', tls: 'iphone',
   port: 'iphone', touchid: 'security', package: 'backup', timemachine: 'backup', datenschluessel: 'security', diagnose: 'troubleshooting', einrichtung_knoepfe: 'setup', updates: 'updates',
-  update_quelle: 'updates', belege_ordner: 'receipts', belege_sub: 'receipts', documents: 'properties', immo_planung: 'properties', assistent: 'assistant', ki_diktat: 'assistant-dictation', ki_bedeutung: 'assistant-memory', ki_sp_start: 'assistant-dictation', ki_mikrofilter: 'assistant-dictation', ki_abschirmung: 'assistant-safety', ki_kontext: 'assistant-setup', ki_leerlauf: 'assistant-setup', ki_auto_suchen: 'assistant-setup', ki_eintragen: 'assistant-rights', ki_eigenes: 'assistant-setup', ki_speichern: 'assistant', ki_programm: 'assistant-setup', ki_modelle: 'assistant-setup', ki_ablage: 'assistant-setup', ki_internet: 'assistant-internet', ki_tavily: 'assistant-internet', ki_vertraut: 'assistant-internet', ki_websites: 'assistant-internet'};
+  update_quelle: 'updates', belege_ordner: 'receipts', belege_sub: 'receipts', documents: 'properties', assistent: 'assistant', ki_diktat: 'assistant-dictation', ki_bedeutung: 'assistant-memory', ki_sp_start: 'assistant-dictation', ki_mikrofilter: 'assistant-dictation', ki_abschirmung: 'assistant-safety', ki_kontext: 'assistant-setup', ki_leerlauf: 'assistant-setup', ki_auto_suchen: 'assistant-setup', ki_eintragen: 'assistant-rights', ki_eigenes: 'assistant-setup', ki_speichern: 'assistant', ki_programm: 'assistant-setup', ki_modelle: 'assistant-setup', ki_ablage: 'assistant-setup', ki_internet: 'assistant-internet', ki_tavily: 'assistant-internet', ki_vertraut: 'assistant-internet', ki_websites: 'assistant-internet'};
 const more = id => ` <a href="#help/${id}" class="more">${t('mehr_in_der_hilfe')}</a>`;   // Verweis auf einen Abschnitt der Hilfe
 // beside a page's title: what the page does in a line, a click opens its part of the help (settings and Konten & Regeln: per tab)
 const PAGE_HELP = {overview: 'overview', balance: 'balance-sheet', cashflow: 'cash-flow', planning: 'planning', properties: 'properties', tax: 'tax',
@@ -664,7 +662,7 @@ function showLogin() {
     : setup ? t('erster_start_passwort_festlegen_mindes')
     : LOGIN.demo ? t('demo_anmelden')
     : SESSION && SESSION.setup_local_only ? t('noch_kein_passwort_festgelegt_die')
-    : SESSION && SESSION.switch ? t('anmeldung_umstellung') : SESSION && SESSION.waiting ? t('anmeldung_wartet') : '';
+    : SESSION && SESSION.waiting ? t('anmeldung_wartet') : '';
   $('#login-text').hidden = !$('#login-text').textContent;
   // Touch ID eingeschaltet (am Mac): nur Touch ID, Passwort erst auf Wunsch – nie beides gleichzeitig
   const tid = !setup && !OFFLINE.mode && SESSION && SESSION.touchid;
@@ -682,8 +680,9 @@ function showLogin() {
   if (tidMode) tryTouchId(true);     // Touch ID at once, without a click -- only while Kontor is the active window (see tryTouchId)
 }
 const LOGIN = {pw: false, demo: false};      // pw: "Stattdessen Passwort eingeben" gewählt; demo: die Anmeldung öffnet die Demo
-const TID = {pending: false, lastTry: 0};
+const TID = {pending: false, lastTry: 0, id: null};       // id: the request running (random) -- the demo link switches it
 try { if (sessionStorage.getItem('kontor.login') === 'demo') { LOGIN.demo = true; TID.skipNext = true; } sessionStorage.removeItem('kontor.login'); } catch (e) {}
+const tidAsk = () => { $('#login-err').textContent = t(LOGIN.demo ? 'touch_id_bitte_am_mac_demo' : 'touch_id_bitte_am_mac'); };
 async function tryTouchId(auto) {
   if (TID.pending || LOGIN.pw || !(SESSION && SESSION.touchid && !SESSION.setup_needed)) return;
   if (auto && TID.skipNext) { TID.skipNext = false; return; }           // nach bewusstem Sperren nicht sofort wieder fragen
@@ -692,10 +691,17 @@ async function tryTouchId(auto) {
   // system dialog in front of what you are doing -- it comes when you switch to Kontor (focus -> revalidate)
   if (auto && (document.hidden || !document.hasFocus())) return;
   TID.pending = true; TID.lastTry = Date.now();
-  $('#login-err').textContent = t('touch_id_bitte_am_mac');
-  try { const r = await api('/api/touchid', LOGIN.demo ? {demo: true} : {}); if (r.demo) return demoEnter(); S.csrf = r.csrf; $('#login-err').textContent = ''; await enterApp(); }
-  catch (err) { $('#login-err').textContent = auto ? t('touch_id_nicht_bestaetigt_erneut') : err.message; }
-  finally { TID.pending = false; }
+  TID.id = Array.from(crypto.getRandomValues(new Uint8Array(16)), b => b.toString(16).padStart(2, '0')).join('');
+  tidAsk();
+  let again = false;
+  try { const r = await api('/api/touchid', Object.assign({tid: TID.id}, LOGIN.demo ? {demo: true} : {})); if (r.demo) return demoEnter(); S.csrf = r.csrf; $('#login-err').textContent = ''; await enterApp(); }
+  catch (err) {
+    if (err.status === 409 && err.data && err.data.switched) again = true;          // switched meanwhile: its window closed, asked anew for that
+    else if (err.status === 409 && LOGIN.demo && err.data && err.data.signed_in) location.reload();     // signed in meanwhile (another window)
+    else $('#login-err').textContent = auto ? t('touch_id_nicht_bestaetigt_erneut') : err.message;
+  }
+  finally { TID.pending = false; TID.id = null; }
+  if (again) tryTouchId(false);
 }
 let REVAL = 0;
 async function revalidate() {
@@ -744,8 +750,9 @@ async function lockNow() { try { await api('/api/lock', {}); } catch (e) {} S.cs
 const demoOn = () => !!(SESSION && SESSION.demo);
 $('#demo-btn').title = t('demo_link_tip');
 $('#demo-btn').addEventListener('click', () => {
-  if (TID.pending) return;          // a Touch ID dialog is open for the sign-in as it was: switched only once it is answered
   LOGIN.demo = !LOGIN.demo; $('#login-err').textContent = ''; showLogin();
+  // a Touch ID window open: confirmed, it opens what is chosen now -- it closes, and the page asks anew (its window says which)
+  if (TID.pending && TID.id) { if (!LOGIN.pw) tidAsk(); api('/api/touchid/switch', {tid: TID.id, demo: LOGIN.demo}).catch(() => {}); }
 });
 // signed in to the demo: the page loads anew -- into the demo and out of it, nothing of one stays in the page's memory for the other
 function demoEnter() { $('#login-pw').value = ''; history.replaceState(null, '', '#overview'); location.reload(); }
@@ -955,7 +962,7 @@ function mmState(st) {
 }
 const nKonten = n => n === 1 ? t('ein_konto') : n + t('konten');
 function fmtZeit(ts) {
-  // 'YYYY-MM-DD HH:MM' -> 'heute 13:40' / 'gestern 08:12' / '03.11. 22:10' / '03.11.25 22:10' (Ortszeit; englisch 03/11)
+  // 'YYYY-MM-DD HH:MM' -> 'heute 13:40' / 'gestern 08:12' / '03.11. 22:10' / '03.11.25 22:10' (local time; English 03/11)
   if (!ts) return '';
   const iso = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
   const now = new Date(), tag = ts.slice(0, 10), zeit = ts.slice(11, 16), sep = LANG === 'en' ? '/' : '.';
@@ -965,7 +972,7 @@ function fmtZeit(ts) {
   return ts.slice(8, 10) + sep + ts.slice(5, 7) + (LANG === 'en' ? (y ? sep + y : '') : '.' + y) + ' ' + zeit;
 }
 function viewCtl() {
-  // Spaltenansicht der Tabellen: Monate (mit Jahressummen) oder nur Jahre
+  // columns of the tables: months (with yearly sums) or years only
   return `<div class="seg" id="modus-seg">${[['months', t('monate'), t('monate_tip')], ['years', t('jahre'), '']].map(([k, l, tip]) => `<button data-m="${k}" class="${S.mode === k ? 'on' : ''}"${tip ? ` title="${tip}"` : ''}>${l}</button>`).join('')}</div>`;
 }
 const swCtl = (id, on, label, tip) => `<label class="switch"${tip ? ` title="${esc(tip)}"` : ''}><input type="checkbox" id="${id}" ${on ? 'checked' : ''}><i></i>${label}</label>`;
@@ -1018,13 +1025,21 @@ function statusMini() {
   keysShow();
   // something to do: bookings waiting for approval (count) or a failed run (!), an update (dot) -- in the sidebar and on the app icon
   const waiting = l && l.dry_run && !l.error ? (l.proposals || []).length : 0, notes = l && !l.error && !waiting ? (l.warnings || []).length : 0;
-  navBadge('#bookings', l && l.error ? '!' : waiting ? (waiting > 99 ? '99+' : String(waiting)) : notes ? '•' : '', l && l.error ? t('letzter_abgleich_mit_fehler') : waiting ? t('0_buchungsvorschlaege', waiting) : tn('n_hinweise_auto', notes));
+  navBadge('#bookings', l && l.error ? '!' : waiting ? (waiting > 99 ? '99+' : String(waiting)) : notes ? '•' : '', l && l.error ? t('letzter_abgleich_mit_fehler') : waiting ? tn('0_buchungsvorschlaege', waiting) : tn('n_hinweise_auto', notes));
   navBadge('#settings', st.update && st.update.newer ? (upFinds(st.update).length ? '!' : '•') : asNewer() ? '•' : '', st.update && st.update.newer ? (upFinds(st.update).length ? t('upd_braucht_freigabe', st.update.available) : t('update') + st.update.available + t('verfuegbar')) : asNewer() ? t('ki_neues_da') : '');
   const mb = $('#menu-btn'); if (mb) mb.classList.toggle('has-badge', !!(waiting || notes || (l && l.error) || (st.update && st.update.newer) || asNewer()));     // narrow window: the sidebar is closed
   try { if (navigator.setAppBadge) { if (waiting) navigator.setAppBadge(waiting); else navigator.clearAppBadge(); } } catch (e) { /* not supported */ }
   if (!st.storage.encrypted) banner(t('daten_liegen_unverschluesselt_verschlu'), 'err');
-  else if (st.storage.key_source === 'file') banner(t('datenschluessel_liegt_als_datei_schlue'));
+  else if ((st.storage.damaged || []).length) {          // a file that did not read at the sign-in was set aside: said until a backup is restored or the note is closed
+    const d = st.storage.damaged, b = $('#banner');
+    b.innerHTML = esc(t('ablage_beiseite', d.map(x => x.file).join(', '), d.map(x => x.kept).join(', '))) + (st.local ? ` <button class="small secondary" id="dmg-ok">${t('hinweis_ausblenden')}</button>` : '');
+    b.className = 'banner err';
+  }
 }
+$('#banner').addEventListener('click', async e => {
+  if (e.target.id !== 'dmg-ok') return;
+  try { await api('/api/storage/notice', {}); S.STATUS.storage.damaged = []; banner(''); } catch (err) { toast(err.message, 5000); }
+});
 const BER = {as_of: '', timer: null};
 const SYNC = {busy: false};
 const MMH = {busy: false};
@@ -1117,10 +1132,10 @@ async function openItems(D) {
   const [ok, ob] = await Promise.all([api(`/api/transactions?year=${yr}&uncategorized=1&limit=1&entity=${encodeURIComponent(S.area)}`).catch(() => ({})),
     api(`/api/transactions?year=${yr}&without_receipt=1&direction=out&limit=1&entity=${encodeURIComponent(S.area)}`).catch(() => ({}))]);
   const lastRun = S.STATUS.last_run, items = [];
-  if (lastRun && lastRun.dry_run && lastRun.proposals && lastRun.proposals.length) items.push(['warn', lastRun.proposals.length + t('buchungsvorschlaege_warten_testmodus'), '#bookings', 'bookings']);
-  if (ok.hits) items.push(['warn', ok.hits + t('umsaetze') + yr + t('ohne_kategorie_zuordnen'), '#categories', 'categorize']);
+  if (lastRun && lastRun.dry_run && lastRun.proposals && lastRun.proposals.length) items.push(['warn', tn('0_buchungsvorschlaege', lastRun.proposals.length), '#bookings', 'bookings']);
+  if (ok.hits) items.push(['warn', tn('n_umsaetze', ok.hits) + ' ' + yr + t('ohne_kategorie_zuordnen'), '#categories', 'categorize']);
   if ((S.DATA.accounts_new || []).length) items.push(['warn', nKonten(S.DATA.accounts_new.length) + t('ohne_bestaetigte_zuordnung_bereich_pos'), '#accounts', '']);
-  if (ob.hits) items.push(['neutral', ob.hits + t('ausgaben_3') + yr + t('ohne_beleg'), '#transactions?no_receipt=1', 'receipts']);
+  if (ob.hits) items.push(['neutral', tn('n_ausgaben', ob.hits) + ' ' + yr + t('ohne_beleg'), '#transactions?no_receipt=1', 'receipts']);
   const ue = (D.cashflow.reconciliation || {})[cur]; if (ue && Math.abs(ue.unexplained) > 1) items.push(['warn', t('unerklaerte_vermoegensaenderung_im_lau') + F(ue.unexplained) + t('pruefzeile'), '#cashflow', 'unexplained']);
   for (const w of (D.warnings || []).slice(0, 3)) items.push(['warn', w, '#bookings', '']);
   if (S.STATUS.update && S.STATUS.update.newer) items.push(upFinds(S.STATUS.update).length ? ['warn', t('upd_braucht_freigabe', S.STATUS.update.available), '#settings/updates', ''] : ['info', t('update') + S.STATUS.update.available + t('verfuegbar'), '#settings/updates', '']);
@@ -1696,7 +1711,7 @@ function holdingsBox(uuid) {
   // Depot: Positionen aus MoneyMoney (Stand des letzten Lesens), aufklappbar oben im Verlaufsfenster
   const d = ((S.DATA && S.DATA.depots) || []).find(x => x.account === uuid); if (!d || !d.positions.length) return '';
   const gv = d.cost_basis ? d.sum - d.cost_basis : null;
-  return `<details class="holdings"><summary>${t('0_positionen', d.positions.length)} · ${F0(d.sum)} €${gv != null ? ` · <span class="${gv >= 0 ? 'pos' : 'neg'}">${gv >= 0 ? '+' : ''}${F0(gv)} € (${FN((d.sum / d.cost_basis - 1) * 100, 1)} %)</span>` : ''}</summary>
+  return `<details class="holdings"><summary>${tn('0_positionen', d.positions.length)} · ${F0(d.sum)} €${gv != null ? ` · <span class="${gv >= 0 ? 'pos' : 'neg'}">${gv >= 0 ? '+' : ''}${F0(gv)} € (${FN((d.sum / d.cost_basis - 1) * 100, 1)} %)</span>` : ''}</summary>
     <div class="small muted" style="margin:4px 0">${t('bestaende_aus_moneymoney_stand_des')} ${xlsxBtn('holdings')}</div>
     <table class="plain small"><thead><tr><th>${t('position')}</th><th class="num">${t('menge')}</th><th class="num">${t('wert')}</th><th class="num">G/V</th></tr></thead><tbody>`
     + d.positions.map(p => `<tr><td title="${esc([p.isin, p.asset_class].filter(Boolean).join(' · '))}">${esc(p.name)}</td><td class="num">${p.quantity.toLocaleString(LOCALE, {maximumFractionDigits: 4})}</td><td class="num">${F(p.value)}</td><td class="num ${p.value - p.cost_basis >= 0 ? 'pos' : 'neg'}">${p.cost_basis ? F(p.value - p.cost_basis) : ''}</td></tr>`).join('')
@@ -4726,7 +4741,7 @@ function vBuchungen(runs) {
     <a class="mode-chip${ask ? '' : ' auto'}" href="#accounts/rules" title="${t(ask ? 'auto_buchen_aus' : 'auto_buchen_an')}">${ask ? ICON.hand : ICON.bolt}${t(ask ? 'modus_freigabe' : 'modus_automatisch')}</a>
   </div>`;
   if (l) {
-    const head = pending ? `${t('wartet_freigabe')} <span class="x">${pending}</span>` : `${t('zuletzt_geprueft')} <span class="x">${esc(l.time)} · ${l.written} ${t('gebucht')}</span>`;
+    const head = pending ? `${t('wartet_freigabe')} <span class="x">${pending}</span>` : `${t('zuletzt_geprueft')} <span class="x">${esc(fmtZeit(l.time))} · ${l.written} ${t('gebucht')}</span>`;
     h += `<h2>${head}${l.error ? ' <span class="pill err">' + esc(l.error) + '</span>' : ''}</h2>`;
     if ((l.proposals || []).length) {
       const pick = pending && local, ed = pending;          // choose and change only while waiting; booking only at the Mac
@@ -4765,7 +4780,7 @@ function vBuchungen(runs) {
       + `</tbody></table></div>` : `<div class="muted small">${t('keine_angelegt')}</div>`);
   // history: only the checks (when, how many proposed and booked, errors) -- the bookings themselves are listed above
   h += `<details class="calc" data-keep="bk-hist"${keepOpen('bk-hist')}><summary>${t('verlauf_2')} (${(runs.history_source || []).length})</summary><div class="wrap auto"><table class="plain"><thead><tr><th>${t('zeit')}</th><th class="num">${t('vorschlaege')}</th><th class="num">${t('gebucht_2')}</th><th>${t('fehler_2')}</th></tr></thead><tbody>`
-    + (runs.history_source || []).map(v => `<tr><td>${esc(v.time)}</td><td class="num">${v.proposals ?? ''}</td><td class="num">${v.written}</td><td>${esc(v.error || '')}</td></tr>`).join('') + '</tbody></table></div></details>';
+    + (runs.history_source || []).map(v => `<tr><td style="white-space:nowrap">${esc(fmtZeit(v.time))}</td><td class="num">${v.proposals ?? ''}</td><td class="num">${v.written}</td><td>${esc(v.error || '')}</td></tr>`).join('') + '</tbody></table></div></details>';
   return h;
 }
 
@@ -4817,7 +4832,7 @@ function vImmobilien(id) {
     return `<div class="card clickable" data-im="${esc(im.id)}" style="cursor:pointer"><div class="l">${esc(BN(im.area) || im.area || '–')}${im.in_planning ? `<span class="tag">${t('in_planung')}</span>` : ''}</div><div class="v s">${esc(im.name)}</div>
       <div class="d">${K.purchase_price != null ? t('kaufpreis') + F0(K.purchase_price) + t('faktor') + FN(K.price_factor) + t('bruttorendite') + (K.gross_rental_yield != null ? FN(K.gross_rental_yield * 100) + ' %' : '–') : t('keine_kalkulation')}</div>
       <div class="d">${j1 ? t('cashflow') + j1.year + ': <b class="' + (j1.cashflow < 0 ? 'neg' : 'pos') + '">' + F0(j1.cashflow) + ` €</b> ${t('ek_rendite')} ` + (j1.return_on_equity != null ? FN(j1.return_on_equity * 100, 1) + ' %' : '–') + t('irr') + (K.irr != null ? FN(K.irr * 100, 1) + ' %' : '–') : ''}</div>
-      ${(d.hints || []).length ? `<div class="d"><span class="pill warn">${t('0_hinweise', d.hints.length)}</span></div>` : ''}</div>`; }).join('') + '</div>';
+      ${(d.hints || []).length ? `<div class="d"><span class="pill warn">${tn('0_hinweise', d.hints.length)}</span></div>` : ''}</div>`; }).join('') + '</div>';
   return h;
 }
 function vImmobilie(id) {
@@ -5130,7 +5145,7 @@ async function belegeApi(path, body) {
   try { return await api(path, body); }
   catch (e) {
     if (!(e.data && e.data.confirm_folder)) throw e;
-    if (!confirm(t('belege_werden_im_ordner') + e.data.folder + t('abgelegt_den_ordner_jetzt_anlegen'))) { go('#settings/receipts'); throw new Error(t('err_kein_belegordner')); }
+    if (!confirm(t('belege_werden_im_ordner', e.data.folder))) { go('#settings/receipts'); throw new Error(t('err_kein_belegordner')); }
     return api(path, Object.assign({}, body, {create_folder: true}));
   }
 }
@@ -5177,7 +5192,7 @@ function vRegeln() {
   // "Gesellschaft") with its participation and counter accounts; target, actual and difference live; one save bar for all
   const C = S.CFG;
   const lr = (S.STATUS || {}).last_run, pend = lr && lr.dry_run ? (lr.proposals || []).length : 0, auto = C.dry_run === false, loc = !!(S.STATUS || {}).local;
-  let h = `<div class="rules-page"><p class="lead">${t('regeln_lead')} <a href="#bookings">${pend ? t('0_buchungsvorschlaege', pend) : t('nav_auto_buchungen')} →</a></p>`
+  let h = `<div class="rules-page"><p class="lead">${t('regeln_lead')} <a href="#bookings">${pend ? tn('0_buchungsvorschlaege', pend) : t('nav_auto_buchungen')} →</a></p>`
     + (S.KONTEN.length ? '' : `<div class="note"><b>${t('noch_keine_konten_geladen_unter')}</b></div>`);
   h += `<div class="group"><div class="set-row"><div class="grow"><b>${t('auto_buchen')}</b><div class="small muted">${t(auto ? 'auto_buchen_an' : 'auto_buchen_aus')}${loc ? '' : ' ' + t('nur_am_mac_klammer')}</div></div>`
     + `<label class="switch${loc ? '' : ' off'}"><input type="checkbox" id="auto-book" ${auto ? 'checked' : ''} ${loc ? '' : 'disabled'}><i></i></label></div></div>`;
@@ -5978,16 +5993,16 @@ function bindZugang(main) {
 function vEinstellungenUpdates() {
   const up = S.CFG.updates || {};
   return `<h2>${t('einstellungen')}</h2><div class="form">
-    <label>${t('automatisch_pruefen_0', hq('updates'))}</label><label class="chk"><select id="e-up-pruefen">${[['daily', t('taeglich')], ['weekly', t('woechentlich')], ['aus', t('nie')]].map(([v, l]) => `<option value="${v}" ${(up.check_mode || 'daily') === v ? 'selected' : ''}>${l}</option>`).join('')}</select> <span class="small muted">${t('nur_github_installieren_erst_nach_klick')}</span></label>
+    <label>${t('automatisch_pruefen_0', hq('updates'))}</label><label class="chk"><select id="e-up-pruefen">${[['daily', t('taeglich')], ['weekly', t('woechentlich')], ['aus', t('nie')]].map(([v, l]) => `<option value="${v}" ${(up.check_mode || 'daily') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
     <label>${t('quelle_github_0', hq('update_quelle'))}</label><input type="text" id="e-up-repo" value="https://github.com/${esc(up.repo || 'stecrz/Kontor')}">
   </div>
   <div class="actions"><button id="save-settings">${t('einstellungen_speichern')}</button></div><div id="findings-e" class="findings"></div>`;
 }
 function vEinstellungenDaten() {
-  return `<h2>${t('daten')}</h2><div class="kv"><div>${t('datenordner')}</div><div>${esc(S.STATUS.storage.folder)}</div>${S.STATUS.storage.program_folder ? `<div>${t('programmordner')}</div><div>${esc(S.STATUS.storage.program_folder)}</div>` : ''}<div>${t('verschluesselung')}</div><div>${!S.STATUS.storage.encrypted ? t('keine_verschluesselung') : S.STATUS.storage.key_source === 'login' ? t('aes_256_nach_anmeldung', t(S.STATUS.storage.touchid_unlock ? 'passwort_oder_touch_id' : 'passwort')) : t('aes_256_schluessel_im') + (S.STATUS.storage.key_source === 'keychain' ? t('macos_schluesselbund') : t('dateisystem_0600'))}</div><div>${t('belegordner')}</div><div><a href="#settings/receipts" title="${esc(t('belegordner_aendern'))}">${esc(S.STATUS.receipts.folder)}</a></div>
+  return `<h2>${t('daten')}</h2><div class="kv"><div>${t('datenordner')}</div><div>${esc(S.STATUS.storage.folder)}</div>${S.STATUS.storage.program_folder ? `<div>${t('programmordner')}</div><div>${esc(S.STATUS.storage.program_folder)}</div>` : ''}<div>${t('verschluesselung')}</div><div>${!S.STATUS.storage.encrypted ? t('keine_verschluesselung') : t('aes_256_nach_anmeldung', t(S.STATUS.storage.touchid_unlock ? 'passwort_oder_touch_id' : 'passwort'))}</div><div>${t('belegordner')}</div><div><a href="#settings/receipts" title="${esc(t('belegordner_aendern'))}">${esc(S.STATUS.receipts.folder)}</a></div>
     <div>Time Machine ${hq('timemachine')}</div><div><span id="tm-state" class="muted">…</span> <button id="tm-toggle" class="secondary small hidden"></button></div>
     <div>${t('protokoll')}</div><div><a href="#log">${t('protokoll_und_diagnose')}</a></div></div>
-  ${S.STATUS.storage.encrypted && S.STATUS.storage.key_source === 'login' ? `<h2>${t('datenschluessel_h')} ${hq('datenschluessel')}</h2>
+  ${S.STATUS.storage.encrypted ? `<h2>${t('datenschluessel_h')} ${hq('datenschluessel')}</h2>
   <div class="row tight"><input type="password" id="dk-pw" placeholder="${t('passwort_zur_bestaetigung')}" autocomplete="current-password" style="width:220px"><button id="dk-go" class="secondary" ${S.STATUS.local ? '' : t('disabled_title_nur_am_mac')}>${t('datenschluessel_erneuern')}</button></div><div id="dk-report"></div>` : ''}`;
 }
 const posRow = (k, v) => `<div class="row tight pos-row"><input type="text" class="p-kat" value="${esc(k)}" placeholder="${t('kategorie_oder_oberkategorie')}"><input type="text" class="p-pos" value="${esc(v)}" placeholder="${t('z_b_sonderausgaben_vorsorge')}"><button class="danger small del-row">×</button></div>`;
@@ -6062,12 +6077,14 @@ async function readPkgFile(file) {
       const pw = await askPassword(t('sicherung_laden_frage', esc(obj.created || '?'), esc(obj.version || '?')));
       if (!pw) return;
       const r = await api('/api/backup/restore', {backup: obj, password: pw});
+      if (r.restart) { restartTo(r.port, r.instance); return; }
       S.CFG = r.config; toast(t('sicherung_geladen') + r.parts.join(', '), 6000); await loadAll(); route(); return;
     }
     if (obj.kontor_backup) {
       const teile = [t('einstellungen'), obj.plan ? t('planung') : '', obj.categories ? t('kategorien') : '', obj.history ? t('verlauf_2') : '', obj.receipts ? t('belegindex') : ''].filter(Boolean).join(', ');
       if (!confirm(t('sicherung_vom') + (obj.created || '?') + ' (' + t('version') + ' ' + (obj.version || '?') + t('wiederherstellen_ersetzt') + teile + '.')) return;
       const r = await api('/api/backup/restore', {backup: obj});
+      if (r.restart) { restartTo(r.port, r.instance); return; }
       S.CFG = r.config; toast(t('sicherung_geladen') + r.parts.join(', '), 6000); await loadAll(); route(); return;
     }
     PKG = obj; if (!PKG.config) { if (PKG.loans || PKG.balance) PKG = {kontor_package: 1, name: file.name, config: PKG}; else throw new Error(t('err_kein_paket')); } PKG_UNRES = null; pkgPreview(); }
@@ -6110,8 +6127,8 @@ function clHistory(hist) {
 }
 // An update whose files hold something the installed version cannot do: one line per kind of finding (what and where, the
 // lines of the program behind it), nothing for an update without findings.
-const UP_KINDS = {guard: 'upd_k_guard', rule: 'upd_k_rule', module: 'upd_k_module', call: 'upd_k_call', around: 'upd_k_around', detour: 'upd_k_detour', place: 'upd_k_place',
-  address: 'upd_k_address', page: 'upd_k_page', file: 'upd_k_file', unreadable: 'upd_k_unreadable'};
+const UP_KINDS = {guard: 'upd_k_guard', rule: 'upd_k_rule', shadow: 'upd_k_shadow', module: 'upd_k_module', call: 'upd_k_call', around: 'upd_k_around', detour: 'upd_k_detour',
+  self: 'upd_k_self', place: 'upd_k_place', address: 'upd_k_address', page: 'upd_k_page', file: 'upd_k_file', extra: 'upd_k_extra', unreadable: 'upd_k_unreadable'};
 function upReview(info) {
   const f = upFinds(info); if (!f.length) return '';
   const rows = Object.keys(UP_KINDS).map(k => [k, f.filter(x => x.kind === k)]).filter(([, xs]) => xs.length).map(([k, xs]) => {
@@ -6121,6 +6138,15 @@ function upReview(info) {
   }).join('');
   return `<div class="note warn up-review" id="up-review"><b>${t('upd_titel', esc(info.available))}</b><div>${t('upd_text')}${more('updates')}</div>${rows}</div>`;
 }
+// the click is the decision: installed without a second question (the button rests meanwhile -- a double click installs once).
+// Only a version with findings is asked about -- and installed with your approval for exactly the files you were shown; if
+// Kontor finds something (else) when it reads them again, the page shows that instead and nothing is installed.
+async function upInstall(ui) { if (ui.disabled) return;
+    const rev = (S.STATUS.update || {}).review, finds = upFinds(S.STATUS.update);
+    if (finds.length && !confirm(t('upd_frage', S.STATUS.update.available))) return;
+    ui.disabled = true; toast(t('update_wird_installiert'), 30000);
+    try { const r = await api('/api/update/install', finds.length ? {approved: rev.digest} : {}); toast(r.text, 8000);
+      if (r.ok && r.restart) waitAndReload(true); else if (r.needs_approval) { S.STATUS = await api('/api/status'); statusMini(); softRoute(); } else ui.disabled = false; } catch (e) { ui.disabled = false; toast(e.message, 8000); } }
 async function vUpdates(form) {
   const r = await api('/api/update/status'), st = S.STATUS, info = r.info, finds = upFinds(info);
   let h = `<div class="cards"><div class="card"><div class="l">${t('installiert')}</div><div class="v">${esc(r.version)}${r.date ? `<span class="vdate">${t('vom_0', FDT(r.date))}</span>` : ''}</div><div class="d">${t('programmordner_wird_beim_update_ersetz')}</div></div>
@@ -6148,7 +6174,7 @@ async function vProtokoll() {
   const min = S.logMin ?? 1, body = logLines(r.rows, min);
   const seg = `<div class="seg small" id="log-min" role="group">${[[0, 'log_alles'], [1, 'log_hinweise'], [2, 'log_probleme']].map(([k, l]) => `<button data-min="${k}" class="${min === k ? 'on' : ''}" aria-pressed="${min === k}">${t(l)}</button>`).join('')}</div>`;
   return `<div class="toolbar">${seg}<button id="log-refresh" class="secondary small">${t('aktualisieren')}</button><button id="diag2" class="secondary small">${t('diagnosedatei_maskiert')}</button><button id="diag3" class="secondary small">${t('diagnosedatei_mit_kontonamen')}</button>${hq('diagnose')}${S.STATUS && S.STATUS.local ? `<button id="log-show" class="secondary small">${t('im_finder_zeigen')}</button>` : ''}</div>
-    <div class="note">${t('datei')} <code>${esc(ordner)}/kontor.log</code> ${t('klartext_rotiert_bei_5_mb')} <code>${t('dienst_err_log')}</code> ${t('fuer_abstuerze_des_dienstes_zur')} <code>${t('library_application_support_kontor')}</code>.</div><pre class="log">` + (body || `<span class="lg-info">${esc(t('log_nichts'))}</span>`) + '</pre>';
+    <div class="note">${t('datei')} <code>${esc(ordner)}/kontor.log</code> ${t('klartext_rotiert_bei_5_mb')} <code>${t('dienst_err_log')}</code> ${t('fuer_abstuerze_des_dienstes_zur')} <code>${t('library_application_support_kontor')}</code>.</div><pre class="log">` + (body || `<span class="lg-info">${esc(t(min >= 2 ? 'log_nichts' : 'log_leer'))}</span>`) + '</pre>';
 }
 // Help: docs/help.de.md or docs/help.en.md (the same file as on GitHub), with contents, search and anchors (#help/<section>)
 const HELP = {md: null, lang: null, q: '', images: {}};
@@ -6773,7 +6799,7 @@ function bind(main) {
     if (!pw) return showFindings($('#dk-report'), [], t('passwort_eingeben'), 'error');
     if (!confirm(t('datenschluessel_frage'))) return;
     dk.disabled = true;
-    try { const r = await api('/api/key/renew', {password: pw}); $('#dk-pw').value = ''; showFindings($('#dk-report'), [], tn('datenschluessel_erneuert', r.files), 'ok'); }
+    try { const r = await api('/api/key/renew', {password: pw}); $('#dk-pw').value = ''; showFindings($('#dk-report'), (r.left || []).length ? [{severity: 'warning', text: t('datenschluessel_rest', r.left.join(', '))}] : [], tn('datenschluessel_erneuert', r.files), 'ok'); }
     catch (e) { showFindings($('#dk-report'), [], e.message, 'error'); }
     finally { dk.disabled = false; } });
   const un = $('#un-go', main); if (un) un.addEventListener('click', async () => {
@@ -6799,15 +6825,7 @@ function bind(main) {
 
   // Updates
   const uc = $('#up-check', main); if (uc) uc.addEventListener('click', async () => { toast(t('pruefe')); await api('/api/update/check', {}); S.STATUS = await api('/api/status'); softRoute(); });
-  // the click is the decision: installed without a second question (the button rests meanwhile -- a double click installs once).
-  // Only a version with findings is asked about -- and installed with your approval for exactly the files you were shown; if
-  // Kontor finds something (else) when it reads them again, the page shows that instead and nothing is installed.
-  const ui = $('#up-install', main); if (ui) ui.addEventListener('click', async () => { if (ui.disabled) return;
-    const rev = (S.STATUS.update || {}).review, finds = upFinds(S.STATUS.update);
-    if (finds.length && !confirm(t('upd_frage', S.STATUS.update.available))) return;
-    ui.disabled = true; toast(t('update_wird_installiert'), 30000);
-    try { const r = await api('/api/update/install', finds.length ? {approved: rev.digest} : {}); toast(r.text, 8000);
-      if (r.ok && r.restart) waitAndReload(true); else if (r.needs_approval) { S.STATUS = await api('/api/status'); statusMini(); softRoute(); } else ui.disabled = false; } catch (e) { ui.disabled = false; toast(e.message, 8000); } });
+  const ui = $('#up-install', main); if (ui) ui.addEventListener('click', () => upInstall(ui));
   const lr = $('#log-refresh', main); if (lr) lr.addEventListener('click', route);
   $$('#log-min button', main).forEach(bt => bt.addEventListener('click', () => { S.logMin = +bt.dataset.min; route(); }));
   const ls = $('#log-show', main); if (ls) ls.addEventListener('click', async () => { try { await api('/api/file/reveal', {path: ((S.STATUS.storage || {}).folder || '') + '/kontor.log'}); } catch (e) { toast(e.message, 5000); } });
@@ -6846,7 +6864,7 @@ async function syncNow(voll, page) {
     const r = S.STATUS.last_result || {};
     const n = (r.proposals || []).length;
     const msg = r.status === 'unchanged' ? t('synchronisiert_keine_aenderung_in_mone')
-      : r.status === 'ok' ? t('synchronisiert') + (r.booked_count ? ' – ' + r.booked_count + ' ' + t('gebucht') : '') + (r.dry_run && n ? ' – ' + n + t('buchungsvorschlaege_testmodus') : '') + ((r.warnings || []).length ? ' – ' + r.warnings.length + t('hinweise_unter_buchungen') : '')
+      : r.status === 'ok' ? t('synchronisiert') + (r.booked_count ? ' – ' + r.booked_count + ' ' + t('gebucht') : '') + (r.dry_run && n ? ' – ' + tn('0_buchungsvorschlaege', n) : '') + ((r.warnings || []).length ? ' – ' + tn('n_hinweise_unter_buchungen', r.warnings.length) : '')
       : (r.text || r.error || t('synchronisiert'));
     toast(msg, r.status === 'unavailable' || r.status === 'error' ? 7000 : 4500);
     // the open page shows the new state: at once (accounts, categories and settings may have changed), and again once the
@@ -6884,11 +6902,11 @@ async function startRun(dry, freigabe, anchor) {
 const AS = {st: null, open: false, msgs: [], refs: [], files: [], conv: '', job: null, n: 0, busy: false, prev: '#overview', setT: null, effort: '', list: false, chats: null, save: true, cw: 0, hover: null, sel: null, ptr: ''};
 const AS_HIDDEN = ['settings', 'log', 'setup', 'assistant'];          // pages the assistant never reads
 // the thinking effort: chosen only at the top of the panel and remembered on this device (like the theme); before the first choice
-// the former setting, else balanced
+// balanced
 const AS_EFFORTS = ['fast', 'balanced', 'thorough'];
 const asEffort = () => {
   if (!AS.effort) { try { const e = LS.get('kontor.effort'); if (AS_EFFORTS.includes(e)) AS.effort = e; } catch (x) { /* kept in memory only */ } }
-  return AS.effort || (((AS.st || {}).settings || {}).effort) || 'balanced';
+  return AS.effort || 'balanced';
 };
 const asOn = () => !!(AS.st && AS.st.settings && AS.st.settings.enabled && !OFFLINE.mode);
 // newer versions of llama.cpp or of the models in use, found by the look (only told at the Mac): what the menu marks at Settings
@@ -7008,11 +7026,15 @@ function asEntry(p, ask) {
     return asCard(p, ask, kind, `${why}<table class="as-e-t"><thead><tr><th></th><th>${t('ki_e_bisher')}</th><th>${t('ki_e_neu_wert')}</th></tr></thead><tbody>${trs}</tbody></table>
       <div class="muted small">${[p.count ? tn('ki_e_rule_vorschau', p.count, p.count) : '', p.dropped ? tn('ki_e_rule_weg', p.dropped, p.dropped) : '', t('ki_e_rule_freigabe')].filter(Boolean).join(' · ')}</div>`, fin, st);
   }
-  if (p.kind === 'book' || p.kind === 'hold') {          // waiting auto bookings to book (final in MoneyMoney) or to hold back: how many, how much, the first of them
-    const more = (p.count || 0) - (p.rows || []).length;
-    const trs = (p.rows || []).map(r => `<tr><td class="nowrap">${esc(FD(r.label))}</td><td class="muted as-e-zw" title="${esc(r.text || '')}">${esc(r.text || '')}</td><td class="num">${r.new == null ? '' : fmt.format(r.new)}</td></tr>`).join('');
+  if (p.kind === 'book' || p.kind === 'hold') {          // waiting auto bookings to book (final in MoneyMoney) or to hold back: how many, how much, each of them
+    // every booking stands on the card: the first ones at once, a long list unfolds (all can be read before the click); a card
+    // saved before 3.17 has only its first rows
+    const all = p.rows || [], cut = all.length > 8 ? 6 : all.length, more = (p.count || 0) - all.length;
+    const who = r => [r.account, r.counterparty].filter(Boolean).join(' · ');          // which account, to whom: each row on its own (a card saved before 3.17: the text only)
+    const line = r => `<tr><td class="nowrap">${esc(FD(r.label))}</td><td class="as-e-zw" title="${esc([who(r), r.text].filter(Boolean).join('\n'))}">${who(r) ? `<div>${esc(who(r))}</div>` : ''}<div class="muted">${esc(r.text || '')}</div></td><td class="num">${r.new == null ? '' : fmt.format(r.new)}</td></tr>`;
+    const rest = all.length > cut ? `<details class="as-e-more" data-id="${esc(p.id)}"${p.more ? ' open' : ''}><summary class="muted small" style="cursor:pointer">${t('ki_e_weitere', all.length - cut)}</summary><table class="as-e-t as-e-tc"><tbody>${all.slice(cut).map(line).join('')}</tbody></table></details>` : '';
     return asCard(p, ask, kind, `<div class="muted small">${tn('ki_e_buchungen', p.count || 0, p.count || 0)}${p.sum != null ? ' · ' + fmt.format(p.sum) : ''}</div>${why}
-      <table class="as-e-t as-e-tc"><tbody>${trs}${more > 0 ? `<tr><td colspan="3" class="muted">${t('ki_e_weitere', more)}</td></tr>` : ''}</tbody></table>`, fin, st);
+      <table class="as-e-t as-e-tc"><tbody>${all.slice(0, cut).map(line).join('')}${more > 0 ? `<tr><td colspan="3" class="muted">${t('ki_e_weitere', more)}</td></tr>` : ''}</tbody></table>${rest}`, fin, st);
   }
   if (p.kind === 'receipt') {          // a receipt given in the panel, to be filed: with which transaction, where (the folder under the title), what differs
     const r = (p.rows || [])[0];
@@ -7373,8 +7395,8 @@ const REC_MAX = 600;          // seconds: then it ends by itself and the text is
 const REC_AUDIO = {channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true};
 // ... and without them (Einstellungen -> KI-Assistent -> Diktieren -> Mikrofonfilter: aus): it hears at once (measured on a MacBook,
 // in Kontor's Mac app: 0.1 s each time, also after a pause), far more quietly -- Kontor levels such a recording itself before it is
-// written down (assistant.py, _speech). No echo or noise filter then: what the Mac plays can get into the text.
-const REC_DIRECT = {channelCount: 1, echoCancellation: false, noiseSuppression: false, autoGainControl: true};
+// written down (assistant.py, _speech) -- no filter of the system then, not even its level: what the Mac plays can get into the text.
+const REC_DIRECT = {channelCount: 1, echoCancellation: false, noiseSuppression: false, autoGainControl: false};
 const REC_DIRECT_WAIT = 600;  // ms its first sound is waited for at most (a microphone that is muted: red anyway)
 const asMicDirect = () => ((AS.st || {}).settings || {}).speech_filter === false;
 // how long red waits: for the first sound at most, and from it on (without the filters nothing fades in: red with the first sound)
@@ -7688,9 +7710,10 @@ async function asSend(text) {
   AS.busy = true; AS.refs = []; AS.files = []; asRefsDraw(); asMsgs(true);
   try {
     const web = AS.msgs.some(x => (x.parts || []).some(p => p.k === 'web' && asWebFetched(p)));          // web text in it: no changes (Kontor knows it; told again after a restart)
+    const receipt_text = AS.msgs.slice(0, -2).some(x => (x.files || []).length > 0);          // ... and a file's text (given with an earlier question): a note from an answer waits for the click
     const ids = [];          // the receipts first, each on its own (in memory at Kontor until the question that names them)
     for (const f of files) ids.push((await api('/api/assistant/attach', {name: f.name, content: await asFileB64(f)})).id);
-    const r = await api('/api/assistant/ask', Object.assign({question: text, conversation: AS.conv, history: hist, page: asPage(), effort: asEffort(), refs, web}, AS.pasted ? {pasted: true} : {}, ids.length ? {files: ids} : {})); AS.pasted = false;
+    const r = await api('/api/assistant/ask', Object.assign({question: text, conversation: AS.conv, history: hist, page: asPage(), effort: asEffort(), refs, web, receipt_text}, AS.pasted ? {pasted: true} : {}, ids.length ? {files: ids} : {})); AS.pasted = false;
     AS.job = r.job; AS.conv = r.conversation; asPoll(m, r.job);
   } catch (e) { m.parts.push({k: 'err', text: e.message}); m.state = 'error'; AS.busy = false; asMsgs(); }
 }
@@ -8214,6 +8237,7 @@ $('#assist').addEventListener('click', e => {
 });
 $('#assist').addEventListener('toggle', e => {
   const d = e.target; if (!d.classList) return;
+  if (d.classList.contains('as-e-more')) { const y = AS.msgs.flatMap(m => m.parts || []).find(x => x.k === 'entry' && x.id === d.dataset.id); if (y) y.more = d.open; return; }          // all bookings of a card: stay unfolded
   const p = ((AS.msgs[+d.dataset.m] || {}).parts || [])[+d.dataset.p]; if (!p) return;
   if (d.classList.contains('as-think')) p.open = d.open;
   else if (d.classList.contains('as-w-d')) { const it = asWebItems(p).find(x => String(x.id || '') === d.dataset.i); if (it) it.open = d.open; }          // a request's address and what is sent: stays open while the answer goes on
@@ -8344,9 +8368,15 @@ async function asChangesLoad() {
   const kind = k => asKind(k) || k || '';
   const list = r.changes || [];
   const mem = c => `<tr><td class="nowrap">${esc(FDT(c.time))}</td><td><b>${esc(t(`ki_a_g_${c.what}`))}</b>${c.title ? ' · ' + esc(c.title) : ''}${(c.what === 'forget_all' || c.what === 'backup') && c.count ? ' · ' + esc(tn('ki_g_n', c.count, asN(c.count))) : ''}${(c.rows || []).map(x => `<div class="muted small">${esc(t('ki_a_g_vorher', x.text || ''))}</div>`).join('')}</td><td>${c.by ? t(`ki_a_g_by_${c.by}`) : '–'}</td><td class="nowrap">${t('ki_e_done')}</td></tr>`;
+  // each change as the card showed it (before and after, each booking), folded
+  const num = (c, v) => v == null ? t('ki_e_leer') : c.kind === 'params' ? (+v).toLocaleString(LOCALE, {maximumFractionDigits: 2}) : fmt.format(v);
+  const row = (c, r) => 'old_text' in r || 'new_text' in r ? `<tr><td>${esc(r.label || '')}</td><td class="muted">${esc(r.old_text || '–')}</td><td><b>${esc(r.new_text || '–')}</b></td></tr>`
+    : c.kind === 'book' || c.kind === 'hold' ? `<tr><td class="nowrap">${esc(FD(r.label || ''))}</td><td>${[r.account, r.counterparty].filter(Boolean).map(esc).join(' · ')}<div class="muted">${esc(r.text || '')}</div></td><td class="num">${r.new == null ? '' : fmt.format(r.new)}</td></tr>`
+    : `<tr><td>${esc(/^\d{4}-\d{2}$/.test(r.label || '') ? MLL(r.label) : r.label || '')}</td><td class="num muted">${r.old != null ? num(c, r.old) : r.shown != null ? num(c, r.shown) : '–'}</td><td class="num"><b>${num(c, r.new)}</b></td></tr>`;
+  const rows = c => (c.rows || []).length ? `<details class="as-log-rows"><summary class="muted small">${tn('ki_a_zeilen', c.rows.length, c.rows.length)}</summary><table class="as-e-t"><tbody>${c.rows.map(r => row(c, r)).join('')}</tbody></table></details>` : '';
   el.classList.toggle('muted', !list.length);
   el.innerHTML = !list.length ? t('ki_aenderungen_keine') : `<div class="as-tw"><table><thead><tr><th>${t('ki_a_zeit')}</th><th>${t('ki_a_was')}</th><th>${t('ki_a_grund')}</th><th>${t('ki_a_stand')}</th></tr></thead><tbody>${list.map(c => c.kind === 'memory' ? mem(c) : `<tr>
-    <td class="nowrap">${esc(FDT(c.time))}</td><td><b>${esc(kind(c.kind))}</b> · ${esc(c.title || '')}${c.category ? ' → ' + esc(c.category.replace(/ \/ /g, ' › ')) : ''}${c.sub ? `<div class="muted small">${esc(c.sub)}</div>` : ''}${c.count && c.kind !== 'web' ? `<div class="muted small">${tn(c.kind === 'book' || c.kind === 'hold' ? 'ki_e_buchungen' : 'ki_a_umsaetze', c.count, c.count)}${c.sum != null ? ' · ' + fmt.format(c.sum) : ''}</div>` : ''}</td><td>${esc(c.reason || '–')}</td>
+    <td class="nowrap">${esc(FDT(c.time))}</td><td><b>${esc(kind(c.kind))}</b> · ${esc(c.title || '')}${c.category ? ' → ' + esc(c.category.replace(/ \/ /g, ' › ')) : ''}${c.sub ? `<div class="muted small">${esc(c.sub)}</div>` : ''}${c.count && c.kind !== 'web' ? `<div class="muted small">${tn(c.kind === 'book' || c.kind === 'hold' ? 'ki_e_buchungen' : 'ki_a_umsaetze', c.count, c.count)}${c.sum != null ? ' · ' + fmt.format(c.sum) : ''}</div>` : ''}${c.kind !== 'web' ? rows(c) : ''}</td><td>${esc(c.reason || '–')}</td>
     <td class="nowrap">${c.kind === 'web' ? (c.state === 'failed' ? t('ki_a_fehlgeschlagen') : c.what === 'read' ? t('ki_a_abgerufen') : tn('ki_w_done_n', c.count || 0, c.count || 0)) : t(c.state === 'undone' ? 'ki_e_undone' : 'ki_e_done')}${c.final ? ' · ' + t('ki_a_endgueltig') : ''}${[c.note, c.state === 'undone' ? c.undo_note : ''].filter(Boolean).map(x => `<div class="muted small">${esc(x)}</div>`).join('')}</td></tr>`).join('')}</tbody></table></div>`;
 }
 const asRate = b => b >= 1e6 ? (b / 1e6).toLocaleString(LOCALE, {maximumFractionDigits: b >= 1e7 ? 0 : 1}) + ' MB/s' : Math.max(1, Math.round(b / 1e3)).toLocaleString(LOCALE) + ' KB/s';

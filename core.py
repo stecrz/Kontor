@@ -27,7 +27,7 @@ import rules
 from rules import Proposal, parse_start, plan_all
 from storage import Store
 from tax import build_tax
-from i18n import tr
+from i18n import tr, trn
 
 log = logging.getLogger("kontor.core")
 RUN_LOCK = threading.Lock()
@@ -197,7 +197,6 @@ def merged_config(cfg: Optional[dict]) -> dict:
     for k, v in cfg.items():
         if k not in out:
             out[k] = v
-    out["receipts"].pop("write_comment", None)          # gone (22.11.2026): a receipt's path is never written into MoneyMoney
     for i, b in enumerate(out["areas"]):
         b.setdefault("id", "b%d" % (i + 1))
         b.setdefault("name", "Bereich %d" % (i + 1))
@@ -986,6 +985,20 @@ def plan_pending(ledger: Ledger, config: dict, state: dict, today: date, hold: O
     return proposal_rows(lg, res.proposals)
 
 
+def not_as_shown(p: Optional[Proposal], shown: dict) -> str:
+    """Why a booking is not booked from the assistant's card ("": it waits exactly as the card showed it): Kontor wants it
+    checked first (its note -- a rule of the assistant's you have not confirmed, a possible counterpart), or it no longer waits
+    as shown -- gone, or another amount, day, counterparty, text or category (the account is part of its key)."""
+    if p is None:
+        return tr("s_ki_buchung_anders")
+    if p.note:
+        return p.note
+    same = (abs(p.amount - float(shown.get("amount") or 0)) < 0.005 and p.booking_date.isoformat() == str(shown.get("date") or "")
+            and p.payee == str(shown.get("counterparty") or "") and p.purpose == str(shown.get("text") or "")
+            and (p.category or "") == str(shown.get("category") or ""))
+    return "" if same else tr("s_ki_buchung_anders")
+
+
 def apply_proposals(bridge: Bridge, ledger: Ledger, proposals: List[Proposal], made: Optional[List[Proposal]] = None,
                     config: Optional[dict] = None, progress: Optional[Callable[[str, int, int], None]] = None,
                     categories: Optional[List[dict]] = None, notes: Optional[List[str]] = None) -> int:
@@ -1648,6 +1661,9 @@ def run_once(store: Store, config: dict, today: date, dry: bool, force: bool,
     """approve (a live run from "Approve" under Auto bookings): account|mark -> changes (amount, date, purpose) of the
     bookings you approved; only these are written, the others keep waiting. None: booking fully automatically, what is new
     since the last check (see wanted). What you chose not to book (settings: nicht_buchen) is never proposed.
+    "shown" in an approval: the amount the page showed (another one now: nothing is written) -- or, from the assistant's card,
+    the whole booking as shown (amount, date, counterparty, text, category): each is booked only if it waits exactly so and
+    carries no note (not_as_shown); the others are left out like bookings not approved, with the reason in _refused.
     report=False: no report here (the service builds it in the background, so the page is up to date at once).
     ledger: a state read already (e.g. only the accounts of the rules, refresh_accounts): not read again, and the mark of the
     last full check stays (the next sync still sees what changed in MoneyMoney).
@@ -1711,11 +1727,21 @@ def run_once(store: Store, config: dict, today: date, dry: bool, force: bool,
         automatic = not dry and approve is None
         edits = {k: v for k, v in approve.items() if isinstance(v, dict)} if approving else None
         hold: set = set()
+        exact = {k: v["shown"] for k, v in approve.items() if isinstance(v, dict) and isinstance(v.get("shown"), dict)} if approving else {}
+        refused: Dict[str, str] = {}                    # from the assistant's card: not (or no longer) as shown -> why
 
         def wanted(p: Proposal) -> bool:
             """Booked in this run: what you approved; booking fully automatically what is new since the last check -- what is
             backdated or missing again (deleted in MoneyMoney) waits for you, and a loan's interest after it too."""
-            return p.key in approve if approving else not p.retro and not p.note
+            return (p.key in approve and p.key not in refused) if approving else not p.retro and not p.note
+
+        def check_shown() -> None:
+            now = {p.key: p for p in result.proposals}
+            for k, sh in exact.items():
+                if k not in refused:
+                    why = not_as_shown(now.get(k), sh)
+                    if why:
+                        refused[k] = why
         failed = False
         moved: List[str] = []
         try:
@@ -1725,6 +1751,7 @@ def run_once(store: Store, config: dict, today: date, dry: bool, force: bool,
                 # that account takes up the difference) -- again until nothing depends on it (booking fully automatically the
                 # rules plan only what is new in the first place)
                 for _ in range(8):
+                    check_shown()                       # (planned again without one: what follows may no longer be as shown either)
                     extra = {p.key for p in result.proposals if not wanted(p)} - hold
                     if not extra:
                         break
@@ -1738,7 +1765,10 @@ def run_once(store: Store, config: dict, today: date, dry: bool, force: bool,
                 now = {p.key: p for p in result.proposals}
                 for k, ch in approve.items():
                     shown = ch.get("shown") if isinstance(ch, dict) else None
-                    if shown is not None and (k not in now or abs(now[k].amount - float(shown)) >= 0.005):
+                    if isinstance(shown, dict):          # the assistant's card: settled above -- still not as shown: nothing
+                        if k not in refused and not_as_shown(now.get(k), shown):
+                            moved.append(k)
+                    elif shown is not None and (k not in now or abs(now[k].amount - float(shown)) >= 0.005):
                         moved.append(k)
             if moved:
                 log.info("%d planned booking(s) not settled or changed since shown, nothing written", len(moved))
@@ -1798,7 +1828,7 @@ def run_once(store: Store, config: dict, today: date, dry: bool, force: bool,
 
         warnings = list(result.warnings)
         if dry and bookings:
-            warnings.insert(0, tr("s_probelauf_d_vorgeschlagene_buchung_en") % len(bookings))
+            warnings.insert(0, trn("s_n_buchungen_warten_freigabe", len(bookings)))
         ums = None
         t_write = time.time()
         if with_report and report:
@@ -1834,7 +1864,8 @@ def run_once(store: Store, config: dict, today: date, dry: bool, force: bool,
                 cur["categories_raw"] = state["categories_raw"]
         store.update("state.json", _merge, {})      # Verlauf-Eingaben waehrend des Laufs bleiben erhalten
 
-        return dict(summary, _ledger=ledger, _categories=categories, _transactions=ums, _booked=[p.key for p in made])
+        return dict(summary, _ledger=ledger, _categories=categories, _transactions=ums, _booked=[p.key for p in made],
+                    **({"_refused": refused} if refused else {}))
     finally:
         RUN_LOCK.release()
 
@@ -1919,12 +1950,12 @@ def export_package(config: dict, name: str = "Kontor-Einstellungen", strip_uuids
     return pkg
 
 
-FILE_FORMAT_SINCE = (3, 15, 0)        # packages and backups: settings named as from this version on
+FILE_FORMAT_SINCE = (3, 17, 0)        # packages and backups: only from this version on (nothing older is read or converted)
 
 
 def check_file_version(d: dict) -> None:
-    """A package or backup written by a Kontor before 3.15.0 names its settings differently: refused, so nothing is replaced by
-    defaults. A file without a version (a configuration written by hand) counts as current."""
+    """A package or backup written by a Kontor before 3.17.0: refused with a clear message, nothing is read from it. A file
+    without a version (a configuration written by hand) counts as current."""
     v = d.get("version") if isinstance(d, dict) else None
     if not v:
         return
@@ -1946,7 +1977,7 @@ def import_package(current: dict, pkg: dict, ledger: Optional[Ledger], mode: str
     for k in ("ui", "updates", "not_book", "assistant", "dry_run"):
         inc.pop(k, None)
     if isinstance(inc.get("receipts"), dict):      # where your receipts lie: yours
-        for k in ("folder", "folder_confirmed", "write_comment"):
+        for k in ("folder", "folder_confirmed"):
             inc["receipts"].pop(k, None)
     if isinstance(inc.get("cashflow"), dict):
         inc["cashflow"].pop("recipient_to_account", None)

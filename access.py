@@ -6,9 +6,8 @@ Dienstes, bis er endet.
   das Mac-Passwort freigibt (auth.touchid_unseal). Ohne Anmeldung ist nichts davon nutzbar, auch nicht am entsperrten Mac.
 * start.json haelt, was der Dienst vor der Anmeldung braucht (Port, Adresse, Zertifikat, Sprache, Touch ID, Sperrzeit,
   Offline-Kopie) -- keine Daten.
-* Umstellung von frueher (Schluessel im Schluesselbund bzw. in master.key, Passwort in auth.json): bei der ersten Anmeldung mit
-  Passwort wird derselbe Schluessel mit dem Passwort verpackt; der alte verschwindet erst, wenn der aus key.json nachweislich
-  jede Datei oeffnet -- auch in den Ordnern aus storage.ENC_DIRS. Bricht etwas ab, macht die naechste Anmeldung weiter.
+* Ein Schluessel verschwindet erst, wenn der neue nachweislich jede Datei oeffnet -- auch in den Ordnern aus storage.ENC_DIRS
+  (Erneuern); bricht etwas ab, macht die naechste Anmeldung weiter. Nie ein neuer Schluessel ueber vorhandene Daten.
 """
 from __future__ import annotations
 
@@ -28,7 +27,6 @@ from i18n import tr
 log = logging.getLogger("kontor.access")
 START_FILE = "start.json"
 LOCK_FILE = "key.lock"
-LEGACY_FILE = "master.key"
 METHODS = ("password", "touchid")
 # what the service needs before anyone signs in -- settings, no data
 START_KEYS = {"port": int, "bind": str, "tls_cert": str, "tls_key": str, "language": str, "touchid": bool, "lock_minutes": int, "offline_copy": bool}
@@ -99,20 +97,6 @@ def write_start(data_dir: str, config: dict) -> None:
         log.warning("Start settings not written: %s", e)
 
 
-def prepare(data_dir: str) -> None:
-    """At the service's start, from before (no key file yet): the start settings from the settings, once -- with the key from
-    before (the keychain), which until the switch opens the data anyway. Afterwards nothing is read before a sign-in."""
-    if os.path.exists(os.path.join(data_dir, START_FILE)) or state(data_dir) != "legacy":
-        return
-    try:
-        key, _ = storage.read_master_key(data_dir)
-        raw = Store(data_dir, key, "legacy").read_bytes("config.json")
-        write_start(data_dir, json.loads(raw.decode("utf-8")) if raw else {})
-        log.info("Start settings taken from the settings once (switch to the key file pending)")
-    except Exception as e:                            # nothing known: the defaults (127.0.0.1, port 8765) until the sign-in
-        log.warning("Start settings not taken from before: %s", e)
-
-
 # ---------------------------------------------------------------------------
 # Zustand
 # ---------------------------------------------------------------------------
@@ -122,22 +106,20 @@ def has_data(data_dir: str) -> bool:
 
 
 def state(data_dir: str) -> str:
-    """'login' (the key file is there), 'legacy' (encrypted data from before, the key in the keychain or master.key), 'broken'
-    (the key file does not read) or 'new' (nothing there yet: set up)."""
+    """'login' (the key file is there), 'broken' (the key file does not read) or 'new' (no key file: set up -- a new key only
+    where no encrypted data are, setup_key)."""
     try:
         rec = storage.key_record(data_dir)
     except StoreError:
         return "broken"
     if rec is not None:
         return "login" if rec.get("password") else "broken"
-    return "legacy" if has_data(data_dir) else "new"
+    return "new"
 
 
 def password_set(data_dir: str) -> bool:
-    """Is a password set? (The key file -- or, from before, Kontor's password in auth.json beside the data.) A broken key file
-    counts as set: never a new setup over data the old key opens."""
-    st = state(data_dir)
-    return st in ("login", "broken") or (st == "legacy" and os.path.exists(os.path.join(data_dir, "auth.json.enc")))
+    """Is a password set (the key file)? A broken key file counts as set: never a new setup over data its key opens."""
+    return state(data_dir) != "new"
 
 
 def touchid_ready(data_dir: str) -> bool:
@@ -150,50 +132,29 @@ def touchid_ready(data_dir: str) -> bool:
     return bool(e) and not e.get("gone") and auth._helper_current()
 
 
-def legacy_left(data_dir: str) -> bool:
-    """Is a key from before still there (keychain entry, master.key)?"""
-    if os.path.exists(os.path.join(data_dir, LEGACY_FILE)):
-        return True
-    return any(storage._kc_read(a)[0] == 0 for a in (storage.KEYCHAIN_ACCOUNT, storage.KEYCHAIN_NEXT))
-
-
 # ---------------------------------------------------------------------------
 # Anmelden: Schluessel freigeben
 # ---------------------------------------------------------------------------
 
-def _legacy_auth(data_dir: str, key: bytes) -> dict:
-    raw = Store(data_dir, key, "legacy").read_bytes("auth.json")
-    rec = json.loads(raw.decode("utf-8")) if raw else {}
-    return rec if isinstance(rec, dict) else {}
-
-
-def unlock_password(data_dir: str, password: str, finish: bool = True) -> Optional[Tuple[bytes, str]]:
-    """(key, how) when the password is right, else None. how: 'password' (key file) -- or, from before, where the key lies
-    ('keychain', 'file'; the password checked against auth.json, complete() then makes the key file). From before an
-    unfinished renewal is finished first (finish: only under the service's lock); never a new key over data."""
+def unlock_password(data_dir: str, password: str) -> Optional[Tuple[bytes, str]]:
+    """(key, 'password') when the password opens the key file, else None. An unfinished renewal is finished first; never a
+    new key over data."""
     st = state(data_dir)
     if st == "broken":
-        if not legacy_left(data_dir):
-            raise StoreError(tr("s_schluesseldatei_kaputt"))
-        st = "legacy"                                    # the key from before is still there: it opens, complete() makes the key file anew
-    if st == "login":
-        with _KeyFileLock(data_dir):
-            rec = storage.key_record(data_dir)
-            got = storage.open_password_entry(rec["password"], password)
-            if got is None:
-                return None
-            return _checked(data_dir, _finish_renewal(data_dir, rec, *got)), "password"
-    if st == "legacy":
-        if finish:                                      # a renewal from before that did not finish: first (only under the service's lock)
-            storage._finish_renewal(data_dir)
-        key, src = storage.load_or_create_master_key(data_dir, finish=False)
-        rec = _legacy_auth(data_dir, key)
-        return (key, src) if rec and auth.verify_password(password, rec) else None
-    return None
+        raise StoreError(tr("s_schluesseldatei_kaputt"))
+    if st != "login":
+        return None
+    with _KeyFileLock(data_dir):
+        rec = storage.key_record(data_dir)
+        got = storage.open_password_entry(rec["password"], password)
+        if got is None:
+            return None
+        return _checked(data_dir, _finish_renewal(data_dir, rec, *got)), "password"
 
 
-def unlock_touchid(data_dir: str) -> Optional[Tuple[bytes, str]]:
-    """(key, 'touchid') after Touch ID (or the Mac's password) in the macOS window -- None when not confirmed or not set up."""
+def unlock_touchid(data_dir: str, reason: str = "", tid: str = "") -> Optional[Tuple[bytes, str]]:
+    """(key, 'touchid') after Touch ID (or the Mac's password) in the macOS window -- None when not confirmed or not set up.
+    reason: what the window says (what the sign-in opens); tid: the sign-in page's request (auth.touchid_close)."""
     try:
         rec = storage.key_record(data_dir)
     except StoreError:
@@ -202,7 +163,7 @@ def unlock_touchid(data_dir: str) -> Optional[Tuple[bytes, str]]:
     if not e or e.get("gone"):
         return None
     try:
-        kek = auth.touchid_unseal(str(e.get("se") or ""), str(e.get("eph") or ""), str(e.get("salt") or ""))
+        kek = auth.touchid_unseal(str(e.get("se") or ""), str(e.get("eph") or ""), str(e.get("salt") or ""), reason, tid=tid)
     except auth.TouchIdGone:
         # this Mac's Secure Enclave cannot use it (made on another Mac): marked, not offered any more -- it stays until the next
         # sign-in with the password makes a new one, so a single odd answer never takes the only other way in
@@ -234,8 +195,7 @@ def verify_password(data_dir: str, key: bytes, password: str) -> bool:
     """Kontor's password, asked again while signed in: does it open the key in use?"""
     rec = storage.key_record(data_dir)
     if not rec or not rec.get("password"):
-        a = _legacy_auth(data_dir, key)
-        return bool(a) and auth.verify_password(password, a)
+        return False
     got = storage.open_password_entry(rec["password"], password)
     return bool(got) and key in got
 
@@ -287,70 +247,40 @@ def _promoted(rec: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Nach der Anmeldung: Schluesseldatei anlegen, Altes entfernen
+# Einrichten, Touch ID, Passwort, Erneuern, Zuruecksetzen
 # ---------------------------------------------------------------------------
 
 def setup_key(data_dir: str, store: Store) -> bytes:
-    """The key a first password wraps: the one in use, the one from before (data without a password yet), or a new one --
-    a new one only when no encrypted data are there."""
+    """The key a first password wraps: the one in use (the store already open), or a new one -- a new one only when no
+    encrypted data are there (their key would be lost: they stay, nothing is set up over them)."""
     if store.is_open and store.master is not None:
         return store.master
     if has_data(data_dir):
-        key, _ = storage.read_master_key(data_dir)
-        return key
+        raise StoreError(tr("s_schluessel_passt_nicht"))
     return secrets.token_bytes(32)
 
 
-def complete(data_dir: str, key: bytes, password: Optional[str] = None) -> bool:
-    """After a sign-in (or a first password): the key file with the password where it is missing or another key's, and the
-    key from before removed -- only once the key from the key file provably opens every file (set_touchid follows). Returns
-    True when nothing from before is left. Anything that fails changes nothing that is needed: the next sign-in tries again."""
+def complete(data_dir: str, key: bytes, password: str) -> bool:
+    """The first password: the key file with the data key wrapped with it -- only where there is none yet and the key provably
+    opens every file (set_touchid follows); read back before it counts. False: nothing changed."""
     with _KeyFileLock(data_dir):
-        try:
-            rec = storage.key_record(data_dir)
-        except StoreError:
-            rec = None                                   # broken: made anew below -- only once the key provably opens every file
-        if rec is None or not rec.get("password") or not _opens_or_empty(key, data_dir):
-            if password is None:
-                return False                             # e.g. Touch ID from before: done at the next sign-in with the password
-            bad = storage.files_not_opening(key, data_dir)
-            if bad:
-                log.error("Key file not made: %d file(s) do not open with the key -- nothing changed", len(bad))
-                return False
-            storage.write_key_record(data_dir, {"password": storage.password_entry(key, password), "touchid": None})
-            got = storage.open_password_entry(storage.key_record(data_dir)["password"], password)
-            if not got or got[0] != key:
-                raise StoreError(tr("s_schluesseldatei_kaputt"))
-            log.warning("Key file made: the data key is wrapped with the password")
-        return _drop_legacy(data_dir, key)
+        if storage.key_record(data_dir) is not None:     # (a broken one raises: never written over)
+            log.error("Key file not made: there is one already -- nothing changed")
+            return False
+        bad = storage.files_not_opening(key, data_dir)
+        if bad:
+            log.error("Key file not made: %d file(s) do not open with the key -- nothing changed", len(bad))
+            return False
+        storage.write_key_record(data_dir, {"password": storage.password_entry(key, password), "touchid": None})
+        got = storage.open_password_entry(storage.key_record(data_dir)["password"], password)
+        if not got or got[0] != key:
+            raise StoreError(tr("s_schluesseldatei_kaputt"))
+        log.warning("Key file made: the data key is wrapped with the password")
+        return True
 
 
 def _opens_or_empty(key: bytes, data_dir: str) -> bool:
     return not has_data(data_dir) or storage._opens(key, data_dir)
-
-
-def _drop_legacy(data_dir: str, key: bytes) -> bool:
-    """The key from before (keychain entries, master.key) goes -- only when the key file holds a password entry and the key it
-    opens, checked file by file, opens every encrypted file. True when nothing from before is left."""
-    if not legacy_left(data_dir):
-        return True
-    bad = storage.files_not_opening(key, data_dir)
-    if bad:
-        log.error("Key from before kept: %d file(s) do not open with the key from the key file", len(bad))
-        return False
-    ok = True
-    for acc in (storage.KEYCHAIN_NEXT, storage.KEYCHAIN_ACCOUNT):
-        if storage._kc_read(acc)[0] == 0:
-            rc, _, _ = storage._security(["delete-generic-password", "-s", storage.KEYCHAIN_SERVICE, "-a", acc])
-            ok = ok and rc == 0 and storage._kc_read(acc)[0] == 44
-    if os.path.exists(os.path.join(data_dir, LEGACY_FILE)):
-        storage._wipe(os.path.join(data_dir, LEGACY_FILE))
-        ok = ok and not os.path.exists(os.path.join(data_dir, LEGACY_FILE))
-    if ok:
-        log.warning("Data key from before removed: the key file opens all %d file(s)", len(storage._enc_files(data_dir)))
-    else:
-        log.warning("Data key from before not removed completely -- tried again at the next sign-in")
-    return ok
 
 
 def _touch_entry(key: bytes, nxt: Optional[bytes] = None, prev: Optional[dict] = None) -> Optional[dict]:
@@ -408,16 +338,17 @@ def set_touchid(data_dir: str, key: bytes, on: bool) -> bool:
 def change_password(data_dir: str, key: bytes, password: str) -> None:
     """A new password: the key wrapped with it (Touch ID's entry stays). Read back before it counts."""
     with _KeyFileLock(data_dir):
-        rec = storage.key_record(data_dir) or {"touchid": None}
+        rec = storage.key_record(data_dir)
+        if not rec or not rec.get("password"):
+            raise StoreError(tr("s_schluesseldatei_kaputt"))
         if _pending(rec):                                # a renewal waits: the next sign-in finishes it first
             raise StoreError(tr("s_schluessel_erneuern_halb"))
-        if rec.get("password") and not _opens_or_empty(key, data_dir):
+        if not _opens_or_empty(key, data_dir):
             raise StoreError(tr("s_schluessel_passt_nicht"))
         storage.write_key_record(data_dir, dict(rec, password=storage.password_entry(key, password)))
         got = storage.open_password_entry(storage.key_record(data_dir)["password"], password)
         if not got or got[0] != key:
             raise StoreError(tr("s_schluesseldatei_kaputt"))
-    _drop_legacy(data_dir, key)
 
 
 def renew(store: Store, password: str) -> int:
@@ -448,8 +379,8 @@ def renew(store: Store, password: str) -> int:
 
 
 def forget(store: Store) -> None:
-    """Everything deleted with the password (Settings -> Reset): every encrypted file of the store, then the key file and the
-    key from before, then the key in memory. A file that does not go stops it before any key is touched."""
+    """Everything deleted with the password (Settings -> Reset): every encrypted file of the store, then the key file, then
+    the key in memory. A file that does not go stops it before the key file is touched."""
     data_dir = store.data_dir
     with _KeyFileLock(data_dir), store._key_lock:       # no file is written meanwhile: the store locks first
         store.close()
@@ -457,37 +388,13 @@ def forget(store: Store) -> None:
             if n.endswith((".enc", ".enc.tmp", ".enc.renew")):
                 os.remove(os.path.join(data_dir, n))      # one that does not go: the key file stays, a sign-in opens the rest
         storage._remove(os.path.join(data_dir, storage.KEY_FILE))
-        for acc in (storage.KEYCHAIN_NEXT, storage.KEYCHAIN_ACCOUNT):
-            storage._security(["delete-generic-password", "-s", storage.KEYCHAIN_SERVICE, "-a", acc])
-        if os.path.exists(os.path.join(data_dir, LEGACY_FILE)):
-            storage._wipe(os.path.join(data_dir, LEGACY_FILE))
     log.warning("Data key forgotten with everything it opened")
 
 
 def remove_keys(data_dir: str) -> bool:
-    """Uninstalling: the key file and the key from before -- only when no encrypted file is left (a key is never deleted
-    while data it opens remain). True when no key is left."""
+    """Uninstalling: the key file -- only when no encrypted file is left (a key is never deleted while data it opens remain).
+    True when no key is left."""
     if any(n.endswith((".enc", ".enc.tmp", ".enc.renew")) for n in (storage._names(data_dir) if os.path.isdir(data_dir) else [])):
         return False
     storage._remove(os.path.join(data_dir, storage.KEY_FILE))
-    for acc in (storage.KEYCHAIN_NEXT, storage.KEYCHAIN_ACCOUNT):
-        storage._security(["delete-generic-password", "-s", storage.KEYCHAIN_SERVICE, "-a", acc])
-    if os.path.exists(os.path.join(data_dir, LEGACY_FILE)):
-        storage._wipe(os.path.join(data_dir, LEGACY_FILE))
-    return not os.path.exists(os.path.join(data_dir, storage.KEY_FILE)) and not legacy_left(data_dir)
-
-
-_LEGACY_GONE: set = set()           # data folders where nothing from before is left (the keychain is not asked again)
-
-
-def key_source(data_dir: str, store: Store) -> str:
-    """For the status: 'login' (the key only after a sign-in), else where the key from before lies ('keychain', 'file')."""
-    if not store.encrypted:
-        return ""
-    if state(data_dir) == "login":                       # a key from before still there: shown as such until it is gone
-        if data_dir in _LEGACY_GONE or not legacy_left(data_dir):
-            _LEGACY_GONE.add(data_dir)
-            return "login"
-        return "file" if os.path.exists(os.path.join(data_dir, LEGACY_FILE)) else "keychain"
-    return store.key_source
-
+    return not os.path.exists(os.path.join(data_dir, storage.KEY_FILE))

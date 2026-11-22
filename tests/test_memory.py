@@ -33,7 +33,7 @@ from storage import Store      # noqa: E402
 class _Mem(unittest.TestCase):
     def setUp(self):
         self.dir = tempfile.mkdtemp(prefix="kontor-mem-")
-        self.store = Store(self.dir, secrets.token_bytes(32), "file")
+        self.store = Store(self.dir, secrets.token_bytes(32))
         self.told = []
         self.m = M.Memory(self.store, lambda what, note, more: self.told.append((what, note.get("text"), more)))
 
@@ -213,13 +213,13 @@ class Notes(_Mem):
         """Kontor started, nobody signed in yet: the memory does not read -- and takes nothing for missing or damaged; after the
         sign-in everything is there."""
         self.m.add("Ziel: mit 45 finanziell frei")
-        key, source = self.store.master, self.store.key_source
+        key = self.store.master
         locked = Store.closed(self.dir)
         m2 = M.Memory(locked)
         for use in (m2.active, m2.stats, lambda: m2.add("Kommt nicht an"), lambda: m2.profile(1500), m2.export):
             with self.assertRaises(storage.StoreLocked):
                 use()
-        locked.unlock(key, source)
+        locked.unlock(key)
         self.assertEqual([n["text"] for n in m2.active()], ["Ziel: mit 45 finanziell frei"])
         self.assertEqual(m2.stats()["broken"], 0)
 
@@ -257,8 +257,10 @@ class Profile(unittest.TestCase):
 
     def fill(self, n, pinned=()):
         notes = [{"id": "n%010x" % i, "text": "Notiz %d: %s" % (i, "wichtig " * (1 + i % 40)), "created": "2026-%02d-%02d 10:00:%02d" % (1 + i % 12, 1 + i % 28, i % 60),
-                  "pinned": i in pinned, "source": {"how": "chat", "chat": "ab12cd34"}} for i in range(n)]
+                  "source": {"how": "chat", "chat": "ab12cd34"}} for i in range(n)]
         self.assertEqual(self.m.merge({"v": 1, "notes": notes}), n)
+        for i in pinned:                                                          # (what comes back from a backup is never pinned: pinned by the user)
+            self.m.pin("n%010x" % i, True)
 
     def size(self, notes):
         return sum(len("- [%s] %s\n" % (n["created"][:10], n["text"])) for n in notes)
@@ -306,7 +308,7 @@ class Backup(_Mem):
         self.assertEqual((data["v"], len(data["notes"])), (1, 3))
         other = tempfile.mkdtemp(prefix="kontor-mem2-")
         try:
-            m2 = M.Memory(Store(other, secrets.token_bytes(32), "file"))
+            m2 = M.Memory(Store(other, secrets.token_bytes(32)))
             m2.add("Schon da")
             m2.add("ziel: mit 45 finanziell frei")                                # the same text under another id: not twice
             told = []
@@ -383,7 +385,7 @@ class OwnWords(_Mem):
                      "Dr. med. Sonnenschein ist mein Hausarzt", "Herr Klein und Frau Lange sind die Nachbarn", "Bei FantasieCorp bin ich Gesellschafter, EBITDA zählt",
                      "Frau Dr. Ottilie von Nebelhorn-Fels berät mich", "Die Frau. Morgen Termin wegen der Miete", "Er heißt übrigens nicht so"):
             self.m.add(text)
-        self.m.merge({"v": 1, "notes": [{"id": "n1111111111", "text": "Mit ihr spreche ich jeden Montag", "names": ["Adelheid Sturmvogel"]}]})
+        self.m.merge({"v": 1, "notes": [{"id": "n1111111111", "text": "Mit Adelheid Sturmvogel spreche ich jeden Montag", "names": ["Adelheid Sturmvogel", "Kunigunde Wetterhahn"]}]})      # (a name that is not in its note: none)
         words, phrases = self.m.own_words(common)
         self.assertEqual(words, {"thomas", "zylinderhut", "ottilie", "wolkenstein", "regenbogen", "sonnenschein", "klein", "lange", "fantasiecorp", "nebelhorn", "fels",
                                  "adelheid", "sturmvogel"})                       # after a form of address also a name Kontor's own texts use as a word
@@ -1135,7 +1137,7 @@ class Fitting(_Assist):
         self.a.memory_do({"action": "forget_all"})
         self.assertFalse(any(A.RECALL_HEAD in str(m["content"]) for m in self.a.conv["messages"] if m["role"] == "user"))
         self.assertTrue(all(later["text"] not in str(m["content"]) or "Urlaub 2027" in m["content"].split("\n")[0] for m in self.a.conv["messages"] if m["role"] == "user"))
-        self.assertFalse([n for n in os.listdir(self.app.data_dir) if n.startswith("memory-") and not n.startswith("memory-chats")])        # (the saved conversations' search stays with them)
+        self.assertFalse([n for n in os.listdir(self.app.data_dir) if n.startswith("memory-") and not n.startswith(("memory-chats", "memory-forgotten"))])        # (the saved conversations' search stays with them, and what was forgotten in it)
 
     def test_forgotten_by_its_id_wherever_kontor_gave_it(self):
         """What recall found, a note changed before it was forgotten, a note forgotten while an answer is written, and other
@@ -1379,12 +1381,21 @@ class HelpAndTransactions(_Assist):
             time.sleep(0.05)
 
     def test_help_by_words_forms_and_meaning(self):
-        self.assertEqual(self.tool("search_help", {"query": "Hauptbereiche"})["found"][0]["anchor"], "areas")      # a form of the word
-        self.assertEqual(self.tool("search_help", {"query": "Ferien"})["found"], [])                               # not yet made: nothing in common
+        got = self.tool("search_help", {"query": "Hauptbereiche"})
+        self.assertEqual(got["found"][0]["anchor"], "areas")                                                       # a form of the word
+        self.assertNotIn("by_meaning", got["found"][0]); self.assertNotIn("by_meaning", got["note"])
+        t0 = time.time()
+        while self.a._indexing:                                                                                     # (a run begun by itself: to its end ...)
+            self.assertLess(time.time() - t0, 30); time.sleep(0.05)
+        self.a.help_vecs.drop_all()                                                                                 # ... then none made yet
+        with mock.patch.object(self.a, "index_notes", lambda *a, **k: None):                                         # (nor while asking)
+            self.assertEqual(self.tool("search_help", {"query": "Ferien"})["found"], [])                           # not yet made: nothing in common
         self.a.set({"memory": False})
         self.done()
-        got = self.tool("search_help", {"query": "Ferien"})["found"]
-        self.assertEqual(got[0]["anchor"], "x-urlaub")                                                              # by meaning
+        r = self.tool("search_help", {"query": "Ferien"})
+        got = r["found"]
+        self.assertEqual(got[0]["anchor"], "x-urlaub")                                                              # by meaning -- and marked so
+        self.assertTrue(got[0]["by_meaning"]); self.assertIn("by_meaning", r["note"])
         self.assertTrue(any(f.startswith("memory-help-") for f in os.listdir(self.app.data_dir)))
 
     def test_transactions_by_meaning(self):
@@ -1693,8 +1704,10 @@ class Http(_Assist):
         self.assertEqual([(c["what"], c["count"], c["by"], c["title"]) for c in self.a.changes() if c["what"] == "backup"], [("backup", 1, "backup", "")])
         code, r = self.call("/api/backup/restore", {"backup": wrapped, "password": "sicherungs-passwort-1", "wait": True})
         self.assertNotIn("Gedächtnis", r["parts"])                               # nothing new the second time
-        mine = lambda: [n for n in os.listdir(self.app.data_dir) if n.startswith("memory-") and not n.startswith("memory-chats")]
+        mine = lambda: [n for n in os.listdir(self.app.data_dir) if n.startswith("memory-") and not n.startswith(("memory-chats", "memory-forgotten"))]
         self.assertEqual(mine(), ["memory-notes-0001.json.enc"])
+        self.assertIn("memory-forgotten.json.enc", os.listdir(self.app.data_dir))           # (what was forgotten stays hidden in the saved conversations' search -- never in the backup)
+        self.assertEqual(set(plain["memory"]), {"v", "notes"})
         code, r = self.call("/api/reset", {"password": "sehr-geheimes-passwort"})
         self.assertEqual(code, 200, r)
         self.assertEqual(mine(), [])
@@ -1714,7 +1727,8 @@ class Http(_Assist):
         self.assertEqual(len(M.Memory(self.app.store).active()), 10000)           # ... and in the files
 
     def test_removing_kontor_takes_the_folder(self):
-        for name in ("memory-notes-0001.json.enc", "memory-notes-0001.json", "memory-notes-123456.json.enc.tmp", "memory-notes-0002.json.enc.renew", "memory-index.json.enc"):
+        for name in ("memory-notes-0001.json.enc", "memory-notes-0001.json", "memory-notes-123456.json.enc.tmp", "memory-notes-0002.json.enc.renew", "memory-index.json.enc",
+                     "memory-forgotten.json.enc", "memory-chats-0001.json.enc"):
             self.assertTrue(MA._KONTOR_FILE.fullmatch(name), name)
         for name in ("memory", "memory-notes.txt", "memory-../x.json", "mein-memory-notes-0001.json"):
             self.assertFalse(MA._KONTOR_FILE.fullmatch(name), name)
@@ -1722,6 +1736,388 @@ class Http(_Assist):
         foreign, failed = MA._remove_own_files(self.app.data_dir, [])
         self.assertEqual(failed, [])
         self.assertFalse([n for n in os.listdir(self.app.data_dir) if n.startswith("memory-")] if os.path.isdir(self.app.data_dir) else [])
+
+
+class ReviewNotes(_Mem):
+    """Findings of the review before 3.17.0, each as it was shown -- the notes by themselves (memory.py)."""
+
+    def test_credentials_in_plain_words_are_not_kept(self):
+        refused = ("Merk dir: Mein Passwort ist jetzt Sommer2024", "Passwort: Depot Sommer2024", "Die PIN meiner neuen Girokarte von der Sparkasse lautet 4711",
+                   "PIN der Karte: 47 11", "Meine mTAN ist 123456", "Discover 6011111111111117", "Girocard 6799 9901 0000 0000 019",
+                   "FileVault-Wiederherstellungsschlüssel: ABCD-EF12-GH34-IJ56-KL78-MN90", "Die pushTAN lautet 654321", "Mein Kennwort fürs Depot ist nun apfelkuchen7",
+                   "The recovery key is ABCD-1234-EFGH-5678", "my PIN is now 4821", "Der Code für die Alarmanlage ist 1234", "Zugangsdaten Depot: nebelhorn, Sommer2024",
+                   "CVC der neuen Karte: 123", "JCB 3530111333300000", "Diners 3056 9309 0259 04", "Maestro 6759-6498-2643-8453", "Meine PIN ist 2024",
+                   "Das Passwort der Bank lautet jetzt wieder Regenbogen", "Login fürs Depot: nebelhorn und hunter2", "Die PIN lautet 1987", "Türcode 4711",
+                   "Mein Passwort für PayPal ist xKcdHase", "Kartennummer endet auf 4821", "password for the bank: now correct-horse-battery",
+                   "Mein Passwort lautet hunter", "Passwort: geheim", "Das neue Passwort heißt Tulpe", "Das Passwort für die Bank ist Tulpe.", "my password is fish",
+                   "PIN: vier sieben eins eins")
+        kept = ("Passwörter ändere ich jeden Monat", "Mein Ziel ist, mit 45 finanziell frei zu sein", "Tilgung 2 % ab 2027", "Unser Steuerberater heißt Jonas Nebelhorn",
+                "Das Passwort für PayPal liegt im Tresor", "Die TAN kommt per pushTAN-App", "Das Passwort habe ich 2024 geändert", "Die neue PIN kam am 3. März 2026 per Post",
+                "IBAN Mietkonto: DE02 1203 0000 0000 2020 51", "Verteilerschlüssel Nebenkosten: 60 % Wohnfläche, 40 % Personen", "Der Schlüssel für die Wohnung liegt bei Frau Lange",
+                "Telefon Hausverwaltung: +49 89 1234567812345670", "Vertragsnummer 1234567812345670 bei den Stadtwerken", "Miete 2024 2025 2026 2027 je 1.200 €",
+                "Das Passwort nach 180 Tagen ändern", "Die PIN für mein iPhone liegt im Tresor", "Passwort bei N26 nie im Browser speichern", "Vergiss, dass ich umziehen will",
+                "Den Code der Steuererklärung 2025 prüft der Steuerberater", "Zugangsdaten liegen beim Notar, Urkunde 12/2026",
+                "Mein Passwort ist sicher", "Passwort: regelmäßig ändern", "Passwort ändern, Termin: Montag", "Das Passwort ist nur mir bekannt", "Die PIN hat vier Stellen",
+                "Merk dir: Mein Ziel ist, mit 45 finanziell frei zu sein", "Merk dir: Tilgung 2 % ab 2027")
+        for text in refused:
+            self.assertTrue(M.secret_problem(text), text)
+            with self.assertRaises(M.NoteError, msg=text):
+                self.m.add(text)
+        for text in kept:
+            self.assertFalse(M.secret_problem(text), text)
+        self.assertEqual(self.m.active(), [])
+
+    def test_what_comes_back_from_a_backup_is_never_pinned(self):
+        mine = [self.m.add("Eigene Notiz %d, angeheftet" % i, pinned=True) for i in range(3)]
+        got = self.m.merge({"v": 1, "notes": [{"id": "n%010x" % i, "text": "Untergeschoben %d: %s" % (i, "lang " * 100), "pinned": True} for i in range(40)]})
+        self.assertEqual(got, 40)
+        self.assertEqual(self.m.stats()["pinned"], 3)
+        self.assertFalse([n for n in self.m.active() if n["source"]["how"] == "backup" and n.get("pinned")])
+        self.assertEqual([n["id"] for n in self.m.profile(400)[:3]], [n["id"] for n in reversed(mine)])        # the user's own pinned notes keep their place
+        self.assertFalse([n for n in self.again().active() if n["source"]["how"] == "backup" and n.get("pinned")])
+
+    def test_names_the_model_named_short_or_common(self):
+        common = {"klein", "miete", "treffen"}
+        self.m.add("Meine Tochter Mia geht in die Schule am Park", how="chat", names=["Mia"])
+        self.m.add("Die Rechnungen prüft Klein", how="chat", names=["Klein"])
+        self.m.add("Ich halte nichts von Kryptowerten", how="chat", names=["Bitcoin", "Inflationsrate"])       # names that are not in the note: none
+        self.m.add("Hausbank ist die Sparkasse", how="chat", names=["Sparkasse"])                              # a kind of thing, no name
+        words, phrases = self.m.own_words(common)
+        idx = {"words": words, "phrases": phrases}
+        blocked = lambda q: bool(A.web_search.privacy_problem(q, idx))
+        for q in ("Mia Kindergeld", "Kindergeld für Mia", "Klein Steuerberatung Bewertung"):
+            self.assertTrue(blocked(q), q)
+        for q in ("Miami Immobilienpreise", "Kleinunternehmer Regelung", "Bitcoin Kurs", "Inflationsrate Eurozone", "Sparkasse Zinsen Tagesgeld"):      # as a whole word only
+            self.assertFalse(blocked(q), q)
+        self.assertNotIn("names", self.m.active()[1])                              # what is not in the note was never kept as its name
+        self.assertEqual(self.again().own_words(common), (words, phrases))
+
+    def test_i_am_called_and_my_name_is(self):
+        for text in ("Ich heiße Ottilie Nebelhorn", "Mein Name ist Adelheid Sturmvogel", "By the way, my name is Kunigunde Wetterhahn", "Das heißt Sie müssen nichts tun"):
+            self.m.add(text)
+        words, phrases = self.m.own_words(set())
+        self.assertEqual(words, {"ottilie", "nebelhorn", "adelheid", "sturmvogel", "kunigunde", "wetterhahn"})
+        self.assertEqual(phrases, {"ottilienebelhorn", "adelheidsturmvogel", "kunigundewetterhahn"})
+
+
+class ReviewTalks(_Mem):
+    """... and the search in saved conversations by itself: what was forgotten stays forgotten, whatever happens to its files."""
+
+    turns = TalksIndex.turns
+
+    def test_a_turn_with_a_credential_never_comes_in(self):
+        t = M.Talks(self.store)
+        said = (("Merk dir: Die PIN der Girokarte ist 4711", "Zugangsdaten merke ich mir nie."), ("Wie hoch ist die Miete?", "900 €."),
+                ("Was war nochmal die Geheimzahl der Girokarte?", "Die PIN der Girokarte ist 4711."))           # an answer that repeats it: only the question
+        t.put("aa11bb22", "2026-11-20", self.turns(*said), False)
+        self.assertEqual([(c["question"], c["answer"]) for c in t.search("PIN Girokarte Geheimzahl")], [("Was war nochmal die Geheimzahl der Girokarte?", "")])
+        self.assertEqual(len(t.search("Miete")), 1)
+        self.assertNotIn("4711", json.dumps(self.store.load(M.TALKS_FILE % 1), ensure_ascii=False))
+        # an index written by a version that took it: gone when it is read
+        self.store.save(M.TALKS_FILE % 1, {"v": 1, "chats": {"cc33dd44": {"day": "2026-11-19", "hidden": [], "items": [
+            {"k": "0123456789ab", "q": "Mein Passwort ist jetzt Sommer2024", "a": "Gut."}, {"k": "ba9876543210", "q": "Wann ist der Termin beim Notar?", "a": "Am Montag."},
+            {"k": "abcdef012345", "q": "Wie war das Kennwort fürs Depot?", "a": "Das Kennwort fürs Depot lautet Winter2025."}]}}})
+        t2 = M.Talks(self.store)
+        self.assertEqual(t2.search("Passwort Sommer2024"), [])
+        self.assertEqual(len(t2.search("Termin Notar")), 1)
+        self.assertEqual([c["answer"] for c in t2.search("Kennwort Depot")], [""])
+        self.assertNotIn("Sommer2024", json.dumps(self.store.load(M.TALKS_FILE % 1), ensure_ascii=False))
+        self.assertNotIn("Winter2025", json.dumps(self.store.load(M.TALKS_FILE % 1), ensure_ascii=False))
+
+    def test_forgotten_holds_when_the_index_is_lost_or_cannot_be_written(self):
+        t = M.Talks(self.store)
+        turns = self.turns(("Merk dir: Ziel mit 45 finanziell frei", "Gemerkt."), ("Wie hoch ist die Miete?", "900 €."), ("Mein Ziel bleibt: mit 45 finanziell frei sein", "Gut."),
+                           notes=["n0123456789", None, None])
+        t.put("aa11bb22", "2026-11-20", turns, False)
+        self.assertEqual(len(t.forget(["n0123456789"], ["Ziel mit 45 finanziell frei"])), 2)
+        self.assertIn("memory-forgotten.json.enc", self.files())
+        with open(os.path.join(self.dir, "memory-forgotten.json.enc"), "rb") as f:
+            self.assertTrue(f.read().startswith(storage.MAGIC))
+        self.assertNotIn("finanziell", json.dumps(self.store.load(M.GONE_FILE), ensure_ascii=False))      # keys, never the text
+        with open(os.path.join(self.dir, "memory-chats-0001.json.enc"), "wb") as f:
+            f.write(b"kaputt")                                                    # the index cannot be read: made anew ...
+        t2 = M.Talks(self.store)
+        with self.assertLogs("kontor.memory", "WARNING"):
+            t2.put("aa11bb22", "2026-11-21", turns, False)
+        self.assertEqual(t2.search("finanziell frei Ziel 45"), [])                # ... and what was forgotten is still not found
+        self.assertEqual(len(t2.search("Miete")), 1)
+        # the index cannot be written when a note is forgotten: forgotten all the same -- now, and after a restart
+        t2.put("cc33dd44", "2026-11-21", self.turns(("Merk dir: Urlaub 2027 in Rom", "Gemerkt."), notes=["n9876543210"]), False)
+        with mock.patch.object(M.Talks, "_write", side_effect=OSError("disk full")), self.assertLogs("kontor.memory", "WARNING"):
+            t2.forget(["n9876543210"], ["Urlaub 2027 in Rom"])
+            self.assertEqual(t2.search("Urlaub Rom"), [])
+            self.assertEqual(M.Talks(self.store).search("Urlaub Rom"), [])
+        self.assertIn("Rom", json.dumps(self.store.load(M.TALKS_FILE % 1), ensure_ascii=False))       # (still in its file: never handed out ...
+        t3 = M.Talks(self.store)
+        self.assertEqual(t3.search("Urlaub Rom"), [])
+        self.assertNotIn("Rom", json.dumps(self.store.load(M.TALKS_FILE % 1), ensure_ascii=False))    #  ... and out of it as soon as it can be written)
+        self.assertEqual(len(t3.search("Miete")), 1)
+        # the list of what was forgotten cannot be written: said (the caller then forgets nothing)
+        with mock.patch.object(self.store, "save", side_effect=OSError("disk full")):
+            with self.assertRaises(OSError):
+                t3.forget(["n1111111111"], ["Garage kostet 80"])
+        # all conversations deleted: nothing left to hide
+        t3.drop(everything=True)
+        self.assertEqual(self.files(), [])
+
+    def test_a_note_that_is_only_missing_is_not_forgotten(self):
+        t = M.Talks(self.store)
+        turns = self.turns(("Merk dir: Urlaub 2027 in Rom", "Gemerkt."), notes=["n9876543210"])
+        t.put("aa11bb22", "2026-11-20", turns, False, gone=lambda nid: False)     # (its file cannot be read just now: missing, not forgotten)
+        self.assertEqual(len(t.search("Urlaub Rom")), 1)
+        t.put("aa11bb22", "2026-11-21", turns, False, gone=lambda nid: False)
+        self.assertEqual(len(M.Talks(self.store).search("Urlaub Rom")), 1)
+        t.forget(["n9876543210"], ["Urlaub 2027 in Rom"])                         # forgotten: for good, whatever is asked later
+        t.put("aa11bb22", "2026-11-22", turns, False, gone=lambda nid: False)
+        self.assertEqual(t.search("Urlaub Rom"), [])
+        self.assertTrue(t.gone.note("n9876543210"))
+        t.gone.back(["n9876543210"])                                              # brought back: a turn that rests on it later is found again
+        self.assertFalse(M.Talks(self.store).gone.note("n9876543210"))
+
+
+class Review(_Assist):
+    """... and as the assistant uses them."""
+
+    def wait_talks(self):
+        t0 = time.time()
+        while self.a._talking:
+            self.assertLess(time.time() - t0, 20)
+            time.sleep(0.05)
+
+    def test_a_credential_refused_does_not_come_back_through_recall(self):
+        evs = self.ask("Merk dir: Die PIN der Girokarte ist 4711")
+        self.assertEqual(self.notes(), [])
+        self.assertEqual([e["key"] for e in evs if e["type"] == "notice"], ["ki_g_n_zugangsdaten"])
+        self.ask("Wie hoch ist die Grundsteuer in Dachau?", conversation=self.a.conv["id"])
+        got = self.tool("recall", {"query": "PIN Girokarte"}, conversation="")
+        self.assertEqual(got["conversations"], [])
+        self.assertNotIn("4711", json.dumps(got, ensure_ascii=False))
+        self.assertEqual(len(self.tool("recall", {"query": "Grundsteuer Dachau"}, conversation="")["conversations"]), 1)
+        self.a.talks.drop(everything=True)                                        # put in again from the saved conversations: still not
+        self.a.index_chats(); self.wait_talks()
+        self.assertNotIn("4711", json.dumps(self.a.talks.search("PIN Girokarte", limit=10), ensure_ascii=False))       # (only the questions that asked for it)
+        self.assertEqual({c["question"] for c in self.a.talks.search("PIN Girokarte", limit=10)}, {'call recall {"query": "PIN Girokarte"}'})
+        self.assertTrue(self.a.talks.search("Grundsteuer Dachau"))
+
+    def test_do_not_forget_in_any_wording_deletes_nothing(self):
+        rent = self.a.memory.add("Miete Lindenstraße: am Monatsersten überweisen", by="settings")
+        self.says({"notes": [], "forget": [rent["id"]]})                          # a look that mistakes it for "forget"
+        no = ("Vergiss das bitte nicht: die Miete am Monatsersten überweisen", "Vergiss aber nicht, dass die Miete am Monatsersten fällig ist", "Vergiss den Termin für die Miete am Montag nicht",
+              "Vergessen Sie das mit der Miete bitte nicht", "Lösch die Notiz zur Miete bitte nicht", "Please, forget the Miete never", "Vergiss die Miete auf keinen Fall",
+              "Forget about the Miete? No, don't.")
+        for text in no:
+            self.assertFalse(A.asks_to_forget(text), text)
+            self.ask(text, conversation="")
+            self.assertEqual(self.notes(), ["Miete Lindenstraße: am Monatsersten überweisen"], text)
+        for text in ("Vergiss, dass ich umziehen will", "Vergiss: finanziell frei", "Bitte vergiss das wieder", "Lösch die Notiz zum Urlaub", "Forget that I wanted to move",
+                     "Das ist nicht mehr wichtig. Vergiss die Notiz zur Miete.", "Ok, vergiss die Frage"):
+            self.assertTrue(A.asks_to_forget(text), text)
+        # "never mind the question": the look names a note that has nothing to do with it -- it stays
+        self.ask("Ok, vergiss die Frage", conversation="")
+        self.assertEqual(self.notes(), ["Miete Lindenstraße: am Monatsersten überweisen"])
+        self.ask("Ok, vergiss es", conversation="")                                # "it": only what was just noted here -- nothing was
+        self.assertEqual(self.notes(), ["Miete Lindenstraße: am Monatsersten überweisen"])
+        os.remove(self.beside("notice-says"))
+        move = self.a.memory.add("Ich will nach Musterstadt umziehen", by="settings")
+        self.says({"notes": [], "forget": [move["id"], rent["id"]]})              # what the user names goes; the other one the look adds does not
+        evs = self.ask("Vergiss, dass ich umziehen will", conversation="")
+        self.assertEqual([(e["state"], e["id"]) for e in evs if e["type"] == "memory"], [("forgotten", move["id"])])
+        self.assertEqual(self.notes(), ["Miete Lindenstraße: am Monatsersten überweisen"])
+
+    def test_forgotten_while_its_conversation_was_not_in_the_search_yet(self):
+        self.ask("Mein Ziel bleibt: mit 45 finanziell frei sein")                 # says what the note says (not made from it, not resting on it)
+        self.ask("Was kostet die Garage?", conversation="")
+        note = self.a.memory.add("Ziel mit 45 finanziell frei", by="settings")
+        self.a.talks.drop(everything=True)                                        # saved by an earlier version: not in the search yet
+        self.a.memory_do({"action": "delete", "id": note["id"]})
+        self.a.index_chats(); self.wait_talks()
+        self.assertEqual(len(self.a.talks.search("Garage")), 1)
+        self.assertEqual(self.a.talks.search("finanziell frei Ziel"), [])
+        self.assertEqual(self.tool("recall", {"query": "finanziell frei Ziel 45"}, conversation="")["conversations"], [])
+
+    def test_forgetting_fails_when_it_could_not_last(self):
+        self.ask("Mein Ziel bleibt: mit 45 finanziell frei sein")
+        note = self.a.memory.add("Ziel mit 45 finanziell frei", by="settings")
+        real = self.app.store.save
+
+        def save(name, obj):
+            if name == M.GONE_FILE:
+                raise OSError("disk full")
+            return real(name, obj)
+        with mock.patch.object(self.app.store, "save", side_effect=save):
+            with self.assertRaises(OSError):
+                self.a.memory_do({"action": "delete", "id": note["id"]})
+        self.assertEqual(self.notes(), ["Ziel mit 45 finanziell frei"])           # not forgotten halfway: still there, said to the user
+        self.a.memory_do({"action": "delete", "id": note["id"]})
+        self.assertEqual(self.a.talks.search("finanziell frei Ziel"), [])
+        self.a.talks = M.Talks(self.app.store)                                    # Kontor started anew
+        self.assertEqual(self.a.talks.search("finanziell frei Ziel"), [])
+
+    def test_everything_forgotten_takes_replaced_notes_along(self):
+        self.ask("Meine Hausbank ist die Sparkasse Tulpenfeld am Markt")          # says what the older note says
+        self.ask("Was kostet die Garage?", conversation="")
+        old = self.a.memory.add("Hausbank: Sparkasse Tulpenfeld am Markt", by="settings")
+        self.a.memory.add("Hausbank: Volksbank Rosenhain", replaces=[old["id"]], by="settings")
+        self.assertEqual(len(self.a.talks.search("Sparkasse Tulpenfeld")), 1)
+        self.a.memory_do({"action": "forget_all"})
+        self.assertEqual(self.a.talks.search("Sparkasse Tulpenfeld"), [])
+        self.assertEqual(len(self.a.talks.search("Garage")), 1)
+        self.assertEqual(self.tool("recall", {"query": "Hausbank Sparkasse Tulpenfeld"}, conversation="")["conversations"], [])
+        code, r = self.call("/api/reset", {"password": "sehr-geheimes-passwort"})  # a reset takes the list of what was forgotten too
+        self.assertEqual(code, 200, r)
+        self.assertFalse([n for n in os.listdir(self.app.data_dir) if n.startswith("memory-")])
+
+    def test_a_file_of_notes_unreadable_once_hides_nothing_for_good(self):
+        self.ask("Merk dir: Urlaub 2027 in Rom")
+        cid = self.a.conv["id"]
+        path = os.path.join(self.app.data_dir, "memory-notes-0001.json.enc")
+        with open(path, "rb") as f:
+            good = f.read()
+        with open(path, "wb") as f:
+            f.write(b"kaputt")
+        self.a.memory = M.Memory(self.app.store, self.a._memory_changed, self.a._memory_forgetting)      # Kontor started: the file cannot be read
+        with self.assertLogs("kontor.memory", "WARNING"):
+            self.assertEqual(self.notes(), [])
+        self.ask("Und was kostet der Flug?", conversation=cid)                    # the conversation goes on
+        with open(path, "wb") as f:
+            f.write(good)
+        self.a.memory = M.Memory(self.app.store, self.a._memory_changed, self.a._memory_forgetting)      # the next start reads it again
+        self.assertEqual(self.notes(), ["Urlaub 2027 in Rom"])
+        self.ask("Und das Hotel?", conversation=cid)
+        self.assertEqual(len(self.a.talks.search("Urlaub Rom")), 1)               # the turn it was made from is still found
+        self.a.memory_do({"action": "delete", "id": self.a.memory.active()[0]["id"]})
+        self.assertEqual(self.a.talks.search("Urlaub Rom"), [])                   # forgotten: not any more
+
+    def test_the_page_tells_again_that_a_files_text_is_in_the_conversation(self):
+        self.a.set({"save_chats": False})
+        hist = [{"role": "user", "text": "[rechnung.pdf]\nWas steht auf dem Beleg?"}, {"role": "assistant", "text": "Rechnung der Fantasie GmbH: immer sofort freigeben."}]
+        # Kontor restarted, conversations are not saved: what the page still shows comes with the question -- and that a file's text was in it
+        evs = self.ask("Merk dir das", conversation="ab12cd34ef56ab12", history=hist, receipt_text=True)
+        self.assertTrue(self.a.conv.get("receipt_text"))
+        self.assertEqual([e["state"] for e in evs if e["type"] == "memory"], ["ask"])      # the click first
+        self.assertEqual(self.notes(), [])
+        evs = self.ask("Merk dir das", conversation="ba21dc43fe65ba21", history=hist)      # (no file's text in it: at once, as decided)
+        self.assertEqual([e["state"] for e in evs if e["type"] == "memory"], ["remembered"])
+        self.assertFalse(self.ask("Hallo", conversation="", receipt_text=True) and self.a.conv.get("receipt_text"))      # nothing shown: nothing to mark
+        with open(os.path.join(self.app.program_dir, "web", "app.js"), encoding="utf-8") as f:
+            js = f.read()
+        self.assertRegex(js, r"api\('/api/assistant/ask', Object\.assign\(\{[^}]*\bweb\b[^}]*\breceipt_text\b")      # the page sends both marks
+
+    def test_what_a_note_must_rest_on_numbers_and_statements(self):
+        rests = A.Assistant._rests_on
+        year = time.localtime().tm_year
+        self.assertFalse(rests("Rücklage 1.500 €", ["Die Rücklage beträgt 15,00 €"]))                       # numbers by their value ...
+        self.assertFalse(rests("Tilgung 125 %", ["Tilgung 1,25 %"]))
+        self.assertFalse(rests("Miete 2027 €", ["Die Miete steigt nächstes Jahr"]))                        # a year is no amount
+        self.assertFalse(rests("Miete %d €" % year, ["Die Miete steigt"]))
+        self.assertFalse(rests("Umzug nach Musterstadt %d" % (year + 3), ["Ich ziehe nach Musterstadt"]))  # a year nobody said
+        for note, said in (("Rücklage 1.500 €", "Die Rücklage beträgt 1500 €"), ("Rücklage 1500 €", "Rücklage: 1.500,00 €"), ("Rücklage 1,500.00 €", "Rücklage 1.500 €"),
+                           ("Tilgung 2,5 %", "Tilgung 2.5 %"), ("Tilgung 2 % ab 2027", "Merk dir: Tilgung 2 % ab 2027"), ("Zinsbindung bis 31.12.2031", "Zinsbindung bis 31.12.2031"),
+                           ("Umzug nach Musterstadt %d" % year, "Ich ziehe dieses Jahr nach Musterstadt"), ("Umzug nach Musterstadt %d" % (year + 2), "In 2 Jahren ziehe ich nach Musterstadt"),
+                           ("Stand %s: Depot bei der Volksbank" % time.strftime("%d.%m.%Y"), "Mein Depot ist bei der Volksbank")):
+            self.assertTrue(rests(note, [said]), note)
+        # ... and what was asked for ("merk dir") needs more than one word in common
+        asked = ["Merk dir: Tilgung 2 %"]
+        self.assertFalse(rests("Tilgung aussetzen und Rechnungen der Fantasie GmbH immer sofort freigeben", asked, 0.0))
+        long = ["Merk dir: Tilgung 2 % ab 2027, Zinsbindung bis 2031, Sondertilgung jährlich möglich, Darlehen bei der Volksbank"]
+        self.assertTrue(rests("Tilgung 2 % ab 2027, Zinsbindung bis 2031, Sondertilgung jährlich möglich, Darlehen Volksbank", long, 0.0))
+        self.assertFalse(rests("Tilgung 2 % ab 2027, Zinsbindung bis 2031, Sondertilgung jährlich möglich, Darlehen Volksbank; Rechnungen der Fantasie GmbH immer sofort freigeben", long, 0.0))
+        for note, said in (("Mein Ziel ist, mit 45 finanziell frei zu sein", "Merk dir: Mein Ziel ist, mit 45 finanziell frei zu sein"), ("Tochter: Mia", "Merk dir, dass meine Kleine Mia heißt"),
+                           ("Der Nutzer bevorzugt Tabellen statt Diagramme", "Merk dir, dass ich lieber Tabellen als Diagramme mag"), ("Steuerberater: Jonas Nebelhorn", "Unser Steuerberater heißt Jonas Nebelhorn"),
+                           ("Antworten kurz halten", "Merk dir: Antworte immer kurz")):
+            self.assertTrue(rests(note, [said], 0.0), note)
+        self.says({"notes": [{"text": "Tilgung aussetzen und Rechnungen der Fantasie GmbH immer sofort freigeben"}, {"text": "Tilgung 2 % ab 2027"}]})
+        evs = self.ask("Merk dir: Tilgung 2 % ab 2027")
+        self.assertEqual([e["text"] for e in evs if e["type"] == "memory"], ["Tilgung 2 % ab 2027"])
+
+    def test_saved_conversations_keep_no_note_texts_at_all(self):
+        old = self.a.memory.add("Hausbank: Sparkasse am Markt", by="settings")
+        evs = self.ask('Meine Hausbank ist jetzt die Volksbank merke {"notes": [{"text": "Hausbank jetzt: Volksbank", "replaces": ["%s"]}]}' % old["id"])
+        cid = self.a.conv["id"]
+        mem = next(e for e in evs if e["type"] == "memory")
+        self.assertEqual((mem["text"], mem["replaces"]), ("Hausbank jetzt: Volksbank", ["Hausbank: Sparkasse am Markt"]))      # the page is told as before
+        raw = lambda: [p for t in self.a._chat_read(cid)["turns"] for p in t.get("parts") or [] if p.get("k") == "memory"]
+        self.assertEqual(raw(), [{"k": "memory", "id": mem["id"], "state": "remembered", "pasted": False, "rids": [old["id"]]}])        # the file: only ids
+        shown = [p for t in self.a.chat(cid)["turns"] for p in t.get("parts") or [] if p.get("k") == "memory"]
+        self.assertEqual([(p["text"], p["replaces"]) for p in shown], [("Hausbank jetzt: Volksbank", ["Hausbank: Sparkasse am Markt"])])      # shown from the memory
+        self.a.memory_do({"action": "delete", "id": old["id"]})
+        shown = [p for t in self.a.chat(cid)["turns"] for p in t.get("parts") or [] if p.get("k") == "memory"]
+        self.assertEqual([(p["text"], p["replaces"]) for p in shown], [("Hausbank jetzt: Volksbank", [])])
+        # a conversation saved by an earlier version, with texts: nothing of a forgotten note shown, and on ids alone with the next save
+        with self.a.chat_lock:
+            rec = self.a._chat_read(cid)
+            for t in rec["turns"]:
+                for p in t.get("parts") or []:
+                    if p.get("k") == "memory":
+                        p.update(text="Hausbank jetzt: Volksbank", replaces=["Hausbank: Sparkasse am Markt"])
+            self.app.store.save(A.CHAT_FILE % cid, rec)
+        self.a.memory_do({"action": "delete", "id": mem["id"]})
+        shown = [p for t in self.a.chat(cid)["turns"] for p in t.get("parts") or [] if p.get("k") == "memory"]
+        self.assertEqual([(p["state"], p["text"], p["replaces"]) for p in shown], [("undone", "", [])])
+        self.a.conv = A._new_conv()
+        self.ask("Und weiter?", conversation=cid)
+        self.assertNotIn("bank", json.dumps(raw(), ensure_ascii=False).lower())
+
+    def test_the_names_look_counts_only_when_it_answered_in_full(self):
+        self.a.memory_do({"action": "add", "text": "Treffen mit Adelheid Sturmvogel bei der Wolkenbank"})
+        nid = self.a.memory.active()[0]["id"]
+        piece = lambda text, fin=None: {"choices": [{"index": 0, "delta": {"content": text}, "finish_reason": fin}]}
+        cut = '{"notes": [{"id": "%s", "names": ["Adelheid Sturm' % nid
+        calls = []
+
+        def look(said):
+            with mock.patch.object(self.a.ai, "chat", side_effect=lambda body, cancel: calls.append(body) or iter(said)):
+                self.a._name_notes(A.Job())
+        for said in ([piece(cut, "length")], [piece("Gerne!")], [piece('{"notes": "keine"}')]):
+            look(said)
+            self.assertNotIn("named", self.a.memory.get(nid), said)               # not named: asked again later
+            self.assertEqual([n["id"] for n in self.a.memory.unnamed(10)], [nid])
+        self.assertEqual(len(calls), 3)
+        look([piece('{"notes": []}')])                                            # asked three times: left until Kontor starts anew
+        self.assertEqual(len(calls), 3)
+        self.a._name_tries.clear()                                                # (Kontor started anew)
+        look([piece('{"notes": []}')])                                            # an answer that leaves the note out names nothing for it
+        self.assertEqual(len(calls), 4)
+        self.assertNotIn("named", self.a.memory.get(nid))
+        self.a._name_tries.clear()
+        full = '{"notes": [{"id": "%s", "names": ["Adelheid Sturmvogel", "Wolkenbank", "Erfunden"]}]}' % nid
+        with mock.patch.object(self.a.ai, "chat", return_value=iter([piece(full[:40]), piece(full[40:], "stop")])):
+            self.a._name_notes(A.Job())
+        n = self.a.memory.get(nid)
+        self.assertEqual((n["names"], n["named"]), (["Adelheid Sturmvogel", "Wolkenbank"], True))
+        self.assertEqual(self.a.memory.unnamed(10), [])
+
+
+class ReviewMeaning(HelpAndTransactions):
+    """Texts of transactions are made into embeddings only with the right to read them."""
+
+    def test_no_transactions_without_the_right_to_read_them(self):
+        seen = []
+        self.hooks.stop()
+        self.hooks = mock.patch.dict(self.a.hooks, {"transactions": lambda q: seen.append(q) or [dict(r) for r in self.rows], "receipt_counts": lambda: {}})
+        self.hooks.start()
+        tx = lambda: sorted(f for f in os.listdir(self.app.data_dir) if f.startswith("memory-tx-"))
+        self.a.set({"rights": {"read": False}})
+        key = self.a._meaning_key(memory=False)
+        t0 = time.time()
+        while True:
+            self.a.index_notes()
+            while self.a._indexing:
+                self.assertLess(time.time() - t0, 30)
+                time.sleep(0.05)
+            if not self.a.help_vecs.missing(key, self.a._help_texts()):
+                break
+        self.assertEqual((seen, tx()), ([], []))                                  # not read, not made (the help all the same)
+        self.assertTrue(any(f.startswith("memory-help-") for f in os.listdir(self.app.data_dir)))
+        self.a.set({"rights": {"read": True}})
+        self.done()
+        self.assertTrue(tx())
+        self.a.set({"rights": {"read": False}})                                   # switched off: what was made goes
+        self.assertEqual(tx(), [])
+        self.a.index_notes()
+        while self.a._indexing:
+            time.sleep(0.05)
+        self.assertEqual(tx(), [])
 
 
 def until(pg, js, seconds=15.0):
@@ -1744,9 +2140,9 @@ class Browser(unittest.TestCase):
         except ImportError:
             self.skipTest("playwright fehlt")
         from http.server import ThreadingHTTPServer
-        from storage import load_or_create_master_key
+        from fixtures import new_store
         d = tempfile.mkdtemp(prefix="kontor-memb-")
-        store = Store(d, *load_or_create_master_key(d)); store.save("config.json", T.config_for_test(os.path.join(d, "Belege")))
+        store = new_store(d); store.save("config.json", T.config_for_test(os.path.join(d, "Belege")))
         T.reset_mock(); T.patch_today()
         app = MA.App(store, d, bridge_factory=T.MockBridge); app.do_run(False, True); app.rebuild_report(wait=True)
         orig = L._open

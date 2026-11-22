@@ -296,27 +296,16 @@ class DemoBridge:
                                    "booked": True, "checkmark": False, "comment": "", "bookingText": ""})
             acc["balance"][0][0] = round(acc["balance"][0][0] + float(amount), 2)
 
-    def set_transaction(self, tx_id: int, category: Optional[str] = None, comment: Optional[str] = None) -> None:
+    def set_transaction(self, tx_id: int, category: Optional[str] = None) -> None:
         self.written.append({"method": "setTransaction", "args": {"id": int(tx_id)}})
         if self.dry_run:
             return
         with self.world.lock:
             for x in self.world.txs:
                 if x["id"] == int(tx_id):
-                    if comment is not None:
-                        x["comment"] = comment
                     if category is not None:
                         path = self._path(category)
                         x["category"], x["categoryPath"] = path.split("\\")[-1], path
-
-    def append_comment(self, tx_id: int, account: str, day: date, text: str) -> bool:
-        with self.world.lock:
-            x = next((x for x in self.world.txs if x["id"] == int(tx_id) and x["accountUuid"] == account), None)
-            if x is None or text in (x.get("comment") or ""):
-                return False
-            if not self.dry_run:
-                x["comment"] = ((x.get("comment") or "") + "\n" + text).strip()
-            return True
 
     def _path(self, category: str) -> str:
         """A category given by its id or its path, as its path."""

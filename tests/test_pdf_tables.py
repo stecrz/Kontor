@@ -651,6 +651,70 @@ class Tables(unittest.TestCase):
         b = P.book(dict(lay, count=3))
         self.assertEqual((b["pages"], b["pages_read"], b["how"]), (3, 1, {"pdf": 1, "none": 2}))
 
+    def test_a_price_is_no_time_of_day(self):
+        """12.40 could be twenty to one -- or a price. Beside figures like 2.500 only a time or a date written as one (02.10,
+        14.30 Uhr, and what stands in their column) or a heading Uhrzeit/Datum above leaves those thousands; a price makes
+        them unclear: text, never two thousand five hundred for two and a half."""
+        def doc(rows, head=("Item", "Quantity", "Price", "Total"), top=None):
+            d = Doc()
+            if top:
+                d.put(top[0], 40, top[1], top[2] if len(top) > 2 else "l")
+            for x, t, a in zip((40, 300, 400, 500), head, "lrrr"):
+                d.put(x, 70, t, a)
+            for i, row in enumerate(rows):
+                for x, t, a in zip((40, 300, 400, 500), row, "lrrr"):
+                    d.put(x, 86 + 13 * i, t, a)
+            return P.book(d.layout())
+        # what the review found: every price here could be a time of day (up to 31, up to 59) -- the quantities became thousands
+        b = doc([("Widget blue", "2.500", "12.40", "31.00"), ("Widget red", "1.000", "9.50", "9.50"), ("Service fee", "3.000", "10.10", "30.30")])
+        self.assertEqual((b["decimal"], grid(b["sheets"][0])[1:]), ("?", [["Widget blue", "2.500", "12.40", "31.00"], ["Widget red", "1.000", "9.50", "9.50"],
+                                                                          ["Service fee", "3.000", "10.10", "30.30"]]))
+        self.assertEqual((X.sum_range(b, None, "B1:B5")["numbers_added"], X.sum_range(b, None, "B1:D5")["left_out"]), (0, {"text": 12}))
+        # ... also with one price, with prices that would even be dates (12.10, 9.05), and with a date written out elsewhere on the page
+        for rows, top in (([("Widget blue", "2.500", "12.40")], None), ([("Widget blue", "2.500", "12.10"), ("Widget red", "1.000", "9.05")], None),
+                          ([("Widget blue", "2.500", "12.40"), ("Widget red", "1.000", "9.50")], (400, "Date 02.10.2026", "r")),           # (above the prices)
+                          ([("Widget blue", "2.500", "12.40"), ("Widget red", "1.000", "9.50")], (40, "Printed 02.10 08:15")),      # (a time of day -- in no column of theirs)
+                          ([("Widget blue", "2.500", "12.40"), ("Widget red", "1.000", "9.50")], (400, "Printed 02.10.2026 08:15", "r")),   # the printing time right above the prices
+                          ([("Widget blue", "2.500", "12.40", "31.00"), ("Widget red", "1.000", "9.50", "9.50")], (500, "Time 08:15 Page 1", "r")),
+                          ([("Widget blue", "2.500", "12.40"), ("Widget red", "1.000", "9.50")], (400, "Datum: 02.10.2026", "r"))):        # (no heading: a figure in its line)
+            b = doc(rows, top=top)
+            self.assertEqual((b["decimal"], [r[1] for r in grid(b["sheets"][0])[-len(rows):]], X.sum_range(b, None, "B1:C6")["numbers_added"]),
+                             ("?", [r[1] for r in rows], 0), rows)
+        L = lambda *texts: P.Line(0, 9, [P.Cell(P.Word(40 + 100 * i, 80 + 100 * i, 0, 9, t)) for i, t in enumerate(texts)], 1)
+        self.assertEqual(P.notation([L("Widget blue", "2.500", "12.40", "31.00"), L("Widget red", "1.000", "9.50", "9.50")]), "?")
+        self.assertEqual(P.notation([L("Lager", "14.30", "12.345"), L("Laden", "16.00", "1.250")]), "?")              # nothing says these are times of day
+        self.assertEqual(P.notation([L("Lager", "02.10", "12.345"), L("Laden", "1.250", "14.30")]), "?")              # 14.30 in another column than 02.10
+        self.assertEqual(P.notation([L("Lager", "02.10", "12.345")] + [P.Line(0, 9, [P.Cell(P.Word(40, 80, 0, 9, "Laden")), P.Cell(P.Word(140, 180, 0, 9, "14.30"))], 2)]), "?")     # ... on another page
+        self.assertEqual(P.notation([L("Lager", "09.75", "12.345")]), "?"); self.assertEqual(P.notation([L("Lager", "08.30", "12.345"), L("Laden", "14.75", "1.250")]), "?")     # (no time of day at all)
+        self.assertEqual(P.notation([L("Lager", "8:15", "12.345"), L("Laden", "14.30", "1.250")]), "?")               # 8:15 is no amount, but vouches for nothing
+        self.assertEqual(P.notation([L("Lager", "24.30", "Uhr", "12.345"), L("Laden", "14.30", "1.250")]), "?")       # (no time of day: 24.30)
+        self.assertEqual(P.notation([L("Tour", "Abfahrt", "Stück"), L("Nord", "14.30", "12.345"), L("Süd", "9.15", "1.250")]), "?")      # a heading that says nothing
+        self.assertEqual(P.notation([L("Seite 1", "Zeit", "08:15"), L("Nord", "14.30", "12.345")]), "?")             # (no heading: figures in its line)
+        # the other way round -- German lists stay as they were: times of day and dates written as such beside whole thousands
+        for lines in ([L("Beginn", "14.30", "12.345"), L("Ende", "02.10", "1.250")],                                   # in the column of 02.10
+                      [L("Lager", "14.30", "Uhr", "12.345"), L("Laden", "16.00", "Uhr", "1.250")],                     # 14.30 Uhr
+                      [L("Lager", "14.30", "Uhr", "12.345"), L("Laden", "9.15", "1.250")],
+                      [L("Tour", "Uhrzeit", "Stück"), L("Nord", "14.30", "12.345"), L("Süd", "9.15", "1.250")],        # under a heading Uhrzeit, Zeit, Uhr, Datum
+                      [L("Tour", "Zeit:", "Stück"), L("Nord", "14.30", "12.345")], [L("Lieferung", "Datum", "Stück"), L("Nord", "12.10", "12.345"), L("Süd", "28.10", "1.250")],
+                      [L("Lager", "31.12.", "12.345"), L("Laden", "01.10.26", "1.250"), L("Kasse", "14:30", "2.500")],  # (dates and times that are no amounts anyway)
+                      [L("4400.10", "Erlöse", "12.345")], [L("Lager", "12.345"), L("Laden", "1.250")],
+                      [L("Lager", "14.30", "12.345,00"), L("Laden", "9.50", "1.250,50")]):                             # amounts with a comma: German, whatever else
+            self.assertEqual(P.notation(lines), ",", [ln.text for ln in lines])
+        b = doc([("Lieferung Nord", "08.30", "12.345", "2.500"), ("Lieferung Süd", "14.30", "1.250", "500"), ("Abholung", "16.00", "3.000", "1.000")],
+                head=("Tour", "Uhrzeit", "Stück", "Kisten"))
+        self.assertEqual((b["decimal"], grid(b["sheets"][0])[1:], X.sum_range(b, None, "C1:D4")["sum"]),
+                         (",", [["Lieferung Nord", "08.30", "12345", "2500"], ["Lieferung Süd", "14.30", "1250", "500"], ["Abholung", "16.00", "3000", "1000"]], "20595"))
+        rows = [("Lieferung Nord", "14.30", "12.345", "2.500"), ("Lieferung Süd", "9.15", "1.250", "500"), ("Abholung", "16.00", "3.000", "1.000")]
+        for head, sign, c in ((("Tour", "Uhrzeit", "Stück", "Kisten"), ",", ["12345", "1250", "3000"]), (("Tour", "Datum", "Stück", "Kisten"), ",", ["12345", "1250", "3000"]),
+                              (("Tour", "Abfahrt", "Stück", "Kisten"), "?", ["12.345", "1.250", "3.000"])):          # times only by their heading -- or nothing says so
+            b = doc(rows, head=head)
+            self.assertEqual((b["decimal"], [r[2] for r in grid(b["sheets"][0])[1:]]), (sign, c), head)
+        d = Doc()                                             # a statement of values: amounts with cents, a day and a time of day in its lines
+        for i, (name, day, time, value) in enumerate((("Depot Nord", "31.12.", "12.40 Uhr", "1.234,56"), ("Depot Süd", "31.12.", "9.50 Uhr", "12.345,00"), ("Festgeld", "30.06.", "17.05 Uhr", "2.500,00"))):
+            d.put(40, 60 + 13 * i, name); d.put(200, 60 + 13 * i, day); d.put(260, 60 + 13 * i, time); d.put(500, 60 + 13 * i, value, "r")
+        b = P.book(d.layout())
+        self.assertEqual((b["decimal"], [r[-1] for r in grid(b["sheets"][0])], X.sum_range(b, None, "A1:F3")["sum"]), (",", ["1234.56", "12345", "2500"], "16079.56"))
+
     def test_figures_as_written(self):
         F = P.figure
         self.assertEqual([F(t) for t in ("1.234,56", "1.234,56-", "(1.234,56)", "-12,5 %", "1 234,56 EUR", "0,00", "1.234", "4400", "+5")],

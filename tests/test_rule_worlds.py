@@ -23,6 +23,7 @@ import random
 import sys
 import unittest
 from datetime import date, timedelta
+from decimal import ROUND_HALF_UP, Decimal
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, os.path.dirname(__file__))
@@ -31,13 +32,20 @@ import fixtures as F  # noqa: E402
 import mm_bridge  # noqa: E402
 import core  # noqa: E402
 import rules  # noqa: E402
-from model import TAG_RE, cents, marks_in  # noqa: E402  (cents: half a cent up, as in commerce)
+from model import TAG_RE, marks_in  # noqa: E402
 from test_e2e import TODAY, MockBridge, config_for_test, patch_today, reset_mock  # noqa: E402
 import test_fuzz  # noqa: E402  (the module, not its class: pytest would run test_fuzz's own cases here again)
 
 START = date(2025, 11, 1)
 SHARES = [1.0, 0.5, 0.3333, 0.749, 0.005, 0.4]
 COMPANIES = ["Alpha GbR", "Beta GmbH", "Gamma KG"]
+
+
+def exact(amount, factor, per=1):
+    """amount x factor / per as a contract means it: multiplied out exactly -- the amount in cents, rate or share as written
+    -- and only then rounded to the cent, half a cent up (as in commerce). Computed here without Kontor's code."""
+    x = Decimal("%.2f" % amount) * Decimal(str(factor)) / Decimal(str(per))
+    return float(x.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
 
 
 def months(a, b):
@@ -198,14 +206,14 @@ class RuleWorlds(test_fuzz.FuzzTests):
             if cs["kind"] != "rule":
                 continue
             members = [a.uuid for a in led.descendants(F.uid(cs["group"]))]
-            # as Kontor rounds it: the value to the cent, then share x value (round(), so nothing booked so far moves)
+            # the value to the cent, then share x value -- exactly, half a cent up
             if cs["cycle"] == "daily":
                 value = sum(led.accounts[u].balance for u in members)
-                self.assertAlmostEqual(led.accounts[F.uid(cs["stake"])].balance, round(cs["share"] * round(value, 2), 2), 2, "%s: %s participation" % (where, c))
+                self.assertAlmostEqual(led.accounts[F.uid(cs["stake"])].balance, exact(value, cs["share"]), 2, "%s: %s participation" % (where, c))
             else:
                 end_of = date(TODAY.year, TODAY.month, 1) - timedelta(days=1)
                 then = sum(led.balance_at(u, end_of) for u in members)
-                self.assertAlmostEqual(led.balance_at(F.uid(cs["stake"]), end_of), round(cs["share"] * round(then, 2), 2), 2,
+                self.assertAlmostEqual(led.balance_at(F.uid(cs["stake"]), end_of), exact(then, cs["share"]), 2,
                                        "%s: %s participation at the end of last month" % (where, c))
 
     def mirrors_complete(self, where, touched):
@@ -246,11 +254,11 @@ class RuleWorlds(test_fuzz.FuzzTests):
                 self.assertIn(mm_bridge.local_date(z["bookingDate"]), days, "%s: interest %02d/%d on its day" % (at, m, y))
                 if cs["model"] == "yearly_base":
                     base = abs(led.balance_at(vd, date(y - 1, 12, 31)))
-                    yearly = cents(base * rate_at(date(y, 1, 1)) / 100.0)
-                    per = cents(yearly / 12.0)
-                    want = cents(yearly - 11 * per) if m == 12 else per
+                    yearly = exact(base, rate_at(date(y, 1, 1)), 100)
+                    per = exact(yearly, 1, 12)
+                    want = round(yearly - 11 * per, 2) if m == 12 else per
                 else:
-                    want = cents(abs(led.balance_at(vd, date(y, m, 1) - timedelta(days=1))) * rate_at(date(y, m, 1)) / 1200.0)
+                    want = exact(abs(led.balance_at(vd, date(y, m, 1) - timedelta(days=1))), rate_at(date(y, m, 1)), 1200)
                 self.assertAlmostEqual(z["amount"], -want, 2, "%s: interest %02d/%d" % (at, m, y))
             self.assertFalse([m for m in booked if m.startswith("#kontor-zins-") and m not in due], "%s: interest for a month not due" % at)
 

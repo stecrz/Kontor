@@ -12,11 +12,12 @@ from __future__ import annotations
 
 import re
 from bisect import bisect_right
+from itertools import accumulate
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from typing import Dict, Iterable, List, Optional, Tuple
 
-from model import MARK, TAG_RE, Ledger, Tx, cents, fmt_eur, has_mark, marks_in, month_end, months_between, norm_cat
+from model import MARK, TAG_RE, Ledger, Tx, cents, fmt_eur, has_mark, marks_in, month_end, months_between, norm_cat, part
 from i18n import tr
 
 
@@ -171,7 +172,17 @@ def _pct(rate: float) -> str:
 
 def _interest_of(modell: str, base: float, rate: float, m: int) -> float:
     """A month's interest as Kontor books it: on the base of the year (1/12, December with the cent left over) or on the debt
-    at the end of the month before."""
+    at the end of the month before -- computed exactly, then rounded to the cent (model.part)."""
+    if modell == "yearly_base":
+        yearly = part(base, rate, 100)
+        per = part(yearly, 1, 12)
+        return cents(yearly - 11 * per) if m == 12 else per
+    return part(base, rate, 1200)
+
+
+def _interest_floats(modell: str, base: float, rate: float, m: int) -> float:
+    """A month's interest as Kontor booked it up to 3.16.99: multiplied as floats and then rounded -- at half a cent now and then
+    a cent less than _interest_of. Only to know such a booking as Kontor's own (never booked anew, never noted for that cent)."""
     if modell == "yearly_base":
         yearly = cents(base * rate / 100.0)
         per = cents(yearly / 12.0)
@@ -310,9 +321,13 @@ def plan_loan(ledger: Ledger, cfg: dict, today: date, config: Optional[dict] = N
     payee = texts.get("counterparty", name)
     loan_txs = ledger.transactions(loan.uuid)
     marks: Dict[str, Tx] = {}
+    again: List[Tx] = []                                 # Kontor's repayment a second time (its mark twice in MoneyMoney)
     for t in loan_txs:
         for m in marks_in(t.purpose + " " + t.comment):
-            marks.setdefault(m, t)
+            if marks.setdefault(m, t) is not t and _payment_id(m) is not None and t not in again:
+                again.append(t)
+    for t in again:                                      # one is too many: named, and counted once (the debt, see fixes)
+        res.warnings.append(tr("s_buchung_doppelt") % (rule, t.booking_date.strftime("%d.%m.%Y"), fmt_eur(t.amount), loan.name))
 
     # 1. Repayments ---------------------------------------------------------
     erk = cfg.get("detection") or {}
@@ -399,7 +414,7 @@ def plan_loan(ledger: Ledger, cfg: dict, today: date, config: Optional[dict] = N
                 res.warnings.append(tr("s_s_keine_jahresanfangsbasis_kein_zinssa") % (rule, y, y))
                 year_cache[y] = (0.0, 0.0, 0.0)
             else:
-                year_cache[y] = (base, rate, cents(base * rate / 100.0))
+                year_cache[y] = (base, rate, part(base, rate, 100))
                 res.info.append(tr("s_zinsbasis_info") %
                                 (rule, y, fmt_eur(base), _pct(rate), fmt_eur(year_cache[y][2])))
         return year_cache[y]
@@ -422,12 +437,27 @@ def plan_loan(ledger: Ledger, cfg: dict, today: date, config: Optional[dict] = N
     # set, e.g. the bank's, is yours). Each right amount, and every new interest, counts the ones before it as corrected:
     # one round of changes as noted fits. Not noted after something unclear: a booking of this loan that waits (not in this
     # plan), or interest twice in a month
-    fixes: List[Tuple[date, float]] = []
+    fixes: List[Tuple[date, float]] = [(t.booking_date, round(-t.amount, 2)) for t in again]      # a repayment twice: the debt as if once
     stale: List[str] = []
-    unclear: List[date] = []
+    unclear: List[date] = [t.booking_date for t in again]
 
     def debt_fixed(day: date) -> float:
         return abs(ledger.balance_at(loan.uuid, day) + sum(d for t, d in fixes if t <= day))
+
+    per_cache: Dict[int, float] = {}
+
+    def monthly(y: int) -> float:
+        """A month's interest on the base of year y: a twelfth of the year's, to the cent. Where Kontor booked months of this
+        year a cent off (computed with floats up to 3.16.99), the year goes on with that amount -- so its twelve months still
+        add up to the year's interest, December taking what is left."""
+        if y not in per_cache:
+            base, rate, yearly = year_basis(y)
+            per = part(yearly, 1, 12)
+            old = _interest_floats(modell, base, rate, 1)
+            if old != per and any(abs(abs(marks[k].amount) - old) < 0.005 for k in (MARK + "zins-%04d-%02d" % (y, i) for i in range(1, 12)) if k in marks):
+                per = old
+            per_cache[y] = per
+        return per_cache[y]
 
     for (y, m) in months_between(ab, today):
         if modell == "yearly_base":
@@ -443,6 +473,7 @@ def plan_loan(ledger: Ledger, cfg: dict, today: date, config: Optional[dict] = N
             if mine or twice:           # Kontor's and yours in the same month, or Kontor's twice: one of them is too much
                 res.warnings.append(tr("s_zins_doppelt") % (rule, "%02d/%04d" % (m, y), fmt_eur((mine or twice)[0].amount)))
                 unclear.append(min(t.booking_date for t in [marks[tag]] + (mine or twice)))
+                fixes.extend((t.booking_date, round(-t.amount, 2)) for t in twice)      # Kontor's twice: the debt as if once
                 continue
             start = date(y, 1, 1) if modell == "yearly_base" else date(y, m, 1)       # the day its base is taken before
             if not (modell == "yearly_base" and str(y) in overrides) and any(d < start for d in unclear + held + (waits if auto else [])):
@@ -457,6 +488,8 @@ def plan_loan(ledger: Ledger, cfg: dict, today: date, config: Optional[dict] = N
                 known = rate_now is not None
             if was is not None and known and rate_now is not None:
                 then, now = _interest_of(modell, was[0], was[1], m), _interest_of(modell, base_now, rate_now, m)
+                if abs(marks[tag].amount - sign * then) >= 0.005:          # as Kontor computed it up to 3.16.99: its own as well
+                    then = _interest_floats(modell, was[0], was[1], m)
                 if abs(marks[tag].amount - sign * then) < 0.005 and abs(now - then) >= STALE_MIN:
                     stale.append(tr("s_zins_statt") % ("%02d/%04d" % (m, y), fmt_eur(sign * now), fmt_eur(sign * then)))
                     fixes.append((marks[tag].booking_date, round(sign * (now - then), 2)))
@@ -484,14 +517,14 @@ def plan_loan(ledger: Ledger, cfg: dict, today: date, config: Optional[dict] = N
             base, rate, yearly = year_basis(y)
             if yearly <= 0:
                 continue
-            per = cents(yearly / 12.0)
+            per = monthly(y)
             interest = cents(yearly - 11 * per) if m == 12 else per
         else:
             rate = _rate_at(rates, date(y, m, 1))
             base = debt_fixed(date(y, m, 1) - timedelta(days=1))           # as if the interest noted above were corrected
             if rate is None or base <= 0:
                 continue
-            interest = cents(base * rate / 1200.0)
+            interest = part(base, rate, 1200)
         if interest <= 0:
             continue
         purpose = _fill(texts["interest_text"], month="%02d/%04d" % (m, y),
@@ -524,11 +557,16 @@ def parse_start(s):
     return d if 1990 <= d.year <= 2100 else None
 
 
+def _seq(t: Tx) -> int:
+    """The order transactions came in: MoneyMoney's number; one planned in this run (or just written) after all read ones."""
+    return t.id if t.id > 0 else 10 ** 15 - t.id
+
+
 class ValueSeries:
     """Sum of the balances of some accounts at the end of past days, as the balance sheet shows them -- so the bookings match
     it: from the transactions; with the whole history read, an account did not exist before its first transaction; accounts
     whose history comes from their balance (portfolios by default) are unknown. Prefix sums, so many days stay quick.
-    Nothing is estimated."""
+    Nothing is estimated. factor x value: computed exactly, then rounded to the cent (model.part)."""
 
     def __init__(self, ledger: Ledger, accs, config: Optional[dict] = None, factor: float = 1.0):
         bil = (config or {}).get("balance") or {}
@@ -541,6 +579,7 @@ class ValueSeries:
                 pass
         self.factor, self.unknown, self.foreign, self.parts, self.now = factor, [], [], [], 0.0
         days: set = set()
+        came: List[Tuple[date, int]] = []
         for a in accs:
             txs = sorted(ledger.transactions(a.uuid), key=lambda t: t.booking_date)
             if (a.currency or "EUR").upper() != "EUR":          # kept in another currency: Kontor does not convert (no rates, no
@@ -560,9 +599,17 @@ class ValueSeries:
                 else:
                     dates.append(t.booking_date); sums.append(run)
             days.update(dates)
+            came.extend((t.booking_date, _seq(t)) for t in txs)
             opening = a.balance - run
             self.parts.append((dates, sums, opening, full and bool(dates)))
         self.change_days = sorted(days)
+        came.sort()
+        self._came_days, self._came_top = [d for d, _ in came], list(accumulate((n for _, n in came), max))
+
+    def newest(self, day: Optional[date]) -> int:
+        """The latest of these accounts' transactions up to `day` (None: of all), by the order they came in (_seq); 0: none."""
+        i = len(self._came_days) if day is None else bisect_right(self._came_days, day)
+        return self._came_top[i - 1] if i else 0
 
     def at(self, day: Optional[date]) -> Tuple[float, float, List[str]]:
         """(factor x value, value, unknown accounts) at the end of `day`; None: now."""
@@ -570,7 +617,7 @@ class ValueSeries:
             if self.foreign:
                 return 0.0, 0.0, self.foreign
             v = round(self.now, 2)
-            return round(self.factor * v, 2), v, []
+            return part(v, self.factor), v, []
         if self.unknown or self.foreign:
             return 0.0, 0.0, self.unknown + self.foreign
         total = 0.0
@@ -580,7 +627,7 @@ class ValueSeries:
                 continue                    # did not exist yet
             total += opening + (sums[i - 1] if i else 0.0)
         v = round(total, 2)
-        return round(self.factor * v, 2), v, []
+        return part(v, self.factor), v, []
 
 
 def _keep_value(ledger: Ledger, res: RuleResult, rule: str, target, series: ValueSeries, cfg: dict, today: date, payee: str,
@@ -603,8 +650,32 @@ def _keep_value(ledger: Ledger, res: RuleResult, rule: str, target, series: Valu
         days.append(None)
     txs = sorted(ledger.transactions(target.uuid), key=lambda t: (t.booking_date, t.id))
     opening = target.balance - sum(t.amount for t in txs)
-    used = {m for t in txs for m in marks_in(t.purpose)}
+    used: set = set()
+    again: List[Tx] = []                                 # a value adjustment of Kontor's a second time (its mark twice in MoneyMoney)
+    for t in txs:
+        ms = [m for m in marks_in(t.purpose) if is_value_tag(m)]
+        if ms and all(m in used for m in ms):
+            again.append(t)
+        used.update(marks_in(t.purpose))
+    for t in again:                                      # one is too many: named, and the balance taken as if it were there once
+        res.warnings.append(tr("s_buchung_doppelt") % (rule, t.booking_date.strftime("%d.%m.%Y"), fmt_eur(t.amount), target.name))
+    if again:
+        txs = [t for t in txs if not any(t is x for x in again)]
+    twice = round(sum(t.amount for t in again), 2)
+    mine = sorted((t.booking_date, _seq(t)) for t in txs if any(is_value_tag(m) for m in marks_in(t.purpose)))
+    mine_days, mine_top = [x for x, _ in mine], list(accumulate((n for _, n in mine), max))
+
+    def stays(d: Optional[date], have: float, value: float) -> bool:
+        """A balance at share x value as Kontor computed it up to 3.16.99 (as floats: half a cent went up or down), with nothing
+        new in the company since Kontor's last value adjustment: it stays -- nothing booked moves for that cent. The next
+        change is booked to the exact value."""
+        if abs(round(series.factor * value, 2) - have) >= 0.005:
+            return False
+        i = len(mine_days) if d is None else bisect_right(mine_days, d)
+        return i > 0 and mine_top[i - 1] > series.newest(d)
     want_now, src_now, unknown_now = series.at(None)
+    if abs(want_now - target.balance) >= 0.005 and not unknown_now and stays(None, round(target.balance - twice, 2), src_now):
+        want_now = round(target.balance - twice, 2)
     preview.update(target=target.uuid, ist=round(target.balance, 2), soll=want_now, source=src_now, diff=round(want_now - target.balance, 2),
                    retro_count=0, back_sum=0.0, open=0, unknown=[], cycle="monthly" if monthly else "daily",
                    begin=start.isoformat() if isinstance(start, date) else None)
@@ -616,7 +687,7 @@ def _keep_value(ledger: Ledger, res: RuleResult, rule: str, target, series: Valu
     i, cum, posted = 0, 0.0, 0.0
     for d in days:
         if d is None:
-            have = target.balance
+            have = round(target.balance - twice, 2)
         else:
             while i < len(txs) and txs[i].booking_date <= d:
                 cum += txs[i].amount
@@ -630,7 +701,7 @@ def _keep_value(ledger: Ledger, res: RuleResult, rule: str, target, series: Valu
                 unknown_months.append(m)
             continue
         diff = round(want - have, 2)
-        if abs(diff) < schwelle:
+        if abs(diff) < schwelle or stays(d, have, src_value):
             continue
         prefix = "%swert-%s-" % (MARK, day.strftime("%Y%m%d"))
         n = 1
@@ -721,6 +792,9 @@ def plan_mirror(ledger: Ledger, res: RuleResult, rule: str, a, b, cfg: dict, con
             o = by_id.get(oid)
             if o is None or o.account_uuid != src.uuid:
                 orphans.append((x, src, m, oid))
+                continue
+            if oid in done_ids:                          # mirrored a second time (its mark twice in MoneyMoney): one is too many
+                res.warnings.append(tr("s_buchung_doppelt") % (rule, m.booking_date.strftime("%d.%m.%Y"), fmt_eur(m.amount), x.name))
                 continue
             done_ids.add(oid); marked += 1
             if abs(m.amount + o.amount) >= 0.005 or m.booking_date != o.booking_date:

@@ -5,7 +5,7 @@
   color-scheme:light;
   --bg:#f5f5f7; --fg:#1d1d1f; --muted:#6e6e73; --faint:#aeaeb2; --line:#e5e5ea; --line-2:#d2d2d7; --head:#ffffff; --sub:#fafafa;
   --plan:#f7f7f9; --hatch:rgba(0,0,0,.13); --hatch-td:rgba(0,0,0,.075); --cur:#f0f0f4; --year:#f2f2f7; --group:#f5f5f7; --group-sh:rgba(0,0,0,.016);
-  --neg:#c0392b; --pos:#1a8a4a; --accent:#1d1d1f; --check:#48484d; --accent-soft:#e8e8ed; --accent-fg:#1d1d1f; --accent-ink:#ffffff;
+  --neg:#c0392b; --pos:#167f43; --accent:#1d1d1f; --check:#48484d; --accent-soft:#e8e8ed; --accent-fg:#1d1d1f; --accent-ink:#ffffff;
   --side:rgba(246,246,248,.92); --side-fg:#1d1d1f;
   --warn-bg:#fff4df; --warn-fg:#8a4b00; --err-bg:#fde8e8; --err-fg:#8a1c1c; --ok-bg:#e6f5ec; --ok-fg:#0f5a30;
   --c-liq:#34c759; --c-anl:#12a88a; --c-fest:#1d9fc0; --c-bet:#af52de; --c-ford:#3a6ff0; --c-immo:#9e7458; --c-verb:#ff6b57; --c-ein:#1a8a4a; --c-aus:#c0392b; --c-neutral:#8e8e93; --c-nw:#e8aa00;
@@ -69,7 +69,7 @@ input[type=checkbox] { accent-color:var(--check); }      /* a little softer than
 .side nav a.on { background:var(--accent-soft); color:var(--accent-fg); font-weight:600; } .side nav a.on svg { opacity:1; }
 .side nav a:hover { background:rgba(127,127,127,.12); }
 .side nav a.alpha:not(.on) { color:color-mix(in srgb, var(--side-fg) 60%, transparent); } .side nav a.alpha:not(.on) svg { opacity:.45; }
-.side nav a.alpha span { min-width:0; } .side nav a .alpha-tag { flex-shrink:0; margin-right:-8px; font-size:8px; padding:2px 3px; }
+.side nav a.alpha span { min-width:0; flex:1; } .side nav a.alpha .alpha-tag { margin-left:-4px; } .side nav a.alpha.on span { letter-spacing:-.2px; }      /* bold and the tag still on one line */ .side nav a .alpha-tag { flex-shrink:0; margin-right:-8px; font-size:8px; padding:2px 3px; }
 .alpha-tag { margin-left:auto; font-style:normal; font-size:8.5px; font-weight:600; letter-spacing:0; text-transform:uppercase; line-height:1; padding:2px 4px; border-radius:4px;
   color:var(--muted); border:1px solid var(--line); background:repeating-linear-gradient(135deg, rgba(127,127,127,.16) 0 2px, transparent 2px 4px); cursor:help; }
 .alpha-tag.big { margin-left:10px; vertical-align:middle; font-size:10.5px; padding:2px 5px; position:relative; top:-2px; }
@@ -107,11 +107,11 @@ main { flex:1; min-width:0; padding:0 24px calc(20px + env(safe-area-inset-botto
 .topbar h1 { grid-column:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; } .topbar #bereich-seg { grid-column:2; justify-self:center; }
 .topbar h1 { font-size:22px; margin:0; font-weight:700; letter-spacing:-.02em; }
 .topbar h1 .page-hq { margin-left:9px; top:-2px; }          /* centred on the title's letters, a little apart */
-/* Kontor's own Mac app: no title bar -- the page as in the browser, the window buttons level with the title row (the app puts
-   them there: keep the row's middle 30px from the top); room for them above Kontor's name in the sidebar and beside the menu
-   in a narrow window (--lb/--tl from the app: where the buttons end, bottom and right) */
+/* Kontor's own Mac app: no title bar -- the page as in the browser, the window buttons small in the top left corner where
+   macOS puts them; room for them above Kontor's name in the sidebar and, in a narrow window, above the title row (--lb from the
+   app: where the buttons end at the bottom) */
 body.mac-chrome .side { padding-top:calc(var(--lb) + 12px); }
-@media (max-width: 900px) { body.mac-chrome #menu-btn { margin-left:calc(var(--tl) - 4px); } }
+@media (max-width: 900px) { body.mac-chrome .topbar { padding-top:max(14px, calc(var(--lb) + 6px)); } }
 
 #menu-btn { display:none; }
 .banner { padding:10px 14px; border-radius:10px; margin:0 0 12px; background:var(--warn-bg); color:var(--warn-fg); }
@@ -514,7 +514,7 @@ body.as-page .as-head { border-bottom:0; padding:0 10px 4px 16px; } body.as-page
 .as-entry { position:relative; } .as-entry.ask { padding-right:40px; } .as-entry.off { opacity:.55; border-color:var(--line-2); } .as-e-pick { position:absolute; top:10px; right:12px; margin:0; } .as-e-pick input { width:18px; height:18px; margin:0; cursor:pointer; }
 .as-e-why { font-size:12.5px; color:var(--muted); margin-top:4px; overflow-wrap:anywhere; } .as-e-fin { font-size:12.5px; color:var(--warn-fg); margin:-2px 0 6px; }
 .as-e-cat { margin-top:4px; overflow-wrap:anywhere; } .as-e-t td.nowrap { white-space:nowrap; }
-.as-e-tc { table-layout:fixed; } .as-e-tc td:first-child { width:6.9em; } .as-e-tc td:last-child { width:5.6em; } .as-e-tc td.as-e-zw { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; } .as-e-tc td[colspan] { width:auto; }
+.as-e-tc { table-layout:fixed; } .as-e-tc td:first-child { width:6.9em; } .as-e-tc td:last-child { width:5.6em; } .as-e-tc td.as-e-zw > div { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; } .as-e-tc td[colspan] { width:auto; }
 .as-todo { margin:14px 0 4px; border-top:1px solid var(--line); padding-top:10px; } .as-todo-h { font-size:11px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; margin-bottom:6px; }
 .as-todo-i { display:flex; align-items:center; gap:8px; padding:5px 0; font-size:13px; } .as-todo-i > span { flex:1; min-width:0; } .as-todo-i .ov-todo-d { flex:none; } .as-todo-i.warn .ov-todo-d { background:var(--warn-fg); } .as-todo-i.info .ov-todo-d { background:var(--accent-fg); } .as-todo-go { white-space:nowrap; }
 .as-lh { color:var(--muted); font-size:.92em; overflow-wrap:anywhere; }
@@ -540,7 +540,7 @@ body.as-page .as-head { border-bottom:0; padding:0 10px 4px 16px; } body.as-page
 .as-web-key #as-websites { width:100%; max-width:420px; }
 @media (max-width: 900px) { .as-web-key { grid-template-columns:1fr; } }
 .as-batch { display:flex; flex-direction:column; gap:8px; margin:2px 0 10px; } .as-batch.done { margin-top:-2px; }
-.as-log { margin-top:14px; } .as-log summary { cursor:pointer; font-weight:600; } .as-log #as-log-list { margin-top:8px; } .as-log td.nowrap { white-space:nowrap; }
+.as-log { margin-top:14px; } .as-log-rows { margin-top:4px; } .as-log .as-log-rows summary { cursor:pointer; font-weight:400; } .as-log-rows .as-e-t { margin-top:4px; } .as-log summary { cursor:pointer; font-weight:600; } .as-log #as-log-list { margin-top:8px; } .as-log td.nowrap { white-space:nowrap; }
 .as-e-btn { display:flex; gap:8px; flex-wrap:wrap; } .as-e-st { display:flex; align-items:center; gap:6px; font-size:12.5px; color:var(--muted); } .as-e-st.ok { color:var(--ok-fg); } .as-e-st .as-undo { margin-left:auto; color:var(--muted); }
 .as-chart { margin:2px 0 10px; }
 .as-ch-h { display:flex; align-items:flex-start; gap:8px; margin-bottom:4px; } .as-ch-t { flex:1; min-width:0; display:flex; flex-direction:column; }

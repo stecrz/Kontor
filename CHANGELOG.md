@@ -1,5 +1,27 @@
 # Änderungen
 
+## 3.17.0 (2026-11-22 18:05)
+- Gesamtprüfung aller Versionen seit 3.16.0: Funktionen, Texte, Hilfe, README und Fahrplan gegen den Code geprüft, Gefundenes behoben
+- Sicherheit: neu einzurichten – alte Schlüsselbund-Umstellung und Reste älterer Versionen entfernt; Sicherungen und Pakete erst ab 3.17.0
+- Anmeldung: „Demo“ wirkt auch bei offener Touch-ID-Abfrage – das Fenster nennt Demo oder echtes Kontor, nie entsteht die andere Sitzung
+- Sicherung: vorab ganz geprüft, ganz oder gar nicht; Zugang bleibt wie an diesem Mac; Regeln aus der Sicherung warten auf Bestätigung
+- Datenordner: jede Datei atomar geschrieben; beschädigte Einstellungen werden beiseitegelegt statt auszusperren; Erneuern übergeht Beschädigtes
+- KI-Assistent: Auto-Buchungen nur genau wie gezeigt, nie aus unbestätigten Regeln; jede Buchung auf der Karte und im Protokoll
+- KI-Assistent: Protokoll zeigt jede Änderung Zeile für Zeile; ohne Protokolleintrag kein Abruf
+- Gedächtnis: Zugangsdaten strenger erkannt (auch ohne Ziffern, Kartennummern); „Vergiss“ nur mit Befehl und passender Notiz; Vergessenes bleibt vergessen
+- Internetsuche: Filter gegen eigene Daten verschärft (Namen mit „und“/Rechtsform, Umschreibungen, wartende Buchungen, eingetragene Stände)
+- Abschirmung: Modell, Internet-Leser und Belegleser schreiben nie in Kontors Zwischenordner oder die Modul-Caches der Compiler
+- Update-Prüfung: erkennt auch geänderte Filter, Hosts, Abschirm-Regeln und untergeschobene Dateien; im Git-Klon ganzer Stand, nur vom eingestellten Repository
+- Buchungsregeln: Zinsen und Anteile exakt gerechnet, kaufmännisch auf den Cent; doppelte Buchungen von Kontor gemeldet
+- Tabellen aus PDFs: 12.40 neben 2.500 bleibt Text (außer als Uhrzeit oder Datum)
+- Belege: verknüpfte Dateien außer PDF und CSV nur im Finder gezeigt, nie geöffnet
+- Mac-App: Fensterknöpfe, wo macOS sie hinsetzt – gleicher Abstand oben und links
+- Diktieren: ohne Mikrofonfilter auch kein Pegelausgleich des Systems
+- KI-Assistent: Denkaufwand nur noch oben im Panel (keine versteckte Einstellung); Hilfe-Funde nach Bedeutung gekennzeichnet
+- Oberfläche: Texte, Pfade und Begriffe vereinheitlicht (de/en), Einzahl/Mehrzahl, Zeiten und Monate einheitlich, Grün im hellen Modus lesbarer
+- Hilfe, README und Hilfe-Bilder neu
+- Entwicklung: toter Code und ungenutzte Texte entfernt; macOS-Job prüft die Abschirmung von Modell und Internet-Leser
+
 ## 3.16.100 (2026-11-22 12:55)
 - Entwicklung: Nachtlauf behoben – Zufallswelten bauen keine zwei gleich hohen PayPal-Umbuchungen im Wochenabstand mehr (bleibt bewusst offen); der gefundene Fall läuft bei jedem Test mit
 - Entwicklung: Test der gespeicherten Verläufe wartet auf das Speichern (schlug unter Last zufällig fehl)

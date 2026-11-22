@@ -11,7 +11,8 @@ How the model runs: as a child process of the service, listening on 127.0.0.1 on
 start (kept in memory only, given to it in its environment, never on its command line); without its chat app, without tools of
 its own, offline. On the Mac inside the system's sandbox (sandbox-exec): no network at all but connections coming in on this
 Mac; it starts no other program, sends no Apple events (cannot steer MoneyMoney or a browser), opens nothing through the system,
-writes only temporary files and reads nothing in your home folder but its own folder -- so not Kontor's data, not MoneyMoney's,
+writes only into a temporary folder of its own (made for each start; besides it the system's caches) -- never into Kontor's
+temporary folders -- and reads nothing in your home folder but its own folder -- so not Kontor's data, not MoneyMoney's,
 no documents. That sandbox is a second line behind llama.cpp itself (should the program or a model file ever be faulty); which
 rules apply is your setting -- nothing the process does makes Kontor try weaker ones. Kontor talks to it at 127.0.0.1 and
 nowhere else (there is no address to set). It ends when you stop it, after some idle minutes, and when Kontor restarts.
@@ -35,6 +36,7 @@ import socket
 import subprocess
 import sys
 import tarfile
+import tempfile
 import threading
 import time
 import urllib.error
@@ -61,6 +63,7 @@ MAX_RUNTIME = 2 << 30               # an unpacked llama.cpp is far smaller: more
 START_SECONDS = 420                 # a large model from a slow disk
 REACH_SECONDS = 45                  # llama-server listens (and says "loading") long before the model is there
 SANDBOX = "/usr/bin/sandbox-exec"
+TMP_PREFIX = "llm-run-"             # a model process's own temporary folder, a new one for every start (never "kontor-...")
 
 # Models Kontor names (they change with Kontor's versions); any other GGUF from Hugging Face can be added by its repository.
 # pick: the variant in that repository (its file is looked up there when you load it); gb: about, for the list before loading.
@@ -217,10 +220,15 @@ SANDBOXES = ("strict", "basic", "off")
 def sandbox_profile(data_dir: str, program_dir: str, base_dir: str, level: str = "strict", home: Optional[str] = None) -> str:
     """The rules for sandbox-exec (later rules win).
     Both levels: no network but connections coming in on this Mac -- none going out at all; nothing written into Kontor's
-    folders; Kontor's data not read (only the model's own folder inside it).
+    folders, nor into Kontor's temporary folders (kontor-..., where e.g. the helper for MoneyMoney's password is built and
+    started, an update is unpacked, Touch ID answers); Kontor's data not read (only the model's own folder inside it).
     strict: besides that it starts no other program, sends no Apple events (so it cannot steer MoneyMoney, a browser or any
     other app), opens nothing through the system (no addresses, no files), signals no other process, does not read the
-    clipboard, writes temporary files only and reads nothing in the home folder."""
+    clipboard, reads nothing in the home folder and writes only into the temporary folder Kontor makes for each start
+    (own_tmp, its TMPDIR) and the system's caches (the graphics chip's compiled programs) -- not into the temporary folders
+    at large, where other programs keep theirs (Apple's compilers too: xcrun's list of tools, swiftc's own files), and not
+    into the compilers' module caches among the caches, from which Kontor's helpers are built (the one asking for
+    MoneyMoney's password)."""
     q = lambda p: json.dumps(os.path.realpath(p), ensure_ascii=False)
     rules = ["(version 1)", "(allow default)", "(deny network*)",
              '(allow network-bind (local ip "localhost:*"))', '(allow network-inbound (local ip "localhost:*"))']
@@ -230,11 +238,20 @@ def sandbox_profile(data_dir: str, program_dir: str, base_dir: str, level: str =
                   "(deny signal)", "(allow signal (target self))",
                   '(deny mach-lookup (global-name "com.apple.pasteboard.1"))',
                   "(deny file-write*)",
-                  '(allow file-write* (subpath "/private/var/folders") (subpath "/private/tmp") (literal "/dev/null") (literal "/dev/dtracehelper") (literal "/dev/tty"))',
+                  '(allow file-write* (regex #"^/private/var/folders/[^/]+/[^/]+/T/%s[^/]+/") (regex #"^/private/var/folders/[^/]+/[^/]+/C/")'
+                  ' (literal "/dev/null") (literal "/dev/dtracehelper") (literal "/dev/tty"))' % TMP_PREFIX,
+                  '(deny file-write* (regex #"^/private/var/folders/[^/]+/[^/]+/C/(clang|org\\.llvm\\.clang)"))',      # (clang's and swiftc's modules)
                   "(deny file-read* (subpath %s) (subpath %s))" % (q(home or os.path.expanduser("~")), q(data_dir))]
     else:
         rules += ["(deny file-write* (subpath %s) (subpath %s))" % (q(data_dir), q(program_dir)), "(deny file-read* (subpath %s))" % q(data_dir)]
-    return "\n".join(rules + ["(allow file-read* (subpath %s))" % q(base_dir), "(allow file-read-metadata (vnode-type DIRECTORY))"])
+    return "\n".join(rules + ['(deny file-write* (regex #"/kontor-[^/]*(/|$)"))',           # after every rule that allows writing: this one wins
+                              "(allow file-read* (subpath %s))" % q(base_dir), "(allow file-read-metadata (vnode-type DIRECTORY))"])
+
+
+def own_tmp() -> str:
+    """A new, empty temporary folder for one start of a model process -- handed to it as TMPDIR, removed when it has ended.
+    In the system's temporary folder, never one of Kontor's own (kontor-...): those no model process may write."""
+    return os.path.realpath(tempfile.mkdtemp(prefix=TMP_PREFIX))
 
 
 def _safe_join(root: str, name: str) -> Optional[str]:
@@ -318,6 +335,7 @@ class LocalAI:
         self.state = "stopped"                         # stopped | starting | ready | error
         self.error = ""
         self.sealed = ""                               # "" | "strict" | "basic": the sandbox the running model is in
+        self.tmp = ""                                  # the running model's own temporary folder (own_tmp)
         self.since: Optional[float] = None
         self.last_used = 0.0
         self.busy = False
@@ -582,16 +600,22 @@ class LocalAI:
         if level != "off" and not self._can_seal() and sys.platform == "darwin":
             raise ModelError(tr("s_ki_sandbox_fehlt"))          # as at the start: the sandbox asked for but not there -- not run without it
 
+        tmp = ""
+
         def run(arg: str) -> str:
             cmd = self._sealed_cmd([binp, arg], level) if level != "off" and self._can_seal() else [binp, arg]      # inside the sandbox you chose
-            r = subprocess.run(cmd, capture_output=True, text=True, timeout=60, env=self._env(""), cwd=os.path.dirname(binp))
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=60, env=self._env("", tmp), cwd=os.path.dirname(binp))
             return (r.stdout or "") + (r.stderr or "")
         try:
+            tmp = own_tmp()
             ver = run("--version")
             m = re.search(r"version:\s*([^\n]+)", ver)
             flags = sorted(set(re.findall(r"(?<![\w-])--[a-z][a-z0-9-]+", run("--help"))))
         except (OSError, subprocess.TimeoutExpired) as e:
             raise ValueError(tr("s_ki_startet_nicht") % str(e)[:200])
+        finally:
+            if tmp:
+                shutil.rmtree(tmp, ignore_errors=True)
         if "--port" not in flags or "--model" not in flags:
             raise ValueError(tr("s_ki_startet_nicht") % (ver.strip()[:200] or "llama-server"))
         return (m.group(1).strip()[:60] if m else ""), flags
@@ -695,12 +719,13 @@ class LocalAI:
     def _sealed_cmd(self, cmd: List[str], level: str = "strict") -> List[str]:
         return [SANDBOX, "-p", sandbox_profile(self.data_dir, self.program_dir, self.base, level)] + cmd
 
-    def _env(self, key: str) -> Dict[str, str]:
-        """A small environment of its own: no proxies, no tokens, nothing of Kontor's."""
+    def _env(self, key: str, tmp: str = "") -> Dict[str, str]:
+        """A small environment of its own: no proxies, no tokens, nothing of Kontor's -- and for temporary files its own folder
+        of this start (tmp: from own_tmp), not the one Kontor and other programs use."""
         env = {"PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "HOME": os.path.expanduser("~"), "LANG": "en_US.UTF-8",
                "HF_HUB_OFFLINE": "1", "LLAMA_ARG_OFFLINE": "1"}
-        if os.environ.get("TMPDIR"):
-            env["TMPDIR"] = os.environ["TMPDIR"]
+        if tmp:
+            env["TMPDIR"] = tmp
         if key:
             env["LLAMA_API_KEY"] = key
         return env
@@ -737,9 +762,14 @@ class LocalAI:
         if "--no-webui" not in flags and "--no-ui" in flags:
             args.append("--no-ui")
         cmd = self._sealed_cmd(args, seal) if seal else args
-        proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=self._env(key),
-                                cwd=os.path.dirname(binp), close_fds=True)
-        self.port, self.key = port, key
+        tmp = own_tmp()                                   # for this start only; gone with the process (_kill)
+        try:
+            proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=self._env(key, tmp),
+                                    cwd=os.path.dirname(binp), close_fds=True)
+        except OSError:
+            shutil.rmtree(tmp, ignore_errors=True)
+            raise
+        self.port, self.key, self.tmp = port, key, tmp
 
         def drain(p=proc):                                # its output: only the last lines, in memory, for a failed start
             try:
@@ -841,6 +871,9 @@ class LocalAI:
                     p.kill()
                 except OSError:
                     pass
+        tmp, self.tmp = self.tmp, ""
+        if tmp:                                          # its temporary folder of that start
+            shutil.rmtree(tmp, ignore_errors=True)
         try:
             os.remove(self._p(self.role + ".json"))
         except OSError:

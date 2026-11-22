@@ -14,6 +14,7 @@ import os
 import sys
 import re
 import secrets
+import threading
 import zipfile
 from datetime import date, datetime
 from typing import Dict, List, Optional
@@ -39,6 +40,8 @@ MAX_FILE = 60 * 1024 * 1024
 
 
 FOLD_CASE = sys.platform == "darwin"      # macOS: names differing only in case are the same file
+ID_BYTES = 8                              # a receipt's id: 16 hex signs, checked against the ones there (up to 3.16.99: 6, unchecked)
+HEAL_LOCK = threading.Lock()              # entries sharing an id given their own: one at a time
 
 
 def _canon(path: str) -> str:
@@ -81,6 +84,8 @@ class Belege:
         self.folder = os.path.expanduser(cfg.get("folder") or DEFAULT_FOLDER)
         self.pattern = cfg.get("subfolder") or "{year}"
         self.index = store.load("receipts.json", {"entry_list": []}) or {"entry_list": []}
+        if self._twins():
+            self._heal()
 
     # -- Ordner ------------------------------------------------------------
     def ensure_folder(self) -> Optional[str]:
@@ -110,6 +115,41 @@ class Belege:
     def entries(self) -> List[dict]:
         return self.index.setdefault("entry_list", [])
 
+    def _twins(self) -> set:
+        """Ids that more than one entry carries (ids up to 3.16.99 were short and not checked when made)."""
+        seen, twice = set(), set()
+        for e in self.entries():
+            (twice if e.get("id") in seen else seen).add(e.get("id"))
+        return twice
+
+    def _heal(self) -> None:
+        """Entries sharing an id each get a new one of their own -- none keeps the old (a page still open with it finds
+        nothing, never the other entry); `was` keeps it, the file's name ends with it (deletable)."""
+        with HEAL_LOCK:
+            self.index = self.store.load("receipts.json", {"entry_list": []}) or {"entry_list": []}      # as it is now
+            twice = self._twins()
+            for e in self.entries():
+                if e.get("id") in twice:
+                    e["was"], e["id"] = e.get("was") or e.get("id"), self._new_id()
+            if twice:
+                self._save()
+
+    def _new_id(self, taken=None) -> str:
+        """An id no entry has (nor had: `was`), and that `taken` does not refuse (a file of that name is there)."""
+        have = {x for e in self.entries() for x in (e.get("id"), e.get("was")) if x}
+        while True:
+            new = secrets.token_hex(ID_BYTES)
+            if new not in have and not (taken and taken(new)):
+                return new
+
+    def _one(self, entry_id: str, like: Optional[dict] = None) -> Optional[dict]:
+        """The one entry meant: by its id -- and, given `like`, only if these fields are as there. None: no such entry.
+        Several (never after _heal): refused, so that the wrong one is never changed or deleted."""
+        hits = [e for e in self.entries() if e.get("id") == entry_id and all(e.get(k) == v for k, v in (like or {}).items())]
+        if len(hits) > 1:
+            raise ValueError(tr("s_beleg_nicht_eindeutig"))
+        return hits[0] if hits and entry_id else None
+
     def counts(self) -> Dict[int, int]:
         out: Dict[int, int] = {}
         for e in self.entries():
@@ -129,17 +169,18 @@ class Belege:
             raise ValueError(tr("s_datei_zu_gross_max_d") % (MAX_FILE // (1024 * 1024)))
         if not data:
             raise ValueError(tr("s_leere_datei"))
-        kennung = secrets.token_hex(3)
         sub = self.subfolder(tx)
         target_dir = os.path.join(self.folder, sub)
         os.makedirs(target_dir, exist_ok=True)
         if tx:
-            base = "%s_%s_%s_%s" % (tx.get("date", "0000-00-00"), ("%.2f" % abs(float(tx.get("amount") or 0))).replace(".", ","),
-                                    _safe(tx.get("name") or os.path.splitext(filename)[0]), kennung)
+            stem = "%s_%s_%s_" % (tx.get("date", "0000-00-00"), ("%.2f" % abs(float(tx.get("amount") or 0))).replace(".", ","),
+                                  _safe(tx.get("name") or os.path.splitext(filename)[0]))
         else:
-            base = "%s_%s_%s" % (date.today().isoformat(), _safe(os.path.splitext(filename)[0]), kennung)
-        name = base + ext
-        with open(os.path.join(target_dir, name), "wb") as f:
+            stem = "%s_%s_" % (date.today().isoformat(), _safe(os.path.splitext(filename)[0]))
+        # an id of its own: no entry has it, and no file of that name is there (a file is never written over)
+        kennung = self._new_id(lambda k: os.path.lexists(os.path.join(target_dir, stem + k + ext)))
+        name = stem + kennung + ext
+        with open(os.path.join(target_dir, name), "xb") as f:
             f.write(data)
         os.chmod(os.path.join(target_dir, name), 0o600)
         entry = {"id": kennung, "tx_id": (tx or {}).get("id"), "account": (tx or {}).get("account"), "entity": (tx or {}).get("entity"),
@@ -172,7 +213,8 @@ class Belege:
         if e.get("external") or not self.allowed(e):
             return False
         full = self.full_path(e)
-        return self.inside(full) or os.path.splitext(os.path.basename(full))[0].endswith("_" + str(e.get("id")))
+        stem = os.path.splitext(os.path.basename(full))[0]
+        return self.inside(full) or any(stem.endswith("_" + str(i)) for i in (e.get("id"), e.get("was")) if i)
 
     def servable(self, e: dict) -> Optional[str]:
         """Path of the entry's file if it exists and may be handed out, else None."""
@@ -183,7 +225,7 @@ class Belege:
         full = os.path.normpath(os.path.join(self.folder, rel_path))
         if not full.startswith(os.path.normpath(self.folder) + os.sep) or not self.inside(full) or not os.path.isfile(full):
             raise ValueError(tr("s_datei_liegt_nicht_im_belegordner"))
-        entry = {"id": secrets.token_hex(3), "tx_id": (tx or {}).get("id"), "account": (tx or {}).get("account"), "entity": (tx or {}).get("entity"),
+        entry = {"id": self._new_id(), "tx_id": (tx or {}).get("id"), "account": (tx or {}).get("account"), "entity": (tx or {}).get("entity"),
                  "date": (tx or {}).get("date") or date.today().isoformat(), "amount": (tx or {}).get("amount"),
                  "name": (tx or {}).get("name") or os.path.basename(rel_path), "path": os.path.relpath(full, os.path.normpath(self.folder)).replace("\\", "/"),
                  "size_bytes": os.path.getsize(full), "added": datetime.now().strftime("%Y-%m-%d %H:%M"), "note": notiz, "original": os.path.basename(rel_path)}
@@ -217,7 +259,7 @@ class Belege:
         st = file_status(full)
         if st == "lacking":
             raise ValueError(tr("s_datei_nicht_gefunden_s") % full)
-        entry = {"id": secrets.token_hex(3), "tx_id": (tx or {}).get("id"), "account": (tx or {}).get("account"), "entity": (tx or {}).get("entity"),
+        entry = {"id": self._new_id(), "tx_id": (tx or {}).get("id"), "account": (tx or {}).get("account"), "entity": (tx or {}).get("entity"),
                  "date": (tx or {}).get("date") or date.today().isoformat(), "amount": (tx or {}).get("amount"),
                  "name": (tx or {}).get("name") or os.path.basename(full), "path": full, "external": True,
                  "size_bytes": os.path.getsize(full) if st == "ok" else 0, "added": datetime.now().strftime("%Y-%m-%d %H:%M"),
@@ -231,28 +273,31 @@ class Belege:
             return os.path.normpath(entry["path"])
         return os.path.normpath(os.path.join(self.folder, entry["path"]))
 
-    def remove(self, entry_id: str, delete_file: bool = False) -> bool:
-        for e in list(self.entries()):
-            if e["id"] == entry_id:
-                self.entries().remove(e)
-                if delete_file and self.deletable(e):
-                    try:
-                        os.remove(self.full_path(e))
-                    except OSError:
-                        pass
-                self._save()
-                return True
-        return False
+    def remove(self, entry_id: str, delete_file: bool = False, like: Optional[dict] = None) -> bool:
+        """Removes exactly the entry meant (_one; like: further fields it must have) -- with its file only if no other entry
+        points to the same file."""
+        e = self._one(entry_id, like)
+        if e is None:
+            return False
+        self.index["entry_list"] = [x for x in self.entries() if x is not e]
+        shared = any(x.get("path") == e.get("path") and bool(x.get("external")) == bool(e.get("external")) for x in self.entries())
+        if delete_file and not shared and self.deletable(e):
+            try:
+                os.remove(self.full_path(e))
+            except OSError:
+                pass
+        self._save()
+        return True
 
     def update(self, entry_id: str, **fields) -> Optional[dict]:
-        for e in self.entries():
-            if e["id"] == entry_id:
-                for k, v in fields.items():
-                    if k in ("note", "tx_id", "account", "entity", "date", "amount", "name"):
-                        e[k] = v
-                self._save()
-                return e
-        return None
+        e = self._one(entry_id)
+        if e is None:
+            return None
+        for k, v in fields.items():
+            if k in ("note", "tx_id", "account", "entity", "date", "amount", "name"):
+                e[k] = v
+        self._save()
+        return e
 
     # -- Ordnerinhalt ------------------------------------------------------
     def listing(self) -> List[dict]:

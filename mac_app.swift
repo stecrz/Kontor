@@ -99,8 +99,7 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItem
         window.setFrameAutosaveName("Kontor")
         noTitleBar()
         watches.append(web.observe(\.title, options: [.new]) { [weak self] w, _ in
-            // (a new title lays the bar out anew -- at once or with the window's next layout: placed again after that too)
-            if let t = w.title, !t.isEmpty { self?.window.title = t; self?.placeButtons(); DispatchQueue.main.async { self?.placeButtons() } }
+            if let t = w.title, !t.isEmpty { self?.window.title = t }
         })
         buildMenu()
 
@@ -137,26 +136,21 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItem
         return v === web || v.isDescendant(of: web)
     }
 
-    // the window buttons level with the page's title row: its middle 30px from the top (the page's .topbar: 14px above a row
-    // of 32px), the strip that moves the window down to the row's end (46px) -- so the page keeps the browser's spacing
-    private static let rowMiddle: CGFloat = 30, rowEnd: CGFloat = 46
+    // the window buttons stay where macOS puts them in a plain title bar -- small, as close to the top edge as to the left one,
+    // as in other Mac apps (the title bar keeps its own height: a taller one gets larger buttons further down); the strip that
+    // moves the window reaches down to the end of the page's title row (46px), so the page keeps the browser's spacing
+    private static let rowEnd: CGFloat = 46
 
     private func placeButtons() {
-        guard web.band > 0, !window.styleMask.contains(.fullScreen), let close = window.standardWindowButton(.closeButton),
-              let mini = window.standardWindowButton(.miniaturizeButton), let zoom = window.standardWindowButton(.zoomButton),
-              let row = close.superview, let bar = row.superview else { return }
-        let h = (2 * Shell.rowMiddle * web.pageZoom).rounded()
-        var f = bar.frame
-        if f.height != h || f.minY != window.frame.height - h {
-            f.size.height = h
-            f.origin.y = window.frame.height - h
-            bar.frame = f
-        }
-        // the buttons' own row fills the bar: macOS now and then gives it back its usual height at the bar's top while the bar
-        // keeps ours -- the buttons, placed for the taller bar, then sat above the window's edge (GitHub's Mac: their middle at -2)
-        if row.frame != bar.bounds { row.frame = bar.bounds }
-        for b in [close, mini, zoom] { b.setFrameOrigin(NSPoint(x: b.frame.minX, y: ((h - b.frame.height) / 2).rounded())) }
+        guard web.band > 0, !window.styleMask.contains(.fullScreen) else { return }
         web.band = (Shell.rowEnd * web.pageZoom).rounded()
+    }
+
+    // where the close button lies (window points): its gap to the left edge and to the top edge
+    private func buttonGaps() -> (left: Double, top: Double)? {
+        guard let b = window.standardWindowButton(.closeButton), let sv = b.superview else { return nil }
+        let r = sv.convert(b.frame, to: nil)
+        return (Double(r.minX), Double(window.frame.height - r.maxY))
     }
 
     // for the page (its px): the strip's height, where the window buttons end (right, bottom) and their middle -- nothing in
@@ -164,7 +158,7 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItem
     private func chrome() -> [String: Double] {
         guard web.band > 0, !window.styleMask.contains(.fullScreen) else { return ["tb": 0, "tl": 0, "ly": 0, "lb": 0] }
         let z = Double(web.pageZoom)
-        var tl = 0.0, ly = Double(Shell.rowMiddle) * z
+        var tl = 0.0, ly = 14.0 * z
         var lb = ly + 7 * z
         if let b = window.standardWindowButton(.zoomButton), let sv = b.superview {
             let r = sv.convert(b.frame, to: nil)
@@ -180,10 +174,6 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItem
 
     func windowDidEnterFullScreen(_ notification: Notification) { if (notification.object as? NSWindow) === window { sendChrome() } }
     func windowDidExitFullScreen(_ notification: Notification) { if (notification.object as? NSWindow) === window { placeButtons(); sendChrome() } }
-    // macOS lays the bar out anew now and then: the buttons back where they belong
-    func windowDidResize(_ notification: Notification) { if (notification.object as? NSWindow) === window { placeButtons() } }
-    func windowDidBecomeKey(_ notification: Notification) { if (notification.object as? NSWindow) === window { placeButtons() } }
-    func windowDidResignKey(_ notification: Notification) { if (notification.object as? NSWindow) === window { placeButtons() } }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 
@@ -291,8 +281,9 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItem
             d["dark"] = self?.window.appearance?.name == NSAppearance.Name.darkAqua
             d["mic"] = Shell.micState()
             if let s = self {
-                s.placeButtons()            // (as after any change of the window: where the buttons are then is what is checked)
-                d["chrome"] = ["full": s.web.band > 0, "band": Double(s.web.band), "middle": s.chrome()["ly"] ?? 0] as [String: Any]
+                let g = s.buttonGaps()
+                d["chrome"] = ["full": s.web.band > 0, "band": Double(s.web.band), "middle": s.chrome()["ly"] ?? 0,
+                               "left": g?.left ?? -1, "top": g?.top ?? -1] as [String: Any]
             }
             let items = (NSApp.mainMenu?.items ?? []).flatMap { $0.submenu?.items ?? [] }.flatMap { $0.submenu?.items ?? [$0] }
             let mine = items.filter { $0.action == #selector(Shell.command(_:)) }

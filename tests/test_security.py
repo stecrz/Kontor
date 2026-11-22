@@ -1,6 +1,6 @@
-"""Security regressions (all with made-up data, never the real keychain): the idle lock with the page open, a keychain that
-does not answer in time, links in the receipts folder that point elsewhere -- and the ways out of the program (which parts can
-open a connection, to which hosts, which other programs they start)."""
+"""Security regressions (all with made-up data): the idle lock with the page open, the data key (key file, renewal, Touch ID,
+the terminal), links in the receipts folder that point elsewhere -- and the ways out of the program (which parts can open a
+connection, to which hosts, which other programs they start)."""
 import ast
 import glob
 import json
@@ -53,136 +53,12 @@ class IdleLock(unittest.TestCase):
         self.assertIsNone(s.get(a["token"]))             # the absolute limit holds
 
 
-class KeychainTimeout(unittest.TestCase):
-    """macOS keychain locked or a prompt waiting: never a new key file next to the data; a key file that opens the data
-    already there is used, nothing is replaced or removed."""
-
-    def setUp(self):
-        self.dir = tempfile.mkdtemp(prefix="kontor-key-")
-        self._sec = storage._security
-
-    def tearDown(self):
-        storage._security = self._sec
-        shutil.rmtree(self.dir, ignore_errors=True)
-
-    def test_timeout_is_not_no_keychain(self):
-        run = subprocess.run
-        try:
-            def slow(*a, **k):
-                raise subprocess.TimeoutExpired("security", 30)
-            subprocess.run = slow
-            self.assertEqual(storage._security(["find-generic-password"])[0], 124)
-            def missing(*a, **k):
-                raise FileNotFoundError("security")
-            subprocess.run = missing
-            self.assertEqual(storage._security(["find-generic-password"])[0], 127)
-        finally:
-            subprocess.run = run
-
-    def test_timeout_end_to_end_creates_no_key(self):
-        run = subprocess.run
-        try:
-            def slow(*a, **k):
-                raise subprocess.TimeoutExpired("security", 30)
-            subprocess.run = slow
-            with self.assertRaises(storage.StoreError):
-                storage.load_or_create_master_key(self.dir)
-        finally:
-            subprocess.run = run
-        self.assertFalse(os.path.exists(os.path.join(self.dir, "master.key")))
-
-    def test_first_start_stops_without_a_key_file(self):
-        storage._security = lambda args, input_text=None: (124, "", "timeout")
-        with self.assertRaises(storage.StoreError):
-            storage.load_or_create_master_key(self.dir)
-        self.assertFalse(os.path.exists(os.path.join(self.dir, "master.key")))
-
-    def test_key_file_that_opens_the_data_is_used(self):
-        key = os.urandom(32)
-        with open(os.path.join(self.dir, "master.key"), "w") as f:
-            f.write(key.hex())
-        with open(os.path.join(self.dir, "config.json.enc"), "wb") as f:
-            f.write(storage.encrypt(key, b"{}"))
-        storage._security = lambda args, input_text=None: (124, "", "timeout")
-        self.assertEqual(storage.load_or_create_master_key(self.dir), (key, "file"))
-
-    def test_key_file_that_does_not_open_the_data_stays_untouched(self):
-        with open(os.path.join(self.dir, "master.key"), "w") as f:
-            f.write(os.urandom(32).hex())
-        with open(os.path.join(self.dir, "config.json.enc"), "wb") as f:
-            f.write(storage.encrypt(os.urandom(32), b"{}"))      # the data belong to another key (in the keychain)
-        before = open(os.path.join(self.dir, "master.key")).read()
-        storage._security = lambda args, input_text=None: (124, "", "timeout")
-        with self.assertRaises(storage.StoreError):
-            storage.load_or_create_master_key(self.dir)
-        self.assertEqual(open(os.path.join(self.dir, "master.key")).read(), before)
-
-    def test_without_security_the_file_key_stays_as_before(self):
-        storage._security = lambda args, input_text=None: (127, "", "no security")     # not macOS
-        key, src = storage.load_or_create_master_key(self.dir)
-        self.assertEqual((src, len(key)), ("file", 32))
-        self.assertEqual(storage.load_or_create_master_key(self.dir), (key, "file"))
-
-    def test_only_no_entry_allows_a_new_key(self):
-        """Access refused, locked or an entry with unexpected content: no new key, nothing written into the keychain."""
-        for answer in ((51, "", "denied"), (36, "", "locked"), (0, "kaputt\n", ""), (0, "z" * 64 + "\n", "")):
-            calls = []
-
-            def fake(args, input_text=None, answer=answer):
-                calls.append(args[0])
-                return answer if args[0] == "find-generic-password" else (0, "", "")
-            storage._security = fake
-            with self.assertRaises(storage.StoreError):
-                storage.load_or_create_master_key(self.dir)
-            self.assertNotIn("add-generic-password", calls, answer)
-            self.assertFalse(os.path.exists(os.path.join(self.dir, "master.key")))
-
-    def test_refused_keychain_with_key_file_that_opens_the_data(self):
-        key = os.urandom(32)
-        with open(os.path.join(self.dir, "master.key"), "w") as f:
-            f.write(key.hex())
-        with open(os.path.join(self.dir, "config.json.enc"), "wb") as f:
-            f.write(storage.encrypt(key, b"{}"))
-        calls = []
-
-        def fake(args, input_text=None):
-            calls.append(args[0])
-            return (51, "", "denied") if args[0] == "find-generic-password" else (0, "", "")
-        storage._security = fake
-        self.assertEqual(storage.load_or_create_master_key(self.dir), (key, "file"))
-        self.assertNotIn("add-generic-password", calls)
-        self.assertTrue(os.path.exists(os.path.join(self.dir, "master.key")))      # the file stays until the keychain answers
-
-
-class FakeKeychain:
-    """A made-up keychain for storage._security (never the real one): entries per account; fail_write: accounts that refuse."""
-
-    def __init__(self):
-        self.entries, self.fail_write, self.fail_delete, self.calls = {}, set(), set(), []
-
-    def __call__(self, args, input_text=None):
-        self.calls.append(args)
-        acc = args[args.index("-a") + 1] if "-a" in args else ""
-        if args[0] == "find-generic-password":
-            return (0, self.entries[acc] + "\n", "") if acc in self.entries else (44, "", "not found")
-        if args[0] == "add-generic-password":
-            if acc in self.fail_write:
-                return (1, "", "refused")
-            self.entries[acc] = args[args.index("-w") + 1]
-            return (0, "", "")
-        if args[0] == "delete-generic-password":
-            if acc in self.fail_delete:
-                return (1, "", "refused")
-            return (0, "", "") if self.entries.pop(acc, None) is not None else (44, "", "not found")
-        return (1, "", "?")
-
-
 class FakeEnclave:
     """A made-up Secure Enclave for auth.touchid_* (never the real one): a key per handle; it unwraps only while confirm is
     True (Touch ID or the Mac's password confirmed in the macOS window)."""
 
     def __init__(self):
-        self.by_handle, self.by_pub, self.confirm, self.asked = {}, {}, True, 0
+        self.by_handle, self.by_pub, self.confirm, self.asked, self.windows = {}, {}, True, 0, []
 
     def new_key(self):
         import base64
@@ -205,8 +81,9 @@ class FakeEnclave:
         eph = base64.b64encode(os.urandom(33)).decode()
         return eph, self._kek(sec, eph, salt)
 
-    def unseal(self, se, eph, salt, reason=""):
+    def unseal(self, se, eph, salt, reason="", tid=""):
         self.asked += 1
+        self.windows.append((reason, tid))               # what the macOS window says, for which request of the sign-in page
         sec = self.by_handle.get(se)
         return self._kek(sec, eph, salt) if self.confirm and sec is not None else None
 
@@ -309,122 +186,94 @@ class SecretsStayInside(unittest.TestCase):
         d = tempfile.mkdtemp(prefix="kontor-gone-")
         self.addCleanup(shutil.rmtree, d, True)
         se, key = FakeEnclave(), os.urandom(32)
-        storage.Store(d, key, "login").save("config.json", {})
-        with mock.patch.object(storage, "_security", FakeKeychain()):
-            for p in se.patches():
-                p.start(); self.addCleanup(p.stop)
-            access.complete(d, key, "ein-langes-passwort"); access.set_touchid(d, key, True)
-            self.assertTrue(access.touchid_ready(d))
-            with mock.patch.object(auth, "touchid_unseal", side_effect=auth.TouchIdGone()):
-                self.assertIsNone(access.unlock_touchid(d))
-            self.assertFalse(access.touchid_ready(d)); self.assertTrue(storage.key_record(d)["password"])
-            self.assertEqual(access.unlock_password(d, "ein-langes-passwort"), (key, "password"))
-            self.assertTrue(access.set_touchid(d, key, True))      # set up again for this Mac after the sign-in
-            self.assertEqual(access.unlock_touchid(d), (key, "touchid"))
+        storage.Store(d, key).save("config.json", {})
+        for p in se.patches():
+            p.start(); self.addCleanup(p.stop)
+        self.assertTrue(access.complete(d, key, "ein-langes-passwort")); access.set_touchid(d, key, True)
+        self.assertTrue(access.touchid_ready(d))
+        with mock.patch.object(auth, "touchid_unseal", side_effect=auth.TouchIdGone()):
+            self.assertIsNone(access.unlock_touchid(d))
+        self.assertFalse(access.touchid_ready(d)); self.assertTrue(storage.key_record(d)["password"])
+        self.assertEqual(access.unlock_password(d, "ein-langes-passwort"), (key, "password"))
+        self.assertTrue(access.set_touchid(d, key, True))      # set up again for this Mac after the sign-in
+        self.assertEqual(access.unlock_touchid(d), (key, "touchid"))
+        # the window says what the sign-in opens -- passed on as it is, with the sign-in page's request
+        self.assertEqual(access.unlock_touchid(d, "die Demo öffnen", tid="ab" * 16), (key, "touchid"))
+        self.assertEqual(se.windows[-1], ("die Demo öffnen", "ab" * 16))
 
 
-class KeyRenewal(unittest.TestCase):
-    """From before (the key in the keychain): a renewal that broke off is finished before the switch to the key file; the old key
-    goes only once all files open with the new one. Only made-up keys and a made-up keychain."""
+class TouchIdWindowCloses(unittest.TestCase):
+    """The sign-in page switched between your data and the demo while the macOS window is open (service.App.touchid_switch):
+    auth.touchid_close deletes the answer file of exactly that request -- touchid.swift sees its output gone and closes the
+    window, without an answer --, nothing else; the request asks nothing more (no second window without LaunchServices)."""
+
+    TID = "a1" * 16
 
     def setUp(self):
-        self.dir = tempfile.mkdtemp(prefix="kontor-renew-")
-        self._sec = storage._security
-        self.kc = FakeKeychain()
-        storage._security = self.kc
-        self.old = os.urandom(32)
-        self.kc.entries["kontor"] = self.old.hex()
-        self.store = storage.Store(self.dir, self.old, "keychain")
-        self.store.save("config.json", {"a": 1}); self.store.save("state.json", {"b": [1, 2]}); self.store.write_bytes("blob.bin", b"\x00\x01")
+        self.addCleanup(auth._TID_FILES.clear)
+        self.other = tempfile.mkdtemp(prefix="kontor-tid-")       # another request's folder (another id)
+        self.addCleanup(shutil.rmtree, self.other, True)
+        with open(os.path.join(self.other, "result"), "w") as f:
+            f.write("x")
+        auth._tid_track("b2" * 16, os.path.join(self.other, "result"))
+        self.runs, self.code, self.answer = [], 0, ""
 
-    def tearDown(self):
-        storage._security = self._sec
-        shutil.rmtree(self.dir, ignore_errors=True)
+    def fake_run(self, cmd, **kw):
+        """LaunchServices: makes the answer file, the helper's window is open -- the page switches -- the window ends."""
+        self.runs.append(cmd[0])
+        if cmd[0] != "open":
+            return subprocess.CompletedProcess(cmd, 0, b"", b"")
+        out = cmd[cmd.index("--stdout") + 1]
+        args = cmd[cmd.index("--args") + 1:]
+        with open(out, "w") as f:
+            f.write(self.answer.replace("NONCE", args[2] if args[0] == "--unseal" else args[1]))
+        beside = os.path.join(tempfile.gettempdir(), "kontor-beside-%d" % os.getpid())
+        with open(beside, "w") as f:
+            f.write("x")
+        self.addCleanup(lambda: os.path.exists(beside) and os.remove(beside))
+        for wrong in ("", "c3" * 16, self.TID.upper()):               # no request, or another one: nothing goes
+            self.assertFalse(auth.touchid_close(wrong))
+        self.assertTrue(os.path.exists(out))
+        self.assertTrue(auth.touchid_close(self.TID))
+        self.assertFalse(os.path.exists(out)); self.assertFalse(os.path.exists(os.path.dirname(out)))     # its file, its empty folder
+        self.assertTrue(auth.touchid_close(self.TID))                # closed already: nothing more to do
+        self.assertTrue(os.path.exists(beside)); self.assertTrue(os.path.exists(os.path.join(self.other, "result")))
+        return subprocess.CompletedProcess(cmd, self.code, b"", b"")
 
-    def files(self):
-        return sorted(n for n in os.listdir(self.dir) if n.endswith(".enc"))
+    def test_only_the_answer_file_of_the_request(self):
+        with mock.patch.object(auth, "touchid_available", return_value=True), mock.patch.object(auth.sys, "platform", "darwin"), \
+                mock.patch.object(auth.subprocess, "run", self.fake_run):
+            for self.code in (0, 1):                         # `open` ends well or not: no answer either way
+                self.answer = "ok NONCE\n"                   # (even what the helper wrote before goes with the file)
+                self.assertFalse(auth.touchid_verify("R", tid=self.TID))
+        self.assertEqual(self.runs, ["open", "open"])        # never asked again without LaunchServices
+        self.assertEqual(list(auth._TID_FILES), ["b2" * 16])     # the request forgotten once it is over, the other one kept
 
-    def opens_all(self, key):
-        for n in self.files():
-            with open(os.path.join(self.dir, n), "rb") as f:
-                storage.decrypt(key, f.read())
-        return True
+    def test_the_key_is_not_gone_when_the_window_closes(self):
+        with mock.patch.object(auth, "_helper_current", return_value=True), mock.patch.object(auth.sys, "platform", "darwin"), \
+                mock.patch.object(auth.subprocess, "run", self.fake_run):
+            self.answer = "gone NONCE\n"                     # a closed window says nothing about the key: no TouchIdGone
+            self.assertIsNone(auth.touchid_unseal("aGFuZGxl", "ZXBo", "00" * 16, "R", tid=self.TID))
+        self.assertEqual(self.runs, ["open"])
+        self.assertEqual(list(auth._TID_FILES), ["b2" * 16])
 
-    def test_interrupted_after_the_new_key_is_kept(self):
-        """The Mac went off after the new key was kept and some files were replaced: the next start re-encrypts the rest and
-        moves the new key into the main entry; both keys stay as long as a file opens only with the old one."""
-        new = os.urandom(32)
-        self.kc.entries["kontor-next"] = new.hex()
-        p = os.path.join(self.dir, "config.json.enc")
-        with open(p, "wb") as f:
-            f.write(storage.encrypt(new, b'{"a": 1}'))                 # this one replaced already, the others not yet
-        open(os.path.join(self.dir, "state.json.enc.renew"), "wb").close()
-        os.makedirs(os.path.join(self.dir, "chats"))                      # a saved conversation in its folder, still with the old key
-        with open(os.path.join(self.dir, "chats", "assistant-chat-aaaaaaaa.json.enc"), "wb") as f:
-            f.write(storage.encrypt(self.old, b'{"turns": []}'))
-        open(os.path.join(self.dir, "chats", "assistant-chat-aaaaaaaa.json.enc.renew"), "wb").close()
-        self.assertEqual(storage._finish_renewal(self.dir), new)
-        self.assertEqual(self.kc.entries, {"kontor": new.hex()}); self.assertTrue(self.opens_all(new))
-        with open(os.path.join(self.dir, "chats", "assistant-chat-aaaaaaaa.json.enc"), "rb") as f:
-            self.assertEqual(storage.decrypt(new, f.read()), b'{"turns": []}')
-        self.assertFalse([n for n in os.listdir(self.dir) + os.listdir(os.path.join(self.dir, "chats")) if n.endswith(".renew")])
-        self.assertIsNone(storage._finish_renewal(self.dir))           # nothing more to do
+    def test_never_a_file_outside_its_own_folder(self):
+        d = tempfile.mkdtemp(prefix="kontor-x-")
+        self.addCleanup(shutil.rmtree, d, True)
+        own = os.path.join(d, "kontor-tid-x")
+        os.mkdir(own)
+        for i, path in enumerate((os.path.join(d, "result"), os.path.join(own, "result"), os.path.join(self.other, "andere"))):
+            with open(path, "w") as f:
+                f.write("x")
+            tid = "%02d" % i * 16
+            auth._tid_track(tid, path)                       # (only touchid_verify / touchid_unseal put their own file there)
+            self.assertFalse(auth.touchid_close(tid))
+            self.assertTrue(os.path.exists(path))
+        self.assertTrue(auth._tid_track("00" * 16, None))    # marked closed all the same: the request asks nothing more
+        self.assertFalse(auth._tid_track("00" * 16, None))   # ... and is forgotten
+        self.assertFalse(auth._tid_track("", "/x")); self.assertNotIn("", auth._TID_FILES)     # no id: nothing kept
 
-    def test_interrupted_neither_key_opens_a_file(self):
-        self.kc.entries["kontor-next"] = os.urandom(32).hex()
-        with open(os.path.join(self.dir, "x.json.enc"), "wb") as f:
-            f.write(storage.encrypt(os.urandom(32), b"{}"))
-        with self.assertRaises(storage.StoreError):
-            storage._finish_renewal(self.dir)
-        self.assertIn("kontor", self.kc.entries); self.assertIn("kontor-next", self.kc.entries)       # no key deleted
 
-    def test_no_new_key_over_existing_data(self):
-        """No entry in the keychain but encrypted data in the folder: Kontor stops instead of making a new key."""
-        del self.kc.entries["kontor"]
-        with self.assertRaises(storage.StoreError):
-            storage.load_or_create_master_key(self.dir)
-        self.assertNotIn("kontor", self.kc.entries)
-        with self.assertRaises(storage.StoreError):
-            storage.read_master_key(self.dir)
-
-    def test_keychain_without_answer_during_finishing(self):
-        """An unfinished renewal and the keychain does not answer at start: Kontor stops instead of starting with the old key."""
-        self.kc.entries["kontor-next"] = os.urandom(32).hex()
-        calls = self.kc
-        storage._security = lambda args, input_text=None: (124, "", "timeout") if "kontor-next" in args else calls(args, input_text)
-        with self.assertRaises(storage.StoreError):
-            storage._finish_renewal(self.dir)
-        self.assertIn("kontor-next", self.kc.entries)
-
-    def half_done(self):
-        """From before: the main entry refused the new key -- all files open with the new key, which is only in kontor-next."""
-        new = os.urandom(32)
-        for n in self.files():
-            p = os.path.join(self.dir, n)
-            with open(p, "rb") as f:
-                plain = storage.decrypt(self.old, f.read())
-            with open(p, "wb") as f:
-                f.write(storage.encrypt(new, plain))
-        self.kc.entries["kontor-next"] = new.hex()
-        return new
-
-    def test_read_only_takes_the_key_that_opens(self):
-        """Uninstalling from the terminal in that state: the key that opens the data is found, nothing is moved."""
-        new = self.half_done()
-        self.assertEqual(storage.read_master_key(self.dir), (new, "keychain"))
-        self.assertEqual(self.kc.entries, {"kontor": self.old.hex(), "kontor-next": new.hex()})
-
-    def test_a_command_beside_the_service_does_not_finish(self):
-        """A command in the terminal while the service runs uses the key that opens the data and leaves finishing to the
-        service: two processes never finish a renewal at the same time."""
-        new = self.half_done()
-        before = {n: open(os.path.join(self.dir, n), "rb").read() for n in self.files()}
-        with mock.patch.object(storage.sys, "platform", "darwin"):
-            self.assertEqual(storage.load_or_create_master_key(self.dir, finish=False), (new, "keychain"))
-            self.assertEqual(self.kc.entries, {"kontor": self.old.hex(), "kontor-next": new.hex()})
-            self.assertEqual({n: open(os.path.join(self.dir, n), "rb").read() for n in self.files()}, before)
-            self.assertEqual(storage.load_or_create_master_key(self.dir), (new, "keychain"))
-        self.assertEqual(self.kc.entries, {"kontor": new.hex()})
 
 class KeyFileRenewal(unittest.TestCase):
     """Datenschluessel erneuern with the key file: everything re-encrypted (also in the store's folders), the old key gone only
@@ -436,15 +285,12 @@ class KeyFileRenewal(unittest.TestCase):
         import access
         self.A = access
         self.dir = tempfile.mkdtemp(prefix="kontor-renew2-")
-        self._sec = storage._security
-        storage._security = FakeKeychain()               # never the real keychain
         self.old = os.urandom(32)
-        self.store = storage.Store(self.dir, self.old, "login")
+        self.store = storage.Store(self.dir, self.old)
         self.store.save("config.json", {"a": 1}); self.store.save("state.json", {"b": [1, 2]}); self.store.save("chats/assistant-chat-aaaaaaaa.json", {"t": 1})
         self.assertTrue(access.complete(self.dir, self.old, self.PW))
 
     def tearDown(self):
-        storage._security = self._sec
         shutil.rmtree(self.dir, ignore_errors=True)
 
     def files(self):
@@ -472,13 +318,115 @@ class KeyFileRenewal(unittest.TestCase):
         self.assertFalse([n for n in storage._names(self.dir) if n.endswith(".renew")])
         self.assertFalse(self.store.is_open)              # the key file may have taken the next key: locked until a sign-in
         self.assertEqual(self.A.unlock_password(self.dir, self.PW), (self.old, "password"))
-        self.store.unlock(self.old, "login")
-        with open(os.path.join(self.dir, "chats", "assistant-chat-bbbbbbbb.json.enc"), "wb") as f:
-            f.write(storage.encrypt(os.urandom(32), b"{}"))                # a file the key does not open: stops before anything
+        self.store.unlock(self.old)
         before = self.files()
-        with self.assertRaises(storage.StoreError):
-            self.A.renew(self.store, self.PW)
-        self.assertEqual(self.files(), before); self.assertEqual(self.pw_key(), (self.old, None))
+        real = storage.decrypt
+
+        def fails(key, blob):                                             # a file that cannot be read right now (openssl, the disk) ...
+            if blob == before["state.json.enc"]:
+                raise storage.StoreError("openssl")
+            return real(key, blob)
+        with mock.patch.object(storage, "decrypt", fails):
+            with self.assertRaises(storage.StoreError):                   # ... still stops it before anything changes
+                self.A.renew(self.store, self.PW)
+        self.assertEqual(self.files(), before); self.assertEqual(self.pw_key(), (self.old, None)); self.assertTrue(self.store.is_open)
+
+    def damage(self):
+        """Two files no key opens: one cut off (a notes file of the memory), one written with another key."""
+        with open(os.path.join(self.dir, "memory-notes-0002.json.enc"), "wb") as f:
+            f.write(storage.encrypt(self.old, b'{"v": 1, "notes": []}')[:-9])
+        with open(os.path.join(self.dir, "chats", "assistant-chat-bbbbbbbb.json.enc"), "wb") as f:
+            f.write(storage.encrypt(os.urandom(32), b"{}"))
+        return ["chats/assistant-chat-bbbbbbbb.json.enc", "memory-notes-0002.json.enc"]
+
+    def test_a_file_no_key_opens_does_not_stop_it(self):
+        """A damaged file opens with no key, so none is lost with the old one: it stays as it is -- byte for byte, under its
+        name -- and is named; everything else gets the new key. (Before: every renewal ended with "check sum does not match",
+        without the file's name, for ever.)"""
+        bad = self.damage()
+        before = self.files()
+        self.assertEqual(self.A.renew(self.store, self.PW), 3)
+        new = self.store.master
+        self.assertNotEqual(new, self.old); self.assertEqual(self.pw_key(), (new, None))
+        self.assertEqual(sorted(self.store.renew_left), bad)             # named (the answer of the renewal, the log)
+        after = self.files()
+        self.assertEqual({n: after[n] for n in bad}, {n: before[n] for n in bad})          # untouched
+        self.assertEqual(sorted(storage.files_not_opening(new, self.dir)), bad)             # everything else opens with the new key
+        self.assertEqual(len(storage.files_not_opening(self.old, self.dir)), 5)
+        self.assertFalse([n for n in storage._names(self.dir) if n.endswith((".renew", ".tmp", storage.LEFT))])
+        self.assertEqual(self.A.unlock_password(self.dir, self.PW), (new, "password"))     # and the next sign-in opens as always
+        self.assertEqual(self.A.renew(self.store, self.PW), 3)           # again: named again, never in the way
+        self.assertEqual(sorted(self.store.renew_left), bad)
+        for n in bad:
+            os.remove(os.path.join(self.dir, n))
+        self.assertEqual(self.A.renew(self.store, self.PW), 3); self.assertEqual(self.store.renew_left, [])
+
+    def test_broken_off_with_a_file_no_key_opens(self):
+        """The Mac goes off while the files change: the next sign-in finishes the renewal by opening every file of the store
+        with one of the two keys -- a damaged one would stop that for good, so it is out of the way meanwhile and has its
+        name again once someone signed in."""
+        bad = self.damage()
+        before = self.files()
+        real, n = os.replace, [0]
+
+        def off(a, b):
+            if a.endswith(".renew"):
+                n[0] += 1
+                if n[0] > 1:
+                    raise OSError("power")
+            return real(a, b)
+        with mock.patch.object(storage.os, "replace", off):
+            with self.assertRaises(storage.StoreError):
+                self.A.renew(self.store, self.PW)
+        self.assertFalse(self.store.is_open)
+        self.assertEqual(sorted(n for n in storage._names(self.dir) if n.endswith(storage.LEFT)), [b + storage.LEFT for b in bad])
+        key, how = self.A.unlock_password(self.dir, self.PW)             # the sign-in: finished, not stopped by the damaged files
+        self.assertNotEqual(key, self.old); self.assertEqual(self.pw_key(), (key, None))
+        self.assertEqual(storage.files_not_opening(key, self.dir), [])
+        self.store.unlock(key)
+        after = self.files()
+        self.assertEqual({n: after[n] for n in bad}, {n: before[n] for n in bad})          # back under their names, untouched
+        self.assertFalse([n for n in storage._names(self.dir) if n.endswith(storage.LEFT)])
+        self.assertEqual(self.store.load("config.json"), {"a": 1})
+        # the key file refuses the next key (Kontor locks, as without a damaged file): the next sign-in opens with the key as
+        # it was, and the files have their names again
+        with mock.patch.object(storage, "write_key_record", side_effect=storage.StoreError("x")):
+            with self.assertRaises(storage.StoreError):
+                self.A.renew(self.store, self.PW)
+        self.assertFalse(self.store.is_open)
+        self.assertEqual(self.A.unlock_password(self.dir, self.PW), (key, "password"))
+        self.store.unlock(key)
+        self.assertEqual(self.files(), after)
+        # a name taken meanwhile is never overwritten
+        p = os.path.join(self.dir, "memory-notes-0002.json.enc")
+        os.rename(p, p + storage.LEFT)
+        self.store.save("memory-notes-0002.json", {"v": 1, "notes": [1]})
+        self.store.unlock(key)
+        self.assertEqual(self.store.load("memory-notes-0002.json"), {"v": 1, "notes": [1]}); self.assertTrue(os.path.exists(p + storage.LEFT))
+
+    def test_deleted_during_a_renewal_stays_deleted(self):
+        """A file deleted while the key is renewed (a saved conversation): the delete waits for the renewal -- before, the
+        renewal wrote the file again, with its content."""
+        import threading
+        inside, go, done = threading.Event(), threading.Event(), threading.Event()
+        real_keep = [None]
+
+        def slow_renew():
+            rec = storage.key_record(self.dir)
+
+            def keep(old, new):                                           # (as access.renew keeps the next key) -- and waits here
+                storage.write_key_record(self.dir, dict(rec, password=storage.password_entry(old, self.PW, nxt=new), touchid=None))
+                inside.set(); go.wait(10)
+            real_keep[0] = self.store.renew_key(keep, lambda new: storage.write_key_record(self.dir, self.A._promoted(storage.key_record(self.dir))))
+        t = threading.Thread(target=slow_renew); t.start()
+        self.assertTrue(inside.wait(10))
+        d = threading.Thread(target=lambda: (self.store.delete("chats/assistant-chat-aaaaaaaa.json"), done.set())); d.start()
+        self.assertFalse(done.wait(0.3))                                  # it waits for the key
+        go.set(); t.join(10); d.join(10)
+        self.assertTrue(done.is_set()); self.assertEqual(real_keep[0], 3)
+        self.assertFalse(os.path.exists(os.path.join(self.dir, "chats", "assistant-chat-aaaaaaaa.json.enc")))      # gone, and stays gone
+        self.assertEqual(storage.files_not_opening(self.store.master, self.dir), [])
+        self.assertEqual(self.store.load("config.json"), {"a": 1})
 
     def test_broken_off_after_the_next_key_was_kept(self):
         """The renaming fails half-way (or the key file does not take the new key): neither key in memory would do -- Kontor
@@ -501,7 +449,7 @@ class KeyFileRenewal(unittest.TestCase):
         self.assertNotEqual(key, self.old); self.assertEqual(self.pw_key(), (key, None))
         self.assertEqual(storage.files_not_opening(key, self.dir), [])
         self.assertFalse([x for x in storage._names(self.dir) if x.endswith(".renew")])
-        self.store.unlock(key, "login")
+        self.store.unlock(key)
         real_write, calls = storage.write_key_record, [0]
 
         def second(d, r):
@@ -542,7 +490,7 @@ class LockedStore(unittest.TestCase):
     def setUp(self):
         self.dir = tempfile.mkdtemp(prefix="kontor-locked-")
         self.key = os.urandom(32)
-        st = storage.Store(self.dir, self.key, "file")
+        st = storage.Store(self.dir, self.key)
         st.save("config.json", {"a": 1}); st.save("chats/assistant-chat-aaaaaaaa.json", {"turns": [1]}); st.write_bytes("x.bin", b"\x01")
 
     def tearDown(self):
@@ -563,7 +511,7 @@ class LockedStore(unittest.TestCase):
                 call()
         self.assertEqual(self.listing(), before)                     # not even a folder for a file that was refused
         self.assertTrue(issubclass(storage.StoreLocked, storage.StoreError))
-        st.unlock(self.key, "file")
+        st.unlock(self.key)
         self.assertTrue(st.is_open)
         self.assertEqual(st.load("config.json"), {"a": 1}); self.assertEqual(st.load("chats/assistant-chat-aaaaaaaa.json"), {"turns": [1]})
         st.close()
@@ -571,13 +519,13 @@ class LockedStore(unittest.TestCase):
         with self.assertRaises(storage.StoreLocked):
             st.load("config.json")
         self.assertTrue(storage.Store(tempfile.mkdtemp(dir=self.dir), None).is_open)     # without encryption (tests only): open
-        self.assertTrue(storage.Store(self.dir, self.key, "file").is_open)
+        self.assertTrue(storage.Store(self.dir, self.key).is_open)
 
     def test_unlock_needs_a_working_key(self):
         st = storage.Store.closed(self.dir)
         with mock.patch.object(storage, "selftest", lambda k: False):
             with self.assertRaises(storage.StoreError):
-                st.unlock(self.key, "file")
+                st.unlock(self.key)
         self.assertFalse(st.is_open)
 
     def test_key_file_wraps_the_key(self):
@@ -623,8 +571,209 @@ class LockedStore(unittest.TestCase):
             self.assertIn(os.path.join("memory", "notes.json.enc"), storage.files_not_opening(self.key, self.dir))
 
 
+class DamagedFiles(unittest.TestCase):
+    """A file of the store that does not read: the message names it; damaged for good is told apart from what may pass; it can
+    be set aside without losing a byte -- and every file is on the disk before it takes its name. Made-up keys only."""
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp(prefix="kontor-damaged-")
+        self.key = os.urandom(32)
+        self.st = storage.Store(self.dir, self.key)
+        self.st.save("config.json", {"a": 1}); self.st.save("state.json", {"b": 2})
+
+    def tearDown(self):
+        shutil.rmtree(self.dir, ignore_errors=True)
+
+    def test_the_message_names_the_file(self):
+        p = os.path.join(self.dir, "config.json.enc")
+        raw = open(p, "rb").read()
+        for broken in (raw[:-7], raw[:40] + bytes([raw[40] ^ 1]) + raw[41:], b"", b"nicht von Kontor"):
+            with open(p, "wb") as f:
+                f.write(broken)
+            self.st._cache.clear()
+            with self.assertRaises(storage.StoreDamaged) as e:
+                self.st.load("config.json")
+            self.assertIn("config.json.enc", str(e.exception)); self.assertEqual(e.exception.name, "config.json")
+        self.st.write_bytes("state.json", b"{kein json")
+        with self.assertRaises(storage.StoreDamaged) as e:
+            self.st.load("state.json")
+        self.assertIn("state.json", str(e.exception)); self.assertEqual(e.exception.name, "state.json")
+        self.assertTrue(issubclass(storage.StoreDamaged, storage.StoreError))
+        # what may pass (openssl does not answer) is not "damaged": nothing is set aside or given up for it
+        self.st.save("state.json", {"b": 2}); self.st._cache.clear()
+        with mock.patch.object(storage, "_openssl", side_effect=storage.StoreError("openssl")):
+            with self.assertRaises(storage.StoreError) as e:
+                self.st.load("state.json")
+        self.assertNotIsInstance(e.exception, storage.StoreDamaged)
+
+    def test_on_the_disk_before_it_takes_its_name(self):
+        """state.json is written every few minutes: synced before the rename, so the Mac going off right after leaves the old
+        file or the new one -- never a file with the name and without the content."""
+        steps = []
+        sync, replace = os.fsync, os.replace
+        with mock.patch.object(storage.os, "fsync", lambda fd: steps.append("sync") or sync(fd)), \
+                mock.patch.object(storage.os, "replace", lambda a, b: steps.append("name") or replace(a, b)):
+            self.st.save("state.json", {"b": 3})
+        self.assertEqual(steps, ["sync", "name"])
+        self.assertEqual(oct(os.stat(os.path.join(self.dir, "state.json.enc")).st_mode & 0o777), "0o600")
+        with mock.patch.object(storage.os, "replace", side_effect=OSError("disk full")):
+            with self.assertRaises(OSError):
+                self.st.save("state.json", {"b": 4})
+        self.st._cache.clear()
+        self.assertEqual(self.st.load("state.json"), {"b": 3})           # the old one, whole
+
+    def test_set_aside_loses_nothing(self):
+        p = os.path.join(self.dir, "config.json.enc")
+        raw = open(p, "rb").read()
+        kept = self.st.set_aside("config.json")
+        self.assertRegex(kept, r"^config\.json\.enc\.damaged-\d{8}-\d{6}$")
+        self.assertFalse(os.path.exists(p)); self.assertEqual(open(os.path.join(self.dir, kept), "rb").read(), raw)
+        self.assertIsNone(self.st.load("config.json", None)); self.assertIsNone(self.st.set_aside("config.json"))
+        self.assertEqual(storage._enc_files(self.dir), ["state.json.enc"])              # no key is asked to open it, none waits for it
+        self.assertEqual(storage.files_not_opening(os.urandom(32), self.dir), ["state.json.enc"])
+        self.st.save("config.json", {"a": 2})
+        again = self.st.set_aside("config.json")                         # within the same second: another name, nothing overwritten
+        self.assertNotEqual(again, kept); self.assertEqual(open(os.path.join(self.dir, kept), "rb").read(), raw)
+        import service as MA
+        for name in (kept, again, "memory-notes-0002.json.enc" + storage.LEFT):          # uninstalling takes them as Kontor's own
+            self.assertTrue(MA._KONTOR_FILE.fullmatch(name), name)
+        self.assertFalse(MA._KONTOR_FILE.fullmatch("Steuer.pdf.damaged-20260101-000000"))
+
+
+class BackupReadBack(unittest.TestCase):
+    """A backup is a file from outside: each part in the form the program reads it in or the whole file is refused; never a
+    waiting category; the access never wider than set on this Mac; nothing books by itself because of it."""
+
+    def setUp(self):
+        import service as MA
+        self.MA = MA
+
+    def test_every_part_in_its_form_or_none(self):
+        P = self.MA.backup_parts
+        good = {"plan": {"areas": {"b1": {"horizon_months": 24, "default_method": "rolling12", "inflation_percent_pa": 2.0,
+                                           "rows": {"income/Gehalt": {"method": "fix", "amount": 7000.0, "increase_percent_pa": 2.0, "amounts": {"2027-01": 5.0}}},
+                                           "loans": {"Darlehen": {"interest_percent_pa": 3.0, "model": "remaining_debt_monthly", "payment": "1500"}},
+                                           "appreciation": {"Haus": {"percent_pa": 2.0, "base": "", "share": 1.0, "area": "b2"}},
+                                           "events": [{"id": "e1", "text": "Auto", "month": "2027-03", "amount": "-20000,50", "kind": "expense",
+                                                       "date_from": None, "after": None, "recurrence": "once", "date_to": None, "active": True}]}}},
+                "categories": {"version": 3, "assignment": {}, "rules": [{"id": "g-1", "category": "Wohnen / Miete", "name_is": "vermieter", "source": "learned", "hits": 5, "active": True}],
+                               "learned_at": "2026-11-01 10:00", "rule_done": ["x"]},
+                "history": {"u1": {"2026-01": 10.5, "2026-02": None}}, "snapshots": {"2026-01": {"u1": 5.0}},
+                "receipts": {"entry_list": [{"id": "abc123", "tx_id": 7, "account": "u1", "entity": "b1", "date": "2026-01-02", "amount": -12.5, "name": "Laden",
+                                             "path": "2026/x.pdf", "size_bytes": 10, "added": "2026-01-02 10:00", "note": "", "original": "x.pdf"},
+                                            {"id": "def456", "tx_id": None, "date": "2026-01-03", "amount": None, "name": "Scan", "path": "/Users/x/Scan.pdf", "external": True}]},
+                "mm_history_src": {"as_of": "2026-11-01 10:00", "accounts": {"u1": {"2025-12": 1.0}}, "opening": {"u1": 0.0},
+                                   "securities": {"u2": [{"name": "Welt-ETF", "isin": "IE00B4L5Y983", "amounts": {"2025-12": 100.0}}]}},
+                "memory": {"v": 1, "notes": []}}
+        got = P(good)
+        self.assertEqual(sorted(got), ["categories", "history", "mm_history_src", "plan", "receipts", "snapshots"])
+        self.assertEqual(P({}), {}); self.assertEqual(P({"plan": None, "snapshots": {}, "receipts": {}, "mm_history_src": {}}), {})
+        self.assertNotIn("categories", P({"categories": {"version": 2, "rules": "x" * 3 and []}}))       # another version: as if not there
+        self.assertIn("plan", P({"plan": {"areas": {"b1": {"horizon_months": "24", "inflation_percent_pa": "2.5"}}}}))    # what int()/float() read: taken
+        odd = {"plan": [5, [], {"areas": []}, {"areas": {"b1": 5}}, {"areas": {"b1": {"horizon_months": "viele"}}}, {"areas": {"b1": {"rows": []}}},
+                        {"areas": {"b1": {"rows": {"r": {"amounts": {"2027-01": "x"}}}}}}, {"areas": {"b1": {"rows": {"r": {"increase_percent_pa": None}}}}},
+                        {"areas": {"b1": {"events": [1]}}}, {"areas": {"b1": {"events": [{"month": "abcdefg", "amount": 1, "recurrence": "quarterly"}]}}},
+                        {"areas": {"b1": {"events": [{"month": "2027-01", "amount": "viel"}]}}}, {"areas": {"b1": {"loans": {"d": {"rate_list": 5}}}}},
+                        {"areas": {"b1": {"appreciation": {"h": {"share": None}}}}}, {"areas": {"b1": {"inflation_percent_pa": float("nan")}}}],
+               "categories": [5, {"version": 3, "rules": {}}, {"version": 3, "rules": [1]}, {"version": 3, "rules": [{"iban": ["x"]}]},
+                              {"version": 3, "rules": [{"purpose_contains": 5}]}, {"version": 3, "assignment": []}, {"version": 3, "rule_done": [1]}],
+               "history": [5, {"u": 5}, {"u": {"2026-13": 1}}, {"u": {"2026-01": "1"}}, {"u": {"0000-01": 1}}, {"u": {"2026-01": True}}],
+               "snapshots": [[1], {"2026-01": 5}, {"2026-01": {"u": None}}, {"x": {"u": 1}}, {"2026-01": {"u": "1"}}],
+               "receipts": [[1], {"entry_list": [1]}, {"entry_list": {}}, {"entry_list": [{"id": "a"}]}, {"entry_list": [{"id": "a", "path": "x.pdf", "tx_id": [1]}]},
+                            {"entry_list": [{"id": 5, "path": "x.pdf"}]}, {"entry_list": [{"id": "a", "path": "x.pdf", "date": 5}]},
+                            {"entry_list": [{"id": "a", "path": "x.pdf", "amount": "12"}]}],
+               "mm_history_src": [[1], {"accounts": []}, {"accounts": {"u": 5}}, {"accounts": {"u": {"2026-01": "x"}}}, {"opening": {"u": "x"}},
+                                  {"securities": {"u": {}}}, {"securities": {"u": [5]}}, {"securities": {"u": [{"amounts": {"x": 1}}]}}],
+               "memory": [5, {"notes": 5}, []]}
+        for part, cases in odd.items():
+            for bad in cases:
+                with self.assertRaises(ValueError, msg=(part, bad)) as e:
+                    P(dict(good, **{part: bad}))
+                self.assertIn("nichts wurde geändert", str(e.exception))
+        self.assertIn("Belegindex", self._why(P, dict(good, receipts={"entry_list": [1]}))); self.assertIn("Verlauf", self._why(P, dict(good, snapshots={"2026-01": 5})))
+
+    def _why(self, fn, arg):
+        with self.assertRaises(ValueError) as e:
+            fn(arg)
+        return str(e.exception)
+
+    def test_a_waiting_category_never_comes_back(self):
+        got = self.MA.backup_parts({"categories": {"version": 3, "assignment": {"4711": {"k": "Wohnen / Miete", "q": "manual", "p": 1}},
+                                                   "rules": [], "learned_at": None, "_idx": 5}})
+        self.assertEqual(got["categories"], {"version": 3, "rules": [], "learned_at": None})
+
+    def test_the_rounds_a_file_names_are_bounded(self):
+        """A backup names its own rounds for its password: one made up must not keep the service computing for minutes."""
+        import hashlib
+        good = self.MA.backup_encrypt({"kontor_backup": 1, "config": {}}, "sicherung-123")
+        self.assertEqual(self.MA.backup_decrypt(good, "sicherung-123")["kontor_backup"], 1)
+        self.assertEqual(self.MA.backup_decrypt({k: v for k, v in good.items() if k != "iter"}, "sicherung-123")["kontor_backup"], 1)
+        calls = []
+        with mock.patch.object(hashlib, "pbkdf2_hmac", side_effect=lambda *a: calls.append(a[3]) or b"\0" * 32):
+            for rounds in (2_000_000_000, 10 ** 30, 1, -5, 99_999, 600000.0, "600000", True, [600000], {"x": 1}):
+                with self.assertRaises(ValueError, msg=rounds):
+                    self.MA.backup_decrypt(dict(good, iter=rounds), "sicherung-123")
+        self.assertEqual(calls, [])                                       # refused before anything was computed
+        for odd in ({"salt": 5}, {"data": None}, {"salt": "kein base64!"}):
+            with self.assertRaises(ValueError):
+                self.MA.backup_decrypt(dict(good, **odd), "sicherung-123")
+
+    def test_the_access_never_gets_wider(self):
+        R = self.MA.restored_config
+        here = {"ui": {"touchid": False, "remote_read_only": True, "lock_minutes": 10, "offline_copy": False, "bind": "127.0.0.1", "port": 8765,
+                       "tls_cert": "", "tls_key": "", "language": "de"}, "dry_run": True}
+        wide = {"ui": {"touchid": True, "remote_read_only": False, "lock_minutes": 100000, "offline_copy": True, "bind": "100.101.102.103", "port": 9999,
+                       "tls_cert": "/x/a.crt", "tls_key": "/x/a.key", "language": "en", "theme": "dark"}, "dry_run": False}
+        ui = R(here, wide)["ui"]
+        self.assertEqual({k: ui.get(k) for k in here["ui"]}, dict(here["ui"], language="en"))       # the access as here; how it looks from the file
+        self.assertEqual(ui["theme"], "dark")
+        # the other way round: where the file is stricter, the stricter one holds
+        open_ = {"ui": {"touchid": True, "remote_read_only": False, "lock_minutes": 60, "offline_copy": True, "bind": "100.101.102.103", "port": 9000,
+                        "tls_cert": "/d/tls/a.crt", "tls_key": "/d/tls/a.key"}}
+        strict = {"ui": {"touchid": False, "remote_read_only": True, "lock_minutes": 5, "offline_copy": False, "bind": "127.0.0.1", "port": 8765}}
+        ui = R(open_, strict)["ui"]
+        self.assertEqual((ui["touchid"], ui["remote_read_only"], ui["lock_minutes"], ui["offline_copy"], ui["bind"]), (False, True, 5, False, "127.0.0.1"))
+        self.assertEqual((ui["port"], ui["tls_cert"], ui["tls_key"]), (9000, "/d/tls/a.crt", "/d/tls/a.key"))       # port and certificate: this Mac's
+        # nothing said, or something odd: as here -- only "from elsewhere only look" counts as said (it is so from the factory)
+        for said in ({}, {"ui": None}, {"ui": [["bind", "0.0.0.0"]]}, {"ui": {"touchid": "nein", "lock_minutes": "5", "offline_copy": 0, "bind": 5, "remote_read_only": "x"}},
+                     {"ui": {"lock_minutes": 0}}, {"ui": {"lock_minutes": -3}}, {"ui": {"lock_minutes": True}}, {"ui": {"lock_minutes": 61}}):
+            ui = R(open_, said)["ui"]
+            self.assertEqual({k: ui.get(k) for k in open_["ui"] if k != "remote_read_only"}, {k: v for k, v in open_["ui"].items() if k != "remote_read_only"}, said)
+        self.assertTrue(R(open_, {})["ui"]["remote_read_only"])
+        self.assertFalse(R(open_, {"ui": {"remote_read_only": False}})["ui"]["remote_read_only"])      # both say so: stays
+        self.assertNotIn("touchid", R({}, {"ui": {"touchid": True}})["ui"])                            # (nothing set here: the factory's)
+
+    def test_nothing_books_by_itself_because_of_a_backup(self):
+        """Booking without asking is on at this Mac: a rule of the file that is not here already waits for the confirmation
+        under Konten & Regeln (review, like a rule from the assistant), and what is set here not to be booked stays so."""
+        R = self.MA.restored_config
+        loan = {"name": "Darlehen", "loan_account": "u1 | D", "source_accounts": ["u2 | K"], "from_date": "2026-01-01"}
+        mine = {"dry_run": False, "loans": [loan], "companies": [{"area": "b2", "participation": "u3 | B"}],
+                "account_mirrors": [{"a": "u4", "b": "u5", "from_date": ""}], "not_book": [{"key": "u1|#kontor-z-2026-01", "text": "Zins"}]}
+        file = {"dry_run": False, "loans": [dict(loan, active=True), dict(loan, name="Neu", loan_account="u9 | N")],
+                "companies": [{"area": "b2", "participation": "u3 | B", "threshold": 500}], "account_mirrors": [{"a": "u4", "b": "u5", "from_date": ""}, {"a": "u6", "b": "u7"}],
+                "not_book": [{"key": "u8|#kontor-z-2026-02", "text": "x"}, "odd"]}
+        got = R(mine, file)
+        self.assertFalse(got["dry_run"])
+        self.assertEqual([bool(r.get("review")) for r in got["loans"]], [False, True])                # the same rule: as it was; a new one waits
+        self.assertEqual([bool(r.get("review")) for r in got["companies"]], [True])                   # changed: waits
+        self.assertEqual([bool(r.get("review")) for r in got["account_mirrors"]], [False, True])
+        self.assertEqual(sorted(x["key"] for x in got["not_book"]), ["u1|#kontor-z-2026-01", "u8|#kontor-z-2026-02"])
+        self.assertTrue(all(r.get("review") is True for sec in ("loans", "companies", "account_mirrors") for r in self.MA.merged_config(got)[sec] if r.get("review")))
+        # a rule still to confirm here (from the assistant): the file has it without the mark -- still to confirm
+        got = R(dict(mine, loans=[dict(loan, review=True)]), file)
+        self.assertEqual([bool(r.get("review")) for r in got["loans"]], [True, True])
+        # asking first (here, or because the file says so): everything waits for you anyway -- nothing is marked
+        for a, b in ((dict(mine, dry_run=True), file), (mine, dict(file, dry_run=True))):
+            got = R(a, b)
+            self.assertTrue(got["dry_run"]); self.assertFalse(any(r.get("review") for sec in ("loans", "companies", "account_mirrors") for r in got[sec]))
+        for odd in ({"loans": "x", "not_book": 5}, {"loans": [1, None], "companies": {"a": 1}}):       # the wrong kind of value: no error
+            self.assertFalse(R(mine, dict(file, **odd))["dry_run"])
+
+
 class CommandLine(unittest.TestCase):
-    """kontor.py in the terminal: is the service running; uninstall stops when the settings do not open."""
+    """kontor.py in the terminal: only these commands, the password only with the current one (or Touch ID), uninstall goes
+    on when the settings are damaged (and takes the demo's folder), install waits until the service may run."""
 
     def setUp(self):
         import kontor
@@ -636,71 +785,24 @@ class CommandLine(unittest.TestCase):
         self.K.DATA_DIR = self._old
         shutil.rmtree(self.dir, ignore_errors=True)
 
-    def test_finishing_only_under_the_service_lock(self):
-        """A command finishes an unfinished renewal only while it holds the service's lock; beside the running service it
-        leaves that to the service."""
-        import fcntl
-        seen, orig = [], self.K.load_or_create_master_key
-        lock = os.path.join(self.dir, "service.lock")
-
-        def fake(data_dir, finish=True):
-            with open(lock, "a") as g:
-                try:
-                    fcntl.flock(g, fcntl.LOCK_EX | fcntl.LOCK_NB); free = True
-                except OSError:
-                    free = False
-            seen.append((finish, free))
-            return None, "file"
-        self.K.load_or_create_master_key = fake
-        self.addCleanup(setattr, self.K, "load_or_create_master_key", orig)
-        self.K.open_store()
-        self.assertEqual(seen, [(True, False)])                    # no service: finishes, and holds the lock meanwhile
-        with open(lock, "w") as f:                                 # the service runs
-            fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            self.K.open_store()
-        self.assertEqual(seen[1][0], False)
-        self.K.open_store()
-        self.assertEqual(seen[2], (True, False))                   # the lock was given back each time
-
-    def test_password_only_with_the_current_one_or_touch_id(self):
-        """kontor.py password: the terminal is no way around signing in -- the current password (or Touch ID) first."""
-        import argparse
-        sec = storage._security
-        storage._security = lambda args, input_text=None: (127, "", "no security")     # never the real keychain
-        self.addCleanup(setattr, storage, "_security", sec)
-        st = storage.Store(self.dir, *storage.load_or_create_master_key(self.dir))
-        st.save("auth.json", auth.with_offline(auth.hash_password("altes-passwort-123"), "altes-passwort-123"))
-        fresh = lambda: storage.Store(self.dir, *storage.load_or_create_master_key(self.dir)).load("auth.json")
-        with mock.patch.object(self.K.auth, "touchid_available", return_value=False), mock.patch.object(self.K.time, "sleep"):
-            with mock.patch.object(self.K.getpass, "getpass", side_effect=["falsch"] * 3):
-                self.assertEqual(self.K.cmd_passwort(argparse.Namespace()), 1)
-            self.assertTrue(auth.verify_password("altes-passwort-123", fresh()))
-            with mock.patch.object(self.K.getpass, "getpass", side_effect=["altes-passwort-123", "neues-passwort-456", "neues-passwort-456"]):
-                self.assertEqual(self.K.cmd_passwort(argparse.Namespace()), 0)
-            self.assertTrue(auth.verify_password("neues-passwort-456", fresh()))
-        with mock.patch.object(self.K.auth, "touchid_available", return_value=True), mock.patch.object(self.K.auth, "touchid_verify", return_value=True), \
-                mock.patch.object(self.K.getpass, "getpass", side_effect=["drittes-passwort-789", "drittes-passwort-789"]):
-            self.assertEqual(self.K.cmd_passwort(argparse.Namespace()), 0)          # Touch ID instead of the password
-        self.assertTrue(auth.verify_password("drittes-passwort-789", fresh()))
-
     def test_password_with_the_key_file(self):
         """kontor.py password once the key file holds the key: the current password (or Touch ID) opens it, the new one wraps it
         -- the data key stays the same, the old password opens nothing any more."""
         import argparse
         import access
-        sec = storage._security
-        storage._security = FakeKeychain()                # never the real keychain
-        self.addCleanup(setattr, storage, "_security", sec)
         key = os.urandom(32)
-        storage.Store(self.dir, key, "login").save("config.json", {})
-        access.complete(self.dir, key, "altes-passwort-123")
+        storage.Store(self.dir, key).save("config.json", {})
+        self.assertTrue(access.complete(self.dir, key, "altes-passwort-123"))
         opens = lambda pw: access.unlock_password(self.dir, pw)
+        offline = lambda: storage.Store(self.dir, key).load("auth.json")          # the iPhone's check value follows the password
         with mock.patch.object(self.K.time, "sleep"):
             with mock.patch.object(self.K.getpass, "getpass", side_effect=["falsch"] * 3):
                 self.assertEqual(self.K.cmd_passwort(argparse.Namespace()), 1)
+            self.assertEqual(opens("altes-passwort-123"), (key, "password")); self.assertIsNone(offline())
             with mock.patch.object(self.K.getpass, "getpass", side_effect=["altes-passwort-123", "neues-passwort-456", "neues-passwort-456"]):
                 self.assertEqual(self.K.cmd_passwort(argparse.Namespace()), 0)
         self.assertIsNone(opens("altes-passwort-123")); self.assertEqual(opens("neues-passwort-456"), (key, "password"))
+        self.assertTrue(offline()["offline"])
         se = FakeEnclave()
         for p in se.patches():
             p.start(); self.addCleanup(p.stop)
@@ -718,15 +820,86 @@ class CommandLine(unittest.TestCase):
             with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
                 self.K.main([cmd])
 
-    def test_uninstall_stops_when_the_settings_do_not_open(self):
+    def _uninstall(self, program):
+        """cmd_uninstall with a made-up program folder, launchd file and temporary folder (never this Mac's own)."""
         import argparse
-        sec = storage._security
-        storage._security = lambda args, input_text=None: (127, "", "no security")     # never the real keychain
-        self.addCleanup(setattr, storage, "_security", sec)
-        st = storage.Store(self.dir, *storage.load_or_create_master_key(self.dir))
+        import contextlib
+        import io
+        import service as MA
+        out = io.StringIO()
+        with mock.patch.object(self.K, "HERE", self.prog), mock.patch.object(MA.updates, "plist_path", lambda label=MA.updates.LABEL: os.path.join(self.prog, "none.plist")), \
+                mock.patch.object(tempfile, "tempdir", self.tmp), mock.patch.object(self.K.getpass, "getpass", return_value=self.PW), \
+                mock.patch.object(self.K.time, "sleep"), contextlib.redirect_stdout(out):
+            code = self.K.cmd_uninstall(argparse.Namespace(yes=True, program=program))
+        return code, out.getvalue()
+
+    PW = "ein-langes-passwort"
+
+    def _installed(self):
+        import access
+        self.prog, self.tmp = tempfile.mkdtemp(prefix="kontor-prog-"), tempfile.mkdtemp(prefix="kontor-tmp-")
+        self.addCleanup(shutil.rmtree, self.prog, True); self.addCleanup(shutil.rmtree, self.tmp, True)
+        for f in ("kontor.py", "service.py", "VERSION"):
+            open(os.path.join(self.prog, f), "w").close()
+        os.makedirs(os.path.join(self.prog, "Belege")); open(os.path.join(self.prog, "Belege", "Rechnung.pdf"), "w").close()      # receipts kept in the program folder
+        key = os.urandom(32)
+        st = storage.Store(self.dir, key)
+        st.save("config.json", {"receipts": {"folder": os.path.join(self.prog, "Belege")}}); st.save("state.json", {"b": 1})
+        self.assertTrue(access.complete(self.dir, key, self.PW))
+        return st
+
+    def test_uninstall_goes_on_when_the_settings_are_damaged(self):
+        """config.json.enc damaged for good (the key is right: it opens the state): uninstalling must still be possible --
+        before, it stopped with "nothing is deleted" and there was no way left. Only the program folder stays then: receipts
+        or linked documents may lie in it, and the settings would have said where."""
+        st = self._installed()
+        p = st.path("config.json")
+        raw = open(p, "rb").read()
+        with open(p, "wb") as f:
+            f.write(raw[:-5])
+        code, out = self._uninstall(program=True)
+        self.assertEqual(code, 0, out)
+        self.assertFalse([n for n in os.listdir(self.dir) if n.endswith(".enc")] if os.path.isdir(self.dir) else [])
+        self.assertFalse(os.path.exists(os.path.join(self.dir, storage.KEY_FILE)))            # the key went with the data
+        self.assertTrue(os.path.exists(os.path.join(self.prog, "kontor.py"))); self.assertTrue(os.path.exists(os.path.join(self.prog, "Belege", "Rechnung.pdf")))
+        self.assertIn(self.K.tr("s_deinstall_programm_bleibt"), out)
+
+    def test_uninstall_with_settings_that_are_no_settings(self):
+        st = self._installed()
         st.write_bytes("config.json", b"{kaputt")
+        code, out = self._uninstall(program=False)
+        self.assertEqual(code, 0, out); self.assertFalse(os.path.exists(st.path("config.json")))
+        self.assertNotIn(self.K.tr("s_deinstall_programm_bleibt"), out)                   # (nobody asked for the program folder)
+
+    def test_uninstall_stops_when_the_settings_cannot_be_read_right_now(self):
+        """What may pass (openssl does not answer, the disk) is not "damaged": nothing is deleted, the next try works."""
+        st = self._installed()
+        with mock.patch.object(storage, "_openssl", side_effect=storage.StoreError("openssl")):
+            code, out = self._uninstall(program=True)
+        self.assertEqual(code, 1)
+        self.assertTrue(os.path.exists(st.path("config.json"))); self.assertTrue(os.path.exists(os.path.join(self.dir, storage.KEY_FILE)))
+        self.assertTrue(os.path.exists(os.path.join(self.prog, "kontor.py")))
+
+    def test_uninstall_takes_the_demo_folder(self):
+        """The demo's folder lies in the temporary folder (receipts uploaded in it are not encrypted); only the service removed
+        it, at its own end or its next start -- uninstalling from the terminal left it there."""
+        self._installed()
+        demo = os.path.join(self.tmp, "kontor-demo-abc123")
+        os.makedirs(os.path.join(demo, "Belege")); open(os.path.join(demo, "Belege", "Beleg.pdf"), "w").close()
+        other = os.path.join(self.tmp, "etwas-anderes"); os.makedirs(other)
+        code, out = self._uninstall(program=True)
+        self.assertEqual(code, 0, out)
+        self.assertFalse(os.path.exists(demo)); self.assertTrue(os.path.exists(other))
+        self.assertFalse(os.path.exists(os.path.join(self.prog, "kontor.py")))            # settings read: the program folder goes as asked ...
+        self.assertTrue(os.path.exists(os.path.join(self.prog, "Belege", "Rechnung.pdf")))     # ... and the receipts in it stay
+
+    def test_uninstall_stops_without_the_key_file(self):
+        """Encrypted data without their key file (nothing to confirm with): nothing is deleted."""
+        import argparse
+        st = self._installed()
+        os.remove(os.path.join(self.dir, storage.KEY_FILE))
         self.assertEqual(self.K.cmd_uninstall(argparse.Namespace(yes=True, program=False)), 1)
-        self.assertTrue(os.path.exists(st.path("config.json"))); self.assertTrue(os.path.exists(os.path.join(self.dir, "master.key")))
+        self.assertTrue(os.path.exists(st.path("config.json")))
 
     def test_install_waits_until_the_service_may_run(self):
         """macOS refuses the service (Login Items: background switched off): install says so, opens that page in System
@@ -907,6 +1080,33 @@ class ReceiptLinks(unittest.TestCase):
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
+class LinkedFilesOpenAsDocuments(unittest.TestCase):
+    """A linked file opens in its own app only when it is a document (service.DOCUMENTS); a page, a script, a program, an
+    archive or anything that only looks like a document is shown in Finder, never opened (3.16.61)."""
+
+    def test_only_documents_open(self):
+        import service
+        d = tempfile.mkdtemp(prefix="kontor-doc-")
+        self.addCleanup(shutil.rmtree, d, True)
+        made = {}
+        for name in ("Rechnung.pdf", "Auszug.CSV", "Seite.html", "Start.command", "run.sh", "Archiv.zip", "Werkzeug.py", "Notiz"):
+            made[name] = os.path.join(d, name)
+            with open(made[name], "w") as f:
+                f.write("x")
+        made["Programm.app"] = os.path.join(d, "Programm.app"); os.makedirs(os.path.join(made["Programm.app"], "Contents"))
+        made["Beleg.pdf.app"] = os.path.join(d, "Beleg.pdf.app"); os.makedirs(made["Beleg.pdf.app"])
+        made["Tabelle.numbers"] = os.path.join(d, "Tabelle.numbers"); os.makedirs(made["Tabelle.numbers"])      # a package: a folder
+        calls = []
+        with mock.patch.object(service.subprocess, "Popen", side_effect=lambda cmd, *a, **k: calls.append(cmd)):
+            for name, path in sorted(made.items()):
+                calls.clear()
+                service.open_document(path)
+                opened = calls == [["open", os.path.abspath(path)]]
+                self.assertEqual(opened, name in ("Rechnung.pdf", "Auszug.CSV"), (name, calls))
+                if not opened:
+                    self.assertEqual(calls, [["open", "-R", os.path.abspath(path)]], name)       # shown in its folder, selected
+
+
 class DemoAnswersOnlyItsOwn(unittest.TestCase):
     """The demo (service.DemoApp) answers only what DEMO_GET / DEMO_POST name; every request of the service is named in one of
     them or in DEMO_NEVER -- a new request has to be decided there (refused until then)."""
@@ -975,7 +1175,7 @@ class NothingGoesOut(unittest.TestCase):
                                "sdmx.oecd.org", "api.worldbank.org", "data.worldbank.org", "stats.bis.org"}}
     NAMES_ONLY = {"schemas.openxmlformats.org", "purl.oclc.org", "www.apple.com"}      # ... and names of file formats (never opened)
     # other programs started by their name (all of macOS or Apple's tools, git for an update of a clone)
-    COMMANDS = {"security", "openssl", "swiftc", "codesign", "open", "launchctl", "/bin/launchctl", "/usr/sbin/sysctl", "ps", "pgrep", "tmutil",
+    COMMANDS = {"openssl", "swiftc", "codesign", "open", "launchctl", "/bin/launchctl", "/usr/sbin/sysctl", "ps", "pgrep", "tmutil",
                 "osascript", "/usr/bin/osascript", "xcode-select", "git", "/bin/sh",
                 "sips", "iconutil", "defaults", "tccutil"}          # Kontor's own Mac app: its icon, its address, gone on uninstall
     # ... and by a path Kontor made up itself (its Touch ID helper, the password window, llama.cpp, Tailscale's own tool, lsof, the receipt reader, the web reader)
@@ -1048,7 +1248,7 @@ class NothingGoesOut(unittest.TestCase):
                     if any(k.arg == "shell" for k in n.keywords):
                         odd.append("%s:%d shell=" % (name, n.lineno))
                     first = n.args[0] if n.args else None
-                    while isinstance(first, ast.BinOp):                  # ["security"] + args
+                    while isinstance(first, ast.BinOp):                  # ["openssl", "enc"] + opts
                         first = first.left
                     if isinstance(first, ast.IfExp):                     # ["open", "-R", x] if ... else ["open", x]
                         first = first.body

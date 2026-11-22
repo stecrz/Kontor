@@ -271,6 +271,8 @@ class Hosts(unittest.TestCase):
 
 
 class Sandbox(unittest.TestCase):
+    KONTORS = '(deny file-write* (regex #"/kontor-[^/]*(/|$)"))'       # Kontor's own temporary folders: never written, at any level
+
     def test_profile(self):
         data, prog, base, home = "/Users/x/Library/Application Support/Kontor", "/Users/x/Kontor \"prog\"", "/Users/x/Library/Application Support/Kontor/assistant", "/Users/x"
         for level in ("strict", "basic"):
@@ -286,22 +288,170 @@ class Sandbox(unittest.TestCase):
             self.assertLess(deny, own)                                               # later rules win: only its own folder inside the data
             self.assertIn('(subpath "%s")' % data, lines[deny])                      # Kontor's data: never read
             self.assertEqual(lines[-1], "(allow file-read-metadata (vnode-type DIRECTORY))")
+            self.assertEqual(lines.count(self.KONTORS), 1)                           # later rules win: after every rule about writing
+            self.assertEqual(max(i for i, l in enumerate(lines) if "file-write" in l), lines.index(self.KONTORS))
+            for wide in ('(subpath "/private/var/folders")', '(subpath "/private/tmp")', '(subpath "/private/var")', '(subpath "/")', "/T/)", '/T/")'):
+                self.assertNotIn(wide, p)                                            # never the temporary folders as a whole
         strict = L.sandbox_profile(data, prog, base, home=home).split("\n")
         self.assertIn("(deny process-exec*)", strict)                                # no other program ...
         self.assertLess(strict.index("(deny process-exec*)"), strict.index('(allow process-exec* (subpath "%s/runtime"))' % base))     # ... but itself
         for rule in ("(deny appleevent-send)", "(deny lsopen)", "(deny signal)", "(allow signal (target self))", '(deny mach-lookup (global-name "com.apple.pasteboard.1"))'):
             self.assertIn(rule, strict)                                              # no steering of other apps, nothing opened through the system
         self.assertLess(strict.index("(deny signal)"), strict.index("(allow signal (target self))"))
-        w = strict.index("(deny file-write*)")                                       # writes: only temporary files
-        self.assertEqual(strict[w + 1], '(allow file-write* (subpath "/private/var/folders") (subpath "/private/tmp") (literal "/dev/null") (literal "/dev/dtracehelper") (literal "/dev/tty"))')
+        w = strict.index("(deny file-write*)")                                       # writes: only its own temporary folder of a start and the system's caches
+        self.assertEqual(strict[w + 1], '(allow file-write* (regex #"^/private/var/folders/[^/]+/[^/]+/T/llm-run-[^/]+/") (regex #"^/private/var/folders/[^/]+/[^/]+/C/")'
+                                        ' (literal "/dev/null") (literal "/dev/dtracehelper") (literal "/dev/tty"))')
+        self.assertEqual(strict[w + 2], '(deny file-write* (regex #"^/private/var/folders/[^/]+/[^/]+/C/(clang|org\\.llvm\\.clang)"))')     # ... not the compilers' modules
         self.assertEqual(sum(1 for l in strict if l.startswith("(allow file-write*")), 1)
         self.assertIn('(deny file-read* (subpath "/Users/x") (subpath "%s"))' % data, strict)      # nothing in the home folder
         basic = L.sandbox_profile(data, prog, base, "basic", home=home)
         self.assertIn('(deny file-write* (subpath "%s") (subpath "/Users/x/Kontor \\"prog\\""))' % data, basic)
+        self.assertNotIn("(allow file-write*", basic)
         self.assertEqual(L.SANDBOXES, ("strict", "basic", "off"))
         self.assertEqual(A.DEFAULTS["sandbox"], "strict")
         self.assertEqual(A.settings({"assistant": {"sandbox": True}})["sandbox"], "strict")       # anything unknown: the strict one
         self.assertEqual(A.settings({"assistant": {"sandbox": "off"}})["sandbox"], "off")
+
+    def may_write(self, profile, path):
+        """What the rules say about writing a path: the last rule about writing that names it decides (a stand-in for the
+        Mac's sandbox, which is not there elsewhere -- the macOS job asks the real one)."""
+        verdict = True                                                               # (allow default)
+        for line in profile.split("\n"):
+            m = re.fullmatch(r"\((allow|deny) file-write\*(.*)\)", line)
+            if not m:
+                self.assertNotIn("file-write", line)                                 # no rule about writing this stand-in does not read
+                continue
+            rest, hit = m.group(2), not m.group(2).strip()
+            for kind, arg in re.findall(r'\((subpath|literal) ("(?:[^"\\]|\\.)*")\)', rest):
+                at = json.loads(arg)
+                hit = hit or path == at or (kind == "subpath" and path.startswith(at.rstrip("/") + "/"))
+            for rx in re.findall(r'\(regex #"([^"]*)"\)', rest):
+                hit = hit or re.search(rx, path) is not None
+            self.assertEqual(re.sub(r'\((subpath|literal) "(?:[^"\\]|\\.)*"\)|\(regex #"[^"]*"\)', "", rest).strip(), "", line)
+            if hit:
+                verdict = m.group(1) == "allow"
+        return verdict
+
+    def test_never_into_kontors_temporary_folders(self):
+        """A model process taken over must not swap a helper Kontor builds and starts from a temporary folder (the one asking
+        for MoneyMoney's password, Touch ID's answer, an update being unpacked): at every level with a sandbox it writes none
+        of Kontor's temporary folders (kontor-...), and at "strict" of all temporary folders only its own of that start."""
+        data, prog, home = "/Users/x/Library/Application Support/Kontor", "/Users/x/Kontor", "/Users/x"
+        base, tmp, caches = data + "/assistant", "/private/var/folders/ab/cd_123xyz/T", "/private/var/folders/ab/cd_123xyz/C"
+        own = "%s/%sa1b2c3d4" % (tmp, L.TMP_PREFIX)
+        strict, basic = (L.sandbox_profile(data, prog, base, level, home=home) for level in ("strict", "basic"))
+        kontors = [tmp + "/kontor-a1b2c3d4/Kontor", tmp + "/kontor-a1b2c3d4", tmp + "/kontor-update-x9/file", tmp + "/kontor-tid-x9/result",
+                   tmp + "/kontor-demo-x9/config.json", "/private/tmp/kontor-a1b2c3d4/Kontor", "/private/tmp/kontor-", own + "/kontor-x/Kontor",
+                   caches + "/kontor-x/y"]
+        for profile in (strict, basic):
+            for path in kontors:
+                self.assertFalse(self.may_write(profile, path), path)
+            for path in (data + "/config.json", base + "/models.json", base + "/runtime/b1/llama-server"):      # nor its own program or models
+                self.assertFalse(self.may_write(profile, path), path)
+            self.assertTrue(self.may_write(profile, own + "/a")); self.assertTrue(self.may_write(profile, own + "/deeper/b"))
+        self.assertFalse(self.may_write(basic, prog + "/service.py"))
+        # strict: the system's caches (the graphics chip's compiled programs) and a few devices besides its own folder ...
+        for path in (caches + "/com.apple.metal/16777235_355/functions.data", caches + "/llama-server/com.apple.metal/1/libraries.list", "/dev/null", "/dev/tty"):
+            self.assertTrue(self.may_write(strict, path), path)
+        # ... and nothing else: not its folder itself (put something else in its place), not other programs' temporary files,
+        # not the compilers' modules among the caches (Kontor's helpers are built from them: swiftc, clang)
+        for path in (own, tmp + "/" + L.TMP_PREFIX, tmp + "/x", tmp + "/rcpt-a1b2/in.pdf", tmp + "/xcrun_db", tmp + "/other/" + L.TMP_PREFIX + "x/y",
+                     tmp + "/TemporaryDirectory.Ab12Cd/Kontor-1.o", caches + "/clang/ModuleCache/2ZEZ/Foundation-ABC.pcm", caches + "/clang",
+                     caches + "/org.llvm.clang.x/ModuleCache/Swift-1.swiftmodule",
+                     "/private/tmp/x", "/private/tmp/%sx/y" % L.TMP_PREFIX, "/private/var/folders/ab/cd_123xyz/0/x", "/private/var/folders/x",
+                     home + "/Library/LaunchAgents/x.plist", home + "/Documents/x", prog + "/service.py", "/dev/disk0", "/x" + own + "/a"):
+            self.assertFalse(self.may_write(strict, path), path)
+        # the folder Kontor makes is one the rules name -- and never one of Kontor's own
+        made = L.own_tmp()
+        try:
+            self.assertTrue(os.path.isdir(made)); self.assertEqual(os.listdir(made), [])
+            self.assertEqual(os.path.dirname(made), os.path.realpath(tempfile.gettempdir()))
+            self.assertTrue(os.path.basename(made).startswith(L.TMP_PREFIX)); self.assertFalse(L.TMP_PREFIX.startswith("kontor-"))
+            self.assertEqual(os.stat(made).st_mode & 0o777, 0o700)
+            self.assertTrue(self.may_write(strict, tmp + "/" + os.path.basename(made) + "/x"))
+        finally:
+            shutil.rmtree(made, ignore_errors=True)
+
+    def test_kontors_temporary_folders_are_named_so(self):
+        """The rule above goes by the name: whatever Kontor puts into the system's temporary folder for itself is called
+        kontor-... (a new one too) -- but the folders handed to a sandboxed process as its own."""
+        own = {("llm_local.py", "TMP_PREFIX"), ("receipt_text.py", '"rcpt-"')}       # the model's and the receipt reader's own folder of a run
+        seen = set()
+        root = os.path.join(HERE, "..")
+        for name in sorted(f for f in os.listdir(root) if f.endswith(".py")):
+            with open(os.path.join(root, name), encoding="utf-8") as f:
+                src = f.read()
+            self.assertEqual(re.findall(r"\b(mkstemp|mktemp|NamedTemporaryFile|TemporaryDirectory|TemporaryFile|SpooledTemporaryFile)\(", src), [],
+                             "%s: a temporary file of Kontor's goes into a folder made with mkdtemp(prefix=\"kontor-...\")" % name)
+            for args in re.findall(r"\bmkdtemp\(([^()]*)\)", src):
+                self.assertNotEqual(args.strip(), "", name)
+                prefix = re.fullmatch(r'prefix=("[^"]*"|\w+)(, dir=HERE)?', args.strip())
+                self.assertIsNotNone(prefix, "%s: mkdtemp(%s)" % (name, args))
+                seen.add((name, prefix.group(1)))
+                if prefix.group(2) or (name, prefix.group(1)) in own:                 # (beside the program, not in the temporary folder: mac_app.py)
+                    continue
+                value = MA.DEMO_PREFIX if (name, prefix.group(1)) == ("service.py", "DEMO_PREFIX") else json.loads(prefix.group(1)) if prefix.group(1).startswith('"') else None
+                self.assertTrue(isinstance(value, str) and value.startswith("kontor-"), "%s: mkdtemp(%s)" % (name, args))
+        self.assertTrue(own <= seen, seen)
+        self.assertTrue({("mm_history.py", '"kontor-"'), ("updates.py", '"kontor-update-"'), ("auth.py", '"kontor-tid-"')} <= seen, seen)
+
+    def test_each_start_has_its_own_temporary_folder(self):
+        """TMPDIR of a model process: a new folder for each start (never Kontor's own temporary folder, never one of
+        kontor-...), gone when the process has ended -- also for the trial runs after a download and a start that fails."""
+        d = tempfile.mkdtemp(prefix="kontor-ai-")
+        ai = L.LocalAI(os.path.join(d, "assistant"), d, d + "-prog")
+        opened, made, envs = L._open, [], []
+        real_tmp, real_popen = L.own_tmp, L.subprocess.Popen
+        fails = []
+
+        def own_tmp():
+            made.append(real_tmp())
+            return made[-1]
+
+        def popen(cmd, *a, **kw):
+            if not any(str(x).startswith(os.path.join(ai.base, "runtime") + os.sep) for x in cmd):      # (not this model's program: as ever)
+                return real_popen(cmd, *a, **kw)
+            envs.append(dict(kw.get("env") or {}))
+            self.assertTrue(os.path.isdir(envs[-1].get("TMPDIR", "")), envs[-1])      # there before the process starts
+            if fails:
+                raise OSError("no start")
+            return real_popen(cmd, *a, **kw)
+        L._open = Net().open
+        try:
+            with mock.patch.object(L, "own_tmp", own_tmp), mock.patch.object(L.subprocess, "Popen", popen):
+                ai.install_runtime(); self.assertEqual(wait_job(ai)["state"], "done", ai.job)      # tried twice (--version, --help) in one folder
+                self.assertEqual(len(made), 1); self.assertEqual([e["TMPDIR"] for e in envs], made * 2)
+                self.assertFalse(os.path.exists(made[0]))
+                ai.download_model("qwen3.6-35b-a3b"); self.assertEqual(wait_job(ai)["state"], "done", ai.job)
+                del envs[:]
+                ai.ensure("qwen3.6-35b-a3b", 8192, "off")
+                first = ai.tmp
+                self.assertEqual((made[1:], envs[0]["TMPDIR"]), ([first], first))
+                self.assertTrue(os.path.isdir(first)); self.assertTrue(os.path.basename(first).startswith(L.TMP_PREFIX))
+                self.assertNotEqual(os.path.realpath(first), os.path.realpath(tempfile.gettempdir()))
+                self.assertNotIn("/kontor-", first[len(os.path.dirname(first)):])
+                ai.ensure("qwen3.6-35b-a3b", 8192, "off"); self.assertEqual(ai.tmp, first)         # as it runs: no new start, the same folder
+                ai.ensure("qwen3.6-35b-a3b", 4096, "off")                                          # a new start: a new folder, the old one gone
+                second = ai.tmp
+                self.assertNotEqual(second, first); self.assertFalse(os.path.exists(first)); self.assertTrue(os.path.isdir(second))
+                self.assertEqual(envs[-1]["TMPDIR"], second)
+                with open(os.path.join(second, "left"), "w") as f:                                 # whatever the process left there goes with it
+                    f.write("x")
+                ai.stop()
+                self.assertEqual(ai.tmp, ""); self.assertFalse(os.path.exists(second))
+                fails.append(1)                                                                    # a start that fails: nothing left behind
+                with self.assertRaises(L.ModelError):
+                    ai.ensure("qwen3.6-35b-a3b", 8192, "off")
+                self.assertEqual(ai.tmp, ""); self.assertEqual(len(made), 4)
+                with self.assertRaises(ValueError):
+                    ai._probe(ai.runtime()["path"], "off")
+                self.assertEqual(len(made), 5)
+            self.assertEqual([p for p in made if os.path.exists(p)], [])
+            self.assertEqual(len(set(made)), len(made))
+        finally:
+            ai.stop()
+            L._open = opened
+            shutil.rmtree(d, ignore_errors=True)
 
 
 class Runtime(_Open):
@@ -908,11 +1058,10 @@ class Tools(_Assist):
         orig = A.THINK_BUDGET
         A.THINK_BUDGET = 20
         try:
-            self.a.set({"effort": "balanced"})
-            evs = self.ask("think " + " ".join("w%d" % i for i in range(20)))
+            evs = self.ask("think " + " ".join("w%d" % i for i in range(20)), effort="balanced")
             self.assertEqual((evs[-1]["thought"], evs[-1]["limit"]), (20, True))
-            self.assertEqual(self.a._effort(self.a.settings(), 15), {"reasoning_budget_tokens": 5, "thinking_budget_tokens": 5})
-            self.assertEqual(self.a._effort(self.a.settings(), 30), {"reasoning_budget_tokens": 0, "thinking_budget_tokens": 0})
+            self.assertEqual(self.a._effort({"effort": "balanced"}, 15), {"reasoning_budget_tokens": 5, "thinking_budget_tokens": 5})
+            self.assertEqual(self.a._effort({"effort": "balanced"}, 30), {"reasoning_budget_tokens": 0, "thinking_budget_tokens": 0})
         finally:
             A.THINK_BUDGET = orig
         self.assertEqual(self.tool("get_overview") and self.a.job.events[-1]["reads"], 1)    # lookups of the user's data
@@ -1320,7 +1469,7 @@ class Tools(_Assist):
         self.assertEqual({t["right"] for t in A.TOOLS if t["kind"] == "enter"}, {"enter_values", "categorize", "book", "rules", "receipts"})
         self.assertEqual({t["name"]: t["right"] for t in A.TOOLS if t["kind"] == "web"}, {"web_search": "internet", "web_read": "internet"})       # read only, off by default
 
-    def test_settings_grouped_and_saved_before(self):
+    def test_settings_grouped_and_saved(self):
         # reading is one switch in the settings: figures, transactions and the page together; the help always
         self.a.set({"rights": {"read": False}})
         r = self.a.settings()["rights"]
@@ -1332,13 +1481,11 @@ class Tools(_Assist):
         self.assertNotIn("show_chart", [t["name"] for t in self.a.tool_list(self.a.settings())])
         self.a.set({"rights": {"navigate": True}})
         self.assertIn("show_chart", [t["name"] for t in self.a.tool_list(self.a.settings())])
-        # saved before 3.16.28 with changes off: on now (each one waits for the click); reading and the iPhone as they were
-        old = {"enabled": True, "rights": {"enter_values": False, "categorize": False, "transactions": False, "remote": True}}
-        s = A.settings({"assistant": old})
-        self.assertEqual((s["rights"]["enter_values"], s["rights"]["categorize"], s["rights"]["transactions"], s["rights"]["remote"]), (True, True, False, True))
-        self.a.set({"rights": {"enter_values": False}})                               # switched off now: stays off
+        # what is saved counts as it is; switched off: stays off
+        s = A.settings({"assistant": {"enabled": True, "rights": {"enter_values": False, "categorize": False, "transactions": False, "remote": True}}})
+        self.assertEqual((s["rights"]["enter_values"], s["rights"]["categorize"], s["rights"]["transactions"], s["rights"]["remote"]), (False, False, False, True))
+        self.a.set({"rights": {"enter_values": False}})
         self.assertFalse(self.a.settings()["rights"]["enter_values"])
-        self.assertEqual(self.app.config["assistant"]["rights_version"], A.RIGHTS_VERSION)
         self.a.set({"rights": {"enter_values": True}})
         # the context: automatic by the memory of this Mac unless chosen; "automatic" stays so in the configuration
         self.assertEqual([A.auto_context(g * 2 ** 30) for g in (0, 16, 24, 32, 48, 64, 128)], [16384, 16384, 32768, 32768, 65536, 65536, 65536])
@@ -1346,11 +1493,11 @@ class Tools(_Assist):
         self.assertEqual(self.app.config["assistant"]["context"], 0)
         self.a.set({"context": 131072})
         self.assertEqual((self.a.settings()["context"], self.a.settings()["context_auto"], self.app.config["assistant"]["context"]), (131072, False, 131072))
-        self.a.set({"effort": "thorough"})                                           # another setting leaves the context as chosen
+        self.a.set({"idle_minutes": 45})                                             # another setting leaves the context as chosen
         self.assertEqual(self.a.settings()["context"], 131072)
         self.a.set({"context": 0})
         self.assertEqual((self.a.settings()["context"], self.a.settings()["context_auto"]), (A.DEFAULTS["context"], True))
-        self.a.set({"effort": "balanced"})
+        self.a.set({"idle_minutes": 30})
 
     def test_settings_are_checked(self):
         s = A.settings({"assistant": {"enabled": "yes", "model": 7, "effort": "max", "context": 123, "idle_minutes": -5, "sandbox": 0, "rights": {"enter_values": "true", "x": True, "figures": False}}})
@@ -1361,9 +1508,13 @@ class Tools(_Assist):
         self.assertEqual(A.DEFAULTS["idle_minutes"], 30)                               # the model stays a while: the next question needs no new start
         with self.assertRaises(ValueError):
             self.a.set({"model": "not-downloaded"})
-        self.a.set({"effort": "fast"}); self.assertEqual(self.a._effort(self.a.settings()), {"reasoning_effort": "none", "chat_template_kwargs": {"enable_thinking": False}})
-        self.a.set({"effort": "balanced"}); self.assertEqual(self.a._effort(self.a.settings()), {"reasoning_budget_tokens": 2000, "thinking_budget_tokens": 2000})
-        self.a.set({"effort": "thorough"}); self.assertEqual(self.a._effort(self.a.settings()), {})
+        self.assertEqual(self.a._effort({"effort": "fast"}), {"reasoning_effort": "none", "chat_template_kwargs": {"enable_thinking": False}})
+        self.assertEqual(self.a._effort({"effort": "balanced"}), {"reasoning_budget_tokens": 2000, "thinking_budget_tokens": 2000})
+        self.assertEqual(self.a._effort({"effort": "thorough"}), {})
+        rights = dict(self.a.settings()["rights"])                                    # a refused change leaves the settings in use as they were
+        with self.assertRaises(ValueError):
+            self.a.set({"rights": {"enter_values": not rights["enter_values"]}, "model": "not-downloaded"})
+        self.assertEqual(self.a.settings()["rights"], rights)
         # for one question, chosen in the panel: the request carries it, the setting stays
         with open(os.path.join(os.path.dirname(self.a.ai.runtime()["path"]), "record"), "w"):
             pass
@@ -1377,7 +1528,7 @@ class Tools(_Assist):
         self.ask("Hallo", effort="nonsense")
         with open(os.path.join(os.path.dirname(self.a.ai.runtime()["path"]), "request.json")) as f:
             self.assertNotIn("reasoning_effort", json.load(f))
-        self.assertEqual(self.a.settings()["effort"], "thorough")
+        self.assertNotIn("effort", self.a.settings())                                 # no setting: chosen for each question
 
     def test_switched_off(self):
         self.ask("Hallo")
@@ -2056,33 +2207,23 @@ class Chats(_Assist):
             if how == "reset":
                 break
 
-    def test_in_their_own_folder_moved_counted_and_old_ones_deleted(self):
-        """Saved conversations lie in a folder of their own; those of earlier versions (beside all other files) move there at the
-        start, as they are; the settings learn how many and how large, and those not continued for a year can go."""
+    def test_in_their_own_folder_counted_and_old_ones_deleted(self):
+        """Saved conversations lie in a folder of their own; the settings learn how many and how large, and those not continued
+        for a year can go."""
         r = self.a.ask({"question": "Neu"}); events(self.a, r["job"])
         new = r["conversation"]
         self.assertTrue(self.app.store.path(A.CHAT_FILE % new).startswith(os.path.join(self.dir, A.CHAT_DIR) + os.sep))
         self.assertFalse([n for n in os.listdir(self.dir) if n.startswith("assistant-chat")])
-        # as an earlier version left them: beside everything else, with their list
-        old = "aaaaaaaa11111111"
+        old = "aaaaaaaa11111111"                                                   # one not continued for long
         rec = {"id": old, "title": "Alt", "created": "2024-01-01 10:00:00", "updated": "2024-01-02 10:00:00", "turns": [{"role": "user", "text": "Alt"}]}
-        self.app.store.save("assistant-chat-%s.json" % old, rec)
-        idx = self.app.store.load(A.CHATS_FILE, {}); self.app.store.save("assistant-chats.json", dict(idx, **{old: self.a._chat_meta(rec)}))
-        os.remove(self.app.store.path(A.CHATS_FILE))
-        self.app.store.save(A.CHAT_FILE % new, self.app.store.load(A.CHAT_FILE % new))          # the new one stays where it is
+        self.app.store.save(A.CHAT_FILE % old, rec)
+        self.app.store.update(A.CHATS_FILE, lambda idx: idx.update({old: self.a._chat_meta(rec)}), {})
         a2 = A.Assistant(self.app, self.a.hooks)                                   # Kontor starts again
-        self.assertFalse([n for n in os.listdir(self.dir) if n.startswith("assistant-chat")])          # the data folder tidy
         self.assertEqual({c["id"] for c in a2.chats()}, {old, new})
-        self.assertEqual(a2.chat(old)["turns"][0]["text"], "Alt")                  # the same key opens it
+        self.assertEqual(a2.chat(old)["turns"][0]["text"], "Alt")
         st = a2.chat_stats()
         self.assertEqual((st["chats"], st["chats_old"], st["chats_many"]), (2, 1, False)); self.assertGreater(st["chats_bytes"], 0)
         self.assertEqual(self.a.status(True)["chats_old"], 1); self.assertNotIn("chats_bytes", self.a.status(False))
-        # a file in both places (a move cut short): the one in the folder counts, the other stays -- nothing is overwritten
-        self.app.store.save("assistant-chat-%s.json" % new, {"id": new, "title": "doppelt", "turns": []})
-        a2._chats_move()
-        self.assertTrue(os.path.exists(os.path.join(self.dir, "assistant-chat-%s.json.enc" % new)))
-        self.assertNotEqual(a2.chat(new)["title"], "doppelt")
-        os.remove(os.path.join(self.dir, "assistant-chat-%s.json.enc" % new))
         # not continued for a year: deleted on request (from the settings); the recent one stays
         code, out = self.call("/api/assistant/chats/delete", {"older_days": 365})
         self.assertEqual((code, out["deleted"]), (200, 1))
@@ -2102,10 +2243,8 @@ class Chats(_Assist):
         self.assertEqual(self.a.delete_chats(older_days=365), 0)
         self.a.stop(); events(self.a, r["job"])
         self.assertIn(old, {c["id"] for c in self.a.chats()})
-        # "delete all" (and resetting) also removes what an earlier version left at the old place and was not moved
-        self.app.store.save("assistant-chat-%s.json" % old, rec)
+        # "delete all" (and resetting): the folder empty
         self.assertEqual(self.a.delete_chats(everything=True), 2)
-        self.assertFalse([n for n in os.listdir(self.dir) if n.startswith("assistant-chat")])
         self.assertFalse(os.listdir(os.path.join(self.dir, A.CHAT_DIR)))
 
     def test_damaged_file_and_entries_taken_back(self):
@@ -2314,6 +2453,167 @@ class Bookings(_Assist):
         self.a.confirm(job, batch, True, None, True); events(self.a, job)
         self.assertEqual(sorted(x["key"] for x in self.app.config["not_book"]), sorted([a["key"], b["key"]]))
 
+    def loan_rows(self, amount=6000.0):
+        return [x for x in self.waiting() if x["rule"].startswith("Darlehen") and x["amount"] == amount]
+
+    def booked(self):
+        return [t for t in T.MockBridge.state["txs"] if "#kontor-" in str(t.get("purpose"))]
+
+    def test_a_rule_not_confirmed_books_nothing_through_the_card(self):
+        """A booking of a rule the assistant changed waits until the user confirms that rule -- the card never books it: not one
+        proposed before the rule changed (planned afresh at the click), not one read afterwards (the list of what waits is
+        planned again when a rule is saved)."""
+        first = self.loan_rows()[0]
+        self.assertNotIn("check_first", first)
+        job, cards, batch, evs = self.propose({"approve": [first["id"]], "reason": "geprüft"})      # the card waits ...
+        old = copy.deepcopy(self.app.config["loans"][0])
+        new = copy.deepcopy(old); new["booking"]["counterparty"] = "Neue Gegenpartei"
+        MA.save_assistant_rule(self.app, "loans", old, new)                           # ... meanwhile the rule changes (another card)
+        n = len(self.a.changes())
+        self.a.confirm(job, batch, True, None, True)
+        st = next(e for e in events(self.a, job, seconds=60) if e["type"] == "entry_state")
+        self.assertEqual(st["state"], "failed", st); self.assertIn("noch nicht bestätigt", st["text"])
+        self.assertEqual((self.booked(), len(self.a.changes())), ([], n))             # nothing booked, nothing logged
+        # the list was planned again with the rule: each of its bookings says why it waits, and none is taken for a card
+        lr = self.app.status(True)["last_run"]
+        mine = [p_ for p_ in lr["proposals"] if p_["rule"].startswith("Darlehen")]
+        self.assertEqual(len(mine), 22); self.assertTrue(lr["dry_run"])
+        self.assertEqual({(p_["counterparty"], p_["note"]) for p_ in mine}, {("Neue Gegenpartei", MA.tr("s_regel_pruefen"))})
+        evs = self.propose({"approve": [A._booking_id(mine[0])]})[3]
+        self.assertIn("check these first", text_of(evs)); self.assertFalse(any(e["type"] == "entry" for e in evs))
+        # a booking of another rule: approved as before
+        other = next(p_ for p_ in lr["proposals"] if p_["rule"] == "Beteiligung Beta GbR")
+        job, cards, batch, evs = self.propose({"approve": [A._booking_id(other)]})
+        self.a.confirm(job, batch, True, None, True)
+        self.assertEqual(next(e for e in events(self.a, job, seconds=60) if e["type"] == "entry_state")["state"], "done")
+        self.assertEqual([t["amount"] for t in self.booked()], [other["amount"]])
+        # confirmed by the user under Konten & Regeln: the list is planned again, its bookings can be approved -- as they are now
+        cfg = copy.deepcopy(self.app.config); cfg["loans"][0].pop("review")
+        seen = json.loads(json.dumps([self.app.config.get(k) or [] for k in ("loans", "companies", "account_mirrors")]))
+        self.assertEqual(self.call("/api/config", {"config": cfg, "rules_seen": seen}, method="PUT")[0], 200)
+        w = self.loan_rows()
+        self.assertFalse([x for x in w if "check_first" in x])
+        job, cards, batch, evs = self.propose({"approve": [w[0]["id"]]})
+        self.a.confirm(job, batch, True, None, True)
+        self.assertEqual(next(e for e in events(self.a, job, seconds=60) if e["type"] == "entry_state")["state"], "done")
+        self.assertEqual([(t["amount"], t["name"]) for t in self.booked() if "#kontor-tx-" in t["purpose"]], [(6000.0, "Neue Gegenpartei")])
+
+    def test_rule_and_bookings_on_one_card(self):
+        """A rule changed and bookings approved with one click: the rule first, then planned afresh -- a booking of the rule just
+        changed is left (said on the card), the others are booked; the log holds what was booked, each one."""
+        w = self.waiting()
+        loan, value = self.loan_rows()[0], next(x for x in w if x["rule"] == "Beteiligung Beta GbR")
+        q = "call decide_bookings %s\ncall propose_rule %s" % (
+            json.dumps({"approve": [loan["id"], value["id"]]}),
+            json.dumps({"kind": "loan", "action": "change", "which": "verkäufer", "fields": {"counterparty": "Neue Gegenpartei"}}, ensure_ascii=False))
+        r = self.a.ask({"question": q})
+        evs = events(self.a, r["job"], until="batch")
+        cards = [e for e in evs if e["type"] == "entry"]
+        self.assertEqual([c["kind"] for c in cards], ["book", "rule"])                # proposed in this order ...
+        self.a.confirm(r["job"], next(e["id"] for e in evs if e["type"] == "batch"), True, None, True)
+        states = {e["id"]: e for e in events(self.a, r["job"], seconds=60) if e["type"] == "entry_state"}
+        book, rule = states[cards[0]["id"]], states[cards[1]["id"]]
+        self.assertEqual(rule["state"], "done"); self.assertTrue(self.app.config["loans"][0]["review"])
+        self.assertEqual(book["state"], "done", book)
+        self.assertEqual(book["text"], "1 Buchung nicht gebucht · " + MA.tr("s_regel_pruefen"))
+        self.assertEqual([(t["amount"], t["name"]) for t in self.booked()], [(value["amount"], "Beta GbR")])       # ... carried out: the rule first
+        log = next(c for c in self.a.changes() if c["kind"] == "book")
+        self.assertEqual((log["count"], log["sum"], [(x["label"], x["new"]) for x in log["rows"]]), (1, value["amount"], [(value["date"], value["amount"])]))
+
+    def test_booked_only_as_shown(self):
+        """What the card books is the booking it showed: another day, counterparty or text since (the rule changed on the rules
+        page, confirmed -- the amount still the same) and it is left, with the reason; nothing is booked that was not shown."""
+        z = next(x for x in self.waiting() if "Zinsen 01/2026" in x["text"])
+        self.assertEqual(z["date"], "2026-01-01")                                    # booked with the payment ...
+        value = next(x for x in self.waiting() if x["rule"] == "Beteiligung Beta GbR")
+        job, cards, batch, evs = self.propose({"approve": [z["id"], value["id"]]})
+        cfg = copy.deepcopy(self.app.config); cfg["loans"][0]["interest"]["booking_day"] = "ultimo"      # ... now at the end of the month
+        self.app.save_config(cfg)
+        self.assertEqual(next(p_["date"] for p_ in self.app.status(True)["last_run"]["proposals"] if "Zinsen 01/2026" in p_["text"]), "2026-01-31")
+        self.a.confirm(job, batch, True, None, True)
+        st = next(e for e in events(self.a, job, seconds=60) if e["type"] == "entry_state")
+        self.assertEqual((st["state"], st["text"]), ("done", "1 Buchung nicht gebucht · wartet nicht mehr so wie gezeigt"), st)
+        self.assertEqual([t["amount"] for t in self.booked()], [value["amount"]])
+        # the same booking read anew and approved: booked on the day it shows now
+        z = next(x for x in self.waiting() if "Zinsen 01/2026" in x["text"])
+        self.assertEqual(z["date"], "2026-01-31")
+        job, cards, batch, evs = self.propose({"approve": [z["id"]]})
+        self.a.confirm(job, batch, True, None, True)
+        self.assertEqual(next(e for e in events(self.a, job, seconds=60) if e["type"] == "entry_state")["state"], "done")
+        self.assertEqual([t["bookingDate"] for t in self.booked() if "#kontor-zins-2026-01" in t["purpose"]], [T.F._dt(date(2026, 1, 31))])
+        # the page's own approval goes by the amount it showed, as before (nothing of the card's check)
+        import core
+        w = next(p_ for p_ in self.app.status(True)["last_run"]["proposals"] if "Zinsen 02/2026" in p_["text"])
+        n = len(self.booked())
+        res = self.app.do_run(False, True, approve={w["key"]: {"shown": w["amount"]}})
+        self.assertEqual((res["written"], len(self.booked())), (1, n + 1)); self.assertNotIn("_refused", res)
+        self.assertEqual(core.not_as_shown(None, {}), "wartet nicht mehr so wie gezeigt")
+
+    def test_every_booking_stands_on_the_card_and_in_the_log(self):
+        """Twenty bookings approved: each of them on the card (the page unfolds a long list) and, once booked, in the log -- not the
+        first eight and a total (plus and minus may cancel out in it)."""
+        w = [x for x in self.waiting() if x["rule"].startswith("Darlehen")]
+        pick = [x for x in w if x["amount"] == 6000.0][:10] + [x for x in w if x["amount"] == -3000.0][:10]
+        job, cards, batch, evs = self.propose({"approve": [x["id"] for x in pick]})
+        c = cards[0]
+        self.assertEqual((c["count"], c["sum"], len(c["rows"])), (20, 30000.0, 20))
+        self.assertEqual(sorted((x["label"], x["new"], x["text"]) for x in c["rows"]), sorted((x["date"], x["amount"], x["text"]) for x in pick))
+        self.a.confirm(job, batch, True, None, True)
+        st = next(e for e in events(self.a, job, seconds=90) if e["type"] == "entry_state")
+        self.assertEqual((st["state"], st.get("text") or ""), ("done", ""), st)
+        self.assertEqual(len(self.booked()), 20)
+        log = self.a.changes()[0]
+        self.assertEqual((log["count"], log["sum"], len(log["rows"])), (20, 30000.0, 20))
+        self.assertEqual(sorted((x["label"], x["new"]) for x in log["rows"]), sorted((x["date"], x["amount"]) for x in pick))
+        # held back: each on the card as well
+        rest = [x for x in self.waiting() if x["rule"].startswith("Darlehen")]
+        job, cards, batch, evs = self.propose({"hold_back": [x["id"] for x in rest]})
+        self.assertEqual((cards[0]["count"], len(cards[0]["rows"])), (len(rest), len(rest)))
+        self.a.confirm(job, batch, False, None, True); events(self.a, job)
+
+    def test_the_card_unfolds_every_booking_in_the_browser(self):
+        """On the page: twenty bookings on one card -- the first six at once, the others unfold (and stay unfolded when the card
+        is drawn again); every one of them can be read before the click, nothing runs out of the card."""
+        try:
+            from playwright.sync_api import sync_playwright
+        except ImportError:
+            self.skipTest("playwright fehlt")
+        w = [x for x in self.waiting() if x["rule"].startswith("Darlehen")][:20]
+
+        def until(pg, js, seconds=30.0):
+            t0 = time.time()
+            while time.time() - t0 < seconds:
+                if pg.evaluate(js):
+                    return
+                pg.wait_for_timeout(80)
+            self.fail("not reached: " + js)
+        with sync_playwright() as p:
+            b = p.chromium.launch(); pg = b.new_page(viewport={"width": 1360, "height": 860})
+            errors = []; pg.on("pageerror", lambda e: errors.append(str(e)))
+            pg.goto("http://127.0.0.1:%d/" % self.port); pg.fill("#login-pw", "sehr-geheimes-passwort"); pg.click("#login-btn")
+            pg.wait_for_selector("#shell:not(.hidden)"); until(pg, "asOn()"); pg.evaluate("asShow(true)"); pg.wait_for_selector("#as-in")
+            pg.fill("#as-in", "call decide_bookings " + json.dumps({"approve": [x["id"] for x in w]})); pg.keyboard.press("Enter")
+            until(pg, "!!document.querySelector('.as-entry.ask')")
+            more = ".as-entry.ask details.as-e-more"
+            shown = "[...document.querySelectorAll('.as-entry.ask tr')].filter(r => !r.closest('details:not([open])') && r.getClientRects().length).map(r => r.children[1].title.split('\\n').pop())"
+            self.assertEqual(pg.evaluate("[...document.querySelectorAll('.as-entry.ask tr')].map(r => r.children[1].title.split('\\n').pop())"), [x["text"] for x in w])
+            whose = pg.evaluate("[...document.querySelectorAll('.as-entry.ask tr')].map(r => r.children[1].querySelector('div').textContent)")      # each row: its account, to whom
+            self.assertEqual([y.split(" · ")[0] for y in whose], [x["account"] for x in w])
+            self.assertEqual((pg.evaluate("document.querySelector('%s').open" % more), len(pg.evaluate(shown))), (False, 6))
+            self.assertIn("14", pg.evaluate("document.querySelector('%s > summary').textContent" % more))
+            pg.click(more + " > summary")
+            until(pg, "document.querySelector('%s').open" % more)
+            self.assertEqual(pg.evaluate(shown), [x["text"] for x in w])               # all twenty to read
+            self.assertTrue(pg.evaluate("(() => { const c = document.querySelector('.as-entry.ask').getBoundingClientRect(); "
+                                        "return [...document.querySelectorAll('.as-entry.ask table')].every(t => t.getBoundingClientRect().right <= c.right + 1); })()"))
+            pg.click(".as-entry.ask .as-pick")                                         # left out by its tick: the card is drawn again
+            until(pg, "!!document.querySelector('.as-entry.ask.off')")
+            self.assertTrue(pg.evaluate("document.querySelector('%s').open" % more))   # ... and stays unfolded
+            pg.click(".as-b-no")
+            until(pg, "!document.querySelector('.as-entry.ask')")
+            self.assertEqual((errors, self.booked()), ([], []))
+            b.close()
+
     def test_changed_meanwhile_and_rights(self):
         w = self.waiting()
         job, cards, batch, evs = self.propose({"approve": [w[0]["id"]]})
@@ -2435,6 +2735,43 @@ class Rules(_Assist):
         self.assertEqual(self.call("/api/config", {"config": page, "rules_seen": seen}, method="PUT")[0], 200)
         self.a.take_back(cards[0]["id"], True)
         self.assertNotEqual(self.app.config["companies"][0].get("cycle"), "monthly")
+
+    def test_another_account_of_the_same_name_is_a_change_and_the_log_keeps_before_and_after(self):
+        """Two accounts called "Stadtbank Kontokorrent" (Alpha GbR, Beta GbR): the rule moved to the other one shows it -- both
+        with their whole path --, the title of a mirror names them so too; a card without a visible change does not exist; and
+        the log keeps every changed setting with what it was and what it is."""
+        alpha, beta = "Alpha GbR / Liquidität / Stadtbank Kontokorrent", "Beta GbR / Liquidität / Stadtbank Kontokorrent"
+        job, cards, batch, evs = self.propose({"kind": "loan", "action": "change", "which": "Verkäuferdarlehen",
+                                               "fields": {"paid_from": beta, "rates": [{"from": "2025-11-20", "percent": 9.5}]}, "reason": "anderes Konto"})
+        self.assertEqual([(r["label"], r["old_text"], r["new_text"]) for r in cards[0]["rows"]],
+                         [("Zahlungen von", alpha, beta), ("Zinssätze", "2025-11-20: 3,0 %", "2025-11-20: 9,5 %")])
+        self.a.confirm(job, batch, True, None, True); events(self.a, job)
+        self.assertTrue(self.app.config["loans"][0]["source_accounts"][0].startswith(T.F.uid("gb.kk")))
+        log = self.a.changes()[0]
+        self.assertEqual((log["kind"], log["title"], log["sub"], log["reason"]), ("rule", "Verkäuferdarlehen", "geänderte Regel", "anderes Konto"))
+        self.assertEqual(log["rows"], [{"label": "Zahlungen von", "old_text": alpha, "new_text": beta},
+                                       {"label": "Zinssätze", "old_text": "2025-11-20: 3,0 %", "new_text": "2025-11-20: 9,5 %"}])
+        # a name that only one account has stays short; a mirror between two of one name is told apart in its title
+        job, cards, batch, evs = self.propose({"kind": "mirror", "action": "add", "fields": {"account_a": alpha, "account_b": "Kapitalkonto A"}})
+        self.assertIn("Several accounts fit", text_of(evs))
+        job, cards, batch, evs = self.propose({"kind": "mirror", "action": "add", "fields": {"account_a": "Immobilie Lindenstraße", "account_b": beta}})
+        self.assertEqual(cards[0]["title"], "Immobilie Lindenstraße ⇄ " + beta)
+        self.assertEqual([(r["label"], r["new_text"]) for r in cards[0]["rows"]][:2], [("Konto 1", "Immobilie Lindenstraße"), ("Konto 2", beta)])
+        self.a.confirm(job, batch, False, None, True); events(self.a, job)
+        # nothing to see, nothing proposed: the same account given by its path, a rate written 3 instead of 3.0, no field at all
+        self.a.take_back(next(c["id"] for c in self.a.changes() if c["kind"] == "rule"), True)
+        for fields in ({"paid_from": alpha}, {"rates": [{"from": "2025-11-20", "percent": "3"}]}, {}, {"loan_account": "Alpha GbR / Verbindlichkeiten / Verkäuferdarlehen"}):
+            evs = self.propose({"kind": "loan", "action": "change", "which": "Verkäuferdarlehen", "fields": fields})[3]
+            self.assertIn("nothing changed", text_of(evs), fields); self.assertFalse(any(e["type"] == "entry" for e in evs), fields)
+        # (a rule the rules page wrote: 3.0 sent back as 3 -- the card still shows no change of the rate)
+        self.assertEqual(A._rule_rows("loans", {"interest": {"rate_list": [{"from_date": "2026-01-01", "percent": 3}]}},
+                                      {"interest": {"rate_list": [{"from_date": "2026-01-01", "percent": 3.0}]}}, A._account_names([], str), {}), [])
+        # accounts told apart by what they are: the same name, another account -- a row; the same account under another label: none
+        accts = [{"uuid": "u1", "name": "Giro", "path": "A / Giro"}, {"uuid": "u2", "name": "Giro", "path": "B / Giro"}, {"uuid": "u3", "name": "Depot", "path": "A / Depot"}]
+        named = A._account_names(accts, lambda r: str(r).split("|", 1)[-1].strip())
+        self.assertEqual(A._rule_rows("account_mirrors", {"a": "u1 | Giro", "b": "u3 | Depot"}, {"a": "u2 | Giro", "b": "u3 | Depot neu"}, named, {}),
+                         [{"label": "Konto 1", "old_text": "A / Giro", "new_text": "B / Giro"}])
+        self.assertEqual((named("A / Depot"), named("u9 | Fremd"), named("Giro")), (("u3", "Depot"), ("u9 | Fremd", "Fremd"), ("Giro", "Giro")))
 
     def test_preview_counts_new_changed_and_dropped_bookings(self):
         from types import SimpleNamespace as NS
@@ -2603,6 +2940,57 @@ class Receipts(_Assist):
             self.assertEqual(self.attach()[0], 403)
         finally:
             MA.auth.is_loopback = self._loop
+
+    def test_ids_are_long_checked_and_the_entry_meant_goes(self):
+        """A receipt's id: 16 hex signs, never one an entry has already, its file never written over another. Entries sharing an
+        id (made before 3.17: 6 signs, unchecked) each get one of their own -- deleting or changing one never hits the other,
+        nor its file."""
+        import receipts as RC
+        tx = dict(self.tx, entity_name="")
+        bl = RC.Belege(self.store, self.app.config)
+        a = bl.add_bytes(tx, "a.pdf", b"A")
+        real, given = RC.secrets.token_hex, [a["id"]]
+        RC.secrets.token_hex = lambda n: given.pop() if given else real(n)             # the same id drawn again: not taken
+        try:
+            b = bl.add_bytes(tx, "a.pdf", b"B")
+        finally:
+            RC.secrets.token_hex = real
+        self.assertEqual(given, [])
+        self.assertTrue(all(re.fullmatch(r"[0-9a-f]{16}", e["id"]) for e in (a, b))); self.assertNotEqual(a["id"], b["id"])
+        self.assertNotEqual(a["path"], b["path"])
+        full = lambda e: os.path.join(self.belege, e["path"])
+        self.assertEqual([open(full(e), "rb").read() for e in (a, b)], [b"A", b"B"])
+        # two entries of one id in the index (as 6 signs could give): each gets its own, none keeps the old one
+        idx = self.store.load("receipts.json")
+        idx["entry_list"][1]["id"] = idx["entry_list"][0]["id"] = "abc123"
+        self.store.save("receipts.json", idx)
+        code, got = self.call("/api/receipts")
+        ids = [e["id"] for e in reversed(got["entry_list"])]
+        self.assertEqual(len(set(ids)), 2); self.assertNotIn("abc123", ids)
+        self.assertEqual([e["was"] for e in got["entry_list"]], ["abc123", "abc123"])
+        # a page still open with the old id: nothing is hit
+        self.assertEqual(self.call("/api/receipts/remove", {"id": "abc123", "delete_file": True}), (200, {"ok": False}))
+        self.assertEqual(self.call("/api/receipts/update", {"id": "abc123", "note": "x"})[1]["ok"], False)
+        self.assertTrue(os.path.isfile(full(a))); self.assertTrue(os.path.isfile(full(b)))
+        # the second one deleted with its file: the first and its file stay
+        self.assertEqual(self.call("/api/receipts/update", {"id": ids[1], "note": "die zweite"})[1]["entry"]["path"], b["path"])
+        self.assertEqual(self.call("/api/receipts/remove", {"id": ids[1], "delete_file": True}), (200, {"ok": True}))
+        left = self.store.load("receipts.json")["entry_list"]
+        self.assertEqual([(e["id"], e["path"], e["note"]) for e in left], [(ids[0], a["path"], "")])
+        self.assertTrue(os.path.isfile(full(a))); self.assertFalse(os.path.exists(full(b)))
+        # the same id twice after all (the index changed under a page's request): refused, never the first one
+        bl = RC.Belege(self.store, self.app.config)
+        bl.entries().append(dict(bl.entries()[0], path="x/y.pdf"))
+        with self.assertRaises(ValueError):
+            bl.remove(ids[0], delete_file=True)
+        with self.assertRaises(ValueError):
+            bl.update(ids[0], note="x")
+        self.assertTrue(bl.remove(ids[0], delete_file=True, like={"path": "x/y.pdf"}))          # told apart by a further field
+        self.assertEqual([e["path"] for e in bl.entries()], [a["path"]]); self.assertTrue(os.path.isfile(full(a)))
+        # one file linked to two transactions: it stays while an entry still points to it
+        c = bl.link_existing(tx, a["path"])
+        self.assertTrue(bl.remove(c["id"], delete_file=True)); self.assertTrue(os.path.isfile(full(a)))
+        self.assertTrue(bl.remove(ids[0], delete_file=True)); self.assertFalse(os.path.exists(full(a)))
 
 
 class Tables(_Assist):
@@ -3657,8 +4045,8 @@ class Http(_Assist):
         self.assertTrue(st["ready"] and st["local"] and st["settings"]["enabled"])
         self.assertEqual(st["runtime"]["tag"], TAG); self.assertEqual(st["settings"]["model"], "qwen3.6-35b-a3b")       # the first model: chosen
         self.assertNotIn("key", json.dumps(st).lower().replace("monkey", ""))
-        code, r = self.call("/api/assistant/settings", {"effort": "thorough", "rights": {"help": False, "navigate": False}})
-        self.assertEqual((code, r["settings"]["effort"], r["settings"]["rights"]["help"], r["settings"]["rights"]["navigate"]), (200, "thorough", True, False))
+        code, r = self.call("/api/assistant/settings", {"idle_minutes": 45, "rights": {"help": False, "navigate": False}})
+        self.assertEqual((code, r["settings"]["idle_minutes"], r["settings"]["rights"]["help"], r["settings"]["rights"]["navigate"]), (200, 45, True, False))
         self.call("/api/assistant/settings", {"rights": {"navigate": True}})
         # without the page's token, without a session
         csrf, self.csrf = self.csrf, "wrong"
@@ -3926,9 +4314,9 @@ class Browser(unittest.TestCase):
         except ImportError:
             self.skipTest("playwright fehlt")
         from http.server import ThreadingHTTPServer
-        from storage import Store, load_or_create_master_key
+        from fixtures import new_store
         d = tempfile.mkdtemp(prefix="kontor-asdock-")
-        store = Store(d, *load_or_create_master_key(d)); store.save("config.json", T.config_for_test(os.path.join(d, "Belege")))
+        store = new_store(d); store.save("config.json", T.config_for_test(os.path.join(d, "Belege")))
         T.reset_mock(); T.patch_today()
         app = MA.App(store, d, bridge_factory=T.MockBridge); app.do_run(False, True); app.rebuild_report(wait=True)
         orig = L._open
@@ -3974,9 +4362,9 @@ class Browser(unittest.TestCase):
         except ImportError:
             self.skipTest("playwright fehlt")
         from http.server import ThreadingHTTPServer
-        from storage import Store, load_or_create_master_key
+        from fixtures import new_store
         d = tempfile.mkdtemp(prefix="kontor-asrule-")
-        store = Store(d, *load_or_create_master_key(d)); store.save("config.json", T.config_for_test(os.path.join(d, "Belege")))
+        store = new_store(d); store.save("config.json", T.config_for_test(os.path.join(d, "Belege")))
         T.reset_mock(); T.patch_today()
         app = MA.App(store, d, bridge_factory=T.MockBridge); app.do_run(False, True); app.rebuild_report(wait=True)
         srv = ThreadingHTTPServer(("127.0.0.1", 0), MA.make_handler(app)); threading.Thread(target=srv.serve_forever, daemon=True).start()
@@ -4027,9 +4415,9 @@ class Browser(unittest.TestCase):
         except ImportError:
             self.skipTest("playwright fehlt")
         from http.server import ThreadingHTTPServer
-        from storage import Store, load_or_create_master_key
+        from fixtures import new_store
         d = tempfile.mkdtemp(prefix="kontor-asui-")
-        store = Store(d, *load_or_create_master_key(d))
+        store = new_store(d)
         store.save("config.json", T.config_for_test(os.path.join(d, "Belege"))); store.save("state.json", dict(T.ALL_NEW))
         T.reset_mock(); T.patch_today()
         app = MA.App(store, d, bridge_factory=T.MockBridge)
@@ -4115,6 +4503,14 @@ class Browser(unittest.TestCase):
                 pg.wait_for_selector("#as-speech-filter"); self.assertEqual(pg.input_value("#as-speech-filter"), "0")
                 pg.select_option("#as-speech-filter", "1"); until(pg, "AS.st.settings.speech_filter === true && !asMicDirect()")
                 pg.click("#as-log summary"); until(pg, "/noch nichts geändert/.test(document.querySelector('#as-log-list').innerText)")
+                # each change in the log as its card showed it: folded, before and after
+                app.assistant._log_write(app.assistant, lambda lst: lst.append({"id": "x1", "time": "2026-11-20 10:00:00", "kind": "rule", "title": "Darlehen A", "reason": "r",
+                                                                                 "state": "done", "rows": [{"label": "Zinssatz", "old_text": "3 %", "new_text": "3,5 %"}, {"label": "Konto", "old_text": "A", "new_text": "B"}]}))
+                pg.evaluate("asChangesLoad()"); pg.wait_for_selector("#as-log-list .as-log-rows")
+                self.assertEqual(pg.inner_text("#as-log-list .as-log-rows summary").strip(), "2 Zeilen")
+                pg.click("#as-log-list .as-log-rows summary")
+                self.assertEqual(pg.evaluate("[...document.querySelectorAll('#as-log-list .as-log-rows tr')].map(r => r.innerText.replace(/\\s+/g, ' ').trim())"), ["Zinssatz 3 % 3,5 %", "Konto A B"])
+                app.assistant._log_write(app.assistant, lambda lst: lst.clear())
                 self.assertTrue(app.assistant.settings()["rights"]["enter_values"])
                 # the panel beside the page: the page makes room, its charts stay in view
                 pg.evaluate("location.hash = '#cashflow'"); pg.wait_for_selector("#main .cf-tbl")
@@ -4350,7 +4746,7 @@ class Browser(unittest.TestCase):
                 pg.evaluate("""(() => { const g = navigator.mediaDevices.getUserMedia; window.__gum = g; window.__asked = [];
                     navigator.mediaDevices.getUserMedia = c => { window.__asked.push(c.audio); return g.call(navigator.mediaDevices, c); }; })()""")
                 pg.click("#as-mic"); until(pg, "REC.on && REC.blocks >= 24")
-                self.assertEqual(pg.evaluate("[REC.direct, window.__asked.length, window.__asked[0].echoCancellation, window.__asked[0].noiseSuppression, REC.heard]"), [True, 1, False, False, True])
+                self.assertEqual(pg.evaluate("[REC.direct, window.__asked.length, window.__asked[0].echoCancellation, window.__asked[0].noiseSuppression, window.__asked[0].autoGainControl, REC.heard]"), [True, 1, False, False, False, True])
                 with self.assertLogs("kontor.assistant", "INFO") as cm:
                     pg.click("#as-mic"); until(pg, "!REC.on && !REC.busy", 20)
                 self.assertTrue(any("direct microphone, level" in x for x in cm.output), cm.output)
@@ -4359,7 +4755,7 @@ class Browser(unittest.TestCase):
                 app.assistant.set({"speech_filter": True})
                 pg.evaluate("asLoad()"); until(pg, "!asMicDirect()")
                 pg.click("#as-mic"); until(pg, "REC.on")
-                self.assertEqual(pg.evaluate("[REC.direct, window.__asked.length, window.__asked[1].echoCancellation, window.__asked[1].noiseSuppression]"), [False, 2, True, True])
+                self.assertEqual(pg.evaluate("[REC.direct, window.__asked.length, window.__asked[1].echoCancellation, window.__asked[1].noiseSuppression, window.__asked[1].autoGainControl]"), [False, 2, True, True, True])
                 pg.keyboard.press("Escape"); until(pg, "!REC.on && !REC.starting")
                 pg.evaluate("(() => { navigator.mediaDevices.getUserMedia = window.__gum; REC.zeros = null; localStorage.removeItem('kontor.mic.zeros'); })()")
                 app.assistant.set({"speech_start": "click"})
@@ -4564,9 +4960,9 @@ class Browser(unittest.TestCase):
         except ImportError:
             self.skipTest("playwright fehlt")
         from http.server import ThreadingHTTPServer
-        from storage import Store, load_or_create_master_key
+        from fixtures import new_store
         d = tempfile.mkdtemp(prefix="kontor-asref-")
-        store = Store(d, *load_or_create_master_key(d))
+        store = new_store(d)
         store.save("config.json", T.config_for_test(os.path.join(d, "Belege"))); store.save("state.json", dict(T.ALL_NEW))
         T.reset_mock(); T.patch_today()
         app = MA.App(store, d, bridge_factory=T.MockBridge)
@@ -4708,7 +5104,7 @@ class Browser(unittest.TestCase):
                 pg.mouse.click(box[0], box[1], button="right"); pg.wait_for_selector("#ctx button"); pg.click("#ctx button:has-text('Im Chat fragen')")
                 until(pg, "AS.refs.length === 1")
                 self.assertIn(" · " + month, pg.evaluate("AS.refs[0].label")); self.assertIn("Stelle in der Grafik: " + month, pg.evaluate("AS.refs[0].text"))
-                pg.evaluate("openHistDrawer(S.KONTEN[0].uuid)"); pg.wait_for_selector("#drawer.open .h-chart svg")
+                pg.evaluate("openHistDrawer(S.KONTEN.find(k => !k.group).uuid)"); pg.wait_for_selector("#drawer.open .h-chart svg")
                 self.assertEqual(menu(pg, "#drawer .h-chart svg"), ki + ["Grafik drucken …"])          # the side window's chart too
                 pg.click("#ctx button:has-text('Im Chat fragen')"); until(pg, "AS.refs.length === 2")
                 self.assertEqual(pg.evaluate("[AS.refs[1].go.route, AS.refs[1].go.mark]"), ["#balance", None])          # its page (the side window is not opened again)
@@ -4757,9 +5153,9 @@ class Browser(unittest.TestCase):
         except ImportError:
             self.skipTest("playwright fehlt")
         from http.server import ThreadingHTTPServer
-        from storage import Store, load_or_create_master_key
+        from fixtures import new_store
         d = tempfile.mkdtemp(prefix="kontor-asnew-")
-        store = Store(d, *load_or_create_master_key(d))
+        store = new_store(d)
         store.save("config.json", T.config_for_test(os.path.join(d, "Belege"))); store.save("state.json", dict(T.ALL_NEW))
         T.reset_mock(); T.patch_today()
         app = MA.App(store, d, bridge_factory=T.MockBridge)
@@ -4849,9 +5245,9 @@ class Browser(unittest.TestCase):
         except ImportError:
             self.skipTest("playwright fehlt")
         from http.server import ThreadingHTTPServer
-        from storage import Store, load_or_create_master_key
+        from fixtures import new_store
         d = tempfile.mkdtemp(prefix="kontor-aschart-")
-        store = Store(d, *load_or_create_master_key(d))
+        store = new_store(d)
         store.save("config.json", T.config_for_test(os.path.join(d, "Belege"))); store.save("state.json", dict(T.ALL_NEW))
         T.reset_mock(); T.patch_today()
         app = MA.App(store, d, bridge_factory=T.MockBridge)
@@ -4983,6 +5379,76 @@ class Browser(unittest.TestCase):
             with app.rebuild_cv:
                 app.rebuild_cv.wait_for(lambda: not app.rebuild_running and not app.rebuild_pending, timeout=60)
             shutil.rmtree(d, ignore_errors=True)
+
+
+class ChangeLog(_Assist):
+    """The log of changes and lookups (Einstellungen -> KI-Assistent): no entry, no lookup; a damaged log is put aside and begun
+    anew; changes, lookups and the memory each keep their own number of entries (a research never pushes a change out)."""
+
+    WIKI = {"ok": True, "status": 200, "url": "https://de.wikipedia.org/w/api.php", "type": "application/json",
+            "data": {"query": {"pages": [{"pageid": 7, "index": 1, "title": "Abgeltungsteuer", "fullurl": "https://de.wikipedia.org/wiki/Abgeltungsteuer",
+                                          "extract": "Eine Steuer auf Kapitalerträge."}]}}}
+
+    def setUp(self):
+        super().setUp()
+        self.calls = []
+        self.a.web_fetch = lambda req: self.calls.append(req["url"]) or json.loads(json.dumps(self.WIKI))       # (nothing leaves this machine)
+        self.a.set({"rights": {"internet": True}})
+
+    def lookup(self, query="Abgeltungsteuer"):
+        """A search on Wikipedia in a new conversation, its card answered with yes: all events."""
+        r = self.a.ask({"question": "call web_search %s" % json.dumps({"source": "wikipedia", "query": query}), "conversation": ""})
+        card = next(e for e in events(self.a, r["job"], until="web") if e["type"] == "web")
+        self.a.confirm(r["job"], card["id"], True, [it["id"] for it in card["items"]])
+        return events(self.a, r["job"])
+
+    def test_no_entry_in_the_log_no_lookup(self):
+        real = self.app.store.save
+
+        def save(name, obj):
+            if name == A.CHANGES_FILE:
+                raise OSError("disk full")
+            return real(name, obj)
+        with mock.patch.object(self.app.store, "save", side_effect=save):
+            evs = self.lookup()
+        self.assertEqual(self.calls, [])                                          # nothing went out
+        self.assertEqual([(e["state"], e.get("text")) for e in evs if e["type"] == "web_item" and e["state"] != "run"], [("failed", A.tr("ki_w_f_protokoll"))])
+        self.assertIn("could not write its log", json.dumps([m for m in self.a.conv["messages"] if m["role"] == "tool"]))      # the model tells the user
+        self.assertEqual(self.a.changes(), [])
+        self.lookup()                                                             # the log can be written again: fetched and logged
+        self.assertEqual(len(self.calls), 1)
+        self.assertEqual([(c["kind"], c["state"], c["title"]) for c in self.a.changes()], [("web", "fetched", "Abgeltungsteuer")])
+
+    def test_a_damaged_log_is_put_aside_and_begun_anew(self):
+        self.lookup()
+        with open(self.app.store.path(A.CHANGES_FILE), "wb") as f:
+            f.write(b"kaputt")                                                    # not readable
+        self.assertEqual(self.a.changes(), [])
+        self.lookup("Kapitalertragsteuer")
+        self.assertEqual(len(self.calls), 2)
+        self.assertEqual([(c["kind"], c["title"]) for c in self.a.changes()], [("web", "Kapitalertragsteuer")])          # logged again from now on
+        aside = os.path.join(self.app.store.data_dir, A.CHANGES_ASIDE)
+        with open(aside, "rb") as f:
+            self.assertEqual(f.read(), b"kaputt")                                 # put aside as it was
+        self.app.store.save(A.CHANGES_FILE, {"kein": "Protokoll"})                 # readable, but no list: the same
+        self.a.memory_do({"action": "add", "text": "Steuerberater im Januar anrufen"})
+        self.assertEqual([c["kind"] for c in self.a.changes()], ["memory"])
+        code, r = self.call("/api/reset", {"password": "sehr-geheimes-passwort"})     # a reset takes what was put aside too
+        self.assertEqual(code, 200, r)
+        self.assertFalse(os.path.exists(aside))
+
+    def test_lookups_never_push_changes_out_of_the_log(self):
+        self.app.store.save(A.CHANGES_FILE, [{"id": "aaaaaaaaaaaa", "time": "2026-11-01 10:00:00", "kind": "balances", "what": "enter_balances",
+                                              "title": "Depot", "sub": "", "reason": "", "state": "done", "chat": "", "rows": []}])
+        with mock.patch.object(A, "CHANGES_MAX", 3):
+            for text in ("Steuerberater im Januar anrufen", "Nebenkosten im März prüfen"):
+                self.a.memory_do({"action": "add", "text": text})
+            for q in ("Abgeltungsteuer", "Kapitalertragsteuer", "Solidaritätszuschlag", "Kirchensteuer", "Sparerpauschbetrag"):
+                self.lookup(q)
+        got = self.a.changes()
+        self.assertEqual([c["title"] for c in got if c["kind"] == "web"], ["Sparerpauschbetrag", "Kirchensteuer", "Solidaritätszuschlag"])      # the latest lookups
+        self.assertEqual([c["title"] for c in got if c["kind"] == "balances"], ["Depot"])                  # the change stays
+        self.assertEqual(len([c for c in got if c["kind"] == "memory"]), 2)
 
 if __name__ == "__main__":
     unittest.main()

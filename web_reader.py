@@ -77,13 +77,35 @@ def public(host: str) -> str:
     ips = []
     for info in infos:
         ip = ipaddress.ip_address(str(info[4][0]).split("%")[0])
-        mapped = ip.ipv4_mapped if ip.version == 6 else None
-        if not ip.is_global or ip.is_multicast or (mapped is not None and (not mapped.is_global or mapped.is_multicast)):
+        if not global_address(ip):
             raise Refused("private")
         ips.append(str(ip))
     if not ips:
         raise Refused("dns")
     return ips[0]
+
+
+NAT64 = ipaddress.ip_network("64:ff9b::/96")             # an IPv4 address reached through a translator (RFC 6052): its last 32 bits
+NAT64_LOCAL = ipaddress.ip_network("64:ff9b:1::/48")     # the same inside one network (RFC 8215): never the internet
+
+
+def inner_addresses(ip) -> list:
+    """The IPv4 addresses an IPv6 address carries inside it -- where a connection to it ends up: mapped (::ffff:a.b.c.d),
+    the old compatible form (::a.b.c.d), through a translator (64:ff9b::a.b.c.d), 6to4 (2002:...), Teredo."""
+    if ip.version != 6:
+        return []
+    inner = [ip.ipv4_mapped, ip.sixtofour] + list(ip.teredo or ())
+    if int(ip) >> 32 == 0 or ip in NAT64:
+        inner.append(ipaddress.IPv4Address(int(ip) & 0xFFFFFFFF))
+    return [x for x in inner if x is not None]
+
+
+def global_address(ip) -> bool:
+    """Is this an address of the internet -- itself and every IPv4 address inside it (not this machine, not the local
+    network, not Tailscale, nothing reserved, no multicast)?"""
+    if not ip.is_global or ip.is_multicast or (ip.version == 6 and ip in NAT64_LOCAL):
+        return False
+    return all(x.is_global and not x.is_multicast for x in inner_addresses(ip))
 
 
 class Redirect(urllib.request.HTTPRedirectHandler):

@@ -396,6 +396,25 @@ class RandomWorlds(unittest.TestCase):
             w.add("Privat", "paypal", date(2026, 1, 1) + timedelta(later), -12.5, cat="Umbuchung", name="PayPal")
         self.check(w, w.datasets(), "friend between two top-ups")
         self.assertEqual(rows(data, "Delta GmbH"), {"Einlagen/Entnahmen Gesellschafter": 12.5, "Einlage/Entnahme Privat / Darlehen von Privat": 12.5})
+        # 250 from the partner by transfer and 250 in cash on one day, both booked by hand on "Darlehen von Partnerin": one booking
+        # is kept for her transfer, the other pairs with the cash by amount -- two loans taken up (3.16.58 to 3.16.99 kept both:
+        # the cash became income "without category", the second booking a change in value)
+        for cat in ("", "Umbuchung"):
+            w = World(0, ["Privat", "Partnerin"])
+            w.account("Privat", "dar:Partnerin", "Darlehen von Partnerin", "liabilities")
+            w.add("Privat", "bank", d, 250.0, iban=w.iban("Partnerin"), purpose="Darlehen", cat=cat)
+            w.add("Partnerin", "bank", d, -250.0, iban=w.iban("Privat"), purpose="Darlehen")
+            w.add("Privat", "bank", d, 250.0, name="Bareinzahlung", cat=cat)
+            w.add("Privat", "dar:Partnerin", d, -250.0, purpose="Darlehen Partnerin"); w.add("Privat", "dar:Partnerin", d, -250.0, purpose="Darlehen Partnerin bar")
+            data = w.datasets(); self.check(w, data, "transfer and cash on one day (%s)" % (cat or "no category"))
+            self.assertEqual(rows(data, "Privat"), {"Darlehen von Partnerin / Aufnahme": 250.0, "Einlage/Entnahme Partnerin / Darlehen von Partnerin / Aufnahme": 250.0}, cat)
+        # ... and only one payment, from her, beside two bookings on one day: one of them is hers, the other stays what it is
+        # (a change in value of that account -- nothing to pair it with)
+        w = World(0, ["Privat", "Partnerin"])
+        w.account("Privat", "dar:Partnerin", "Darlehen von Partnerin", "liabilities")
+        w.add("Privat", "bank", d, 250.0, iban=w.iban("Partnerin"), purpose="Darlehen"); w.add("Partnerin", "bank", d, -250.0, iban=w.iban("Privat"), purpose="Darlehen")
+        w.add("Privat", "dar:Partnerin", d, -250.0, purpose="Darlehen Partnerin"); w.add("Privat", "dar:Partnerin", d, -250.0, purpose="Darlehen Partnerin")
+        self.assertEqual(rows(w.datasets(), "Privat"), {"Einlage/Entnahme Partnerin / Darlehen von Partnerin / Aufnahme": 250.0, "Darlehen von Partnerin": -250.0})
 
     def test_random_worlds(self):
         for seed in F.fuzz_seeds("Welten"):
@@ -433,6 +452,14 @@ def loan(w, a, b, d, lag, x):
     w.add(b, "bank", later, x, iban=w.iban(a), purpose="Darlehen"); w.add(b, "dar:" + a, later, -x, purpose="Darlehen " + a)
 
 
+def loan_and_cash(w, a, b, d, lag, x):
+    """Lent by transfer and the same amount again in cash on the day it arrived -- both booked by hand on the loan: two loans
+    taken up, not income "without category" and a change in value (3.16.58 kept both bookings for the one transfer)."""
+    loan(w, a, b, d, lag, x)
+    later = min(d + timedelta(lag), TODAY)
+    w.add(b, "bank", later, x, name="Bareinzahlung"); w.add(b, "dar:" + a, later, -x, purpose="Darlehen " + a + " bar")
+
+
 EDGES = {
     "ein Cent": lambda w, a, b, d, lag: transfer(w, a, b, d, lag, 0.01),
     "fast 100 Mio.": lambda w, a, b, d, lag: transfer(w, a, b, d, lag, 99999999.99, cat="Umbuchung"),
@@ -441,6 +468,9 @@ EDGES = {
     "hin und zurück am selben Tag": lambda w, a, b, d, lag: [transfer(w, a, b, d, 0, 400.0), transfer(w, b, a, d, 0, 400.0)],
     "Darlehen, am selben Tag zurück": lambda w, a, b, d, lag: [loan(w, a, b, d, lag, 3000.0), loan(w, b, a, d, lag, 3000.0)],
     "Darlehen über einen Cent": lambda w, a, b, d, lag: loan(w, a, b, d, lag, 0.01),
+    "Darlehen überwiesen und bar am selben Tag": lambda w, a, b, d, lag: loan_and_cash(w, a, b, d, lag, 250.0),
+    "Darlehen überwiesen und bar, beides Umbuchung": lambda w, a, b, d, lag: [
+        loan(w, a, b, d, 0, 250.0), w.add(b, "bank", d, 250.0, name="Bareinzahlung", cat="Umbuchung"), w.add(b, "dar:" + a, d, -250.0, purpose="Darlehen " + a + " bar")],
 }
 
 

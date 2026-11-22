@@ -237,6 +237,51 @@ class Flow(_Web):
             evs = self.ask("call web_search %s" % json.dumps({"source": "wikipedia", "query": "Bilanz " + area}))
             self.assertIn("Refused by Kontor", TA.text_of(evs))
 
+    def test_what_the_model_can_read_never_goes_out(self):
+        """Figures the model reads in Kontor's report -- typed into a property's calculation, planned -- are refused like the
+        amount of a transaction, a day in "from" too; Kontor's own words for a position block nothing, a search with a year goes."""
+        self.own()                                                 # (Kontor is done reading and rebuilding)
+        T = TA.T
+        code, r = self.call("/api/properties", {"action": "create", "name": "Parkweg", "area": T.F.uid("ga"), "category": "Vermietung \\ Parkweg"})
+        inputs = dict(T.GA_EINGABEN, rent=dict(T.GA_EINGABEN["rent"], net_rent_month=9137))
+        self.call("/api/properties", {"action": "calc_save", "id": r["property"]["id"], "calc": {"name": "Basis", "inputs": inputs}})
+        self.app.rebuild_report(wait=True)
+        area = T.F.uid("priv")
+        months = self.app.dataset()["areas"][area]["plan_months"]
+        MA.plan_update(self.app, {"area": area, "event": {"text": "Auto", "month": months[2], "amount": 4319, "kind": "expense"}})
+        MA.plan_update(self.app, {"area": area, "row": "expenses/Wohnen", "month": months[3], "value": -1723})
+        booked = {int(round(abs(t.amount) * 100)) for t in self.app.ledger.txs}
+        self.assertFalse({913700, 431900, 172300} & booked)        # none of them is the amount of a transaction
+        own = self.a._own()
+        for q in ("Miete 9137 Euro", "Auto 4319", "Wohnen 1723 Euro"):
+            self.assertEqual(W.privacy_problem(q, own), "it contains an amount from the user's own data", q)
+            evs = self.ask("call web_search %s" % json.dumps({"searches": [{"source": "wikipedia", "query": q}]}))
+            self.assertFalse(any(e["type"] == "web" for e in evs), q)
+            self.assertIn("Refused by Kontor, nothing was sent", TA.text_of(evs), q)
+        costs = self.app.dataset()["real_estate"][0]["figures"]["closing_costs"]          # a result of the calculation
+        self.assertTrue(W.privacy_problem("/x/%s" % ("%.2f" % costs).replace(".", ","), own, strict=False))
+        # what waits for approval and balances typed in (state.json): the model reads them too
+        st = self.app.store.load("state.json", {})
+        st["last_run"] = dict(st.get("last_run") or {}, proposals=[{"amount": -5281.37, "counterparty": "Zahnarztpraxis Okonkwo", "account_name": "Giro"}])
+        st.setdefault("history", {})[T.F.uid("priv.giro")] = {"2024-03": 61873.25}
+        self.app.store.save("state.json", st)
+        own = self.a._own()
+        for q in ("Rechnung 5281,37", "Zahnarztpraxis Okonkwo Bewertung", "Stand 61873,25"):
+            self.assertTrue(W.privacy_problem(q, own), q)
+        evs = self.ask("call web_search %s" % json.dumps({"searches": [{"source": "ecb", "query": "EXR/M.USD.EUR.SP00.A", "from": "1990-11-21"}]}))
+        self.assertFalse(any(e["type"] == "web" for e in evs))
+        self.assertIn("no day", TA.text_of(evs))
+        self.assertEqual(self.fake.calls, [])
+        # ordinary searches: a year that is no amount of the user's, Kontor's own words for a position
+        for y in range(2015, 2036):
+            if y * 100 not in booked:
+                self.assertEqual(W.privacy_problem("Steuersätze %d" % y, own), "", y)
+        self.assertGreater(len([y for y in range(2015, 2036) if y * 100 not in booked]), 15)
+        for q in ("Abgeltungsteuer Wertpapiere", "Bankguthaben Einlagensicherung", "§ 7 EStG", "Zinsentwicklung EZB 2024", "Schmidt und Partner GmbH Insolvenz"):
+            self.assertEqual(W.privacy_problem(q, own), "", q)
+        job, card, evs = self.search({"searches": [{"source": "wikipedia", "query": "Steuersätze 2025"}]})
+        self.assertEqual(([it["query"] for it in card["items"]], len(self.fake.calls)), (["Steuersätze 2025"], 1))
+
     def test_own_data_never_goes_out_to_the_new_sources(self):
         """The same check for every source: a name, an amount or an IBAN of the user's is refused before the card -- also in a
         series key or in the words that only pick a feed's items -- and no request goes out."""
@@ -1048,10 +1093,10 @@ class Browser(unittest.TestCase):
             self.skipTest("playwright fehlt")
         import threading
         from http.server import ThreadingHTTPServer
-        from storage import Store, load_or_create_master_key
+        from fixtures import new_store
         T = TA.T
         d = tempfile.mkdtemp(prefix="kontor-asweb-")
-        store = Store(d, *load_or_create_master_key(d))
+        store = new_store(d)
         store.save("config.json", T.config_for_test(os.path.join(d, "Belege"))); store.save("state.json", dict(T.ALL_NEW))
         T.reset_mock(); T.patch_today()
         app = MA.App(store, d, bridge_factory=T.MockBridge)
@@ -1334,6 +1379,26 @@ class NewSources(unittest.TestCase):
             with self.assertRaises(W.WebError, msg=(src, a)):
                 W.prepare(src, a, lang="de")
 
+    def test_from_is_a_year_or_a_month_never_a_day(self):
+        """"from" goes into the address: a year or a month only -- a day (a date could be one of the user's) is refused, as it
+        is among the search words; its year is checked against the user's amounts like any number."""
+        none = {"phrases": set(), "words": set(), "ibans": set(), "amounts": set()}
+        series = (("ecb", "EXR/M.USD.EUR.SP00.A"), ("bundesbank", "BBEX3/D.USD.EUR.BB.AC.000"), ("bis", "WS_CBPOL/D.XM"),
+                  ("oecd", "OECD.SDD.STES,DSD_STES@DF_CLI,4.1/DEU.M.LI...AA...H"), ("worldbank", "DEU/NY.GDP.MKTP.KD.ZG"), ("eurostat", "prc_hicp_manr"))
+        for src, q in series:
+            for bad in ("1990-11-21", "21.11.1990", "1990-11-21T00:00", "2020-13", "2020-1", "199011", "1990/11", "90", "seit 2020", 19901121):
+                with self.assertRaises(W.WebError, msg=(src, bad)):
+                    W.prepare(src, {"query": q, "from": bad}, "de")
+            for good in ("2020", "2020-03", 2021, " 2019 "):
+                p = W.prepare(src, {"query": q, "from": good}, "de")
+                self.assertIn(str(good).strip()[:4], p["url"].split("?", 1)[1], (src, good))
+                self.assertNotRegex(p["url"], r"(19|20)\d\d-\d\d-\d\d", (src, good))
+                self.assertEqual(W.privacy_problem(p["check"], none, source=src), "", (src, good))
+                self.assertTrue(W.privacy_problem(p["check"], dict(none, amounts={int(str(good).strip()[:4]) * 100}), source=src), (src, good))      # exactly an amount of the user's
+            for empty in ("", None, False):
+                self.assertIn("last", W.prepare(src, {"query": q, "from": empty}, "de")["url"].split("?", 1)[1].lower().replace("mrv", "last"), (src, empty))
+        self.assertIn("startPeriod=2020-03&", W.prepare("ecb", {"query": "EXR/M.USD.EUR.SP00.A", "from": "2020-03"}, "de")["url"] + "&")
+
     def test_ris(self):
         ans = ok({"member": [{"item": {"@type": "Decision", "@id": "/v1/case-law/STRE202612345", "headline": "Abfindung als Arbeitslohn", "courtName": "BFH",
                                        "decisionDate": "2026-03-04", "fileNumbers": ["IX R 1/25"], "ecli": "ECLI:DE:BFH:2026:U.040326.IXR1.25.0",
@@ -1516,6 +1581,29 @@ class Reader(unittest.TestCase):
         finally:
             socket.getaddrinfo = real
 
+    def test_no_private_ipv4_inside_an_ipv6_address(self):
+        """An IPv6 address that carries an IPv4 address of this machine or of the local network inside it (through a translator,
+        in the old compatible form, mapped, 6to4): refused like that address itself."""
+        import ipaddress
+        real = socket.getaddrinfo
+        answer = lambda *ips: (lambda *a, **k: [(socket.AF_INET6 if ":" in ip else socket.AF_INET, socket.SOCK_STREAM, 6, "", (ip, 443)) for ip in ips])
+        try:
+            for ip in ("64:ff9b::c0a8:101", "64:ff9b::7f00:1", "64:ff9b::a00:5", "64:ff9b::6440:102", "64:ff9b::a9fe:a9fe", "64:ff9b:1::5db8:d822", "::127.0.0.1", "::192.168.1.1",
+                       "::10.0.0.5", "::ffff:10.0.0.5", "::ffff:127.0.0.1", "2002:c0a8:101::1", "2002:7f00:1::1", "::", "::1"):
+                for ips in ((ip,), ("93.184.216.34", ip)):               # (one such address among good ones is enough)
+                    socket.getaddrinfo = answer(*ips)
+                    with self.assertRaises(R.Refused, msg=ips):
+                        R.public("example.org")
+            socket.getaddrinfo = answer("64:ff9b::c0a8:101")
+            self.assertEqual(R.handle(dict(self.req(), _check=R.public), lambda r, timeout: self.Resp(b"{}"))["error"], "private")
+            for ip in ("64:ff9b::5db8:d822", "2606:2800:220:1:248:1893:25c8:1946", "93.184.216.34"):      # a public address, also behind a translator (an IPv6-only network): as before
+                socket.getaddrinfo = answer(ip)
+                self.assertEqual(R.public("example.org"), ip)
+        finally:
+            socket.getaddrinfo = real
+        self.assertEqual([str(x) for x in R.inner_addresses(ipaddress.ip_address("64:ff9b::c0a8:101"))], ["192.168.1.1"])
+        self.assertEqual(R.inner_addresses(ipaddress.ip_address("192.168.1.1")), [])
+
     def test_pinned_connection(self):
         """The connection goes to the address that was checked (no second lookup), the certificate is checked for the name."""
         import shutil
@@ -1671,6 +1759,9 @@ class Reader(unittest.TestCase):
         self.assertIn('(deny file-read* (subpath "/Users/x") (subpath "/Users/x/Library/Application Support/Kontor"))', lines)
         self.assertEqual(lines[-2], '(deny file-read* (subpath "/Users/x/Library/Application Support/Kontor"))')          # Kontor's data: never, whatever is allowed before
         self.assertIn("(deny appleevent-send)", lines)
+        allow = next(i for i, x in enumerate(lines) if x.startswith("(allow file-write*"))       # writes: never into Kontor's temporary folders, nor the compilers' modules
+        self.assertGreater(lines.index('(deny file-write* (regex #"/kontor-[^/]*(/|$)"))'), allow)
+        self.assertGreater(next(i for i, x in enumerate(lines) if "clang|org" in x and x.startswith("(deny file-write*")), allow)
         exe = W.python_exe()
         execs = next(x for x in lines if x.startswith("(allow process-exec*"))
         self.assertTrue(execs.startswith("(allow process-exec* (literal %s)" % json.dumps(exe)))       # only Python itself (and its app bundle)
@@ -1761,9 +1852,11 @@ class Privacy(unittest.TestCase):
                "real_estate": [{"name": "Lindenweg 3", "notes": "Mieter Kowalski zahlt pünktlich", "property_account": "u9 | Mietkonto Lindenweg",
                                 "calcs": [{"id": "k1", "name": "Kalkulation Sonnenhof", "inputs": {"name": "Sonnenhof", "partners": [{"name": "Hanna Beispielfrau"}],
                                                                                                   "loans": [{"name": "Darlehen Kastanienallee", "account": "u7 | Annuitaet Kastanie"}]}}]}],
-               "loans": [{"name": "Darlehen Birkenhof", "loan_account": "u5 | Kredit Birkenhof", "source_accounts": ["u1 | Erika Girokonto"], "counterparty": "Bankhaus Lindgruen"}],
+               "loans": [{"name": "Darlehen Birkenhof", "loan_account": "u5 | Kredit Birkenhof", "source_accounts": ["u1 | Erika Girokonto"], "from_date": "2026-01-01",
+                          "booking": {"counterparty": "Bankhaus Lindgruen"}}],
                "companies": [{"area": "b2", "participation": "u6 | Anteil Nordlicht", "counterparty": "Nordlicht Beteiligungen"}],
-               "account_mirrors": [{"name": "Spiegel Tannenhof", "account": "u8 | Treuhand Tannenhof"}]}
+               "account_mirrors": [{"a": "u8 | Treuhand Tannenhof", "b": "u9 | Mietkonto Lindenweg", "from_date": "2026-01-01"}]}
+        cfg = __import__("core").merged_config(cfg)                # (the rules as Kontor keeps them, not as a test names them)
         idx = W.own_index(led, cfg, {}, [], [{"path": "Hobby / Segelclub Albatros"}, {"name": "Lebensmittel"}])
         self.assertFalse(idx["empty"])
         for q in ("Erika", "beispiel", "Musterhaus Verwaltung", "Beispiel Holding", "Lindenweg 3", "Kowalski", "Sonnenhof Rendite", "Beispielfrau",
@@ -1783,6 +1876,162 @@ class Privacy(unittest.TestCase):
             self.assertTrue(W.privacy_problem(q, idx), q)
         self.assertEqual(W.privacy_problem("Kranich Zug", idx), "")                 # a counterparty's single word: free
         self.assertTrue(W.own_index(None, {}, {"empty": True}, [])["empty"])        # nothing known at all
+
+    # -- what a second look at the filter found (3.16.99): each of these went out before --------------------------------------
+    @staticmethod
+    def world(names=(), amounts=(), owner="Max Mustermann"):
+        """A made-up ledger: one account of this owner, a transaction per counterparty and per amount."""
+        import model
+        d = __import__("datetime").date(2026, 1, 2)
+        txs = [model.Tx(id=i + 1, account_uuid="u1", booking_date=d, value_date=None, amount=-10.0 - i, currency="EUR", name=n) for i, n in enumerate(names)]
+        txs += [model.Tx(id=100 + i, account_uuid="u1", booking_date=d, value_date=None, amount=a, currency="EUR", name="Werkstatt Quittenbaum") for i, a in enumerate(amounts)]
+        acc = model.Account(uuid="u1", name="Girokonto", type="giro", group=False, indentation=0, balance=0.0, currency="EUR", owner=owner)
+        return model.Ledger({"u1": acc}, txs)
+
+    def test_names_with_und_or_a_legal_form_in_the_middle(self):
+        """A name is compared the same way on both sides: "und", "&", "e.V.", "Co." and the legal form count neither in your
+        data nor in the search -- so the name as it is written is refused, not only its bare words."""
+        idx = W.own_index(self.world(("Müller und Söhne GmbH", "Haus & Grund e.V. Nordstadt", "Kanzlei Sommer & Co. Steuerberater")), {"areas": [{"name": "Hof und Gut GbR"}]}, {})
+        for q in ("Müller und Söhne GmbH Insolvenz", "Müller Söhne", "Mueller & Soehne", "mueller-und-soehne", "MÜLLER UND SÖHNE", "Müller u. Söhne", "Mueller and Soehne", "Haus & Grund e.V. Nordstadt",
+                  "Haus und Grund Nordstadt Beitrag", "Kanzlei Sommer & Co. Steuerberater", "Kanzlei Sommer Steuerberater Bewertung", "Hof und Gut GbR", "Hof & Gut", "Hofgut",
+                  "Muster e mann", "Max und Mustermann", "M u s t e r m a n n"):
+            self.assertTrue(W.privacy_problem(q, idx), q)
+        self.assertTrue(W.privacy_problem("/firmen/mueller-und-soehne-gmbh-80331-muenchen", idx, strict=False))       # in a result's address too
+        # other names with the same small words: free
+        for q in ("Schmidt und Partner GmbH Insolvenz", "Ernst & Young GmbH Bewertung", "Haus und Garten Steuer", "Grund und Boden Bewertung", "GmbH & Co. KG Besteuerung",
+                  "Verein e.V. Gemeinnützigkeit", "Sommer und Winter Reifen", "Müller Milch", "Kanzlei Steuerberater Kosten"):
+            self.assertEqual(W.privacy_problem(q, idx), "", q)
+
+    def test_rules_as_kontor_keeps_them(self):
+        """The index reads the booking rules by the names Kontor saves them under (core.merged_config): a loan's counterparty
+        and what it looks for in a booking, both accounts of a mirror."""
+        import core
+        cfg = core.merged_config({
+            "areas": [{"name": "Privat"}],
+            "loans": [{"name": "Darlehen Erlengrund", "loan_account": "u5 | Kredit Erlengrund", "source_accounts": ["u1 | Girokonto"], "from_date": "2026-01-01",
+                       "detection": {"text_contains": ["Abschlag Quittenhain", "Vertrag SF-2291X"], "exclude_text": "Sonderzahlung Birkenmoor", "counter_iban": ["DE02 1203 0000 0000 2020 51"]},
+                       "booking": {"counterparty": "Hildegard Sommerfeld", "category_interest": "Zinsen Tantendarlehen", "repayment_text": "Tilgung {date} · Vertrag VTR7Q2K9 · {tag}"},
+                       "interest": {"base_override": {"2026": 118300}}}],
+            "companies": [{"area": "b1", "participation": "u6 | Anteil Nordlicht", "counterparty": "Nordlicht Beteiligungen", "category": "Wertanpassung Polarstern"}],
+            "account_mirrors": [{"a": "u8 | Treuhand Tannenhof", "b": "u9 | Mietkonto Lindenweg", "from_date": "2026-01-01", "category": "Spiegelung Seerose"}]})
+        loan, mirror = cfg["loans"][0], cfg["account_mirrors"][0]
+        self.assertEqual((loan["booking"]["counterparty"], loan["detection"]["text_contains"][0], mirror["a"], mirror["b"]),
+                         ("Hildegard Sommerfeld", "Abschlag Quittenhain", "u8 | Treuhand Tannenhof", "u9 | Mietkonto Lindenweg"))       # (as Kontor keeps them)
+        idx = W.own_index(None, cfg, {})
+        for q in ("Hildegard Sommerfeld", "Bonität Hildegard Sommerfeld", "Treuhand Tannenhof", "Tannenhof", "Mietkonto Lindenweg", "Lindenweg", "Abschlag Quittenhain",
+                  "Vertrag SF-2291X", "2291X", "Sonderzahlung Birkenmoor", "Zinsen Tantendarlehen", "Nordlicht Beteiligungen", "Wertanpassung Polarstern", "Spiegelung Seerose",
+                  "Erlengrund", "Zinsbasis 118300", "Vertrag VTR7Q2K9"):
+            self.assertTrue(W.privacy_problem(q, idx), q)
+        self.assertIn("DE02120300000000202051", idx["ibans"])
+        for q in ("Hildegard von Bingen", "Sommerfeld Physiker", "Abschlag Stromrechnung", "Sonderzahlung Steuer"):       # a counterparty as a whole, never word by word
+            self.assertEqual(W.privacy_problem(q, idx), "", q)
+
+    def test_an_amount_that_looks_like_a_year_or_has_one_decimal(self):
+        idx = W.own_index(self.world(amounts=(1950.0, -234.5, 2024.0, 7.5)), {}, {})
+        for q in ("Gehalt 1950 Euro netto", "Gehalt 1950", "Rente 1950 2025", "1950-2025", "Rente 1.950", "1 950 Euro", "1'950", "19/50", "1950 12", "EUR1950",
+                  "234,5", "Strom 234,5 kWh", "234.5", "Steuern 2024", "Vergleich 2023 2024"):
+            self.assertTrue(W.privacy_problem(q, idx), q)
+        self.assertEqual(W.privacy_problem("Gehalt 1950 Euro netto", idx), "it contains an amount from the user's own data")
+        self.assertTrue(W.privacy_problem("/tarif-234,5-kwh", idx, strict=False))            # written with a decimal: in a result's address too
+        self.assertEqual(W.privacy_problem("/archiv/1950/zinsen", idx, strict=False), "")     # ... a bare number there is the source's own
+        # a real year that is no amount of the user's, and other numbers: free
+        for q in ("Steuersätze 2025", "Inflation 2020-2025", "Rente 1951", "Leitzins 4,5 %", "Leitzins 7,5 %", "Strom 234 kWh", "Haushaltsjahr 2025/26", "Grundsteuer 2025 Hebesatz 490 Prozent"):
+            self.assertEqual(W.privacy_problem(q, idx), "", q)
+
+    def test_figures_of_calculations_planning_and_waiting_bookings(self):
+        """Whatever the model can read is in the index: what you typed into a calculation, its results, the planning, the tax
+        overview, depots -- and what is handed over beside it (bookings that wait). Years, counts and rates there block nothing."""
+        import core
+        cfg = core.merged_config({
+            "areas": [{"name": "Privat"}],
+            "real_estate": [{"name": "Lindenweg 3", "calcs": [{"name": "Basis", "inputs": {
+                "purchase_price": 385000, "area_sqm": 118, "horizon_years": 25, "sale": {"year": 2046, "costs_percent": 3},
+                "rent": {"net_rent_month": 1450, "utilities_month": "310,00", "index": {"cpi_base": 122.7}},
+                "loans": [{"name": "Bank", "amount": 300000, "interest_percent": 3.6, "annuity_month": 1375}], "partners": [{"name": "A", "share_percent": 100, "tax_rate_percent": 420}]}}]}],
+            "tax": {"depreciation": {"Lindenweg 3": {"2026": 6160}}}})
+        ds = {"areas": {"a": {"plan": {"horizon_months": 240, "events": [{"text": "Auto", "month": "2027-02", "amount": 5200.0}], "rows": {"expenses/Wohnen": {"amounts": {"2027-03": -1700.0}}}},
+                              "balance": {"projection": {"net_worth": {"2027-12": 141000.0}}, "rows": [{"id": "pos:securities", "name": "Wertpapiere", "group": True, "count": 317, "amounts": {"2026-10": 8840.0}},
+                                                                                                    {"id": "transit", "name": "Geld unterwegs", "transit": True, "amounts": {"2026-10": 0.0}}]},
+                              "cashflow": {"sections": [{"rows": [{"n": {"2026-01": 480}, "ord": 610, "plan": {"amounts": {"2027-01": -2300.0}, "increase_percent_pa": 200.0}}]}],
+                                           "sums": {"2026-01": {"income": 4100, "expenses": -3120.5}}},
+                              "figures": {"runway_months": 130.0, "saving_rate": 0.31, "expenses_month": 2890.0}}},
+              "real_estate": [{"name": "Lindenweg 3", "figures": {"equity": 9500.0, "exit_year": 2046, "debt_service_month": 1375.0, "ltv": 0.78, "closing_costs": 31762.5},
+                               "years": [{"year": 2027, "rent": 17400.0, "months": 12, "cashflow": 913.0}]}],
+              "tax": {"years": [2024, 2025, 2026], "entities": [{"share": 1.0, "years": {"2025": {"sum_income": 58210.0, "positions": {"Anlage N": {"amount": 4470.0, "categories": [{"amount": 4470.0, "count": 260}]}}}}}]},
+              "categories": {"total": {"without": 317, "moneymoney": 2025}}, "area_info": {"a": {"account_count": 140}},
+              "depots": [{"sum": 4321.0, "positions": [{"quantity": 150.0, "price": 245.0, "value": 3675.0}]}]}
+        waiting = [{"amount": 612.0, "counterparty": "Verkäufer Quittenbaum", "account_name": "Darlehen Erlengrund", "text": "Zinsen 2026 · Vertrag ZK-77140"}]
+        idx = W.own_index(None, cfg, ds, more=waiting)
+        for q in ("Miete 1450 Euro", "Eigenkapital 9500", "Nebenkosten 310 Euro", "Rate 1375", "Auto 5200 Euro", "Wohnen 1700", "Ausgaben 2300", "Ausgaben 2890 im Monat", "AfA 6160",
+                  "Depot 4321", "Wert 3675", "Überschuss 913", "Werbungskosten 4470", "Einnahmen 4100", "Wertpapiere 8840", "Zinsen 612 Euro", "Verkäufer Quittenbaum", "Erlengrund", "ZK-77140"):
+            self.assertTrue(W.privacy_problem(q, idx), q)
+        self.assertTrue(W.privacy_problem("/x-31762,50", idx, strict=False))                  # a result of the calculation, with its cents
+        self.assertTrue(W.privacy_problem("/x-3120,5", idx, strict=False))
+        for q in ("Steuersätze 2025", "Mietspiegel 2027", "Verkauf 2046", "Prognose 2024 2026", "Zinsbindung 240 Monate", "317 Urteile", "150 Aktien", "Kurs 245", "118 qm Wohnung",
+                  "480 Buchungen", "610", "130 Monate", "Index 122,7", "Faktor 200", "Grenzsteuersatz 420", "140 Konten", "260 Fälle", "Abgeltungsteuer Wertpapiere", "Geldanlage unterwegs"):
+            self.assertEqual(W.privacy_problem(q, idx), "", q)
+        self.assertFalse({"wertpapiere", "geld", "unterwegs"} & (idx["words"] | idx["phrases"]))      # Kontor's own words for a position: no name of the user's
+
+    def test_only_plain_writing_goes_out(self):
+        """Letters that only look like Latin ones, characters written as %XX, blanks that are no space, digits set apart by
+        signs: refused -- only the Latin alphabet with the accented letters of European names goes out, compared as plain letters."""
+        idx = W.own_index(self.world(amounts=(1234.56,), owner="Max Mustermann"), {}, {})
+        for q in ("\u1d0dustermann", "Musterm\u0251nn", "\U0001f17custermann", "\U0001f13custermann", "\u24c2ustermann", "\uff2dustermann", "\U0001d40custermann",
+                  "Mu\ua731termann", "Musterma\u0274n", "M\u1d1cstermann", "\u2133ustermann", "Mustermann\u2122", "M%75stermann", "M%2575stermann", "%4d%75%73%74%65%72%6d%61%6e%6e",
+                  "Muster\u2800mann", "Zins\u2800senkung", "Zins\u3164satz", "Zins\u200bsatz", "Zins\U000e0041satz", "12_345_678", "1/2/3/4/5/6", "1 % 2 % 3 % 4 % 5 %",
+                  "12:34:56", "1(2)3(4)5", "1|2|3|4|5", "\uff11\uff12\uff13\uff14\uff15", "1\u00b22\u00b33", "12\u2074\u2075\u2076", "\u2460\u2461\u2462", "Zins \u2665", "\u0661\u0662\u0663"):
+            self.assertTrue(W.privacy_problem(q, idx), ascii(q))
+            self.assertTrue(W.privacy_problem(q, self.NONE), ascii(q))                       # refused for how it is written, whatever is known of the user
+        self.assertIn("another alphabet", W.privacy_problem("\u1d0dustermann", self.NONE))
+        self.assertIn("%XX", W.privacy_problem("M%75stermann", self.NONE))
+        for q in ("Zins\u2800senkung", "Zins\u3164satz", "Zins\U000e0041satz"):               # a blank that is no space: the card could not show it
+            with self.assertRaises(W.WebError, msg=ascii(q)):
+                W._q(q)
+        # the address of a result: what it writes as %XX is read as the characters it stands for
+        for q in ("/person/M%75stermann", "/person/M%2575stermann", "/person/\u1d0dustermann", "/x/1.234%2C56", "/x/Max%20Mustermann", "/person/M%FCstermann"):
+            self.assertTrue(W.privacy_problem(q, idx, strict=False), ascii(q))
+        for q in ("/artikel/zins%20wende-2024", "/wiki/100%25_Finanzierung", "/a/K%C3%B6ln", "/suche?q=50%ige+L%C3%B6sung"):
+            self.assertEqual(W.privacy_problem(q, idx, strict=False), "", q)
+        # every letter that may go out is compared as its plain letter -- an accent hides no name
+        for c in sorted(W._LETTERS):
+            self.assertRegex(W._fold("x%sy" % c), r"^[a-z]+$", hex(ord(c)))
+            self.assertEqual(W._not_plain("x%sy" % c), "", hex(ord(c)))
+        other = W.own_index(self.world(owner="Jørgen Østergård", names=("Łukasz Żółć Transporte",)), {}, {})
+        for q in ("Jørgen Østergård", "Jorgen Ostergard", "JORGEN", "Ostergards Firma", "Łukasz Żółć Transporte", "Lukasz Zolc Transporte", "lukasz-zolc-transporte"):
+            self.assertTrue(W.privacy_problem(q, other), q)
+        for q in ("Mústermann", "Mustermánn", "Mùstermañn", "MUSTERMANN", "Muſtermann", "Mustermanns Bilanz"):
+            self.assertTrue(W.privacy_problem(q, idx), q)
+
+    def test_names_written_another_way(self):
+        """A name also counts written without the dots of ä/ö/ü (Muller for Müller, and the other way round), with digits for
+        letters (Must3rmann) and backwards (nnamretsuM) -- the last ones only for names of six letters or more, so that a short
+        name does not end the search for a common word (Schön: "schon", Nebel: "Leben")."""
+        idx = W.own_index(self.world(("Bäckerei Größer", "MULLER BAU", "Nebel", "Schön Optik"), owner="Jürgen Schäfer"),
+                          {"areas": [{"name": "Gräf"}]}, {}, categories=[{"path": "Gebühren"}, {"path": "Mobilität / Tanken"}])
+        for q in ("Jurgen Schafer", "Juergen Schaefer", "Schafer Insolvenz", "Jürgen", "Jurgen", "Backerei Grosser", "Müller Bau", "Mueller Bau", "Muller Bau", "Mobilitat Tanken",
+                  "Sch4fer", "Schäf3r", "5chäfer", "Jürg3n Sch4f3r", "Bäck3rei Größ3r", "refähcS", "refahcS nesiolvnI", "refähcS negrüJ"):
+            self.assertTrue(W.privacy_problem(q, idx), q)
+        self.assertTrue(W.privacy_problem("/firma/backerei-grosser", idx, strict=False))
+        # short names, Kontor's own words for a category, codes and figures with digits in them: as before
+        for q in ("Schon gewusst: Steuer 2025", "Leben Versicherung", "Regen Nebelwand", "Grafik Steuer", "Gebühren Girokonto", "Gebuhren Bank", "Mobilität Steuer",
+                  "Schonvermögen Bürgergeld", "Optik Kette", "B2B Rechnung", "G20 Gipfel", "4K Fernseher", "5G Netz", "Web3 Steuer", "CO2 Steuer 2026", "H2 Wasserstoff",
+                  "Q1/2025 BIP", "1A Lage", "Abschreibung 3D Drucker", "BBEX3/D.USD.EUR.BB.AC.000", "Riester 2.0", "Lager Regal", "Amortisation 15J"):
+            self.assertEqual(W.privacy_problem(q, idx), "", q)
+        self.assertFalse({"schon", "graf"} & (idx["words"] | idx["phrases"]))
+        self.assertEqual(W.privacy_problem("Web3 Recht", W.own_index(self.world(owner="Anna Weber"), {}, {})), "")      # (not "Weber Echt": a short name read another way)
+        self.assertNotIn("gebuhren", idx["phrases"])                     # a word that names a kind of thing: not even without its dots
+
+    def test_ordinary_searches_still_go(self):
+        idx = W.own_index(self.world(("Müller und Söhne GmbH", "Techniker Krankenkasse"), amounts=(1950.0, -234.5, 850.0)), {"areas": [{"name": "Hof und Gut GbR"}]}, {})
+        for q in ("Steuersätze 2025", "§ 7 EStG", "EStG § 7 Abs. 4 Satz 2", "Zinsentwicklung EZB 2024", "Schmidt und Partner GmbH", "Ernst & Young GmbH Wirtschaftsprüfung",
+                  "Bausparkasse Schwäbisch Hall AG & Co. KG", "Erbschaftsteuer Ägypten Café", "Kaufpreis pro m² München", "Leitzins 4,5 %", "Haushaltsjahr 2024/25",
+                  "Abgeltungsteuer 25 % 2025", "Umsatzsteuer 19 % / 7 %", "ISO 9001:2015", "Dvořák Škoda Łódź Erdoğan Çelik Ångström", "„Kalte Progression“ – Ausgleich 2026",
+                  "Q1/2025 BIP", "AfA 2 % / 2,5 % / 3 % Gebäude", "Grundfreibetrag 2024, 2025", "Körperschaftsteuer 15 % seit 2008", "§§ 20, 32d EStG", "Art. 6 Abs. 1 lit. f DSGVO",
+                  "EXR/M.USD.EUR.SP00.A", "BBEX3/D.USD.EUR.BB.AC.000", "FM/B.U2.EUR.4F.KR.MRR_FR.LEV", "OECD.SDD.STES,DSD_STES@DF_CLI,4.1/DEU.M.LI...AA...H", "prc_hicp_manr geo=DE",
+                  "DEU;FRA/NY.GDP.MKTP.KD.ZG", "WS_CBPOL/D.XM", "Was kostet ein Notar? (Hauskauf)", "Pendlerpauschale: 30 Cent/km", "Zins + Tilgung = Annuität", "100 % Finanzierung",
+                  "Rürup-Rente Höchstbetrag", "Riester’s Zulage", "Krankenkassenbeitrag 2026"):
+            self.assertEqual(W.privacy_problem(q, idx), "", q)
+            self.assertEqual(W.privacy_problem(q, self.NONE), "", q)
 
     def test_links_only_fixed_hosts(self):
         hits = [{"url": "https://de.wikipedia.org/wiki/A"}, {"url": "http://de.wikipedia.org/wiki/B"}, {"url": "https://evil.example/c"},

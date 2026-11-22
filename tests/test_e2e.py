@@ -31,7 +31,8 @@ import updates  # noqa: E402
 import changelog  # noqa: E402
 from service import App, make_handler  # noqa: E402
 from model import TAG_RE, Ledger, accounts_from_export, fmt_eur, tx_from_export  # noqa: E402
-from storage import Store, load_or_create_master_key  # noqa: E402
+from storage import Store  # noqa: E402
+from fixtures import new_store  # noqa: E402
 from tax import build_tax  # noqa: E402
 
 TODAY = date(2026, 11, 4)
@@ -196,8 +197,7 @@ def patch_today():
 class CoreTests(unittest.TestCase):
     def setUp(self):
         self.dir = tempfile.mkdtemp(prefix="kontor-test-")
-        key, src = load_or_create_master_key(self.dir)
-        self.store = Store(self.dir, key, src)
+        self.store = new_store(self.dir)
         self.store.save("config.json", config_for_test(os.path.join(self.dir, "Belege")))
         self.store.save("state.json", dict(ALL_NEW))
         reset_mock()
@@ -524,16 +524,14 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(new_cfg["loans"][0]["loan_account"].split(" | ")[0], F.uid("ga.vd"))
         self.assertEqual(len(new_cfg["companies"]), 2)
         # what Kontor may write into MoneyMoney without asking does not travel: not out, and not in (a package from elsewhere)
-        self.assertNotIn("dry_run", pkg["config"]); self.assertNotIn("write_comment", pkg["config"].get("receipts") or {})
-        loud = copy.deepcopy(pkg); loud["config"].update(dry_run=False, receipts={"write_comment": True, "subfolder": "{year}"})      # (an old package)
+        self.assertNotIn("dry_run", pkg["config"])
+        loud = copy.deepcopy(pkg); loud["config"].update(dry_run=False)
         for mode in ("merge", "replace"):
             got, _, _ = core.import_package(core.merged_config({"dry_run": True}), loud, led, mode)
-            self.assertEqual((got["dry_run"], "write_comment" in got["receipts"]), (True, False), mode)
+            self.assertTrue(got["dry_run"], mode)
             # ... and what you set here stays, also when a package replaces everything else
             got, _, _ = core.import_package(core.merged_config({"dry_run": False, "receipts": {"folder": "~/Belege", "folder_confirmed": True}}), pkg, led, mode)
             self.assertEqual((got["dry_run"], got["receipts"]["folder"], got["receipts"]["folder_confirmed"]), (False, "~/Belege", True), mode)
-        # the setting "Reference in MoneyMoney" is gone (22.11.2026): an old configuration's switch has no effect
-        self.assertNotIn("write_comment", core.merged_config({"receipts": {"write_comment": True}})["receipts"])
         # a number that is none in a file written by hand: the default, so the service starts
         self.assertEqual([core.merged_config({"ui": {"lock_minutes": v, "port": p}})["ui"][k] for v, p, k in
                           (("", 8765, "lock_minutes"), (True, 8765, "lock_minutes"), (0, 8765, "lock_minutes"), (20, 8765, "lock_minutes"), (15, "x", "port"), (15, 80, "port"), (15, 9000, "port"))],
@@ -935,8 +933,7 @@ class _AppBase(unittest.TestCase):
 
     def setUp(self):
         self.dir = tempfile.mkdtemp(prefix="kontor-app-")
-        key, src = load_or_create_master_key(self.dir)
-        self.store = Store(self.dir, key, src)
+        self.store = new_store(self.dir)
         self.belege = os.path.join(self.dir, "Belege")
         self.store.save("config.json", config_for_test(self.belege))
         self.store.save("state.json", dict(ALL_NEW))
@@ -1374,15 +1371,13 @@ class AppTests(_AppBase):
             # who gets in and how stay as set at the Mac -- whatever a page elsewhere sends (also one loaded before the Mac
             # changed them: it is not refused for it, the rest is saved)
             want = {k: self.app.config["ui"].get(k) for k in ("lock_minutes", "touchid", "offline_copy", "remote_read_only")}
-            for change in ({"ui": {"lock_minutes": 100000}}, {"ui": {"touchid": False}}, {"ui": {"offline_copy": True}}, {"ui": {"remote_read_only": True}},
-                           {"receipts": {"write_comment": True}}):          # (the last: gone, never kept)
+            for change in ({"ui": {"lock_minutes": 100000}}, {"ui": {"touchid": False}}, {"ui": {"offline_copy": True}}, {"ui": {"remote_read_only": True}}):
                 cfg = copy.deepcopy(self.app.config)
                 for k, v in change.items():
                     cfg[k] = dict(cfg.get(k) or {}, **v)
                 cfg.setdefault("schedule", {})["interval_minutes"] = 45
                 self.assertEqual(self.call("/api/config", {"config": cfg}, method="PUT")[0], 200, change)
                 self.assertEqual({k: self.app.config["ui"].get(k) for k in want}, want, change)
-                self.assertFalse(self.app.config["receipts"].get("write_comment"), change)
                 self.assertEqual(self.app.config["schedule"]["interval_minutes"], 45)
             runs = []; orig_run = self.app.do_run
             self.app.do_run = lambda dry, force, **kw: runs.append(dry)
@@ -2166,12 +2161,11 @@ class LoginTouchIdTest(unittest.TestCase):
             self.skipTest("playwright fehlt")
         import auth
         d = tempfile.mkdtemp(prefix="kontor-tid-")
-        key, src = load_or_create_master_key(d)
-        store = Store(d, key, src); store.save("config.json", config_for_test(os.path.join(d, "Belege")))
+        store = new_store(d); store.save("config.json", config_for_test(os.path.join(d, "Belege")))
         reset_mock(); patch_today()
         old_av, old_ver = auth.touchid_available, auth.touchid_verify
         auth.touchid_available = lambda: True
-        auth.touchid_verify = lambda reason=None: False          # Dialog abgebrochen
+        auth.touchid_verify = lambda reason=None, tid="": False          # Dialog abgebrochen
         app = App(store, d, bridge_factory=MockBridge)
         srv = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(app)); port = srv.server_address[1]
         threading.Thread(target=srv.serve_forever, daemon=True).start()
@@ -2345,12 +2339,12 @@ class DemoTests(_AppBase):
         self.assertTrue(any(f.endswith(".pdf") for f in self._files(d.data_dir)))
         # settings it keeps: where receipts lie, access, the assistant -- whatever a page sends
         cfg = self.call("/api/config")[1]
-        cfg["receipts"] = {"folder": self.dir, "write_comment": True}; cfg["ui"]["remote_read_only"] = False; cfg["assistant"] = {"enabled": False}
+        cfg["receipts"] = {"folder": self.dir}; cfg["ui"]["remote_read_only"] = False; cfg["assistant"] = {"enabled": False}
         cfg["areas"][0]["name"] = "Haushalt"
         code, r = self.call("/api/config", {"config": cfg})
         self.assertEqual(code, 200, r)
         self.assertEqual(d.config["areas"][0]["name"], "Haushalt")
-        self.assertTrue(d.config["receipts"]["folder"].startswith(d.data_dir)); self.assertNotIn("write_comment", d.config["receipts"])
+        self.assertTrue(d.config["receipts"]["folder"].startswith(d.data_dir))
         self.assertNotEqual(d.config["ui"].get("remote_read_only"), False)
         self.assertEqual({k: v for k, v in self._files(self.dir).items() if not k.startswith("key")}, before)     # the real folder: nothing changed
         self.assertNotEqual(self.app.config["areas"][0]["name"], "Haushalt")
@@ -2377,7 +2371,7 @@ class DemoTests(_AppBase):
                      "/api/remote/acl", "/api/history/mm-status", "/api/assistant/memory"):
             self.assertEqual(self.call(path), (403, {"error": "In der Demo nicht verfügbar."}), path)
         for path in ("/api/password", "/api/uninstall", "/api/reset", "/api/backup", "/api/backup/restore", "/api/key/renew", "/api/setup",
-                     "/api/login", "/api/touchid", "/api/update/install", "/api/remote", "/api/file/open", "/api/receipts/link",
+                     "/api/login", "/api/touchid", "/api/touchid/switch", "/api/update/install", "/api/remote", "/api/file/open", "/api/receipts/link",
                      "/api/receipts/open", "/api/receipts/export", "/api/package/import", "/api/securities/lookup", "/api/language",
                      "/api/assistant/settings", "/api/assistant/model/download", "/api/assistant/web", "/api/assistant/server", "/api/mac-app/open"):
             self.assertEqual(self.call(path, {"password": self.PW, "new": "x" * 12})[0], 403, path)
@@ -2512,6 +2506,75 @@ class DemoTests(_AppBase):
         self.assertFalse(os.path.exists(old)); self.assertTrue(os.path.exists(fresh))
         shutil.rmtree(fresh)
 
+    def test_nothing_about_this_mac_or_the_assistants_setup(self):
+        """The demo's pages get what its panel needs -- is the assistant on and ready, its rights, dictating --
+        and nothing about this Mac (memory, disk, llama.cpp, the models there are, what is newer), the model set up or the
+        websites trusted in the real Kontor. Its settings take nothing that reaches beyond the demo: no port is even tried."""
+        import service as MA
+        import test_assistant as TA
+        TA.install(self.app)
+        real = self.app.assistant
+        real.set({"web_trusted": {"hosts": ["erfunden-vertraut.example"]}, "idle_minutes": 77})
+        self.login(); self.call("/api/lock", {}); self.csrf = None
+        d = self._demo()
+        code, st = self.call("/api/assistant/status")
+        self.assertEqual(code, 200)
+        self.assertEqual(sorted(st), ["busy", "dictation", "job", "local", "question_limit", "ready", "server", "settings", "speech_early", "tools"])
+        self.assertEqual(sorted(st["settings"]), sorted(MA.assistant_mod.DEMO_SETTINGS)); self.assertEqual(sorted(st["server"]), ["state", "tps"])
+        self.assertTrue(st["ready"] and st["settings"]["enabled"]); self.assertEqual(st["settings"]["rights"], real.settings()["rights"])
+        full = real.status(True)
+        self.assertTrue(full["platform"]["ram"] and full["models"] and full["web"] and full["folder"])      # (the real Kontor's page gets all of it)
+        code, cfg = self.call("/api/config")
+        self.assertEqual(code, 200); self.assertNotIn("assistant", cfg); self.assertTrue(cfg["areas"])
+        said = json.dumps([st, cfg, self.call("/api/status")[1]], ensure_ascii=False)
+        for word in ("erfunden-vertraut", "web_trusted", "qwen3.6-35b-a3b", "disk_free", "idle_minutes", "sandbox", self.dir, os.path.basename(self.dir)):
+            self.assertNotIn(word, said, word)
+        self.assertTrue(MA.assistant_mod.settings(d.config)["enabled"])                # (inside, the demo's assistant follows the real settings)
+        # a page of the demo sends settings: port, address, certificate, access -- nothing is taken, nothing tried
+        port = d.config["ui"].get("port")
+        with mock.patch.object(MA, "port_free", side_effect=AssertionError("the demo asked whether a port of this Mac is free")):
+            for ui in ({"port": self.port}, {"port": 45678}, {"bind": "100.101.102.103", "tls_cert": "/x.crt", "tls_key": "/x.key"}, {"bind": "0.0.0.0"},
+                       {"remote_read_only": False, "touchid": True, "lock_minutes": 100000, "offline_copy": True}):
+                code, r = self.call("/api/config", {"config": dict(cfg, ui=dict(cfg["ui"], **ui), assistant={"enabled": False, "web_trusted": {"hosts": ["x.example"]}})})
+                self.assertEqual(code, 200, (ui, r)); self.assertFalse(r["restart"]); self.assertNotIn("assistant", r["config"])
+                self.assertEqual(d.config["ui"], cfg["ui"], ui); self.assertEqual(d.config["ui"].get("port"), port)
+        self.assertEqual(real.settings()["web_trusted"]["hosts"], ["erfunden-vertraut.example"])
+        code, r = self.call("/api/categories/areas", {"without": []})                  # (another answer that carries the settings)
+        self.assertEqual(code, 200, r); self.assertNotIn("assistant", r["config"])
+        self.call("/api/lock", {})
+        self.app.demo_box.end()
+        real.stop_all()
+
+    def test_no_helper_at_the_mac(self):
+        """A PDF or a picture given in the demo's chat: not read there -- the helper for text recognition is neither built nor
+        started for the demo (said in a short message); an Excel table (read by Kontor itself) goes as before."""
+        import service as MA
+        import test_assistant as TA
+        TA.install(self.app)
+        self.login(); self.call("/api/lock", {}); self.csrf = None
+        d = self._demo()
+        b64 = lambda raw: base64.b64encode(raw).decode()
+        started = []
+        with mock.patch.object(MA.receipt_text, "_helper", side_effect=lambda *a, **k: started.append("helper")), \
+                mock.patch.object(MA.receipt_text, "text_of", side_effect=lambda *a, **k: started.append("text")), \
+                mock.patch.object(MA.receipt_text, "layout_of", side_effect=lambda *a, **k: started.append("layout")):
+            for name in ("Rechnung.pdf", "Foto.png", "Scan.JPG", "Bild.heic"):
+                code, r = self.call("/api/assistant/attach", {"name": name, "content": b64(b"%PDF-1.4 erfunden")})
+                self.assertEqual((code, r), (400, {"error": "In der Demo liest der Assistent keine PDFs und Bilder – Excel-Tabellen gehen."}), name)
+            code, r = self.call("/api/assistant/attach", {"name": "Tabelle.xlsx", "content": b64(b"PK erfunden")})
+            self.assertEqual(code, 200, r)
+            for hook in ("receipt_text", "receipt_layout"):                    # and behind the page: refused anyway
+                with self.assertRaises(MA.receipt_text.TextUnavailable):
+                    d.assistant.hooks[hook](b"%PDF-1.4 erfunden")
+            f = {"id": "b1", "name": "Rechnung.pdf", "data": b"%PDF-1.4", "conv": "c", "type": "PDF"}
+            self.assertEqual(d.assistant._receipt_read(f)["how"], "none"); self.assertIn("unreadable", d.assistant._table(dict(f)))
+            self.assertEqual(started, [])
+            self.app.assistant.hooks["receipt_text"](b"%PDF-1.4 erfunden")     # (the real Kontor's assistant does read it)
+            self.assertEqual(started, ["text"])
+        self.call("/api/lock", {})
+        self.app.demo_box.end()
+        self.app.assistant.stop_all()
+
     def test_assistant_shares_only_the_model(self):
         import test_assistant as TA
         TA.install(self.app)
@@ -2552,6 +2615,170 @@ class DemoTests(_AppBase):
         with open(os.path.join(os.path.dirname(real.ai.runtime()["path"]), "request.json")) as f:
             self.assertIn("Erfundinand", f.read())                              # (the real Kontor's questions do carry its memory)
         real.stop_all()
+
+
+class TouchIdDemoSwitchTests(_AppBase):
+    """The sign-in page switches between your data and the demo while the Touch ID window is open (/api/touchid/switch): what
+    switched while a window is open (or just confirmed): nothing signs in, the page asks anew for what it wants now. Chosen the
+    demo: never a session of the real Kontor, also when the old window is confirmed after all (it did not close); switched back:
+    never the demo. The window says which; only at this Mac, only the request running; one request at a time."""
+
+    PW = "sehr-geheimes-passwort"
+
+    def setUp(self):
+        super().setUp()
+        import auth
+        self.login()
+        cfg = copy.deepcopy(self.app.config); cfg["ui"]["touchid"] = True; self.app.save_config(cfg)
+        self.call("/api/lock", {}); self.csrf = None
+        self.windows, self.cond, self.closes = [], threading.Condition(), True
+        for p in (mock.patch.object(auth, "touchid_available", return_value=True), mock.patch.object(auth, "touchid_verify", self.verify),
+                  mock.patch.object(auth, "touchid_close", self.close)):
+            p.start(); self.addCleanup(p.stop)
+
+    def tearDown(self):
+        for w in self.windows:
+            w["go"].set()
+        if self.app._demo_box is not None:
+            self.app.demo_box.end()
+        super().tearDown()
+
+    def verify(self, reason="", tid=""):
+        """The macOS window (made up): open until the test confirms it -- or it closes."""
+        w = {"reason": reason, "tid": tid, "go": threading.Event(), "ok": False}
+        with self.cond:
+            self.windows.append(w); self.cond.notify_all()
+        w["go"].wait(60)
+        return w["ok"]
+
+    def close(self, tid):
+        """auth.touchid_close: the window ends without an answer (closes False: it does not -- an older helper, a race)."""
+        for w in self.windows:
+            if w["tid"] == tid and not w["go"].is_set() and self.closes:
+                w["go"].set()
+                return True
+        return False
+
+    def window(self, n):
+        with self.cond:
+            self.assertTrue(self.cond.wait_for(lambda: len(self.windows) >= n, 15))
+        return self.windows[n - 1]
+
+    def ask(self, body):
+        res = {}
+        th = threading.Thread(target=lambda: res.update(r=self.call("/api/touchid", body)))
+        th.start()
+        return lambda: (th.join(150), res["r"])[1]
+
+    def confirm(self, w):
+        w["ok"] = True; w["go"].set()
+
+    def test_switched_to_the_demo_never_a_session_of_yours(self):
+        from i18n import tr
+        answer = self.ask({"tid": "a1" * 16})
+        w = self.window(1)
+        self.assertEqual(w["reason"], tr("s_touchid_reason")); self.assertEqual(w["tid"], "a1" * 16)
+        self.assertEqual(self.call("/api/touchid/switch", {"tid": "a1" * 16, "demo": True}), (200, {"ok": True}))
+        self.assertEqual(answer(), (409, {"switched": True}))                 # the window closed: the page asks anew
+        self.assertFalse(self.app.sessions.active()); self.assertFalse(self.call("/api/session")[1]["signed_in"])
+        self.assertIsNone(self.app.demo_box.app)
+        answer = self.ask({"tid": "b2" * 16, "demo": True})
+        w = self.window(2)
+        self.assertEqual(w["reason"], tr("s_touchid_reason_demo"))           # the new window says: the demo
+        self.confirm(w)
+        code, r = answer()
+        self.assertEqual(code, 200, r); self.assertTrue(r["demo"])
+        self.assertFalse(self.app.sessions.active())                         # the real Kontor: no session
+        s = self.call("/api/session")[1]; self.assertTrue(s["signed_in"] and s["demo"])
+        demo_jar = list(self.jar); self.jar.clear()
+        self.assertFalse(self.call("/api/session")[1]["signed_in"])         # without the demo's cookie: nobody signed in
+        for c in demo_jar:
+            self.jar.set_cookie(c)
+        self.csrf = r["csrf"]; self.call("/api/lock", {}); self.csrf = None
+        # the window does not close (an older helper, a race) and is confirmed after all: nobody signed in -- never your data;
+        # the page asks anew (the data are open now: only a confirmation), for the demo
+        self.closes = False
+        answer = self.ask({"tid": "c3" * 16})
+        w = self.window(3)
+        self.assertEqual(w["reason"], tr("s_touchid_reason"))
+        self.assertEqual(self.call("/api/touchid/switch", {"tid": "c3" * 16, "demo": True})[0], 200)
+        self.assertFalse(w["go"].is_set())
+        self.confirm(w)
+        self.assertEqual(answer(), (409, {"switched": True}))
+        self.assertFalse(self.app.sessions.active()); self.assertFalse(self.call("/api/session")[1]["signed_in"])
+        answer = self.ask({"tid": "c4" * 16, "demo": True})
+        w = self.window(4)
+        self.assertEqual(w["reason"], tr("s_touchid_reason_demo"))
+        self.confirm(w)
+        code, r = answer()
+        self.assertEqual(code, 200, r); self.assertTrue(r["demo"])
+        self.assertFalse(self.app.sessions.active())
+        self.assertTrue(self.call("/api/session")[1]["demo"])
+
+    def test_switched_back_to_your_data_never_the_demo(self):
+        from i18n import tr
+        answer = self.ask({"tid": "d4" * 16, "demo": True})
+        w = self.window(1)
+        self.assertEqual(w["reason"], tr("s_touchid_reason_demo"))
+        self.assertEqual(self.call("/api/touchid/switch", {"tid": "d4" * 16, "demo": False})[0], 200)
+        self.assertEqual(answer(), (409, {"switched": True}))
+        answer = self.ask({"tid": "e5" * 16})
+        w = self.window(2)
+        self.assertEqual(w["reason"], tr("s_touchid_reason"))
+        self.confirm(w)
+        code, r = answer()
+        self.assertEqual(code, 200, r); self.assertNotIn("demo", r)
+        self.assertEqual(self.app.sessions.active(), 1); self.assertIsNone(self.app.demo_box.app)
+        self.csrf = r["csrf"]; self.call("/api/lock", {}); self.csrf = None
+        # the old window confirmed after all, after switching there and back: nobody signed in -- the page asks anew
+        self.closes = False
+        answer = self.ask({"tid": "f6" * 16, "demo": True})
+        w = self.window(3)
+        for demo in (False, True, False):
+            self.assertEqual(self.call("/api/touchid/switch", {"tid": "f6" * 16, "demo": demo})[0], 200)
+        self.confirm(w)
+        self.assertEqual(answer(), (409, {"switched": True}))
+        self.assertFalse(self.app.sessions.active()); self.assertIsNone(self.app.demo_box.app)
+
+    def test_only_at_this_mac_and_only_the_request_running(self):
+        import auth
+        self.assertEqual(self.call("/api/touchid/switch", {"tid": "a1" * 16, "demo": True})[0], 409)       # none running
+        answer = self.ask({"tid": "a1" * 16})
+        w = self.window(1)
+        for body in ({"tid": "b2" * 16, "demo": True}, {"tid": "A1" * 16, "demo": True}, {"demo": True}, {"tid": "a1" * 16},
+                     {"tid": "a1" * 16, "demo": "ja"}, {"tid": "ä" * 32, "demo": True}, {"tid": "a1" * 16 + "0", "demo": True}):
+            self.assertEqual(self.call("/api/touchid/switch", body)[0], 409, body)
+        with mock.patch.object(auth, "is_loopback", return_value=False):      # from another device
+            self.assertEqual(self.call("/api/touchid/switch", {"tid": "a1" * 16, "demo": True})[0], 403)
+        self.assertEqual((self.app._tid["demo"], self.app._tid["switched"]), (False, False))
+        self.assertFalse(w["go"].is_set())                                   # its window still open
+        self.confirm(w)
+        code, r = answer()
+        self.assertEqual(code, 200, r); self.assertNotIn("demo", r)
+        self.assertEqual(self.app.sessions.active(), 1); self.assertIsNone(self.app.demo_box.app)
+        self.assertIsNone(self.app._tid)
+        self.assertEqual(self.call("/api/touchid/switch", {"tid": "a1" * 16, "demo": True})[0], 409)       # over: nothing to switch
+
+    def test_one_request_at_a_time(self):
+        """A newer request replaces the one running (its window closes, it opens nothing even if confirmed); a sign-in with the
+        password does too -- never two sessions, never the one not chosen."""
+        answer1 = self.ask({"tid": "a1" * 16})
+        w1 = self.window(1)
+        self.closes = False                                                  # (as if the first window stayed open)
+        answer2 = self.ask({"tid": "b2" * 16, "demo": True})
+        w2 = self.window(2)
+        self.confirm(w1)
+        self.assertEqual(answer1()[1].get("superseded"), True)              # replaced: nothing opened
+        self.assertFalse(self.app.sessions.active())
+        self.assertEqual(self.app._tid["id"], "b2" * 16)
+        code, r = self.call("/api/login", {"password": self.PW})             # meanwhile signed in with the password ...
+        self.assertEqual(code, 200, r)
+        self.assertIsNone(self.app._tid)
+        self.confirm(w2)                                                     # ... the demo's window, confirmed after: nothing
+        code, r = answer2()
+        self.assertEqual(code, 409); self.assertTrue(r.get("superseded"))
+        self.assertEqual(self.app.sessions.active(), 1); self.assertIsNone(self.app.demo_box.app)
+        self.assertFalse(self.call("/api/session")[1].get("demo"))
 
 
 class FeatureTests(_AppBase):
@@ -3040,42 +3267,75 @@ class FeatureTests(_AppBase):
         self.assertEqual(self.store.load("plan.json")["areas"][P]["rows"]["income/Arbeitseinkommen"]["method"], "fix")
         self.assertEqual(self.call("/api/backup/restore", {"backup": {"x": 1}})[0], 400)
         # a backup is a file (one without a password is read too, and a password proves nothing): it never decides alone whose
-        # code runs here, where Kontor listens, which address it shows for the iPhone or whether it writes into MoneyMoney
-        # without asking. Everything else of it is taken over.
+        # code runs here, who gets in and how, or whether it writes into MoneyMoney without asking. Everything else of it is
+        # taken over.
         restore = lambda c: self.call("/api/backup/restore", {"backup": {"kontor_backup": 1, "config": c}})[0]
         self.assertTrue(self.app.config["dry_run"])                             # (after the reset; the backup above said: book without asking)
         cfg = copy.deepcopy(inner["config"])
         cfg["updates"] = {"repo": "someone/else", "check_mode": "weekly"}
         cfg["ui"] = dict(cfg.get("ui") or {}, bind="0.0.0.0", lock_minutes=7, tls_cert="/x/kontor.elsewhere.example.crt", tls_key="/x/k.key")
-        cfg["receipts"] = dict(cfg.get("receipts") or {}, subfolder="../../{year}", write_comment=True)
+        cfg["receipts"] = dict(cfg.get("receipts") or {}, subfolder="../../{year}")
         cfg["dry_run"] = False
         cfg["assistant"] = {"enabled": True, "rights": {"remote": True, "change": True}}
         before = copy.deepcopy(self.app.config.get("assistant"))
         self.assertEqual(restore(cfg), 200)
         now = self.app.config
         self.assertEqual(now["updates"]["repo"], "stecrz/Kontor"); self.assertEqual(now["updates"]["check_mode"], "weekly")
-        self.assertEqual(now["ui"].get("bind") or "127.0.0.1", "127.0.0.1"); self.assertEqual(now["ui"]["lock_minutes"], 7)
+        self.assertEqual(now["ui"].get("bind") or "127.0.0.1", "127.0.0.1"); self.assertEqual(now["ui"]["lock_minutes"], 7)       # fewer minutes: stricter, taken
         self.assertFalse(now["ui"].get("tls_cert")); self.assertFalse(now["ui"].get("tls_key"))
         self.assertEqual(self.call("/api/remote")[1]["url"], None)
-        self.assertEqual(now["receipts"]["subfolder"], inner["config"]["receipts"]["subfolder"]); self.assertNotIn("write_comment", now["receipts"])
+        self.assertEqual(now["receipts"]["subfolder"], inner["config"]["receipts"]["subfolder"])
         self.assertTrue(now["dry_run"]); self.assertEqual(now.get("assistant"), before)
-        # what is allowed is taken over: an address of Tailscale, a pattern inside the folder, one of Kontor's own certificates
+        # the access never gets wider through a backup: an address of Tailscale and one of Kontor's own certificates are
+        # allowed in themselves -- set here by you, not by a file; Touch ID, "only look", the lock and the offline copy stay too
         tls = os.path.join(self.dir, "tls"); os.makedirs(tls, exist_ok=True)
         own = [os.path.join(tls, "mac.example.ts.net" + e) for e in (".crt", ".key")]
         for f in own:
             open(f, "w").close()
-        cfg["ui"].update(bind="100.101.102.103", tls_cert=own[0], tls_key=own[1]); cfg["receipts"]["subfolder"] = "{entity}/{year}"
+        mine = copy.deepcopy(self.app.config); mine["ui"].update(touchid=False, offline_copy=False)
+        self.app.save_config(mine)
+        cfg["ui"].update(bind="100.101.102.103", tls_cert=own[0], tls_key=own[1], port=9999, lock_minutes=100000, touchid=True, remote_read_only=False, offline_copy=True)
+        cfg["receipts"]["subfolder"] = "{entity}/{year}"
+        code, r = self.call("/api/backup/restore", {"backup": {"kontor_backup": 1, "config": cfg}})
+        self.assertEqual(code, 200); self.assertFalse(r["restart"])
+        now = self.app.config
+        self.assertEqual(now["ui"].get("bind") or "127.0.0.1", "127.0.0.1"); self.assertFalse(now["ui"].get("tls_cert") or now["ui"].get("tls_key"))
+        self.assertEqual((now["ui"]["lock_minutes"], now["ui"]["port"]), (7, mine["ui"]["port"]))
+        self.assertFalse(self.app.touchid_on()); self.assertTrue(self.app.remote_readonly()); self.assertFalse(self.app.offline_copy())
+        self.assertEqual(self.call("/api/remote")[1]["url"], None)
+        self.assertEqual(now["receipts"]["subfolder"], "{entity}/{year}")           # (what is not about the access: a pattern inside the folder)
+        import access
+        self.assertNotEqual(access.start_settings(self.dir).get("bind"), "100.101.102.103")       # nor from the next start on
+        # set here by you: it stays, whatever the file says -- except where the file is stricter (only this Mac)
+        mine = copy.deepcopy(self.app.config); mine["ui"].update(bind="100.101.102.103", tls_cert=own[0], tls_key=own[1], lock_minutes=7)
+        self.app.save_config(mine)
+        cfg["ui"].update(bind="100.99.98.97", tls_cert=os.path.join(tls, "other.example.crt"), tls_key=own[1])
         self.assertEqual(restore(cfg), 200)
         now = self.app.config
-        self.assertEqual(now["ui"]["bind"], "100.101.102.103"); self.assertEqual(now["receipts"]["subfolder"], "{entity}/{year}")
-        self.assertEqual([now["ui"]["tls_cert"], now["ui"]["tls_key"]], own)
-        cfg["ui"].update(tls_cert=os.path.join(tls, "..", "tls", "missing.example.crt"), tls_key=own[1])       # not there: the one set here stays
-        self.assertEqual(restore(cfg), 200); self.assertEqual([self.app.config["ui"]["tls_cert"], self.app.config["ui"]["tls_key"]], own)
+        self.assertEqual(now["ui"]["bind"], "100.101.102.103"); self.assertEqual([now["ui"]["tls_cert"], now["ui"]["tls_key"]], own)
+        asked = []
+        self.app.request_restart = lambda: asked.append(1)
+        cfg["ui"].update(bind="127.0.0.1")
+        self.assertEqual(restore(cfg), 200)
+        self.assertEqual(self.app.config["ui"]["bind"], "127.0.0.1"); self.assertEqual(asked, [1])      # (the other address stops answering: a restart)
+        self.app.save_config(mine)
+        cfg["ui"].update(bind="100.101.102.103", tls_cert=own[0], tls_key=own[1])
         # switched on at this Mac by you: a backup keeps it on or switches it off -- and a source for updates set here stays
         on = copy.deepcopy(self.app.config); on["dry_run"] = False; on["updates"]["repo"] = "mine/fork"
         self.app.save_config(on)
         self.assertEqual(restore(cfg), 200)
         self.assertFalse(self.app.config["dry_run"]); self.assertEqual(self.app.config["updates"]["repo"], "mine/fork")
+        self.assertFalse(any(r.get("review") for sec in ("loans", "companies") for r in self.app.config[sec]))      # the rules as they are here: nothing to confirm
+        # ... but nothing of the file books by itself: a rule that is not here as the file has it waits for your confirmation
+        other = copy.deepcopy(cfg); other["companies"][0]["threshold"] = 250.0
+        other["loans"].append(dict(copy.deepcopy(other["loans"][0]), name="Aus der Datei"))
+        held = copy.deepcopy(self.app.config); held["not_book"] = [{"key": F.uid("ga.vd") + "|#kontor-z-2026-01", "text": "x", "account_name": "y"}]
+        self.app.save_config(held)
+        self.assertEqual(restore(other), 200)
+        now = self.app.config
+        self.assertFalse(now["dry_run"])
+        self.assertEqual([bool(r.get("review")) for r in now["companies"]], [True, False]); self.assertEqual([bool(r.get("review")) for r in now["loans"]], [False, True])
+        self.assertEqual([x["key"] for x in now["not_book"]], [F.uid("ga.vd") + "|#kontor-z-2026-01"])       # held back here: stays held back
         off = copy.deepcopy(cfg); off["dry_run"] = True
         self.assertEqual(restore(off), 200)
         self.assertTrue(self.app.config["dry_run"])
@@ -3090,6 +3350,117 @@ class FeatureTests(_AppBase):
             self.assertIsInstance(self.app.config["receipts"]["folder"], str)
             for page in ("/api/status", "/api/remote", "/api/config", "/api/receipts"):
                 self.assertEqual(self.call(page)[0], 200, (page, odd))
+
+    def test_a_backup_never_writes_into_moneymoney(self):
+        """A category that still waited to be written into MoneyMoney when the backup was made does not come back as waiting:
+        the next sync would enter it there without any click of yours. What waits here (your click) stays."""
+        self.login(); self.run_and_wait()
+        open_ids = [t["id"] for t in self.call("/api/transactions?limit=5000")[1]["transactions"] if t["name"] == "Baumarkt"]
+        a, b = open_ids[0], open_ids[1]
+        code, sich = self.call("/api/backup", {"password": "sicherung-123"})
+        import service as MA
+        inner = MA.backup_decrypt(sich, "sicherung-123")
+        inner["categories"]["assignment"] = {str(a): {"k": "Wohnen / Miete", "q": "manual", "p": 1}}       # as if assigned from the iPhone back then
+        inner["categories"]["rule_done"] = ["erfunden"]
+        with categorize.LOCK:
+            kat = categorize.load(self.store)
+            categorize.set_waiting(kat, [b], "Wohnen\\Miete")           # yours, here, still waiting for the next sync
+            categorize.save(self.store, kat)
+        writes = lambda tid: [w for i in MockBridge.instances for w in i.written if w[0] == "set" and w[1] == tid]
+        code, r = self.call("/api/backup/restore", {"backup": inner})
+        self.assertEqual(code, 200, r); self.assertIn("Kategorien", r["parts"])
+        kat = categorize.load(self.store)
+        self.assertEqual(list(kat["assignment"]), [str(b)]); self.assertEqual(kat["rule_done"], ["erfunden"])
+        self.run_and_wait()
+        self.assertEqual(writes(a), [])                                   # nothing entered in MoneyMoney for it
+        self.assertFalse(next(t for t in MockBridge.state["txs"] if t["id"] == a).get("categoryPath"))
+        self.assertEqual(len(writes(b)), 1)                               # (your own click went through as always)
+
+    def test_a_backup_is_checked_whole_before_anything_is_written(self):
+        """One part in a form the program does not read, and the whole file is refused with a clear message -- nothing changed.
+        (Before: saved as it came; snapshots {"2026-01": 5} ended every sync with an error, receipts {"entry_list": [1]} the
+        transactions and the receipts page, until a reset.)"""
+        import service as MA
+        self.login(); self.run_and_wait()
+        P = F.uid("priv")
+        self.call("/api/plan", {"area": P, "row": "income/Arbeitseinkommen", "method": "fix", "amount": "7000"})
+        code, sich = self.call("/api/backup", {"password": "sicherung-123"})
+        good = MA.backup_decrypt(sich, "sicherung-123")
+        files = ("config.json", "plan.json", "state.json", "categories.json", "receipts.json", "mm-history.json")
+        snap = lambda: {n: self.store.load(n, None) for n in files}
+        before = snap()
+        changed = copy.deepcopy(good)
+        changed["config"]["areas"][0]["name"] = "Aus der Datei"; changed["plan"]["areas"][P]["rows"]["income/Arbeitseinkommen"]["amount"] = 1.0
+        changed["history"] = {F.uid("priv.giro"): {"2026-01": 5.0}}
+        for part, bad, label in (("snapshots", {"2026-01": 5}, "Verlauf"), ("receipts", {"entry_list": [1]}, "Belegindex"), ("plan", {"areas": {P: 5}}, "Planung"),
+                                 ("categories", {"version": 3, "rules": [{"iban": ["x"]}]}, "Kategorien"), ("history", {"u": {"2026-01": "x"}}, "Verlauf"),
+                                 ("mm_history_src", {"accounts": {"u": 5}}, "MoneyMoney"), ("memory", {"notes": 5}, "Gedächtnis")):
+            code, r = self.call("/api/backup/restore", {"backup": dict(changed, **{part: bad})})
+            self.assertEqual(code, 400, part); self.assertIn(label, r["error"]); self.assertIn("nichts wurde geändert", r["error"])
+            self.assertEqual(snap(), before, part)
+            self.assertEqual(self.app.config["areas"][0]["name"], "Privat")
+        for page in ("/api/sync", "/api/transactions", "/api/receipts", "/api/status", "/api/dataset"):
+            self.assertEqual(self.call(page)[0], 200, page)
+        self.run_and_wait()
+        self.assertNotEqual((self.app.last_result or {}).get("status"), "error")
+        # a write that fails half-way puts back what was there
+        before = snap()
+        real = self.app.save_config
+        with mock.patch.object(self.app, "save_config", side_effect=lambda c: (_ for _ in ()).throw(OSError("disk full")) if c["areas"][0]["name"] == "Aus der Datei" else real(c)):
+            code, r = self.call("/api/backup/restore", {"backup": dict(changed, receipts={"entry_list": [{"id": "abc123", "path": "2026/x.pdf", "tx_id": None}]})})
+        self.assertEqual(code, 500)
+        self.assertEqual(snap(), before)
+        # the rounds a file names for its password: bounded (answered at once, nothing computed)
+        t0 = time.time()
+        self.assertEqual(self.call("/api/backup/restore", {"backup": dict(sich, iter=2_000_000_000), "password": "sicherung-123"})[0], 400)
+        self.assertLess(time.time() - t0, 5)
+        # and the file as it was made is taken as before
+        code, r = self.call("/api/backup/restore", {"backup": changed})
+        self.assertEqual(code, 200, r)
+        self.assertEqual(self.app.config["areas"][0]["name"], "Aus der Datei"); self.assertEqual(self.store.load("plan.json")["areas"][P]["rows"]["income/Arbeitseinkommen"]["amount"], 1.0)
+        self.assertEqual(self.store.load("state.json")["history"], {F.uid("priv.giro"): {"2026-01": 5.0}})
+        # a file here that no longer opens (cut off) does not stop the backup that replaces it -- nor, half-way, its return
+        for n in ("plan.json", "categories.json"):
+            p = self.store.path(n); raw = open(p, "rb").read()
+            with open(p, "wb") as f:
+                f.write(raw[:-7])
+        cut = {n: open(self.store.path(n), "rb").read() for n in ("plan.json", "categories.json")}
+        with mock.patch.object(self.app, "save_config", side_effect=OSError("disk full")):
+            self.assertEqual(self.call("/api/backup/restore", {"backup": good})[0], 500)
+        self.assertEqual({n: open(self.store.path(n), "rb").read() for n in cut}, cut)
+        code, r = self.call("/api/backup/restore", {"backup": good})
+        self.assertEqual(code, 200, r)
+        self.assertEqual(self.store.load("plan.json"), good["plan"]); self.assertEqual(categorize.load(self.store)["rules"], good["categories"]["rules"])
+
+    def test_history_of_a_group_of_accounts(self):
+        """/api/history asked for a group (e.g. "All accounts"): a clear answer instead of an internal error -- and no balance
+        is saved for a group."""
+        self.login(); self.run_and_wait()
+        groups = [a for a in self.app.ledger.accounts.values() if a.group]
+        self.assertTrue(groups)
+        for g in groups:
+            for q in ("", "&source=balances", "&source=transactions"):
+                code, r = self.call("/api/history?account=%s%s" % (g.uuid, q))
+                self.assertEqual((code, r), (400, {"error": "Einen Verlauf gibt es nur für einzelne Konten, nicht für Gruppen."}), g.name)
+            code, r = self.call("/api/history", {"account": g.uuid, "amounts": {"2026-03": 5}})
+            self.assertEqual(code, 400, g.name)
+        self.assertFalse(set(self.store.load("state.json").get("history") or {}) & {g.uuid for g in groups})
+        self.assertEqual(self.call("/api/history?account=" + F.uid("priv.giro"))[0], 200)
+        self.assertEqual(self.call("/api/history?account=gibt-es-nicht")[0], 200)
+
+    def test_renewing_the_key_names_a_damaged_file(self):
+        """A file no key opens (a damaged notes file of the memory, left untouched on purpose): the renewal goes through and
+        names it -- before, every renewal ended with "check sum does not match", without the file's name."""
+        self.login(); self.run_and_wait()
+        p = os.path.join(self.dir, "memory-notes-0002.json.enc")
+        with open(p, "wb") as f:
+            f.write(b"MMT1" + os.urandom(80))
+        raw, old = open(p, "rb").read(), self.app.store.master
+        code, r = self.call("/api/key/renew", {"password": "sehr-geheimes-passwort"})
+        self.assertEqual(code, 200, r)
+        self.assertEqual(r["left"], ["memory-notes-0002.json.enc"]); self.assertGreater(r["files"], 3)
+        self.assertNotEqual(self.app.store.master, old); self.assertEqual(open(p, "rb").read(), raw)
+        self.assertEqual(self.call("/api/dataset")[0], 200)
 
     def test_uninstall_removes_kontor_keeps_receipts(self):
         """Uninstall: only at the Mac and with the password; removes the service file, Kontor's own files in the data folder (also
@@ -3159,8 +3530,10 @@ class FeatureTests(_AppBase):
         K.DATA_DIR, K.HERE = self.dir, prog
         MA.App.uninstall_key = lambda app: calls.append("key") or True          # never the real keychain
         MA.updates.plist_path = lambda label=MA.updates.LABEL: os.path.join(prog, "none.plist")
+        tmp = tempfile.mkdtemp(prefix="kontor-tmp-")                            # (uninstalling takes the demo's folders there: never those of a test beside this one)
+        self.addCleanup(shutil.rmtree, tmp, True)
         try:
-            with mock.patch.object(K.auth, "touchid_available", return_value=False), mock.patch.object(K.time, "sleep"):
+            with mock.patch.object(K.auth, "touchid_available", return_value=False), mock.patch.object(K.time, "sleep"), mock.patch.object(tempfile, "tempdir", tmp):
                 # as in the interface: only with the Kontor password -- wrong three times, nothing is removed
                 with mock.patch.object(K.getpass, "getpass", return_value="falsch") as gp:
                     self.assertEqual(K.cmd_uninstall(argparse.Namespace(yes=True, program=False)), 1)
@@ -3185,7 +3558,7 @@ class FeatureTests(_AppBase):
         code, r = self.call("/api/key/renew", {"password": "sehr-geheimes-passwort"})
         self.assertEqual(code, 200, r); self.assertGreater(r["files"], 3); self.assertNotEqual(self.app.store.master, old)
         self.assertEqual(ST.open_password_entry(ST.key_record(self.dir)["password"], "sehr-geheimes-passwort"), (self.app.store.master, None))
-        self.assertTrue(Store(self.dir, self.app.store.master, "login").load("config.json")["areas"])
+        self.assertTrue(Store(self.dir, self.app.store.master).load("config.json")["areas"])
         self.assertTrue(ST.files_not_opening(old, self.dir))
         self.assertEqual(self.call("/api/dataset")[0], 200)
 
@@ -3364,8 +3737,7 @@ class BrowserTest(unittest.TestCase):
         except ImportError:
             self.skipTest("playwright fehlt")
         d = tempfile.mkdtemp(prefix="kontor-ui-")
-        key, src = load_or_create_master_key(d)
-        store = Store(d, key, src); store.save("config.json", config_for_test(os.path.join(d, "Belege")))
+        store = new_store(d); store.save("config.json", config_for_test(os.path.join(d, "Belege")))
         reset_mock(); patch_today()
         app = App(store, d, bridge_factory=MockBridge)
         app.do_run(False, True)
@@ -4900,7 +5272,7 @@ class DemoBrowserTest(unittest.TestCase):
         except ImportError:
             self.skipTest("playwright fehlt")
         d = tempfile.mkdtemp(prefix="kontor-ui-")
-        store = Store(d, *load_or_create_master_key(d)); store.save("config.json", config_for_test(os.path.join(d, "Belege")))
+        store = new_store(d); store.save("config.json", config_for_test(os.path.join(d, "Belege")))
         store.save("state.json", dict(ALL_NEW))
         reset_mock(); patch_today()
         app = App(store, d, bridge_factory=MockBridge); app.do_run(False, True)
@@ -4983,6 +5355,80 @@ class DemoBrowserTest(unittest.TestCase):
             shutil.rmtree(d, ignore_errors=True)
 
 
+class TouchIdDemoBrowserTest(unittest.TestCase):
+    """The sign-in page with Touch ID: the demo link works while the macOS window is open -- the card says the demo, that
+    window closes and a new one asks for the demo; confirmed, the page is in the demo and the real Kontor has no session."""
+
+    def test_demo_link_while_the_window_is_open(self):
+        try:
+            from playwright.sync_api import sync_playwright
+        except ImportError:
+            self.skipTest("playwright fehlt")
+        import auth
+        from i18n import tr
+        d = tempfile.mkdtemp(prefix="kontor-ui-")
+        store = new_store(d)
+        cfg = config_for_test(os.path.join(d, "Belege")); cfg.setdefault("ui", {})["touchid"] = True
+        store.save("config.json", cfg); store.save("state.json", dict(ALL_NEW))
+        reset_mock(); patch_today()
+        app = App(store, d, bridge_factory=MockBridge)
+        app.first_password("sehr-geheimes-passwort")
+        srv = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(app)); url = "http://127.0.0.1:%d/" % srv.server_address[1]
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        windows, cond = [], threading.Condition()
+
+        def verify(reason="", tid=""):               # the macOS window (made up): open until confirmed or closed
+            w = {"reason": reason, "tid": tid, "go": threading.Event(), "ok": False}
+            with cond:
+                windows.append(w); cond.notify_all()
+            w["go"].wait(90)
+            return w["ok"]
+
+        def close(tid):                              # auth.touchid_close: the window ends without an answer
+            hit = [w for w in windows if w["tid"] == tid and not w["go"].is_set()]
+            for w in hit:
+                w["go"].set()
+            return bool(hit)
+
+        def window(n):
+            with cond:
+                self.assertTrue(cond.wait_for(lambda: len(windows) >= n, 20), "window %d not asked" % n)
+            return windows[n - 1]
+        try:
+            with mock.patch.object(auth, "touchid_available", return_value=True), mock.patch.object(auth, "touchid_verify", verify), \
+                    mock.patch.object(auth, "touchid_close", close), sync_playwright() as p:
+                b = p.chromium.launch(); pg = b.new_page(viewport={"width": 1360, "height": 820})
+                errors = []; pg.on("pageerror", lambda e: errors.append(str(e)))
+                pg.goto(url); pg.wait_for_selector("#tid-box:not(.hidden)")
+                pg.click("#touchid-btn")                       # (asked at once already where the page has the focus: the same request)
+                w = window(1)
+                until(pg, "TID.pending && !!TID.id")
+                self.assertEqual(w["reason"], tr("s_touchid_reason")); self.assertEqual(w["tid"], pg.evaluate("TID.id"))
+                self.assertEqual(pg.inner_text("#login-err"), pg.evaluate("t('touch_id_bitte_am_mac')"))
+                pg.click("#demo-btn")                          # while the window is open: it works at once
+                until(pg, "document.querySelector('#login-text').textContent === t('demo_anmelden') && document.querySelector('#demo-btn').textContent === t('demo_zurueck')")
+                until(pg, "document.querySelector('#login-err').textContent === t('touch_id_bitte_am_mac_demo')")
+                w2 = window(2)                                 # the first window closed, the page asked anew: for the demo
+                self.assertTrue(w["go"].is_set()); self.assertFalse(w["ok"])
+                self.assertEqual(w2["reason"], tr("s_touchid_reason_demo")); self.assertNotEqual(w2["tid"], w["tid"])
+                self.assertFalse(app.sessions.active()); self.assertIsNone(app.demo_box.app)
+                w2["ok"] = True; w2["go"].set()
+                wait_shell(pg, 90000)
+                until(pg, "demoOn() && DEMO_PAGE", 60)
+                self.assertTrue(pg.is_visible("#demo-badge"))
+                self.assertFalse(app.sessions.active())                           # the real Kontor: no session
+                self.assertEqual(app.demo_box.app.sessions.active(), 1)
+                self.assertEqual(len(windows), 2)
+                self.assertEqual(errors, [])
+                b.close()
+        finally:
+            for w in windows:
+                w["go"].set()
+            app.demo_box.end()
+            srv.shutdown(); srv.server_close()
+            shutil.rmtree(d, ignore_errors=True)
+
+
 class WebAppTest(unittest.TestCase):
     """Kontor as an app of its own, step 1 of the setup: the way right in it (Safari makes the app itself, no page can), a
     button where the browser offers it (Chrome, Edge). Opened as an app at the Mac for the first time, Kontor goes straight on
@@ -4994,8 +5440,7 @@ class WebAppTest(unittest.TestCase):
         except ImportError:
             self.skipTest("playwright fehlt")
         d = tempfile.mkdtemp(prefix="kontor-app-")
-        key, src = load_or_create_master_key(d)
-        store = Store(d, key, src); store.save("config.json", config_for_test(os.path.join(d, "Belege")))
+        store = new_store(d); store.save("config.json", config_for_test(os.path.join(d, "Belege")))
         reset_mock(); patch_today()
         app = App(store, d, bridge_factory=MockBridge)
         app.do_run(False, True)
@@ -5076,19 +5521,15 @@ class WebAppTest(unittest.TestCase):
 
 class DataAfterSignIn(unittest.TestCase):
     """Daten erst nach Anmeldung: before a sign-in nothing in the service reads the data; the password (or Touch ID) opens the
-    data key, which then lies only in memory; the switch from the keychain loses nothing -- also when it breaks off midway, in
-    every folder of the store. Made-up keys, a made-up keychain and a made-up Secure Enclave only."""
+    data key from the key file, which then lies only in memory; a renewal broken off midway loses nothing, in every folder of
+    the store. Made-up keys and a made-up Secure Enclave only."""
     PW = "sehr-geheimes-passwort"
 
     def setUp(self):
         import access as AC
         import storage as ST
-        from test_security import FakeKeychain
         self.ST, self.AC = ST, AC
         self.dir = tempfile.mkdtemp(prefix="kontor-key-")
-        self.kc, sec = FakeKeychain(), ST._security
-        ST._security = self.kc                       # never the real keychain
-        self.addCleanup(setattr, ST, "_security", sec)
         self.belege = os.path.join(self.dir, "Belege")
         self.servers = []
         reset_mock()
@@ -5099,20 +5540,21 @@ class DataAfterSignIn(unittest.TestCase):
             srv.shutdown(); srv.server_close()
         shutil.rmtree(self.dir, ignore_errors=True)
 
-    def legacy(self):
-        """The data as an earlier Kontor left them: the key in the keychain, the password in auth.json, a saved conversation."""
+    def existing(self, **ui):
+        """Kontor set up before: the key file with the password, the settings (ui: some of them changed), a saved conversation."""
         import auth
         key = os.urandom(32)
-        self.kc.entries["kontor"] = key.hex()
-        st = Store(self.dir, key, "keychain")
-        st.save("config.json", config_for_test(self.belege)); st.save("state.json", dict(ALL_NEW))
+        st = Store(self.dir, key)
+        cfg = config_for_test(self.belege)
+        cfg.setdefault("ui", {}).update(ui)
+        st.save("config.json", cfg); st.save("state.json", dict(ALL_NEW))
         st.save("auth.json", auth.with_offline(auth.hash_password(self.PW), self.PW))
         st.save("chats/assistant-chat-aaaaaaaa.json", {"turns": [1]})
+        self.assertTrue(self.AC.complete(self.dir, key, self.PW))
         return key
 
     def start(self):
         """The service as launchd starts it (or after an update): locked."""
-        self.AC.prepare(self.dir)
         self.app = App(Store.closed(self.dir), self.dir, bridge_factory=MockBridge)
         srv = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(self.app))
         threading.Thread(target=srv.serve_forever, daemon=True).start()
@@ -5148,9 +5590,7 @@ class DataAfterSignIn(unittest.TestCase):
                     self.assertNotIn(form, raw, n)
 
     def test_nothing_reads_the_data_before_a_sign_in(self):
-        key = self.legacy()
-        self.AC.complete(self.dir, key, self.PW)                 # switched already: the key file
-        self.assertEqual(self.kc.entries, {})
+        key = self.existing()
         tried, decrypted = [], []
         need, dec = self.ST.Store._need_key, self.ST.decrypt
 
@@ -5164,7 +5604,8 @@ class DataAfterSignIn(unittest.TestCase):
             time.sleep(0.5)
             code, s = self.call("/api/session")
             self.assertEqual(code, 200)
-            self.assertEqual((s["signed_in"], s["setup_needed"], s["waiting"], s["switch"], s["touchid"]), (False, False, True, False, False))
+            self.assertEqual((s["signed_in"], s["setup_needed"], s["waiting"], s["touchid"]), (False, False, True, False))
+            self.assertNotIn("switch", s)
             for page in ("/api/status", "/api/dataset", "/api/config", "/api/accounts", "/api/offline/verifier", "/api/transactions"):
                 self.assertEqual(self.call(page)[0], 401, page)
             for page in ("/api/run", "/api/config", "/api/backup", "/api/key/renew", "/api/assistant/ask"):
@@ -5179,127 +5620,151 @@ class DataAfterSignIn(unittest.TestCase):
         self.assertEqual(code, 200, r)
         self.assertTrue(self.app.store.is_open); self.assertEqual(self.app.store.master, key)
         self.assertTrue(self.app.config["areas"])                     # the settings read after the sign-in
-        self.assertEqual(self.call("/api/status")[0], 200)
-        self.assertEqual(self.call("/api/status")[1]["storage"]["key_source"], "login")
+        code, st = self.call("/api/status")
+        self.assertEqual(code, 200); self.assertTrue(st["storage"]["encrypted"]); self.assertNotIn("key_source", st["storage"])
         self.no_key_on_disk(key)
         # the interface locks: the key stays in memory, the schedule goes on; a restart needs a sign-in again
         self.assertEqual(self.call("/api/lock", {})[0], 200)
         self.assertTrue(self.app.store.is_open)
         self.start()
         self.assertFalse(self.app.store.is_open); self.assertEqual(self.call("/api/status")[0], 401)
-
-    def test_switch_from_the_keychain(self):
-        key = self.legacy()
-        before = self.files()
-        self.start()
-        s = self.call("/api/session")[1]
-        self.assertTrue(s["switch"]); self.assertTrue(s["waiting"]); self.assertFalse(s["touchid"]); self.assertFalse(s["setup_needed"])
-        self.assertEqual(self.call("/api/login", {"password": "falsch-falsch"})[0], 401)
-        self.assertIn("kontor", self.kc.entries); self.assertIsNone(self.ST.key_record(self.dir))
         self.assertEqual(self.call("/api/login", {"password": self.PW})[0], 200)
-        self.assertEqual(self.kc.entries, {})                         # the old key is gone ...
-        rec = self.ST.key_record(self.dir)
-        self.assertEqual(self.ST.open_password_entry(rec["password"], self.PW), (key, None))     # ... the same key, only with the password
-        self.assertEqual(self.files(), before)                       # no file touched
-        self.assertEqual(self.ST.files_not_opening(key, self.dir), [])
-        self.no_key_on_disk(key)
-        self.start()                                                  # after a restart: the key file
-        s = self.call("/api/session")[1]
-        self.assertFalse(s["switch"]); self.assertTrue(s["waiting"])
-        self.assertEqual(self.call("/api/login", {"password": self.PW})[0], 200)
-        self.assertEqual(self.app.store.master, key)
-        code, b = self.call("/api/backup", {"password": "sicherung-1234"})          # the backup: its own password, as before
+        code, b = self.call("/api/backup", {"password": "sicherung-1234"})          # the backup: its own password
         self.assertEqual(code, 200, b)
         code, r = self.call("/api/backup/restore", {"backup": b, "password": "sicherung-1234"})
         self.assertEqual(code, 200, r); self.assertTrue(self.app.config["areas"])
 
-    def test_switch_waits_while_a_file_does_not_open(self):
-        key = self.legacy()
-        odd = os.path.join(self.dir, "chats", "assistant-chat-bbbbbbbb.json.enc")
-        with open(odd, "wb") as f:
-            f.write(self.ST.encrypt(os.urandom(32), b"{}"))            # a file in a folder of the store with another key
-        self.start()
-        self.assertEqual(self.call("/api/login", {"password": self.PW})[0], 200)      # the data open with the key from before
-        self.assertEqual(self.kc.entries, {"kontor": key.hex()}); self.assertIsNone(self.ST.key_record(self.dir))
-        os.remove(odd)
-        self.start()
-        self.assertEqual(self.call("/api/login", {"password": self.PW})[0], 200)
-        self.assertEqual(self.kc.entries, {}); self.assertEqual(self.ST.open_password_entry(self.ST.key_record(self.dir)["password"], self.PW)[0], key)
+    def test_a_damaged_file_does_not_lock_out(self):
+        """config.json.enc, state.json.enc or auth.json.enc damaged for good (the key is right): the sign-in still opens Kontor
+        -- the file is set aside under another name (not deleted, not changed), Kontor goes on with the factory settings or an
+        empty state (nothing books by itself), never with a new key or a new setup, and says so until the note is closed or a
+        backup is restored. Before: every sign-in ended with 409 "file does not have the expected format" -- no way in."""
+        key = self.existing()
+        st = Store(self.dir, key)
+        cfg = st.load("config.json"); cfg["ui"].update(lock_minutes=7, port=45678, touchid=False, language="en")
+        st.save("config.json", cfg)
+        st.save("plan.json", {"areas": {"b": {"horizon_months": 12}}})
+        self.start(); self.assertEqual(self.call("/api/login", {"password": self.PW})[0], 200)      # (start.json: the access as it is)
+        code, backup = self.call("/api/backup", {"password": "sicherung-1234"})
+        self.assertEqual(code, 200, backup)
+        rec = open(os.path.join(self.dir, "key.json"), "rb").read()
+        cut = {}
+        for name in ("config.json", "state.json", "auth.json"):
+            p = os.path.join(self.dir, name + ".enc")
+            raw = open(p, "rb").read()
+            cut[name] = raw[:len(raw) // 2]
+            with open(p, "wb") as f:
+                f.write(cut[name])
+            if name == "state.json":                     # (the key is known to be right: auth.json opens with it)
+                # what may pass (openssl does not answer) is not "damaged": locked again as before, nothing set aside -- also
+                # not the two damaged ones read before it
+                self.start()
+                read = self.ST.Store.read_bytes
 
-    def test_switch_after_an_unfinished_renewal_from_before(self):
-        """From before, a renewal of the key broke off (the next key in its own keychain entry, one file with it): the sign-in
-        finishes it, then the key file holds the new key and both entries go."""
-        key = self.legacy()
-        new = os.urandom(32)
-        self.kc.entries["kontor-next"] = new.hex()
-        data = Store(self.dir, key, "keychain").read_bytes("chats/assistant-chat-aaaaaaaa.json")
-        with open(os.path.join(self.dir, "chats", "assistant-chat-aaaaaaaa.json.enc"), "wb") as f:
-            f.write(self.ST.encrypt(new, data))
+                def fails(store, n):
+                    if n == "auth.json":
+                        raise self.ST.StoreError("openssl")
+                    return read(store, n)
+                with mock.patch.object(self.ST.Store, "read_bytes", fails):
+                    self.assertEqual(self.call("/api/login", {"password": self.PW})[0], 409)
+                self.assertFalse(self.app.store.is_open); self.assertFalse([n for n in os.listdir(self.dir) if self.ST.DAMAGED in n])
         self.start()
-        self.assertEqual(self.call("/api/login", {"password": self.PW})[0], 200)
-        self.assertEqual(self.app.store.master, new); self.assertEqual(self.kc.entries, {})
-        self.assertEqual(self.ST.files_not_opening(new, self.dir), [])
-        self.assertEqual(self.ST.open_password_entry(self.ST.key_record(self.dir)["password"], self.PW)[0], new)
+        self.assertEqual(self.call("/api/login", {"password": self.PW}), (409, {"error": self.ST.tr("s_schluessel_passt_nicht")}))    # none of the three opens: is the key right at all?
+        with open(os.path.join(self.dir, "auth.json.enc"), "wb") as f:                # (that one whole again -- access.py decides this, see the report)
+            f.write(self.ST.encrypt(key, b'{"alg": "x"}'))
+        self.start()
+        code, r = self.call("/api/login", {"password": self.PW})
+        self.assertEqual(code, 200, r)
+        self.assertTrue(self.app.store.is_open); self.assertEqual(self.app.store.master, key)        # the same key, no new one
+        self.assertEqual(open(os.path.join(self.dir, "key.json"), "rb").read(), rec)
+        s = self.call("/api/session")[1]
+        self.assertTrue(s["signed_in"]); self.assertFalse(s["setup_needed"])          # no new setup over the data that are left
+        status = self.call("/api/status")[1]
+        notes = status["storage"]["damaged"]
+        self.assertEqual([n["file"] for n in notes], ["config.json", "state.json"])
+        for n in notes:                                                               # set aside: there, byte for byte
+            self.assertRegex(n["kept"], r"^%s\.enc\.damaged-\d{8}-\d{6}$" % re.escape(n["file"]))
+            self.assertEqual(open(os.path.join(self.dir, n["kept"]), "rb").read(), cut[n["file"]])
+        now = self.app.config
+        self.assertEqual(now["areas"], []); self.assertEqual(now["loans"], []); self.assertTrue(now["dry_run"])       # the factory's: nothing books by itself
+        self.assertEqual((now["ui"]["lock_minutes"], now["ui"]["port"], now["ui"]["touchid"], now["ui"]["language"]), (7, 45678, False, "en"))     # the access as it was
+        self.assertEqual(self.app.store.load("plan.json"), {"areas": {"b": {"horizon_months": 12}}})                  # the other data: untouched
+        self.assertEqual(self.app.store.load("chats/assistant-chat-aaaaaaaa.json"), {"turns": [1]})
+        self.assertEqual(self.call("/api/dataset")[0], 200); self.assertEqual(self.call("/api/config")[0], 200)
+        # uninstalling with the program folder: refused while it is not known where your receipts lie
+        self.assertTrue(self.app.settings_lost())
+        self.app.program_dir = self.dir
+        self.assertIn("error", self.app.uninstall(True)); self.assertTrue(os.path.exists(os.path.join(self.dir, "plan.json.enc")))
+        # the next sign-in: nothing more to set aside, the note stays
+        self.start(); self.assertEqual(self.call("/api/login", {"password": self.PW})[0], 200)
+        self.assertEqual(len(self.call("/api/status")[1]["storage"]["damaged"]), 2)
+        self.assertEqual(len([n for n in os.listdir(self.dir) if self.ST.DAMAGED in n]), 2)
+        # closed by you -- the files stay where they are
+        self.assertEqual(self.call("/api/storage/notice", {}), (200, {"ok": True}))
+        self.assertEqual(self.call("/api/status")[1]["storage"]["damaged"], []); self.assertFalse(self.app.settings_lost())
+        self.assertEqual(len([n for n in os.listdir(self.dir) if self.ST.DAMAGED in n]), 2)
+        # ... or by the backup the note advises: the settings are back
+        self.app.store.update("state.json", lambda cur: cur.__setitem__("set_aside", notes), {})
+        code, r = self.call("/api/backup/restore", {"backup": backup, "password": "sicherung-1234"})
+        self.assertEqual(code, 200, r)
+        self.assertTrue(self.app.config["areas"]); self.assertEqual(self.call("/api/status")[1]["storage"]["damaged"], [])
+        # a reset takes what was set aside with it
+        self.assertEqual(self.call("/api/reset", {"password": self.PW})[0], 200)
+        self.assertEqual([n for n in os.listdir(self.dir) if self.ST.DAMAGED in n], [])
 
-    def test_switch_broken_off_midway(self):
-        """The Mac goes off (or something refuses) at every step of the switch: the next sign-in carries on, nothing is lost."""
-        key = self.legacy()
+    def test_a_damaged_password_record_alone(self):
+        """auth.json.enc damaged (in it: the check value for the iPhone's offline view): set aside like the others; the sign-in
+        with the password makes it anew."""
+        self.existing()
+        p = os.path.join(self.dir, "auth.json.enc")
+        with open(p, "wb") as f:
+            f.write(b"MMT1" + os.urandom(100))
+        self.start()
+        code, r = self.call("/api/login", {"password": self.PW})
+        self.assertEqual(code, 200, r)
+        self.assertEqual([n["file"] for n in self.call("/api/status")[1]["storage"]["damaged"]], ["auth.json"])
+        self.assertTrue(self.app.config["areas"]); self.assertFalse(self.app.settings_lost())      # the settings are all there
+        import auth
+        self.assertTrue(auth.verify_password(self.PW, self.app.auth_record())); self.assertTrue(self.app.auth_record()["offline"])
+        self.assertEqual(self.call("/api/offline/verifier")[0], 200)
+
+    def test_a_broken_or_missing_key_file(self):
+        """The key file does not read: nothing is changed and the message says what helps; gone while encrypted data are
+        there: the setup is offered, but never a new key over the data."""
+        key = self.existing()
         before = self.files()
-        real = self.ST._write_atomic
-
-        def off(p, payload):
-            if p.endswith("key.json"):
-                raise OSError("power off")
-            return real(p, payload)
-        with mock.patch.object(self.ST, "_write_atomic", off):        # 1. while the key file is written
-            self.start()
-            self.assertEqual(self.call("/api/login", {"password": self.PW})[0], 200)
-        self.assertIsNone(self.ST.key_record(self.dir)); self.assertEqual(self.kc.entries, {"kontor": key.hex()})
-        with mock.patch.object(self.AC, "_drop_legacy", side_effect=OSError("power off")):     # 2. after the key file, before the old key goes
-            self.start()
-            self.assertEqual(self.call("/api/login", {"password": self.PW})[0], 200)
-        self.assertIsNotNone(self.ST.key_record(self.dir)); self.assertEqual(self.kc.entries, {"kontor": key.hex()})
-        self.kc.fail_delete.add("kontor")                             # 3. the keychain does not delete
-        self.start()
-        self.assertEqual(self.call("/api/login", {"password": self.PW})[0], 200)
-        self.assertEqual(self.kc.entries, {"kontor": key.hex()})
-        self.assertEqual(self.call("/api/status")[1]["storage"]["key_source"], "keychain")      # shown as it is: still in the keychain
-        self.kc.fail_delete.clear()                                   # 4. done at the next sign-in
-        self.start()
-        self.assertEqual(self.call("/api/login", {"password": self.PW})[0], 200)
-        self.assertEqual(self.kc.entries, {}); self.assertEqual(self.app.store.master, key)
-        self.assertEqual(self.files(), before); self.assertEqual(self.ST.files_not_opening(key, self.dir), [])
-
-    def test_a_broken_key_file(self):
-        """The key file does not read: with the key from before still there, the sign-in makes it anew; without, nothing is
-        changed and the message says what helps -- never a new key over the data."""
-        key = self.legacy()
         with open(os.path.join(self.dir, "key.json"), "w") as f:
             f.write("{kaputt")
         self.start()
         self.assertFalse(self.call("/api/session")[1]["setup_needed"])
-        self.assertEqual(self.call("/api/login", {"password": self.PW})[0], 200)
-        self.assertEqual(self.ST.open_password_entry(self.ST.key_record(self.dir)["password"], self.PW)[0], key)
-        self.assertEqual(self.kc.entries, {})
-        with open(os.path.join(self.dir, "key.json"), "w") as f:
-            f.write("{kaputt")
-        self.start()
         code, r = self.call("/api/login", {"password": self.PW})
         self.assertEqual(code, 409); self.assertIn("Sicherung", r["error"]); self.assertFalse(self.app.store.is_open)
         self.assertEqual(self.call("/api/setup", {"password": "ein-neues-passwort"})[0], 403)
         self.assertEqual(open(os.path.join(self.dir, "key.json")).read(), "{kaputt")
-
-    def test_settings_that_do_not_read_keep_it_locked(self):
-        key = self.legacy()
-        self.AC.complete(self.dir, key, self.PW)
-        Store(self.dir, key, "login").write_bytes("config.json", b"{kaputt")
+        os.remove(os.path.join(self.dir, "key.json"))
         self.start()
-        self.assertEqual(self.call("/api/login", {"password": self.PW})[0], 409)
-        self.assertFalse(self.app.store.is_open)                      # not open on defaults (nothing overwritten)
-        self.assertEqual(Store(self.dir, key, "login").read_bytes("config.json"), b"{kaputt")
+        code, r = self.call("/api/setup", {"password": "ein-neues-passwort"})
+        self.assertEqual(code, 409); self.assertIn("Sicherung", r["error"])
+        self.assertIsNone(self.ST.key_record(self.dir)); self.assertFalse(self.app.store.is_open)
+        self.assertEqual(self.files(), before); self.assertEqual(self.ST.files_not_opening(key, self.dir), [])
+
+    def test_settings_that_do_not_read_are_set_aside(self):
+        """(Until 3.16.99 they kept Kontor locked for good -- see test_a_damaged_file_does_not_lock_out.) Nothing is overwritten:
+        the file as it was lies beside, under another name."""
+        key = self.existing()
+        for odd in (b"{kaputt", b"[1, 2]", b'"text"'):               # no JSON, or none that holds settings
+            Store(self.dir, key).write_bytes("config.json", odd)
+            raw = open(os.path.join(self.dir, "config.json.enc"), "rb").read()
+            self.start()
+            self.assertEqual(self.call("/api/login", {"password": self.PW})[0], 200)
+            self.assertTrue(self.app.store.is_open); self.assertTrue(self.app.config["dry_run"]); self.assertEqual(self.app.config["areas"], [])
+            kept = self.call("/api/status")[1]["storage"]["damaged"][-1]
+            self.assertEqual(kept["file"], "config.json")
+            self.assertEqual(open(os.path.join(self.dir, kept["kept"]), "rb").read(), raw)
+            self.assertEqual(self.ST.decrypt(key, raw), odd)
 
     def test_renewal_broken_off_midway(self):
-        key = self.legacy()
+        key = self.existing()
         self.start(); self.assertEqual(self.call("/api/login", {"password": self.PW})[0], 200)
         before = self.files()
         real = self.ST.write_key_record
@@ -5354,9 +5819,9 @@ class DataAfterSignIn(unittest.TestCase):
         se = FakeEnclave()
         for p in se.patches():
             p.start(); self.addCleanup(p.stop)
-        key = self.legacy()
+        key = self.existing()
         self.start()
-        self.assertFalse(self.call("/api/session")[1]["touchid"])       # from before: once with the password
+        self.assertFalse(self.call("/api/session")[1]["touchid"])       # no key for Touch ID in the key file yet: once with the password
         self.assertEqual(self.call("/api/login", {"password": self.PW})[0], 200)
         rec = self.ST.key_record(self.dir)
         self.assertTrue(rec["touchid"]); self.no_key_on_disk(key)
@@ -5391,11 +5856,11 @@ class DataAfterSignIn(unittest.TestCase):
         self.assertEqual(self.AC.start_settings(self.dir).get("touchid"), False)
 
     def test_reset_with_the_password_forgets_the_key(self):
-        key = self.legacy()
+        key = self.existing()
         self.start(); self.assertEqual(self.call("/api/login", {"password": self.PW})[0], 200)
         self.assertEqual(self.call("/api/reset", {"password": self.PW, "with_password": True})[0], 200)
         self.assertEqual(self.ST._enc_files(self.dir), []); self.assertIsNone(self.ST.key_record(self.dir))
-        self.assertEqual(self.kc.entries, {}); self.assertFalse(self.app.store.is_open)
+        self.assertFalse(self.app.store.is_open)
         s = self.call("/api/session")[1]
         self.assertTrue(s["setup_needed"]); self.assertFalse(s["waiting"])
         self.assertEqual(self.call("/api/setup", {"password": "ein-neues-passwort"})[0], 200)
@@ -5404,9 +5869,7 @@ class DataAfterSignIn(unittest.TestCase):
         self.assertEqual(self.call("/api/login", {"password": "ein-neues-passwort"})[0], 200)
 
     def test_reset_without_the_password_keeps_the_key(self):
-        key = self.legacy()
-        st = Store(self.dir, key, "keychain")
-        cfg = st.load("config.json"); cfg["ui"]["bind"] = "100.64.1.2"; st.save("config.json", cfg)
+        key = self.existing(bind="100.64.1.2")
         self.start(); self.assertEqual(self.call("/api/login", {"password": self.PW})[0], 200)
         self.assertEqual(self.AC.start_settings(self.dir).get("bind"), "100.64.1.2")
         self.assertEqual(self.call("/api/reset", {"password": self.PW})[0], 200)
@@ -5424,7 +5887,6 @@ class DataAfterSignIn(unittest.TestCase):
         key = self.app.store.master
         self.assertEqual(self.ST.open_password_entry(self.ST.key_record(self.dir)["password"], self.PW)[0], key)
         self.assertEqual(self.AC.start_settings(self.dir).get("language"), "en")
-        self.assertEqual(self.kc.entries, {}); self.assertFalse(os.path.exists(os.path.join(self.dir, "master.key")))
         self.assertEqual(self.call("/api/setup", {"password": "noch-ein-passwort"})[0], 403)
         self.start()
         self.assertEqual(self.app.config["ui"]["language"], "en")          # from the start settings, before the sign-in
@@ -5432,11 +5894,11 @@ class DataAfterSignIn(unittest.TestCase):
         self.no_key_on_disk(key)
 
     def test_start_settings_hold_no_data(self):
-        key = self.legacy()
-        st = Store(self.dir, key, "keychain")
-        cfg = st.load("config.json"); cfg["ui"].update(port=9876, language="en", lock_minutes=5, bind="100.64.1.2")
-        st.save("config.json", cfg)
-        self.start()                                                  # from before: taken from the settings once
+        self.existing(port=9876, language="en", lock_minutes=5, bind="100.64.1.2")
+        self.start()
+        self.assertEqual(self.AC.start_settings(self.dir), {})          # nothing known before the first sign-in: the defaults
+        self.assertEqual(self.call("/api/login", {"password": self.PW})[0], 200)         # the sign-in writes them from the settings
+        self.start()                                                  # read before the next sign-in
         got = self.AC.start_settings(self.dir)
         self.assertEqual((got["port"], got["language"], got["lock_minutes"], got["bind"]), (9876, "en", 5, "100.64.1.2"))
         self.assertLessEqual(set(json.load(open(os.path.join(self.dir, "start.json")))), set(self.AC.START_KEYS))
@@ -5445,7 +5907,7 @@ class DataAfterSignIn(unittest.TestCase):
 
     def test_uninstall_takes_the_key_file(self):
         import service as MA
-        self.legacy()
+        self.existing()
         self.start(); self.assertEqual(self.call("/api/login", {"password": self.PW})[0], 200)
         self.app.program_dir = "/nonexistent"
         with mock.patch.object(MA.updates, "plist_path", return_value=os.path.join(self.dir, "none.plist")):
@@ -5549,8 +6011,7 @@ class MacAppBrowserTest(unittest.TestCase):
             self.skipTest("playwright fehlt")
         import mac_app
         d = tempfile.mkdtemp(prefix="kontor-macapp-")
-        key, src = load_or_create_master_key(d)
-        store = Store(d, key, src); store.save("config.json", config_for_test(os.path.join(d, "Belege")))
+        store = new_store(d); store.save("config.json", config_for_test(os.path.join(d, "Belege")))
         reset_mock(); patch_today()
         app = App(store, d, bridge_factory=MockBridge)
         app.do_run(False, True)
@@ -5558,7 +6019,7 @@ class MacAppBrowserTest(unittest.TestCase):
         threading.Thread(target=srv.serve_forever, daemon=True).start()
         opened = []
         shell = """window.__shell = []; window.webkit = {messageHandlers: {kontor: {postMessage: m => {
-            window.__shell.push(m); return Promise.resolve(m.mic ? (window.__mic || 'prompt') : m.chrome ? {tb: 46, tl: 78, ly: 30, lb: 37} : true); }}}};"""
+            window.__shell.push(m); return Promise.resolve(m.mic ? (window.__mic || 'prompt') : m.chrome ? {tb: 46, tl: 66, ly: 14, lb: 21} : true); }}}};"""
         standalone = """(() => { const mm = window.matchMedia.bind(window);
             window.matchMedia = q => /display-mode:\\s*standalone/.test(q) ? {matches: true, media: q, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {}} : mm(q); })();"""
         try:
@@ -5605,25 +6066,20 @@ class MacAppBrowserTest(unittest.TestCase):
                 self.assertTrue(pg3.evaluate("SHELL && APP_MODE"))
                 pg3.evaluate("location.replace('#settings')"); pg3.wait_for_selector("#webapp-row .pill")
                 self.assertEqual(pg3.inner_text("#webapp-row"), "Läuft als App")
-                # no title bar of its own: the page as in the browser, the window buttons level with the title row -- the app puts
-                # them 30px from the top (mac_app.swift: rowMiddle), the row's middle stays there, also in a narrow window -- above
-                # Kontor's name; the app learns where the page has something to click in the strip that moves the window
+                # no title bar of its own: the page as in the browser, the window buttons small in the top left corner where macOS
+                # puts them (here: 7px from the top, ending 21px down) -- Kontor's name below them; in a narrow window the title row
+                # below them too; the app learns where the page has something to click in the strip that moves the window
                 self.assertFalse(pg.evaluate("document.body.classList.contains('mac-chrome')"))
                 until(pg3, "document.body.classList.contains('mac-chrome')")
                 top = "document.querySelector('.topbar h1').getBoundingClientRect().top"
                 self.assertEqual(pg3.evaluate(top), pg.evaluate(top))
-                self.assertGreaterEqual(pg3.evaluate("document.querySelector('.side .brand').getBoundingClientRect().top"), 37 + 12)
-                mid = "(r => (r.top + r.bottom) / 2)(document.querySelector('%s').getBoundingClientRect())"
-                self.assertLessEqual(abs(pg3.evaluate(mid % '.topbar h1') - 30), 2)
+                self.assertGreaterEqual(pg3.evaluate("document.querySelector('.side .brand').getBoundingClientRect().top"), 21 + 12)
                 pg3.set_viewport_size({"width": 800, "height": 900}); until(pg3, "getComputedStyle(document.querySelector('#menu-btn')).display !== 'none'")
-                self.assertLessEqual(abs(pg3.evaluate(mid % '#menu-btn') - 30), 2); self.assertLessEqual(abs(pg3.evaluate(mid % '.topbar h1') - 30), 2)
-                self.assertGreaterEqual(pg3.evaluate("document.querySelector('#menu-btn').getBoundingClientRect().left"), 78)
+                for sel in ('#menu-btn', '.topbar h1'):
+                    self.assertGreaterEqual(pg3.evaluate("document.querySelector('%s').getBoundingClientRect().top" % sel), 21 + 4, sel)
                 pg3.set_viewport_size({"width": 1440, "height": 900})
                 until(pg3, """(() => { const q = document.querySelector('.topbar .page-hq').getBoundingClientRect(), d = (window.__shell.filter(m => m.drag).pop() || {}).drag || [];
                     return d.some(h => JSON.stringify(h) === JSON.stringify([q.left, q.top, q.width, q.height].map(Math.round))); })()""")
-                # the app still open from before the update (its buttons where macOS puts them, no bottom given): Kontor's name below them
-                pg3.evaluate("window.dispatchEvent(new CustomEvent('kontorchrome', {detail: {tb: 28, tl: 76, ly: 14}}))")
-                self.assertGreaterEqual(pg3.evaluate("document.querySelector('.side .brand').getBoundingClientRect().top"), 14 + 7 + 12)
                 pg3.evaluate("window.dispatchEvent(new CustomEvent('kontorchrome', {detail: {tb: 0, tl: 0, ly: 0, lb: 0}}))")          # full screen: as in the browser
                 self.assertFalse(pg3.evaluate("document.body.classList.contains('mac-chrome')"))
                 until(pg3, "JSON.stringify((window.__shell.filter(m => m.drag).pop() || {}).drag) === '[]'")
@@ -5663,8 +6119,7 @@ class KeysFindBrowserTest(unittest.TestCase):
         except ImportError:
             self.skipTest("playwright fehlt")
         d = tempfile.mkdtemp(prefix="kontor-keys-")
-        key, src = load_or_create_master_key(d)
-        store = Store(d, key, src); store.save("config.json", config_for_test(os.path.join(d, "Belege")))
+        store = new_store(d); store.save("config.json", config_for_test(os.path.join(d, "Belege")))
         reset_mock(); patch_today()
         app = App(store, d, bridge_factory=MockBridge)
         app.do_run(False, True)
@@ -5778,8 +6233,7 @@ class SafariTablesTest(unittest.TestCase):
         except ImportError:
             self.skipTest("playwright fehlt")
         d = tempfile.mkdtemp(prefix="kontor-wk-")
-        key, src = load_or_create_master_key(d)
-        store = Store(d, key, src); store.save("config.json", config_for_test(os.path.join(d, "Belege")))
+        store = new_store(d); store.save("config.json", config_for_test(os.path.join(d, "Belege")))
         reset_mock(); patch_today()
         app = App(store, d, bridge_factory=MockBridge)
         app.do_run(False, True)
@@ -5830,8 +6284,7 @@ class BrowserWizardTest(unittest.TestCase):
         except ImportError:
             self.skipTest("playwright fehlt")
         d = tempfile.mkdtemp(prefix="kontor-lang-")
-        key, src = load_or_create_master_key(d)
-        store = Store(d, key, src); store.save("config.json", config_for_test(os.path.join(d, "Belege")))
+        store = new_store(d); store.save("config.json", config_for_test(os.path.join(d, "Belege")))
         reset_mock(); patch_today()
         app = App(store, d, bridge_factory=MockBridge)
         srv = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(app)); port = srv.server_address[1]
@@ -5866,8 +6319,7 @@ class BrowserWizardTest(unittest.TestCase):
         except ImportError:
             self.skipTest("playwright fehlt")
         d = tempfile.mkdtemp(prefix="kontor-wiz-")
-        key, src = load_or_create_master_key(d)
-        store = Store(d, key, src)
+        store = new_store(d)
         store.save("config.json", {"updates": {"check_mode": "aus"}, "schedule": {"automatic": False}, "receipts": {"folder": os.path.join(d, "Belege")}})
         reset_mock(); patch_today()
         app = App(store, d, bridge_factory=MockBridge)

@@ -5,12 +5,12 @@ die nach der Gesamtprüfung erscheint. Nur die großen Themen, höchstens sechs 
 Einstellungen → Updates zeigt den Überblick vor den einzelnen Versionen; die kommende Hauptversion als „in Arbeit“.
 
 ## 3.17
-- KI-Assistent schlägt vor: Kategorien, Buchungsregeln, Auto-Buchungen, Belege – ausgeführt erst nach deinem Klick, mit Protokoll
-- KI-Assistent: Diagramme, Verläufe, Internetsuche nur zum Lesen; Belege, Excel und mehrseitige PDF-Tabellen (BWA, Summenlisten) im Chat
-- Diktieren bis zehn Minuten, live im Textfeld; Rechtsklick auf Zahl, Zeile oder Grafik: „Kurz erklären“, „Im Chat fragen“, kopieren
-- Eigene Mac-App „Kontor“: Menüleiste, Suche mit ⌘F, Downloads, Mikrofon ohne erneute Nachfrage
-- Updates: jede neue Version vor dem Installieren gelesen – neue Netzzugriffe oder Programmaufrufe warten auf deine Freigabe
-- KI-Assistent: Gedächtnis – Passendes kommt zur Frage, nach Wörtern und Bedeutung, auch aus Verläufen, Hilfe, Umsätzen; sucht neuere Modelle
+- Sicherheit: Daten erst nach deiner Anmeldung lesbar (Passwort oder Touch ID); jedes Update vor dem Installieren gelesen und geprüft
+- KI-Assistent schlägt vor, du entscheidest: Kategorien, Buchungsregeln, Auto-Buchungen, Belege – ausgeführt nach deinem Klick, mit Protokoll
+- KI-Assistent liest Belege, Excel und mehrseitige PDF-Tabellen (BWA, Summenlisten); Diagramme und gespeicherte Verläufe im Chat
+- KI-Assistent: Gedächtnis aus deinen Worten, Suche nach Bedeutung; Internetsuche nur zum Lesen bei festen, meist amtlichen Quellen
+- Eigene Mac-App mit Menüleiste und ⌘F; Diktieren bis zehn Minuten; Rechtsklick auf jede Zahl: „Kurz erklären“, „Im Chat fragen“
+- Demo mit erfundenen Beispieldaten zum Vorzeigen; Updates zeigen die Änderungen je Hauptversion
 
 ## 3.16
 - KI-Assistent (Alpha): Sprachmodell nur auf diesem Mac, ohne Netz – liest alle Auswertungen, zeigt Ansichten, trägt Werte nach deinem Klick ein
