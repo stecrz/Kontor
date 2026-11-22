@@ -106,6 +106,9 @@ anhängen – nie löschen.
   Neustarts erhalten. (umgesetzt in 3.16.80)
 - **Hilfe laufend:** Texte der Hilfe (de/en) und des README werden mit jeder Änderung gepflegt, die sie betrifft – auch in
   kleinen Versionen. Nur die Hilfe-Bilder entstehen weiter erst beim großen Versionssprung. (umgesetzt in 3.16.80)
+- **Belege nur in Kontor** (2026-11-22): Der Pfad eines Belegs wird nie in einen Umsatz in MoneyMoney geschrieben (auch nicht in
+  den Kommentar); Belege werden nur in Kontor verknüpft und gepflegt. Die Einstellung „Verweis in MoneyMoney“ entfällt.
+  (umgesetzt in 3.16.89)
 
 ## Offen (Entscheidung steht aus – mit Empfehlung vorlegen, wenn der Punkt dran ist)
 - Umsatzsteuer-Voranmeldung direkt an ELSTER senden (ELSTERs Programmbibliothek ERiC, Anmeldung als Hersteller, Zertifikat und

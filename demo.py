@@ -335,7 +335,7 @@ def config(world: World, real: Dict, receipts_dir: str) -> Dict:
                              "partners": [{"name": "A", "share_percent": 50, "tax_rate_percent": 42}, {"name": "B", "share_percent": 50, "tax_rate_percent": 42}],
                              "distribution_percent": 50, "tax_refund_in_cashflow": False}}]}],
         "updates": {"check_mode": "aus"},
-        "receipts": {"folder": receipts_dir, "subfolder": "{year}/{entity}", "write_comment": False, "folder_confirmed": True},
+        "receipts": {"folder": receipts_dir, "subfolder": "{year}/{entity}", "folder_confirmed": True},
         "ui": {k: copy.deepcopy(ui_real[k]) for k in ("language", "lock_minutes", "remote_read_only", "theme", "port") if k in ui_real},
         "assistant": copy.deepcopy((real or {}).get("assistant") or {}),
     }

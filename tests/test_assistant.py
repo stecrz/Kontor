@@ -2467,7 +2467,6 @@ class Receipts(_Assist):
         card = next(e for e in evs if e["type"] == "entry")
         self.assertEqual((card["kind"], card["title"], card["create"], card["rows"][0]["new"], card["diffs"]), ("receipt", "Rechnung.pdf", True, self.tx["amount"], [{"what": "date", "days": 5}]))
         self.assertFalse(os.path.isdir(self.belege))                                  # proposed: nothing filed
-        self.app.config["receipts"]["write_comment"] = True                          # "Reference in MoneyMoney": not by the assistant
         self.a.confirm(r["job"], next(e["id"] for e in evs if e["type"] == "batch"), True, None, True); events(self.a, r["job"])
         e = self.store.load("receipts.json")["entry_list"][-1]
         self.assertEqual((e["tx_id"], e["note"]), (self.tx["id"], "Werkzeug"))
@@ -2913,11 +2912,11 @@ class Categories(_Assist):
         self.a.confirm(job, batch, True, None, True); events(self.a, job)
         orig, calls = T.MockBridge.set_transaction, []
 
-        def once(self_, tx_id, category=None, comment=None):
+        def once(self_, tx_id, category=None):
             calls.append(tx_id)
             if len(calls) > 1:
                 raise MA.MoneyMoneyError("stopped")
-            return orig(self_, tx_id, category, comment)
+            return orig(self_, tx_id, category)
         T.MockBridge.set_transaction = once
         try:
             with self.assertRaises(ValueError) as cm:

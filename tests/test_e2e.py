@@ -93,8 +93,6 @@ class MockBridge:
                     {"name": "Anleihen-ETF", "isin": "IE00BZ163L38", "quantity": 600.0, "marketPrice": 50.0, "marketValue": 30000.0, "purchaseValue": 31000.0, "currency": "EUR", "assetClass": "ETF"}]
         return []
 
-    append_comment = mm_bridge.Bridge.append_comment
-
     def add_transaction(self, account_ref, booking_date, payee, amount, purpose="", category=None):
         self.written.append(("add", account_ref, booking_date, amount, purpose))
         if self.dry_run:
@@ -105,14 +103,12 @@ class MockBridge:
             if a["uuid"] == account_ref:
                 a["balance"][0][0] = round(a["balance"][0][0] + amount, 2)
 
-    def set_transaction(self, tx_id, category=None, comment=None):
-        self.written.append(("set", tx_id, category, comment))
+    def set_transaction(self, tx_id, category=None):
+        self.written.append(("set", tx_id, category))
         if self.dry_run:
             return
         for t in self.txs:
             if t["id"] == tx_id:
-                if comment is not None:
-                    t["comment"] = comment
                 if category is not None:
                     import mm_categories
                     paths = {c["uuid"]: c["path"] for c in mm_categories.with_paths(self.export_categories())}
@@ -529,13 +525,15 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(len(new_cfg["companies"]), 2)
         # what Kontor may write into MoneyMoney without asking does not travel: not out, and not in (a package from elsewhere)
         self.assertNotIn("dry_run", pkg["config"]); self.assertNotIn("write_comment", pkg["config"].get("receipts") or {})
-        loud = copy.deepcopy(pkg); loud["config"].update(dry_run=False, receipts={"write_comment": True, "subfolder": "{year}"})
+        loud = copy.deepcopy(pkg); loud["config"].update(dry_run=False, receipts={"write_comment": True, "subfolder": "{year}"})      # (an old package)
         for mode in ("merge", "replace"):
             got, _, _ = core.import_package(core.merged_config({"dry_run": True}), loud, led, mode)
-            self.assertEqual((got["dry_run"], got["receipts"]["write_comment"]), (True, False), mode)
+            self.assertEqual((got["dry_run"], "write_comment" in got["receipts"]), (True, False), mode)
             # ... and what you set here stays, also when a package replaces everything else
-            got, _, _ = core.import_package(core.merged_config({"dry_run": False, "receipts": {"write_comment": True, "folder": "~/Belege", "folder_confirmed": True}}), pkg, led, mode)
-            self.assertEqual((got["dry_run"], got["receipts"]["write_comment"], got["receipts"]["folder"], got["receipts"]["folder_confirmed"]), (False, True, "~/Belege", True), mode)
+            got, _, _ = core.import_package(core.merged_config({"dry_run": False, "receipts": {"folder": "~/Belege", "folder_confirmed": True}}), pkg, led, mode)
+            self.assertEqual((got["dry_run"], got["receipts"]["folder"], got["receipts"]["folder_confirmed"]), (False, "~/Belege", True), mode)
+        # the setting "Reference in MoneyMoney" is gone (22.11.2026): an old configuration's switch has no effect
+        self.assertNotIn("write_comment", core.merged_config({"receipts": {"write_comment": True}})["receipts"])
         # a number that is none in a file written by hand: the default, so the service starts
         self.assertEqual([core.merged_config({"ui": {"lock_minutes": v, "port": p}})["ui"][k] for v, p, k in
                           (("", 8765, "lock_minutes"), (True, 8765, "lock_minutes"), (0, 8765, "lock_minutes"), (20, 8765, "lock_minutes"), (15, "x", "port"), (15, 80, "port"), (15, 9000, "port"))],
@@ -1181,7 +1179,7 @@ class AppTests(_AppBase):
         n0 = len(sets())
         code, r = self.call("/api/categories/undo", {"ids": ids, "wait": True})
         self.assertEqual((code, r["undone"], r["changed"], r["error"]), (200, 1, 1, 0))
-        self.assertEqual(sets()[n0:], [("set", ids[0], F.uid("cat:Unkategorisiert"), None)])
+        self.assertEqual(sets()[n0:], [("set", ids[0], F.uid("cat:Unkategorisiert"))])
         self.assertEqual(categorize.mm_of(next(t for t in self.app.ledger.txs if t.id == ids[0])), "")
         code, w = self.call("/api/categories/written"); self.assertEqual([x["id"] for x in w["items"]], [ids[1]])
         # MoneyMoney shows no category any more (set back there): taken back only where it still shows Kontor's -- nothing written
@@ -1373,11 +1371,11 @@ class AppTests(_AppBase):
             self.assertEqual(self.call("/api/config", {"config": cfg}, method="PUT")[0], 403)
             cfg["receipts"] = dict(self.app.config.get("receipts") or {}, subfolder="../../{year}")
             self.assertEqual(self.call("/api/config", {"config": cfg}, method="PUT")[0], 403)
-            # who gets in and how, and whether Kontor writes into comments in MoneyMoney, stay as set at the Mac -- whatever a
-            # page elsewhere sends (also one loaded before the Mac changed them: it is not refused for it, the rest is saved)
+            # who gets in and how stay as set at the Mac -- whatever a page elsewhere sends (also one loaded before the Mac
+            # changed them: it is not refused for it, the rest is saved)
             want = {k: self.app.config["ui"].get(k) for k in ("lock_minutes", "touchid", "offline_copy", "remote_read_only")}
             for change in ({"ui": {"lock_minutes": 100000}}, {"ui": {"touchid": False}}, {"ui": {"offline_copy": True}}, {"ui": {"remote_read_only": True}},
-                           {"receipts": {"write_comment": True}}):
+                           {"receipts": {"write_comment": True}}):          # (the last: gone, never kept)
                 cfg = copy.deepcopy(self.app.config)
                 for k, v in change.items():
                     cfg[k] = dict(cfg.get(k) or {}, **v)
@@ -2329,7 +2327,7 @@ class DemoTests(_AppBase):
         code, r = self.call("/api/config", {"config": cfg})
         self.assertEqual(code, 200, r)
         self.assertEqual(d.config["areas"][0]["name"], "Haushalt")
-        self.assertTrue(d.config["receipts"]["folder"].startswith(d.data_dir)); self.assertFalse(d.config["receipts"]["write_comment"])
+        self.assertTrue(d.config["receipts"]["folder"].startswith(d.data_dir)); self.assertNotIn("write_comment", d.config["receipts"])
         self.assertNotEqual(d.config["ui"].get("remote_read_only"), False)
         self.assertEqual(self._files(self.dir), before)                         # the real folder: not a file written, nothing changed
         self.assertNotEqual(self.app.config["areas"][0]["name"], "Haushalt")
@@ -2971,7 +2969,7 @@ class FeatureTests(_AppBase):
         self.assertEqual(now["ui"].get("bind") or "127.0.0.1", "127.0.0.1"); self.assertEqual(now["ui"]["lock_minutes"], 7)
         self.assertFalse(now["ui"].get("tls_cert")); self.assertFalse(now["ui"].get("tls_key"))
         self.assertEqual(self.call("/api/remote")[1]["url"], None)
-        self.assertEqual(now["receipts"]["subfolder"], inner["config"]["receipts"]["subfolder"]); self.assertFalse(now["receipts"]["write_comment"])
+        self.assertEqual(now["receipts"]["subfolder"], inner["config"]["receipts"]["subfolder"]); self.assertNotIn("write_comment", now["receipts"])
         self.assertTrue(now["dry_run"]); self.assertEqual(now.get("assistant"), before)
         # what is allowed is taken over: an address of Tailscale, a pattern inside the folder, one of Kontor's own certificates
         tls = os.path.join(self.dir, "tls"); os.makedirs(tls, exist_ok=True)
@@ -2986,13 +2984,13 @@ class FeatureTests(_AppBase):
         cfg["ui"].update(tls_cert=os.path.join(tls, "..", "tls", "missing.example.crt"), tls_key=own[1])       # not there: the one set here stays
         self.assertEqual(restore(cfg), 200); self.assertEqual([self.app.config["ui"]["tls_cert"], self.app.config["ui"]["tls_key"]], own)
         # switched on at this Mac by you: a backup keeps it on or switches it off -- and a source for updates set here stays
-        on = copy.deepcopy(self.app.config); on["dry_run"] = False; on["receipts"]["write_comment"] = True; on["updates"]["repo"] = "mine/fork"
+        on = copy.deepcopy(self.app.config); on["dry_run"] = False; on["updates"]["repo"] = "mine/fork"
         self.app.save_config(on)
         self.assertEqual(restore(cfg), 200)
-        self.assertFalse(self.app.config["dry_run"]); self.assertTrue(self.app.config["receipts"]["write_comment"]); self.assertEqual(self.app.config["updates"]["repo"], "mine/fork")
-        off = copy.deepcopy(cfg); off["dry_run"] = True; off["receipts"]["write_comment"] = False
+        self.assertFalse(self.app.config["dry_run"]); self.assertEqual(self.app.config["updates"]["repo"], "mine/fork")
+        off = copy.deepcopy(cfg); off["dry_run"] = True
         self.assertEqual(restore(off), 200)
-        self.assertTrue(self.app.config["dry_run"]); self.assertFalse(self.app.config["receipts"]["write_comment"])
+        self.assertTrue(self.app.config["dry_run"])
         for odd in (None, 0, "no", []):                                         # no clear "ask first": asking stays
             self.assertEqual(restore(dict(cfg, dry_run=odd)), 200); self.assertTrue(self.app.config["dry_run"], odd)
         # the wrong kind of value anywhere near: nothing of it is kept and every page still answers

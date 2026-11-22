@@ -3245,14 +3245,13 @@ def make_handler(app: App):
                 if bool(cfg.get("dry_run", True)) != bool(app.config.get("dry_run", True)) and not local:
                     return self._json(403, {"error": tr("s_nur_von_diesem_mac_aus")})      # booking without asking: switched only at the Mac
                 old_b, new_b = app.config.get("receipts") or {}, cfg.get("receipts") or {}
-                # who gets in and how (as under /api/remote), and whether Kontor writes into comments in MoneyMoney: only at the Mac
+                # who gets in and how (as under /api/remote): only at the Mac
                 if not local:
                     cfg["ui"] = dict(cfg.get("ui") or {}, **{k: copy.deepcopy(old_ui[k]) for k in ("remote_read_only", "offline_copy", "touchid", "lock_minutes") if k in old_ui})
                     for k in ("remote_read_only", "offline_copy", "touchid", "lock_minutes"):
                         if k not in old_ui:
                             cfg["ui"].pop(k, None)
-                    cfg["receipts"] = dict(new_b, write_comment=bool(old_b.get("write_comment")))
-                    new_ui, new_b = cfg["ui"], cfg["receipts"]
+                    new_ui = cfg["ui"]
                 if any((old_b.get(k) or "") != (new_b.get(k) or "") for k in ("folder", "subfolder")) and not local:
                     return self._json(403, {"error": tr("s_nur_von_diesem_mac_aus")})
                 if (new_b.get("subfolder") or "") != (old_b.get("subfolder") or ""):
@@ -3672,15 +3671,7 @@ def make_handler(app: App):
                 except Exception:
                     raise ValueError(tr("s_dateiinhalt_unlesbar"))
                 e = bl.add_bytes(tx_of(body), str(body.get("file_name") or "Beleg"), data, str(body.get("note") or ""))
-                if (app.config.get("receipts") or {}).get("write_comment") and e.get("tx_id") is not None and local:
-                    # your setting "Reference in MoneyMoney": added to the comment that is there (read just before), never
-                    # in its place
-                    u = ums.get(int(e["tx_id"])) or {}
-                    try:
-                        if u.get("account") and u.get("date"):
-                            app.bridge_factory(False).append_comment(int(e["tx_id"]), u["account"], date.fromisoformat(u["date"]), "Beleg: " + e["path"])
-                    except (MoneyMoneyError, ValueError) as ex:
-                        log.warning("Receipt reference not written to MoneyMoney: %s", ex)
+                # linked in Kontor only -- a receipt's path is never written into MoneyMoney (decided 22.11.2026)
                 log.info("Receipt stored (%d KB)", len(data) // 1024)
                 return self._json(200, {"ok": True, "entry": e})
             if path == "/api/receipts/link":
@@ -4054,8 +4045,6 @@ def restored_config(current: dict, incoming: dict, data_dir: str = "") -> dict:
         sub = cfg["receipts"].get("subfolder")
         if sub and (not isinstance(sub, str) or pattern_problem(sub)):
             cfg["receipts"]["subfolder"] = old_r.get("subfolder") or "{year}"
-        if cfg["receipts"].get("write_comment") and not old_r.get("write_comment"):
-            cfg["receipts"]["write_comment"] = False
     if cfg.get("dry_run", True) is not True and current.get("dry_run", True):       # anything but a clear "ask first" (also a missing or odd value)
         cfg["dry_run"] = True
     return cfg

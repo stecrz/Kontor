@@ -1,5 +1,9 @@
 # Änderungen
 
+## 3.16.89 (2026-11-22 03:59)
+- Belege nur in Kontor: Einstellung „Verweis in MoneyMoney“ entfällt, nie mehr ein Belegpfad im Kommentar eines Umsatzes
+- MoneyMoney-Brücke: bei Umsätzen nur noch die Kategorie, alles andere abgewiesen
+
 ## 3.16.88 (2026-11-22 03:57)
 - KI-Assistent: liest Tabellen aus PDFs und Bildern (BWA, Summenlisten, Wertenachweise) – alle Seiten, zu einer Tabelle zusammengesetzt
 - KI-Assistent: Seitenköpfe, Seitenzahlen und wiederholte Tabellenköpfe fallen heraus; Summen rechnet Kontor

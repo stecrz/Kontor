@@ -15,10 +15,14 @@ const ERLAUBT = {
   exportAccounts: true, exportCategories: true, exportTransactions: true, exportPortfolio: true,
   addTransaction: true, setTransaction: true
 };
+// setTransaction: nur die Kategorie -- nie Kommentar, Haekchen oder anderes eines Umsatzes
+const ANGABEN = {setTransaction: {id: true, categoryTo: true}};
 
 function run(argv) {
   const params = JSON.parse(argv[0]);
   if (!ERLAUBT[params.method]) throw new Error("Befehl nicht erlaubt: " + params.method);
+  const nur = ANGABEN[params.method];
+  if (nur) for (const k of Object.keys(params.args || {})) if (!nur[k]) throw new Error("Angabe nicht erlaubt: " + k);
   const mm = Application('MoneyMoney');
   let out;
   if (params.args === null || params.args === undefined) {

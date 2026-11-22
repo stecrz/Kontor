@@ -199,7 +199,6 @@ const H = {
   kz_eingetragen: t('kz_eingetragen_tip'),
   belege_ordner: t('belege_werden_als_normale_dateien'),
   belege_sub: t('platzhalter_jahr_monat_entitaet_bereic'),
-  belege_kommentar: t('schreibt_den_dateinamen_des_belegs'),
   months_back: t('wie_viele_monate_historie_gelesen'),
   bind: t('auf_diesem_mac_ist_die'),
   tls: t('optional_zertifikat_schluessel_pem_fue'),
@@ -5850,7 +5849,6 @@ function vEinstellungenBelege() {
   return `<div class="form">
     <label>${t('belegordner_0', hq('belege_ordner'))}</label><div><input type="text" id="e-bl-ordner" value="${esc(bl.folder || '~/Documents/Kontor-Belege')}" style="width:100%"><div class="small muted">${bl.folder_confirmed ? t('wird_beim_ersten_beleg_angelegt') : t('noch_nicht_angelegt_beim_ersten')}</div></div>
     <label>${t('unterordner_muster_0', hq('belege_sub'))}</label><input type="text" id="e-bl-sub" value="${esc(bl.subfolder || '{year}')}" placeholder="${t('jahr_jahr_entitaet_entitaet_jahr')}">
-    <label>${t('verweis_in_moneymoney_0', hq('belege_kommentar'))}</label><label class="chk"><input type="checkbox" id="e-bl-comment" ${bl.write_comment ? 'checked' : ''} ${(S.STATUS || {}).local ? '' : `disabled title="${esc(t('nur_am_mac'))}"`}> ${t('dateipfad_als_kommentar_an_den')}</label>
     <div class="full note">${t('belege_werden_als_normale_dateien_2')}</div>
   </div>${saveBar()}`;
 }
@@ -5993,7 +5991,7 @@ function collectSettings() {
     cfg.balance = Object.assign(cfg.balance || {}, { months_back: parseInt($('#e-monate').value) || 0 });
   }
   if ($('#e-bl-sub') && subPatternProblem($('#e-bl-sub').value.trim())) { $('#e-bl-sub').classList.add('invalid'); $('#e-bl-sub').focus(); throw new Error(subPatternProblem($('#e-bl-sub').value.trim())); }
-  if ($('#e-bl-ordner')) cfg.receipts = Object.assign(cfg.receipts || {}, { folder: $('#e-bl-ordner').value.trim() || '~/Documents/Kontor-Belege', subfolder: $('#e-bl-sub').value.trim() || '{year}', write_comment: $('#e-bl-comment').checked,
+  if ($('#e-bl-ordner')) cfg.receipts = Object.assign(cfg.receipts || {}, { folder: $('#e-bl-ordner').value.trim() || '~/Documents/Kontor-Belege', subfolder: $('#e-bl-sub').value.trim() || '{year}',
       folder_confirmed: !!(cfg.receipts || {}).folder_confirmed || $('#e-bl-ordner').value.trim() !== ((S.CFG.receipts || {}).folder || '') });    // ein hier gewählter Ordner gilt als bestätigt
   if ($('#e-verm')) cfg.tax = Object.assign(cfg.tax || {}, { rental_category: $('#e-verm').value.trim() || 'Vermietung',
       property_loans: Object.fromEntries($$('.e-obj').map(i => [i.dataset.ref, i.value.trim()]).filter(([, v]) => v)),

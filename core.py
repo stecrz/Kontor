@@ -48,7 +48,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
                      "recipient_to_account": {},      # per area: recipient (IBAN, else name) -> the account saving goes into | "extern"
                      "transfer_categories": ["Umbuchung"], "transfer_pairing": True, "pairing_manual_accounts": True},
     "tax": {"rental_category": "Vermietung", "property_loans": {}, "depreciation": {}, "positions": {}, "entities": []},
-    "receipts": {"folder": "~/Documents/Kontor-Belege", "subfolder": "{year}", "write_comment": False, "folder_confirmed": False},
+    "receipts": {"folder": "~/Documents/Kontor-Belege", "subfolder": "{year}", "folder_confirmed": False},
     "fetch": {"online": [], "offline": []},      # eigene Festlegung: Konto wird von MoneyMoney abgerufen / nicht (sonst erkannt)
     "not_book": [],      # bookings of the rules you chose not to book: {"key": account|mark, "datum", "betrag", "konto", "art", "text", "regel", "seit"}
     "updates": {"repo": "stecrz/Kontor", "check_mode": "daily"},   # pruefen: taeglich | woechentlich | aus
@@ -197,6 +197,7 @@ def merged_config(cfg: Optional[dict]) -> dict:
     for k, v in cfg.items():
         if k not in out:
             out[k] = v
+    out["receipts"].pop("write_comment", None)          # gone (22.11.2026): a receipt's path is never written into MoneyMoney
     for i, b in enumerate(out["areas"]):
         b.setdefault("id", "b%d" % (i + 1))
         b.setdefault("name", "Bereich %d" % (i + 1))
@@ -1890,7 +1891,6 @@ def export_package(config: dict, name: str = "Kontor-Einstellungen", strip_uuids
     cfg.pop("not_book", None)                 # decisions about bookings in your MoneyMoney: they stay here
     cfg.pop("assistant", None)                # so do the assistant's rights
     cfg.pop("dry_run", None)                  # and what Kontor may write into your MoneyMoney without asking: set here, by you
-    (cfg.get("receipts") or {}).pop("write_comment", None)
     (cfg.get("receipts") or {}).pop("folder_confirmed", None)
     (cfg.get("cashflow") or {}).pop("recipient_to_account", None)       # so do your recipients (their IBANs)
     (cfg.get("receipts") or {}).pop("folder", None)
@@ -1938,7 +1938,7 @@ def import_package(current: dict, pkg: dict, ledger: Optional[Ledger], mode: str
     inc = copy.deepcopy(pkg["config"])
     for k in ("ui", "updates", "not_book", "assistant", "dry_run"):
         inc.pop(k, None)
-    if isinstance(inc.get("receipts"), dict):      # where your receipts lie and whether Kontor writes into MoneyMoney's comments: yours
+    if isinstance(inc.get("receipts"), dict):      # where your receipts lie: yours
         for k in ("folder", "folder_confirmed", "write_comment"):
             inc["receipts"].pop(k, None)
     if isinstance(inc.get("cashflow"), dict):
@@ -1967,7 +1967,7 @@ def import_package(current: dict, pkg: dict, ledger: Optional[Ledger], mode: str
     base = copy.deepcopy(merged_config(current))
     if mode == "replace":
         keep = copy.deepcopy((base.get("cashflow") or {}).get("recipient_to_account") or {})
-        mine = {k: copy.deepcopy(v) for k, v in (base.get("receipts") or {}).items() if k in ("folder", "folder_confirmed", "write_comment")}
+        mine = {k: copy.deepcopy(v) for k, v in (base.get("receipts") or {}).items() if k in ("folder", "folder_confirmed")}
         for k, v in inc.items():
             base[k] = v
             report.append(tr("s_paket_ersetzt") % k)

@@ -209,6 +209,9 @@ jobs:
             if out=$(osascript -l JavaScript mm_bridge.jxa "{\"method\":\"$m\",\"args\":null}" 2>&1); then echo "$m let through"; exit 1; fi
             echo "$out" | grep -q "nicht erlaubt" || { echo "unexpected: $out"; exit 1; }
           done
+          # a transaction's comment (anything but its category) stays blocked too
+          if out=$(osascript -l JavaScript mm_bridge.jxa '{"method":"setTransaction","args":{"id":1,"commentTo":"x"}}' 2>&1); then echo "comment let through"; exit 1; fi
+          echo "$out" | grep -q "Angabe nicht erlaubt" || { echo "unexpected: $out"; exit 1; }
       - name: Install and service
         run: |
           # a keychain of its own for the data key (the runner's own one may ask); removed with the machine

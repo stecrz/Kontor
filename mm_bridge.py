@@ -20,7 +20,7 @@ import os
 import plistlib
 import subprocess
 import time
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timezone
 from typing import Any, Dict, List, Optional
 from i18n import tr
 
@@ -217,31 +217,17 @@ class Bridge:
             raise MoneyMoneyError(tr("s_buchung_konnte_nicht_angelegt_werden") % e)
         self.written.append({"method": "addTransaction", "args": dict(args)})
 
-    def set_transaction(self, tx_id: int, category: Optional[str] = None, comment: Optional[str] = None) -> None:
+    def set_transaction(self, tx_id: int, category: Optional[str] = None) -> None:
+        """The category of a transaction -- the only thing Kontor changes in a transaction (never its comment, mm_bridge.jxa)."""
         args: Dict[str, Any] = {"id": int(tx_id)}
         if category is not None:
             args["categoryTo"] = category
-        if comment is not None:
-            args["commentTo"] = comment
         if len(args) == 1:
             return
         if self.dry_run:
-            log.info("DRY RUN setTransaction (%s)", ", ".join(sorted(args)))      # no category or comment in the log
+            log.info("DRY RUN setTransaction (%s)", ", ".join(sorted(args)))      # no category in the log
             self.written.append({"method": "setTransaction", "args": args})
             return
         self._call("setTransaction", args)
         self.written.append({"method": "setTransaction", "args": args})
-
-    def append_comment(self, tx_id: int, account: str, day: date, text: str) -> bool:
-        """Add a note to a transaction's comment without losing what is there: read just before (only this account, around that
-        day), keep the comment and add the text. Nothing if the text is there already or the transaction is not found."""
-        rows = self.export_transactions(day - timedelta(days=7), day + timedelta(days=7), account=account)
-        r = next((x for x in rows if int(x.get("id") or 0) == int(tx_id) and str(x.get("accountUuid") or account) == account), None)
-        if r is None:
-            return False
-        cur = str(r.get("comment") or "")
-        if text in cur:
-            return False
-        self.set_transaction(tx_id, comment=(cur + "\n" if cur.strip() else "") + text)
-        return True
 

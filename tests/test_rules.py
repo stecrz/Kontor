@@ -1319,8 +1319,8 @@ class CapitalAccountRoleTests(unittest.TestCase):
 
 class WritePathTests(unittest.TestCase):
     """Everything Kontor may do in MoneyMoney, in one place: new bookings in offline accounts (core.apply_proposals), the
-    category of a transaction you assign (mm_categories.write), a receipt reference added to a comment (Bridge.append_comment).
-    Nothing else -- no transfers, nothing deleted, nothing existing replaced."""
+    category of a transaction you assign (mm_categories.write). Nothing else -- no transfers, no comments, nothing deleted, nothing
+    existing replaced."""
 
     class Rec:
         dry_run = False
@@ -1331,8 +1331,8 @@ class WritePathTests(unittest.TestCase):
         def add_transaction(self, *a, **k):
             self.calls.append(("add",) + a)
 
-        def set_transaction(self, tx_id, category=None, comment=None):
-            self.calls.append(("set", tx_id, category, comment))
+        def set_transaction(self, tx_id, category=None):
+            self.calls.append(("set", tx_id, category))
 
         def export_transactions(self, from_date, to_date=None, account=None):
             return [t for t in self.txs if t["accountUuid"] == account]
@@ -1353,14 +1353,12 @@ class WritePathTests(unittest.TestCase):
             if not name.endswith(".py"):
                 continue
             src = open(os.path.join(root, name), encoding="utf-8").read()
-            for call in ("add_transaction", "set_transaction", "append_comment", "_call"):
+            for call in ("add_transaction", "set_transaction", "append_comment", "_call"):          # append_comment: gone
                 n = len(_re.findall(r"\.%s\(" % call, src))
                 if n:
                     found[(name, call)] = n
         self.assertEqual(found, {("core.py", "add_transaction"): 1,              # apply_proposals
                                  ("mm_categories.py", "set_transaction"): 1,     # the category you assign (write-back on)
-                                 ("service.py", "append_comment"): 1,            # receipt reference (your setting)
-                                 ("mm_bridge.py", "set_transaction"): 1,         # inside append_comment
                                  ("mm_bridge.py", "_call"): 8})
 
     def test_bookings_only_marked_once_and_into_offline_accounts(self):
@@ -1399,15 +1397,19 @@ class WritePathTests(unittest.TestCase):
         core.apply_proposals(br, led, [a, b], [], None, None, cats, notes)
         self.assertEqual([c[-1] for c in br.calls], ["Zinsen", None]); self.assertEqual(len(notes), 1); self.assertIn("Gibtsnicht", notes[0])
 
-    def test_comment_is_added_never_replaced(self):
+    def test_never_a_comment(self):
+        """A transaction's comment (or anything but its category) is never written -- not by Kontor's code, and the bridge to
+        MoneyMoney lets nothing else through (receipts are linked in Kontor only, decided 22.11.2026)."""
+        import inspect
         import mm_bridge
-        t = F.tx("priv.giro", date(2026, 10, 1), -10.0, "Laden", "Einkauf", comment="meine Notiz")
-        br = self.Rec([t]); br.append_comment = mm_bridge.Bridge.append_comment.__get__(br)
-        self.assertTrue(br.append_comment(t["id"], t["accountUuid"], date(2026, 10, 1), "Beleg: 2026/a.pdf"))
-        self.assertEqual(br.calls, [("set", t["id"], None, "meine Notiz\nBeleg: 2026/a.pdf")])
-        t["comment"] = "meine Notiz\nBeleg: 2026/a.pdf"; br.calls.clear()
-        self.assertFalse(br.append_comment(t["id"], t["accountUuid"], date(2026, 10, 1), "Beleg: 2026/a.pdf")); self.assertEqual(br.calls, [])
-        self.assertFalse(br.append_comment(999999, t["accountUuid"], date(2026, 10, 1), "x")); self.assertEqual(br.calls, [])       # not found: nothing
+        self.assertEqual(list(inspect.signature(mm_bridge.Bridge.set_transaction).parameters), ["self", "tx_id", "category"])
+        self.assertFalse(hasattr(mm_bridge.Bridge, "append_comment"))
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        jxa = open(os.path.join(root, "mm_bridge.jxa"), encoding="utf-8").read()
+        self.assertIn("const ANGABEN = {setTransaction: {id: true, categoryTo: true}};", jxa)
+        for name in os.listdir(root):
+            if name.endswith((".py", ".jxa")):
+                self.assertNotIn("commentTo", open(os.path.join(root, name), encoding="utf-8").read(), name)
 
 
 class MarkTests(unittest.TestCase):
