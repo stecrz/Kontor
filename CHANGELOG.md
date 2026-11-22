@@ -1,5 +1,11 @@
 # Änderungen
 
+## 3.16.91 (2026-11-22 04:50)
+- Darlehen: Hinweis, wenn gebuchte Zinsen nicht mehr zu Restschuld oder Zinssatz passen – mit den richtigen Beträgen je Monat
+- Darlehen: neue Zinsen rechnen schon so, als wären die genannten angepasst; ab 1 € Abweichung, nicht nach Wartendem oder Doppeltem
+- Darlehen: Zinswechsel mitten im Jahr bei Jahresbasis gemeldet (gilt erst ab dem Folgejahr)
+- Darlehen: Zinssatz im Buchungstext so genau wie eingegeben
+
 ## 3.16.90 (2026-11-22 04:30)
 - KI-Assistent: PDF-Tabellen am Mac richtig gelesen – Wörter standen ab der zweiten Zeile an falscher Stelle (der GitHub-Lauf von 3.16.88 war deshalb rot)
 - KI-Assistent: einzelne Minuszeichen und Striche in PDFs bleiben in ihrer Zeile

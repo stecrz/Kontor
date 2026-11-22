@@ -161,6 +161,45 @@ def _rate_at(rates: List[dict], day: date) -> Optional[float]:
     return best
 
 
+STALE_MIN = 1.0             # booked interest off by less than this is not noted (e.g. after you set the bank's amount before it)
+
+
+def _pct(rate: float) -> str:
+    """A rate as Kontor writes it into its booking text: as entered (up to six places), with a comma."""
+    return ("%.6f" % rate).rstrip("0").rstrip(".").replace(".", ",")
+
+
+def _interest_of(modell: str, base: float, rate: float, m: int) -> float:
+    """A month's interest as Kontor books it: on the base of the year (1/12, December with the cent left over) or on the debt
+    at the end of the month before."""
+    if modell == "yearly_base":
+        yearly = cents(base * rate / 100.0)
+        per = cents(yearly / 12.0)
+        return cents(yearly - 11 * per) if m == 12 else per
+    return cents(base * rate / 1200.0)
+
+
+def _written_interest(template: str, purpose: str, month: str, tag: str) -> Optional[Tuple[float, float]]:
+    """(base, rate) as Kontor wrote them into its interest booking ("… % p.a. auf … €"); None: not to be read (a text of yours,
+    or one without them) -- then nothing is compared."""
+    parts, seen = re.split(r"\{(\w+)\}", template), set()
+    pat = ""
+    for i, p in enumerate(parts):
+        if i % 2 == 0:
+            pat += re.escape(p)
+        elif p in ("base", "percent") and p not in seen:
+            seen.add(p)
+            pat += r"(?P<base>\d{1,3}(?:\.\d{3})*,\d{2} €)" if p == "base" else r"(?P<percent>\d+(?:,\d+)?)"
+        else:
+            pat += re.escape({"month": month, "tag": tag}.get(p, "")) if p in ("month", "tag") else ".*?"
+    if seen != {"base", "percent"}:
+        return None
+    hit = re.search(pat, purpose or "")
+    if not hit:
+        return None
+    return (float(hit.group("base")[:-2].replace(".", "").replace(",", ".")), float(hit.group("percent").replace(",", ".")))
+
+
 def _matches(t: Tx, erk: dict) -> bool:
     ibans = erk.get("counter_iban") or []
     if isinstance(ibans, str):
@@ -353,7 +392,7 @@ def plan_loan(ledger: Ledger, cfg: dict, today: date, config: Optional[dict] = N
             if str(y) in overrides:
                 base = abs(overrides[str(y)])
             elif ledger.has_history_before(loan.uuid, prev) or ledger.earliest_tx(loan.uuid) is None:
-                base = abs(ledger.balance_at(loan.uuid, prev))
+                base = debt_fixed(prev)
             else:
                 base = None
             if base is None or rate is None:
@@ -362,8 +401,7 @@ def plan_loan(ledger: Ledger, cfg: dict, today: date, config: Optional[dict] = N
             else:
                 year_cache[y] = (base, rate, cents(base * rate / 100.0))
                 res.info.append(tr("s_zinsbasis_info") %
-                                (rule, y, fmt_eur(base), ("%.3f" % rate).rstrip("0").rstrip(".").replace(".", ","),
-                                 fmt_eur(year_cache[y][2])))
+                                (rule, y, fmt_eur(base), _pct(rate), fmt_eur(year_cache[y][2])))
         return year_cache[y]
 
     zins_cat = norm_cat(str(cat_zins or "")).split(" / ")[-1].lower()           # its name ('Zinsen/Gebühren' stays whole)
@@ -379,6 +417,18 @@ def plan_loan(ledger: Ledger, cfg: dict, today: date, config: Optional[dict] = N
         if own_interest(t):
             own.setdefault((t.booking_date.year, t.booking_date.month), []).append(t)
     own_months: List[str] = []
+    # Kontor's interest booked on a debt that has changed since (a payment entered later, a repayment proposed again, a rate
+    # changed): it is never changed -- a note with the right amounts. Only what is still as Kontor booked it (an amount you
+    # set, e.g. the bank's, is yours). Each right amount, and every new interest, counts the ones before it as corrected:
+    # one round of changes as noted fits. Not noted after something unclear: a booking of this loan that waits (not in this
+    # plan), or interest twice in a month
+    fixes: List[Tuple[date, float]] = []
+    stale: List[str] = []
+    unclear: List[date] = []
+
+    def debt_fixed(day: date) -> float:
+        return abs(ledger.balance_at(loan.uuid, day) + sum(d for t, d in fixes if t <= day))
+
     for (y, m) in months_between(ab, today):
         if modell == "yearly_base":
             year_basis(y)
@@ -389,8 +439,27 @@ def plan_loan(ledger: Ledger, cfg: dict, today: date, config: Optional[dict] = N
         tag = MARK + "zins-%04d-%02d" % (y, m)
         mine = own.get((y, m))
         if tag in marks:
-            if mine:                    # Kontor's and yours in the same month: one of them is too much
-                res.warnings.append(tr("s_zins_doppelt") % (rule, "%02d/%04d" % (m, y), fmt_eur(mine[0].amount)))
+            twice = [t for t in loan_txs if tag in marks_in(t.purpose + " " + t.comment)][1:]
+            if mine or twice:           # Kontor's and yours in the same month, or Kontor's twice: one of them is too much
+                res.warnings.append(tr("s_zins_doppelt") % (rule, "%02d/%04d" % (m, y), fmt_eur((mine or twice)[0].amount)))
+                unclear.append(min(t.booking_date for t in [marks[tag]] + (mine or twice)))
+                continue
+            start = date(y, 1, 1) if modell == "yearly_base" else date(y, m, 1)       # the day its base is taken before
+            if not (modell == "yearly_base" and str(y) in overrides) and any(d < start for d in unclear + held + (waits if auto else [])):
+                continue
+            was = _written_interest(texts["interest_text"], marks[tag].purpose, "%02d/%04d" % (m, y), tag)
+            if modell == "yearly_base":
+                known = year_basis(y)[2] > 0
+                rate_now, base_now = year_basis(y)[1], year_basis(y)[0]
+            else:
+                rate_now = _rate_at(rates, date(y, m, 1))
+                base_now = debt_fixed(date(y, m, 1) - timedelta(days=1))
+                known = rate_now is not None
+            if was is not None and known and rate_now is not None:
+                then, now = _interest_of(modell, was[0], was[1], m), _interest_of(modell, base_now, rate_now, m)
+                if abs(marks[tag].amount - sign * then) < 0.005 and abs(now - then) >= STALE_MIN:
+                    stale.append(tr("s_zins_statt") % ("%02d/%04d" % (m, y), fmt_eur(sign * now), fmt_eur(sign * then)))
+                    fixes.append((marks[tag].booking_date, round(sign * (now - then), 2)))
             continue
         if mine:
             own_months.append("%02d/%04d" % (m, y))
@@ -419,18 +488,20 @@ def plan_loan(ledger: Ledger, cfg: dict, today: date, config: Optional[dict] = N
             interest = cents(yearly - 11 * per) if m == 12 else per
         else:
             rate = _rate_at(rates, date(y, m, 1))
-            base = abs(ledger.balance_at(loan.uuid, date(y, m, 1) - timedelta(days=1)))
+            base = debt_fixed(date(y, m, 1) - timedelta(days=1))           # as if the interest noted above were corrected
             if rate is None or base <= 0:
                 continue
             interest = cents(base * rate / 1200.0)
         if interest <= 0:
             continue
         purpose = _fill(texts["interest_text"], month="%02d/%04d" % (m, y),
-                        percent=("%.3f" % rate).rstrip("0").rstrip(".").replace(".", ","), base=fmt_eur(base), tag=tag)
+                        percent=_pct(rate), base=fmt_eur(base), tag=tag)
         _emit(res, ledger, Proposal(rule, "interest", loan.uuid, loan.path, bday, round(sign * interest, 2), payee, purpose, cat_zins, tag,
                                     retro=not new), edits)
     if own_months:
         res.info.append(tr("s_zins_selbst_gebucht") % (rule, ", ".join(own_months[:12]) + (" …" if len(own_months) > 12 else "")))
+    if stale:
+        res.warnings.append(tr("s_zins_veraltet") % (rule, ", ".join(stale)))
     return res
 
 

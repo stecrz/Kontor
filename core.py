@@ -778,6 +778,13 @@ def check_config(ledger: Ledger, categories: List[dict], config: dict) -> List[D
             date.fromisoformat(l.get("from_date", ""))
         except ValueError:
             add("error", tr("s_darlehen_s_ab_datum_fehlt") % n)
+        z = l.get("interest") if isinstance(l.get("interest"), dict) else {}
+        if z.get("model", "yearly_base") == "yearly_base":     # one rate for the year: the one on 1 January
+            days = sorted(str(r.get("from_date") or "") for r in z.get("rate_list") or [] if isinstance(r, dict))
+            first = str(l.get("from_date") or "")[:4]
+            for d in days[1:]:                                  # a change before the year Kontor books from plays no part
+                if re.fullmatch(r"\d{4}-\d{2}-\d{2}", d) and not d.endswith("-01-01") and (not first.isdigit() or int(d[:4]) >= int(first)):
+                    add("warning", tr("s_zinswechsel_jahresbasis") % (n, "%s.%s.%s" % (d[8:], d[5:7], d[:4]), int(d[:4]) + 1))
     bil = config.get("balance", {}) or {}
     for b in config.get("areas") or []:
         if not isinstance(b, dict):

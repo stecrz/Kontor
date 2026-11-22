@@ -189,7 +189,7 @@ class RuleWorlds(test_fuzz.FuzzTests):
                 break
             self.approve(self.cfg, rnd, part=False)
             self.check(where + " settling")
-        end = self.run_once(self.cfg, True)
+        end = self.end = self.run_once(self.cfg, True)
         self.assertEqual(end["proposals"], [], "%s: something is still to book" % where)
         return core.fetch(MockBridge(True), self.cfg, TODAY)
 
@@ -289,6 +289,7 @@ class RuleWorlds(test_fuzz.FuzzTests):
         self.participations_right(led, where)
         self.mirrors_complete(where, ())
         self.loans_exact(led, where)
+        self.assertFalse([w for w in self.end["warnings"] if "passen nicht mehr" in w], where)      # no interest on a changed debt
 
     def changed(self, seed):
         rnd = self.setup_world(seed)

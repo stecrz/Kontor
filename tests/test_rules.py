@@ -967,6 +967,119 @@ class StatelessLoanTests(unittest.TestCase):
         self.assertEqual([(p.kind, p.booking_date) for p in res.proposals], [("repayment", date(2026, 10, 2))])     # each booking counts once
 
 
+class StaleInterestTests(unittest.TestCase):
+    """Kontor never changes interest it booked: when the debt it came from changed since (a payment entered later, a rate
+    changed), a note names the right amounts -- each, and every new interest, counting the ones before it as corrected, so
+    one round of changes fits. An amount you set yourself (the bank's) is yours; less than 1 euro off is not noted."""
+    today = date(2026, 11, 4)
+    monthly = loan_cfg(interest={"model": "remaining_debt_monthly", "rate_list": [{"from_date": "2025-11-20", "percent": 3.0}], "booking_day": "ultimo"})
+
+    @staticmethod
+    def book(led, cfg, today):
+        res = plan_loan(led, cfg, today)
+        return led.without_planned(keep=[p.key for p in res.proposals])
+
+    @staticmethod
+    def stale(led, cfg, today, **kw):
+        return [w for w in plan_loan(led.fork(), cfg, today, **kw).warnings if "passen nicht mehr" in w]
+
+    def correct(self, led, note):
+        """Every month the note names set to the right amount in MoneyMoney (the mark kept)."""
+        import re
+        for month, amount in re.findall(r"(\d\d/\d{4}): (-?[\d.]+,\d\d) € statt", note):
+            z = next(t for t in led.txs if "#kontor-zins-%s-%s" % (month[3:], month[:2]) in t.purpose)
+            led = _replace_tx(led, z, float(amount.replace(".", "").replace(",", ".")))
+        return led
+
+    def late_payment(self):
+        """Everything booked until 4 November; then an extra payment in March, entered in MoneyMoney only now."""
+        real = self.book(make_ledger({"ga.vd": -1200000.0}, F.ga_transactions(self.today)), self.monthly, self.today)
+        self.assertEqual(self.stale(real, self.monthly, self.today), [])
+        import dataclasses
+        accs = {u: dataclasses.replace(a) for u, a in real.accounts.items()}          # its own balances (planning moves them)
+        return real, Ledger(accs, real.txs + tx_from_export([F.tx("ga.kk", date(2026, 3, 10), -20000.0, "Verkäufer", "Sondertilgung", "", F.SELLER_IBAN)]))
+
+    def test_payment_entered_later(self):
+        real, late = self.late_payment()
+        late = self.book(late, self.monthly, self.today)                      # its repayment booked: April to October are off
+        note = self.stale(late, self.monthly, self.today)
+        self.assertEqual(len(note), 1)
+        self.assertEqual([m for m in ("%02d/2026" % i for i in range(1, 12)) if m in note[0]], ["%02d/2026" % i for i in range(4, 11)])
+        self.assertIn("04/2026: -2.927,44 € statt -2.977,44 €", note[0])  # April: 3 % / 12 of 20,000 less
+        # set as the note says: nothing left to note, nothing to book (each right amount counted the ones before it)
+        fixed = self.correct(late, note[0])
+        self.assertEqual(self.stale(fixed, self.monthly, self.today), [])
+        self.assertEqual(plan_loan(fixed.fork(), self.monthly, self.today).proposals, [])
+        # an amount of yours (the bank's) for April: April is yours, the months after it are noted from it
+        april = next(t for t in late.txs if "#kontor-zins-2026-04" in t.purpose)
+        bank = self.stale(_replace_tx(late, april, -2951.11), self.monthly, self.today)
+        self.assertNotIn("04/2026", bank[0]); self.assertIn("05/2026", bank[0])
+        # less than 1 euro off (the bank's amount a little higher than Kontor's): nothing noted after it
+        self.assertEqual(self.stale(_replace_tx(real, next(t for t in real.txs if "#kontor-zins-2026-04" in t.purpose), -2977.94), self.monthly, self.today), [])
+
+    def test_new_interest_in_the_same_run_counts_the_corrections(self):
+        _, late = self.late_payment()
+        end = date(2026, 11, 30)                                               # November's interest is due in this run too
+        res = plan_loan(late, self.monthly, end)
+        self.assertEqual(sorted(p.kind for p in res.proposals), ["interest", "repayment"])
+        late = late.without_planned(keep=[p.key for p in res.proposals])
+        fixed = self.correct(late, self.stale(late, self.monthly, end)[0])
+        self.assertEqual(self.stale(fixed, self.monthly, end), [])
+        # November was booked as if corrected: to the cent what Kontor books for it now (less than the note's 1 euro apart)
+        nov = next(t for t in fixed.txs if "#kontor-zins-2026-11" in t.purpose)
+        again = plan_loan(_replace_tx(fixed, nov).fork(), self.monthly, end).proposals
+        self.assertEqual([p.amount for p in again if p.kind == "interest"], [nov.amount])
+
+    def test_nothing_noted_after_something_unclear(self):
+        real, _ = self.late_payment()
+        # Kontor's March repayment deleted in MoneyMoney: it waits for you -- booking fully automatically leaves it out of
+        # the plan, so the interest after it cannot be judged (proposed again with your approval: nothing to note either)
+        tl = next(t for t in real.txs if "#kontor-tx-" in t.purpose and t.booking_date == date(2026, 3, 1))
+        gone = _replace_tx(real, tl)
+        seen = Seen(Seen.top_id(real), self.today)
+        self.assertEqual(self.stale(gone, self.monthly, self.today, seen=seen, auto=True), [])
+        self.assertEqual(self.stale(gone, self.monthly, self.today, seen=seen), [])
+        # Kontor's interest twice in a month (its mark twice in MoneyMoney): the note to delete one, nothing noted after it
+        z = next(t for t in real.txs if "#kontor-zins-2026-04" in t.purpose)
+        import dataclasses
+        twice = Ledger({u: dataclasses.replace(a) for u, a in real.accounts.items()}, real.txs + [dataclasses.replace(z, id=990002)])
+        twice.accounts[F.uid("ga.vd")].balance = round(twice.accounts[F.uid("ga.vd")].balance + z.amount, 2)
+        res = plan_loan(twice.fork(), self.monthly, self.today)
+        self.assertTrue(any("04/2026" in w and "eine davon" in w for w in res.warnings), res.warnings)
+        self.assertFalse([w for w in res.warnings if "passen nicht mehr" in w])
+
+    def test_rate_changed_and_yearly_base(self):
+        cfg = loan_cfg(from_date="2025-12-01")
+        real = self.book(make_ledger({"ga.vd": -1200000.0}, F.ga_transactions(self.today)), cfg, self.today)
+        self.assertEqual(self.stale(real, cfg, self.today), [])
+        # the rate corrected afterwards: every month of 2026 is noted (the base of the year as before)
+        higher = loan_cfg(from_date="2025-12-01", interest=dict(cfg["interest"], rate_list=[{"from_date": "2025-11-20", "percent": 3.5}]))
+        note = self.stale(real, higher, self.today)
+        self.assertEqual(len(note), 1); self.assertIn("01/2026", note[0]); self.assertIn("10/2026", note[0])
+        self.assertEqual(self.stale(self.correct(real, note[0]), higher, self.today), [])
+        # your own text for the interest (without base and rate): nothing to compare, nothing noted
+        own = loan_cfg(from_date="2025-12-01", booking=dict(cfg["booking"], interest_text="Zinsen {month} · {tag}"))
+        mine = self.book(make_ledger({"ga.vd": -1200000.0}, F.ga_transactions(self.today)), own, self.today)
+        self.assertEqual(self.stale(mine, dict(own, interest=higher["interest"]), self.today), [])
+        # a rate with four places is written as entered, so it can be compared later
+        fine = loan_cfg(from_date="2025-12-01", interest=dict(cfg["interest"], rate_list=[{"from_date": "2025-11-20", "percent": 3.1234}]))
+        led = self.book(make_ledger({"ga.vd": -1200000.0}, F.ga_transactions(self.today)), fine, self.today)
+        self.assertIn("3,1234 % p.a.", next(t.purpose for t in led.txs if "#kontor-zins-2026-01" in t.purpose))
+        self.assertTrue(self.stale(led, higher, self.today))
+
+    def test_rate_change_during_the_year_is_named(self):
+        import core
+        led = make_ledger({"ga.vd": -1200000.0}, [])
+        rates = [{"from_date": "2020-03-01", "percent": 2.0}, {"from_date": "2023-06-15", "percent": 2.5}, {"from_date": "2026-07-01", "percent": 4.0},
+                 {"from_date": "2027-01-01", "percent": 2.0}]
+        found = [f["text"] for f in core.check_config(led, [], {"loans": [loan_cfg(interest=dict(loan_cfg()["interest"], rate_list=rates))]}) if f["severity"] == "warning"]
+        # only what plays a part from "Buchen ab" (2026) on
+        self.assertEqual([f for f in found if "Jahresbasis" in f], ["Darlehen Verkäuferdarlehen: Zinssatz ab 01.07.2026 gilt bei Jahresbasis erst ab 2027 – der Satz vom 1. Januar zählt fürs ganze Jahr."])
+        monthly = loan_cfg(interest={"model": "remaining_debt_monthly", "rate_list": rates, "booking_day": "ultimo"})
+        self.assertFalse([f for f in core.check_config(led, [], {"loans": [monthly]}) if "Jahresbasis" in f["text"]])
+        self.assertTrue(core.check_config(led, [], {"loans": [loan_cfg(interest="kaputt")]}))           # damaged settings: named, not crashed
+
+
 def _replace_tx(led, tx, amount=None):
     """The ledger without `tx` (amount=None: deleted in MoneyMoney) or with its amount changed there."""
     import dataclasses
