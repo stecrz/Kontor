@@ -1,5 +1,9 @@
 # Änderungen
 
+## 3.16.74 (2026-11-22 02:45)
+- Entwicklung: `Store.is_open` („Ablage offen?“) – ohne Schlüssel wirft jedes Lesen/Schreiben `StoreLocked`; wer die Ablage liest, prüft das vorher
+- Entwicklung: Schlüsseldatei-Bausteine (Datenschlüssel nur mit dem Passwort verpackt), noch ungenutzt
+
 ## 3.16.73 (2026-11-22 01:55)
 - Mac-App: Fensterknöpfe auf Höhe des Seitentitels; schmales Fenster mit denselben Abständen wie das breite
 

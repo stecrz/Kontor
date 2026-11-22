@@ -381,6 +381,94 @@ class KeyRenewal(unittest.TestCase):
         self.assertEqual(free[:2], [True, True]); self.assertIn(False, free)      # the probe sees the lock when it is held
 
 
+class LockedStore(unittest.TestCase):
+    """Before anyone signs in the store has no key: every read and write refuses (StoreLocked), nothing is created -- and the
+    key file holds the data key only wrapped (password), never in the clear. Made-up keys only."""
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp(prefix="kontor-locked-")
+        self.key = os.urandom(32)
+        st = storage.Store(self.dir, self.key, "file")
+        st.save("config.json", {"a": 1}); st.save("chats/assistant-chat-aaaaaaaa.json", {"turns": [1]}); st.write_bytes("x.bin", b"\x01")
+
+    def tearDown(self):
+        shutil.rmtree(self.dir, ignore_errors=True)
+
+    def listing(self):
+        return sorted(os.path.relpath(os.path.join(r, n), self.dir) for r, ds, fs in os.walk(self.dir) for n in ds + fs)
+
+    def test_nothing_reads_or_writes_until_unlocked(self):
+        st = storage.Store.closed(self.dir)
+        self.assertFalse(st.is_open); self.assertTrue(st.encrypted)
+        before = self.listing()
+        for call in (lambda: st.load("config.json"), lambda: st.load("nope.json", {}), lambda: st.load_shared("config.json"),
+                     lambda: st.save("config.json", {}), lambda: st.save("memory/x.json", {}), lambda: st.update("state.json", lambda o: None, {}),
+                     lambda: st.read_bytes("x.bin"), lambda: st.write_bytes("y.bin", b""), lambda: st.delete("config.json"),
+                     lambda: st.exists("config.json"), lambda: st.stamp("config.json"), lambda: st.renew_key()):
+            with self.assertRaises(storage.StoreLocked):
+                call()
+        self.assertEqual(self.listing(), before)                     # not even a folder for a file that was refused
+        self.assertTrue(issubclass(storage.StoreLocked, storage.StoreError))
+        st.unlock(self.key, "file")
+        self.assertTrue(st.is_open)
+        self.assertEqual(st.load("config.json"), {"a": 1}); self.assertEqual(st.load("chats/assistant-chat-aaaaaaaa.json"), {"turns": [1]})
+        st.close()
+        self.assertFalse(st.is_open)
+        with self.assertRaises(storage.StoreLocked):
+            st.load("config.json")
+        self.assertTrue(storage.Store(tempfile.mkdtemp(dir=self.dir), None).is_open)     # without encryption (tests only): open
+        self.assertTrue(storage.Store(self.dir, self.key, "file").is_open)
+
+    def test_unlock_needs_a_working_key(self):
+        st = storage.Store.closed(self.dir)
+        with mock.patch.object(storage, "selftest", lambda k: False):
+            with self.assertRaises(storage.StoreError):
+                st.unlock(self.key, "file")
+        self.assertFalse(st.is_open)
+
+    def test_key_file_wraps_the_key(self):
+        self.assertIsNone(storage.key_record(self.dir))
+        new = os.urandom(32)
+        e = storage.password_entry(self.key, "ein-langes-passwort", nxt=new)
+        storage.write_key_record(self.dir, {"password": e, "touchid": None})
+        p = os.path.join(self.dir, storage.KEY_FILE)
+        self.assertEqual(oct(os.stat(p).st_mode & 0o777), "0o600")
+        raw = open(p, "rb").read()
+        for k in (self.key, new):                                     # neither key in the clear, in any spelling
+            self.assertNotIn(k, raw); self.assertNotIn(k.hex().encode(), raw); self.assertNotIn(__import__("base64").b64encode(k), raw)
+        rec = storage.key_record(self.dir)
+        self.assertEqual(storage.open_password_entry(rec["password"], "ein-langes-passwort"), (self.key, new))
+        self.assertIsNone(storage.open_password_entry(rec["password"], "ein-falsches-passwort"))
+        self.assertEqual(storage.open_password_entry(storage.password_entry(self.key, "pw-1234567890"), "pw-1234567890"), (self.key, None))
+        self.assertNotEqual(storage.password_entry(self.key, "pw-1234567890")["salt"], storage.password_entry(self.key, "pw-1234567890")["salt"])
+        for bad in ({"rounds": 10}, {"kdf": "md5"}, {"salt": "zz"}, {"key": "nicht-base64!"}, {"key": "AAAA"}):
+            with self.assertRaises(storage.StoreError):
+                storage.open_password_entry(dict(rec["password"], **bad), "ein-langes-passwort")
+        self.assertFalse([n for n in os.listdir(self.dir) if n.endswith(".tmp")])
+
+    def test_a_broken_key_file_is_never_taken_for_none(self):
+        p = os.path.join(self.dir, storage.KEY_FILE)
+        for content in (b"", b"{", b"[]", b'{"kontor_key": 2}', b'{"kontor_key": 1, "password": 5}', b"\xff\xfe"):
+            with open(p, "wb") as f:
+                f.write(content)
+            with self.assertRaises(storage.StoreError):
+                storage.key_record(self.dir)
+
+    def test_files_not_opening_reaches_every_folder(self):
+        self.assertEqual(storage.files_not_opening(self.key, self.dir), [])
+        other = os.urandom(32)
+        self.assertEqual(sorted(storage.files_not_opening(other, self.dir)),
+                         sorted(["config.json.enc", os.path.join("chats", "assistant-chat-aaaaaaaa.json.enc"), "x.bin.enc"]))
+        with open(os.path.join(self.dir, "chats", "assistant-chat-bbbbbbbb.json.enc"), "wb") as f:
+            f.write(storage.encrypt(other, b"{}"))                       # one file in a folder with another key
+        self.assertEqual(storage.files_not_opening(self.key, self.dir), [os.path.join("chats", "assistant-chat-bbbbbbbb.json.enc")])
+        with mock.patch.object(storage, "ENC_DIRS", ("chats", "memory")):      # a folder added later counts the same way
+            os.makedirs(os.path.join(self.dir, "memory"))
+            with open(os.path.join(self.dir, "memory", "notes.json.enc"), "wb") as f:
+                f.write(storage.encrypt(other, b"{}"))
+            self.assertIn(os.path.join("memory", "notes.json.enc"), storage.files_not_opening(self.key, self.dir))
+
+
 class CommandLine(unittest.TestCase):
     """kontor.py in the terminal: is the service running; uninstall stops when the settings do not open."""
 

@@ -14,6 +14,7 @@ wie MoneyMoney mit "Passwort im Schluesselbund sichern".
 """
 from __future__ import annotations
 
+import base64
 import copy
 import hashlib
 import hmac
@@ -40,6 +41,10 @@ KEYCHAIN_LABEL = "Kontor Datenschlüssel"
 
 class StoreError(Exception):
     pass
+
+
+class StoreLocked(StoreError):
+    """The store has no key yet (nobody signed in since the service started): nothing can be read or written."""
 
 
 # ---------------------------------------------------------------------------
@@ -328,6 +333,130 @@ def selftest(master: bytes) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Schluesseldatei: der Datenschluessel nur verpackt -- mit einem Schluessel aus dem Passwort (bzw. per Touch ID), nie offen
+# ---------------------------------------------------------------------------
+
+KEY_FILE = "key.json"           # in the data folder; holds no key in the clear, only wrapped ones (and what unwraps them needs)
+KDF = "pbkdf2-sha256"
+KDF_ROUNDS = 600_000
+
+
+def key_record(data_dir: str) -> Optional[dict]:
+    """The key file, or None when there is none. Unreadable or odd content raises StoreError -- never taken for "none" (that
+    would lead to a new key over data the old one opens)."""
+    try:
+        with open(os.path.join(data_dir, KEY_FILE), "rb") as f:
+            raw = f.read()
+    except FileNotFoundError:
+        return None
+    except OSError as e:
+        raise StoreError(tr("s_schluesseldatei_kaputt")) from e
+    try:
+        rec = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError) as e:
+        raise StoreError(tr("s_schluesseldatei_kaputt")) from e
+    if not isinstance(rec, dict) or rec.get("kontor_key") != 1 or not all(isinstance(rec.get(m), (dict, type(None))) for m in ("password", "touchid")):
+        raise StoreError(tr("s_schluesseldatei_kaputt"))
+    return rec
+
+
+def write_key_record(data_dir: str, rec: dict) -> None:
+    """Writes the key file whole or not at all (beside it, then renamed; on the disk before the rename counts) and reads it
+    back: StoreError unless the file holds exactly this record."""
+    rec = dict(rec, kontor_key=1)
+    raw = json.dumps(rec, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    os.makedirs(data_dir, mode=0o700, exist_ok=True)
+    _write_atomic(os.path.join(data_dir, KEY_FILE), raw)
+    _sync_dir(data_dir)
+    if key_record(data_dir) != rec:
+        raise StoreError(tr("s_schluesseldatei_kaputt"))
+
+
+def _sync_dir(path: str) -> None:
+    """The folder's entries on the disk too (a renamed file survives the Mac going off right after)."""
+    try:
+        fd = os.open(path, os.O_RDONLY)
+        try:
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+    except OSError:
+        pass
+
+
+def password_kek(password: str, salt: bytes, rounds: int = KDF_ROUNDS) -> bytes:
+    """The key that wraps the data key, made from the password (PBKDF2-HMAC-SHA256)."""
+    return hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, rounds)
+
+
+def wrap_entry(kek: bytes, key: bytes, nxt: Optional[bytes] = None, **fields: Any) -> dict:
+    """An entry of the key file: the data key (and, while it is renewed, the next one) wrapped with kek."""
+    e = dict(fields, key=base64.b64encode(encrypt(kek, key)).decode("ascii"))
+    if nxt is not None:
+        e["next"] = base64.b64encode(encrypt(kek, nxt)).decode("ascii")
+    return e
+
+
+def _unwrap(kek: bytes, b64: Any) -> Optional[bytes]:
+    try:
+        blob = base64.b64decode(str(b64), validate=True)
+    except (ValueError, TypeError) as e:
+        raise StoreError(tr("s_schluesseldatei_kaputt")) from e
+    if not blob.startswith(MAGIC):
+        raise StoreError(tr("s_schluesseldatei_kaputt"))
+    try:
+        key = decrypt(kek, blob)
+    except StoreError:
+        return None                                      # the check sum does not match: not the right password (or key)
+    if len(key) != 32:
+        raise StoreError(tr("s_schluesseldatei_kaputt"))
+    return key
+
+
+def open_entry(kek: bytes, entry: dict) -> Optional[Tuple[bytes, Optional[bytes]]]:
+    """(data key, next key or None) -- None when kek is not the one it was wrapped with; StoreError for a broken entry."""
+    if not isinstance(entry, dict) or "key" not in entry:
+        raise StoreError(tr("s_schluesseldatei_kaputt"))
+    key = _unwrap(kek, entry["key"])
+    if key is None:
+        return None
+    nxt = _unwrap(kek, entry["next"]) if entry.get("next") else None
+    if entry.get("next") and nxt is None:
+        raise StoreError(tr("s_schluesseldatei_kaputt"))
+    return key, nxt
+
+
+def password_entry(key: bytes, password: str, nxt: Optional[bytes] = None) -> dict:
+    """The data key wrapped with the password (a fresh salt each time)."""
+    salt = secrets.token_bytes(16)
+    return wrap_entry(password_kek(password, salt), key, nxt, kdf=KDF, rounds=KDF_ROUNDS, salt=salt.hex())
+
+
+def open_password_entry(entry: dict, password: str) -> Optional[Tuple[bytes, Optional[bytes]]]:
+    """(data key, next key) with the password -- None for a wrong one."""
+    try:
+        rounds, salt = int(entry["rounds"]), bytes.fromhex(entry["salt"])
+    except (KeyError, TypeError, ValueError) as e:
+        raise StoreError(tr("s_schluesseldatei_kaputt")) from e
+    if entry.get("kdf") != KDF or not 100_000 <= rounds <= 10_000_000 or len(salt) < 16:
+        raise StoreError(tr("s_schluesseldatei_kaputt"))
+    return open_entry(password_kek(password, salt, rounds), entry)
+
+
+def files_not_opening(key: bytes, data_dir: str) -> list:
+    """Every encrypted file of the store -- also in its folders (ENC_DIRS) --, each opened whole: the names this key does
+    not open. Empty: the key provably opens all data."""
+    bad = []
+    for n in _enc_files(data_dir):
+        try:
+            with open(os.path.join(data_dir, n), "rb") as f:
+                decrypt(key, f.read())
+        except (OSError, StoreError):
+            bad.append(n)
+    return bad
+
+
+# ---------------------------------------------------------------------------
 # Store
 # ---------------------------------------------------------------------------
 
@@ -353,15 +482,51 @@ class Store:
         self._file_locks: Dict[str, threading.RLock] = {}
         self._key_lock = threading.RLock()            # no file is read or written while the key is renewed
 
+    @classmethod
+    def closed(cls, data_dir: str) -> "Store":
+        """The store before anyone signed in: the data are encrypted, the key is not there yet -- every read and write raises
+        StoreLocked until unlock()."""
+        st = cls(data_dir, None)
+        st.encrypted = True
+        return st
+
+    @property
+    def is_open(self) -> bool:
+        """Ablage offen? False until someone signed in after the service started (and after the key was dropped): then every
+        read and write -- load, save, update, read_bytes, write_bytes, delete, exists, stamp -- raises StoreLocked."""
+        return self.master is not None or not self.encrypted
+
+    def unlock(self, master: bytes, key_source: str) -> None:
+        """The key, once someone signed in: from here on the store reads and writes."""
+        if not selftest(master):
+            raise StoreError(tr("s_ohne_verschluesselung"))
+        with self._key_lock:
+            self.master, self.key_source, self.encrypted = master, key_source, True
+            with self._cache_lock:
+                self._cache.clear()
+
+    def close(self) -> None:
+        """Drops the key from memory (everything deleted with the password): locked again until someone sets one up."""
+        with self._key_lock:
+            self.master, self.key_source, self.encrypted = None, "", True
+            with self._cache_lock:
+                self._cache.clear()
+
+    def _need_key(self) -> None:
+        if self.master is None and self.encrypted:
+            raise StoreLocked(tr("s_ablage_gesperrt"))
+
     # Pfade
     def path(self, name: str) -> str:
         return os.path.join(self.data_dir, name + (".enc" if self.encrypted else ""))
 
     def exists(self, name: str) -> bool:
+        self._need_key()
         return os.path.exists(self.path(name))
 
     # JSON
     def _stamp(self, name: str) -> Optional[Tuple[int, int]]:
+        self._need_key()
         try:
             st = os.stat(self.path(name))
             return (st.st_mtime_ns, st.st_size)
@@ -428,6 +593,7 @@ class Store:
     def read_bytes(self, name: str) -> Optional[bytes]:
         p = self.path(name)
         with self._key_lock:
+            self._need_key()
             if not os.path.exists(p):
                 return None
             with open(p, "rb") as f:
@@ -437,11 +603,13 @@ class Store:
             return raw
 
     def write_bytes(self, name: str, data: bytes) -> None:
+        self._need_key()
         p = self.path(name)
         tmp = p + ".tmp"
         if os.path.dirname(name):                        # a file in one of the store's folders (ENC_DIRS): the folder first, only for the user
             os.makedirs(os.path.dirname(p), mode=0o700, exist_ok=True)
         with self._key_lock:
+            self._need_key()
             payload = encrypt(self.master, data) if self.encrypted else data
             fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
             with os.fdopen(fd, "wb") as f:
@@ -455,6 +623,7 @@ class Store:
         checked, then the new key is kept in its own keychain entry and checked, only then the files are replaced and the new
         key takes the main entry. Interrupted after that, the next start finishes it (_finish_renewal). Only with the keychain,
         and never while an earlier renewal is unfinished (its key would be lost). Returns the number of files."""
+        self._need_key()
         if not self.encrypted:
             raise StoreError(tr("s_ohne_verschluesselung"))
         if self.key_source != "keychain":
@@ -502,6 +671,7 @@ class Store:
             return len(names)
 
     def delete(self, name: str) -> None:
+        self._need_key()
         with self._cache_lock:
             self._cache.pop(name, None)
         try:
