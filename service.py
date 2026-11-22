@@ -29,6 +29,7 @@ import os
 import ssl
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from datetime import date, datetime, timedelta
@@ -49,6 +50,7 @@ import categorize
 import updates
 import changelog
 import assistant as assistant_mod
+import demo
 from receipts import Belege, file_status, pattern_problem
 import receipt_text
 from mm_bridge import Bridge, MoneyMoneyError, MoneyMoneyLocked, MoneyMoneyNotRunning, is_running
@@ -476,6 +478,19 @@ def balance_lookup(ledger: Ledger) -> Callable[[str, date, bool], Optional[float
 
 
 class App:
+    DEMO = False                                     # the demo (DemoApp): made-up data, its own sign-in, only some requests
+    _demo_box: Optional["DemoBox"] = None
+
+    @property
+    def demo_box(self) -> Optional["DemoBox"]:
+        """The demo shown from the sign-in page (at most one; DemoBox) -- none in the demo itself."""
+        if self.DEMO:
+            return None
+        with DEMO_LOCK:
+            if self._demo_box is None:
+                self._demo_box = DemoBox(self)
+            return self._demo_box
+
     def __init__(self, store: Store, data_dir: str, bridge_factory=Bridge):
         self.store = store
         self.data_dir = data_dir
@@ -518,7 +533,7 @@ class App:
         if store.is_open:
             threading.Thread(target=self._load_ledger_cache, name="kontor-cache", daemon=True).start()
         self.mmh: dict = {"running": False, "step": None, "result": None}   # Kontostaende aus MoneyMoney einlesen
-        if sys.platform == "darwin":          # Touch-ID-Helfer bei Bedarf (neu) uebersetzen
+        if sys.platform == "darwin" and not self.DEMO:          # Touch-ID-Helfer bei Bedarf (neu) uebersetzen
             threading.Thread(target=lambda: log.info("Touch ID helper: %s", auth.build_touchid()), name="kontor-touchid", daemon=True).start()
             port = int((self.config.get("ui") or {}).get("port") or 8765)          # Kontor's own app: its address, built if needed
             threading.Thread(target=lambda: log.info("Mac app: %s", mac_app.prepare(port)), name="kontor-mac-app", daemon=True).start()
@@ -1785,6 +1800,207 @@ class App:
 
 
 # ---------------------------------------------------------------------------
+# Demo: Kontor with made-up data, to show it to someone without showing your data
+# ---------------------------------------------------------------------------
+DEMO_LOCK = threading.Lock()
+DEMO_PREFIX = "kontor-demo-"           # its data folder: a temporary folder of its own, gone at its end (or at the next start)
+# What the demo answers -- everything else is refused (a new request is refused there until it is put into one of these lists;
+# tests/test_security.py makes sure every request of the service is in one of them). Reading its own data, the pages, the
+# assistant's questions; never anything about this Mac, its files, programs, network, updates, access or the real Kontor.
+DEMO_GET = frozenset(("/api/status", "/api/dataset", "/api/config", "/api/plan", "/api/accounts", "/api/categories", "/api/sync", "/api/runs",
+                      "/api/transactions", "/api/receipts", "/api/receipts/file", "/api/export/property.xlsx", "/api/package/export",
+                      "/api/assistant/status", "/api/assistant/chats", "/api/assistant/chat", "/api/assistant/changes", "/api/assistant/poll",
+                      "/api/help", "/api/check/status", "/api/history", "/api/categories/positions", "/api/categories/written",
+                      "/api/categories/unassigned", "/api/categories/proposals", "/api/properties", "/api/properties/template"))
+DEMO_GET_PREFIX = ("/api/export/",)    # the Excel files of the pages
+DEMO_POST = frozenset(("/api/lock", "/api/config", "/api/rules/preview", "/api/check", "/api/sync", "/api/sync/gaps", "/api/bookings/reject",
+                       "/api/bookings/plan", "/api/bookings/restore", "/api/bookings/refresh", "/api/run", "/api/report", "/api/report/rebuild",
+                       "/api/plan", "/api/history", "/api/history/import", "/api/receipts/upload", "/api/receipts/remove", "/api/receipts/update",
+                       "/api/categories/assign", "/api/categories/proposals", "/api/categories/positions", "/api/categories/areas",
+                       "/api/categories/undo", "/api/properties", "/api/properties/calculate",
+                       "/api/assistant/ask", "/api/assistant/stop", "/api/assistant/reset", "/api/assistant/page", "/api/assistant/confirm",
+                       "/api/assistant/listen", "/api/assistant/transcribe", "/api/assistant/attach", "/api/assistant/chats/delete", "/api/assistant/undo",
+                       "/api/assistant/memory/undo", "/api/assistant/memory/offer"))          # (notes of the demo's own memory, under its answers)
+# ... and what it never answers (named, so that a request is never in no list at all)
+DEMO_NEVER = frozenset(("/api/setup", "/api/login", "/api/touchid", "/api/demo", "/api/password", "/api/offline/verifier", "/api/log",
+                        "/api/remote", "/api/remote/acl", "/api/timemachine", "/api/timemachine-exclusion", "/api/diagnostics", "/api/update/status",
+                        "/api/update/check", "/api/update/install", "/api/language", "/api/securities/lookup", "/api/history/mm-status",
+                        "/api/history/mm-import", "/api/history/mm-reveal", "/api/file/choose", "/api/file/open", "/api/file/reveal",
+                        "/api/backup", "/api/backup/restore", "/api/reset", "/api/uninstall", "/api/key/renew", "/api/mac-app/open",
+                        "/api/package/import", "/api/receipts/link", "/api/receipts/open", "/api/receipts/export",
+                        "/api/assistant/settings", "/api/assistant/check", "/api/assistant/runtime/install", "/api/assistant/runtime/remove",
+                        "/api/assistant/model/files", "/api/assistant/model/download", "/api/assistant/model/cancel", "/api/assistant/model/delete",
+                        "/api/assistant/web", "/api/assistant/server", "/api/assistant/update-all",
+                        "/api/assistant/memory"))
+DEMO_FIXED = ("ui", "receipts", "updates", "assistant", "notifications")    # settings of the demo no page changes (how it looks and works)
+DEMO_SESSIONS = 20                     # at the same time at most (each start without a password is one)
+
+
+def demo_allowed(method: str, path: str, body: Optional[dict] = None) -> bool:
+    """Does the demo answer this request? (Within an allowed one: no file of this Mac linked to a property.)"""
+    if method == "GET":
+        return path in DEMO_GET or path.startswith(DEMO_GET_PREFIX)
+    if path == "/api/properties" and str((body or {}).get("action") or "") == "doc_add":
+        return False
+    return path in DEMO_POST
+
+
+class DemoApp(App):
+    """Kontor with made-up data (demo.py), to show it to someone: a world of its own in place of MoneyMoney, its own data folder
+    (temporary, encrypted with a key only in memory, removed at its end), its own sign-in and sessions. It never reads the real
+    data folder, the real settings (only how Kontor looks: language, lock, the assistant's model), sessions, conversations or
+    receipts; it answers only DEMO_GET / DEMO_POST. The assistant answers with the same model as the real Kontor (a model knows
+    nothing of anyone) but with a conversation, saved conversations and changes of its own -- and never from the internet."""
+    DEMO = True
+
+    def __init__(self, real: "App", box: "DemoBox"):
+        d = tempfile.mkdtemp(prefix=DEMO_PREFIX)
+        try:
+            store = Store(d, secrets.token_bytes(32), "demo")
+            std = sorted(categorize.STANDARD)                   # MoneyMoney's default category: named as in the real one
+            self.world = demo.World(date.today(), std[0] if len(std) == 1 else "Unkategorisiert")
+            store.save("config.json", demo.config(self.world, real.config, os.path.join(d, "Belege")))
+            store.save("state.json", self.world.state())
+            super().__init__(store, d, bridge_factory=self.world.bridge)
+        except Exception:
+            shutil.rmtree(d, ignore_errors=True)
+            raise
+        self.box = box
+        self._peer = lambda: real.assistant                     # the model it shares (nothing else of the real Kontor)
+        self._real_open = lambda: real.store.is_open
+
+    def assistant_peer(self) -> Optional["assistant_mod.Assistant"]:
+        """The real Kontor's assistant: its model is the one the demo's assistant asks (assistant.Assistant) -- none while nobody
+        signed in to the real Kontor since its start (its settings are data): the demo's assistant is then switched off."""
+        return self._peer() if self._real_open() else None
+
+    def apply_language(self) -> None:
+        """The language is the real Kontor's (it holds for the whole service)."""
+
+    @property
+    def categories_raw(self) -> list:
+        return self._categories_raw
+
+    @categories_raw.setter
+    def categories_raw(self, cats: list) -> None:
+        self._categories_raw = cats                              # (the default category counts for the whole service: the real one's)
+
+    def save_config(self, cfg: dict) -> None:
+        cfg = dict(cfg)
+        for k in DEMO_FIXED:                                     # whatever a page sends: as at the start of the demo
+            if k in self.config:
+                cfg[k] = copy.deepcopy(self.config[k])
+            else:
+                cfg.pop(k, None)
+        super().save_config(cfg)
+
+    def tailscale(self, fresh: bool = False) -> dict:
+        return {"found": False}
+
+    def start_remote(self) -> None:
+        return None
+
+    def request_restart(self) -> None:
+        return None
+
+    def offline_copy(self) -> bool:
+        return False
+
+    def _refuse(self, *a, **k):
+        raise ValueError(tr("s_demo_nicht_moeglich"))
+
+    uninstall = uninstall_key = uninstall_finish = historie_einlesen = securities_lookup = _refuse
+
+    def status(self, loopback: bool, frisch: bool = False) -> dict:
+        st = super().status(loopback, frisch)
+        st["moneymoney"].update(running=True, locked=False)
+        st.update(demo=True, mac_app=None, update=None, touchid=False, touchid_active=False,
+                  storage=dict(st["storage"], folder="", program_folder=""), receipts={"folder": ""})
+        return st
+
+    def dispose(self) -> None:
+        """The end of the demo: its answers stop, its folder goes (with everything shown, uploaded or asked in it)."""
+        self.stop.set()
+        self.sessions.drop_all()
+        a = self._assistant
+        try:
+            self.assistant_stop()                                # its own answer only; the shared model runs on
+        except Exception:  # pragma: no cover
+            log.exception("Demo: assistant")
+        until = time.time() + 20                                 # its answer, a sync or report still running: finished first
+        while (self.running or self.rebuild_running or (a is not None and a.job is not None and not a.job.done)) and time.time() < until:
+            time.sleep(0.05)
+        shutil.rmtree(self.data_dir, ignore_errors=True)
+        t = threading.Timer(120, shutil.rmtree, (self.data_dir,), {"ignore_errors": True})      # what a request still on its way wrote after
+        t.daemon = True
+        t.start()
+
+
+class DemoBox:
+    """The demo of a Kontor: at most one at a time, started from the sign-in page (POST /api/demo), ended with "Beenden" -- or
+    once its last session has ended (locked after the minutes set): then its folder goes. Started again: a new world."""
+    REAP_SECONDS = 30
+
+    def __init__(self, real: "App"):
+        self.real = real
+        self.lock = threading.Lock()
+        self.app: Optional["DemoApp"] = None
+        self.handler = None                  # its request handler (make_handler), set with it
+        remove_stale_demos()                 # folders a service before this one left behind (with the first request after its start)
+
+    def current(self) -> Tuple[Optional["DemoApp"], Any]:
+        return self.app, self.handler
+
+    def open_session(self, remote: str, handler_for: Callable[["DemoApp"], Any]) -> dict:
+        """A session in the demo (started if there is none): the session. handler_for: make_handler."""
+        with self.lock:
+            if self.app is None:
+                remove_stale_demos()
+                d = DemoApp(self.real, self)
+                try:
+                    until = time.time() + 120                    # the world read, the rules booked (after a sync of the real Kontor that runs) ...
+                    while d.do_run(False, True).get("status") == "already_running" and time.time() < until:
+                        time.sleep(0.5)
+                    d.rebuild_report(wait=True, grund="demo", timeout=120)     # ... and the figures there when its first page opens
+                    self.app, self.handler = d, handler_for(d)
+                except Exception:
+                    d.dispose()
+                    raise
+                threading.Thread(target=self._reap, args=(d,), name="kontor-demo", daemon=True).start()
+                log.info("Demo started")
+            elif self.app.sessions.active() >= DEMO_SESSIONS:
+                raise ValueError(tr("s_demo_zu_viele"))
+            return self.app.sessions.create(remote, "demo")
+
+    def end(self, only: Optional["DemoApp"] = None, idle: bool = False) -> None:
+        with self.lock:
+            d = self.app
+            if d is None or (only is not None and d is not only) or (idle and d.sessions.active()):
+                return
+            self.app, self.handler = None, None
+        d.dispose()
+        log.info("Demo ended")
+
+    def _reap(self, d: "DemoApp") -> None:
+        while self.app is d:
+            time.sleep(self.REAP_SECONDS)
+            self.end(d, idle=True)
+
+
+def remove_stale_demos(age: float = 600.0) -> int:
+    """Folders of demos a stopped service left behind (encrypted with a key that went with it; receipts uploaded in it are not):
+    those not touched for age seconds -- a demo of another Kontor running beside (tests) is younger."""
+    n = 0
+    base = tempfile.gettempdir()
+    for name in os.listdir(base):
+        p = os.path.join(base, name)
+        if name.startswith(DEMO_PREFIX) and os.path.isdir(p) and not os.path.islink(p) and time.time() - os.path.getmtime(p) > age:
+            shutil.rmtree(p, ignore_errors=True)
+            n += 1
+    return n
+
+
+# ---------------------------------------------------------------------------
 # Excel-Exporte
 # ---------------------------------------------------------------------------
 
@@ -2302,10 +2518,23 @@ def _parse_balance_csv(text: str) -> Dict[str, Dict[str, float]]:
 # ---------------------------------------------------------------------------
 
 def make_handler(app: App):
+    """The request handler of a Kontor (or of its demo, DemoApp). Each request goes to the demo only with a valid session of
+    the demo; everything else -- also every sign-in -- to the real Kontor."""
     class H(BaseHTTPRequestHandler):
         server_version = "Kontor"
         sys_version = ""
         timeout = 60                    # a connection that sends nothing (or stops reading) ends, its thread with it
+
+        def _handed_over(self) -> bool:
+            """The real Kontor or its demo -- decided anew for each request on the connection: True when the other one answered."""
+            if "_home" not in self.__dict__:
+                self._home = type(self)                   # the handler the connection came in with: the real Kontor's
+            cls = _pick(self)
+            if cls is type(self):
+                return False
+            self.__class__ = cls
+            getattr(self, "do_" + self.command)()
+            return True
 
         def log_message(self, fmt, *args):
             line, code = (str(args[0]) if args else ""), (str(args[1]) if len(args) > 1 else "")
@@ -2350,6 +2579,8 @@ def make_handler(app: App):
             self.send_header("Content-Length", str(len(body)))
             self.send_header("Cache-Control", cache)
             self._sec_headers()
+            if app.DEMO:
+                self.send_header("X-Kontor-Demo", "1")
             for k, v in (extra or {}).items():
                 self.send_header(k, v)
             self.end_headers()
@@ -2368,6 +2599,18 @@ def make_handler(app: App):
             if not isinstance(obj, dict):
                 raise ValueError(tr("s_json_erwartet"))
             return obj
+
+        def _refuse_unread(self, code: int, text: str) -> None:
+            """An answer without reading the request (a small body is read, so that the answer arrives; a larger one ends the connection)."""
+            try:
+                n = int(self.headers.get("Content-Length") or 0)
+            except ValueError:
+                n = -1
+            if 0 < n <= 65536:
+                self.rfile.read(n)
+            elif n:
+                self.close_connection = True
+            return self._json(code, {"error": text})
 
         def _wrong_password(self, pw, key: str = "s_passwort_falsch") -> bool:
             """Kontor's password, asked again for something weighty: False when it is right. Otherwise the answer is sent
@@ -2430,12 +2673,22 @@ def make_handler(app: App):
 
         # -- GET -----------------------------------------------------------
         def do_GET(self):
+            if self._handed_over():
+                return
             u = urlparse(self.path)
             if not self._host_ok():
                 return self._raw(421, b"falsche Adresse", "text/plain; charset=utf-8")
             if not u.path.startswith("/api/"):
                 return self._static(u.path)
             q = {k: v[0] for k, v in parse_qs(u.query).items()}
+            if app.DEMO:
+                s = self._session()
+                if u.path == "/api/session":
+                    return self._json(200, {"signed_in": s is not None, "csrf": s["csrf"] if s else None, "demo": True, "setup_needed": False,
+                                            "setup_local_only": False, "touchid": False, "touchid_available": False, "locked_seconds": 0,
+                                            "local": self._loopback(), "instance": app.instance, "offline_copy": False, "version": version()})
+                if not demo_allowed("GET", u.path):
+                    return self._json(403, {"error": tr("s_demo_nicht_moeglich")})
             if u.path == "/api/session":
                 s = self._session()
                 setup = not app.password_set()           # nothing of the data is read here: the key file, the start settings
@@ -2709,10 +2962,14 @@ def make_handler(app: App):
             self._mutating()
 
         def _mutating(self):
+            if self._handed_over():
+                return
             u = urlparse(self.path)
             if not u.path.startswith("/api/") or not self._origin_ok() or not self._host_ok():
                 return self._json(403, {"error": "rejected"})
-            before = u.path in ("/api/setup", "/api/login", "/api/touchid")           # the ways in: a password, nothing large
+            before = u.path in ("/api/setup", "/api/login", "/api/touchid", "/api/demo")    # the ways in: a password, nothing large
+            if app.DEMO and not demo_allowed("POST", u.path):     # (the ways in too: the demo knows no password)
+                return self._refuse_unread(403, tr("s_demo_nicht_moeglich"))
             if not before and self._session() is None:          # not signed in: nothing is read (a small body only, so the answer arrives)
                 try:
                     n = int(self.headers.get("Content-Length") or 0)
@@ -2728,7 +2985,23 @@ def make_handler(app: App):
             except (ValueError, json.JSONDecodeError) as e:
                 return self._json(400, {"error": tr("s_ungueltige_anfrage_s") % e})
             remote = self._remote()
+            if app.DEMO and not demo_allowed("POST", u.path, body):
+                return self._json(403, {"error": tr("s_demo_nicht_moeglich")})
 
+            if u.path == "/api/demo":
+                # the demo (DemoApp): made-up data, nothing of yours -- no password, as it shows nothing that needs one; not over
+                # a session of yours in this browser (another window signed in meanwhile: that window's pages would turn into the demo)
+                if app.sessions.get(self._cookie(), touch=False) is not None:
+                    return self._json(409, {"error": tr("s_demo_angemeldet")})
+                try:
+                    s = app.demo_box.open_session(remote, make_handler)
+                except ValueError as e:
+                    return self._json(429, {"error": str(e)})
+                except Exception as e:
+                    log.exception("Demo not started")
+                    return self._json(500, {"error": tr("s_interner_fehler_s") % e})
+                log.info("Demo session from %s", remote)
+                return self._json(200, {"ok": True, "csrf": s["csrf"]}, self._set_cookie(s["token"]))
             if u.path == "/api/setup":
                 if app.password_set() or not self._loopback():
                     return self._json(403, {"error": tr("s_einrichtung_nur_einmal_und_nur")})
@@ -2931,6 +3204,8 @@ def make_handler(app: App):
                 return self._assistant(path, body, local)
             if path == "/api/lock":
                 app.sessions.drop_all()
+                if app.DEMO:
+                    app.box.end(app)                    # "Beenden": the demo ends, its folder goes
                 return self._json(200, {"ok": True}, self._set_cookie("", clear=True))
             if path == "/api/password":
                 if not body.get("old") and local and app.touchid_on() and auth.touchid_available():
@@ -3673,6 +3948,15 @@ def make_handler(app: App):
 
         def _update_plan(self, body: dict) -> dict:
             return plan_update(app, body)
+
+    home_app = app.box.real if app.DEMO else app
+
+    def _pick(req) -> Any:
+        box = home_app.demo_box
+        d, cls = box.current() if box is not None else (None, None)
+        if d is not None and d.sessions.get(req._cookie(), touch=False) is not None:
+            return cls
+        return req._home
 
     return H
 

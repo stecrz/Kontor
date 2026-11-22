@@ -137,6 +137,18 @@ GitHub. Ziel: jeder immer auf dem Stand, Konflikte klein, nichts doppelt.
   Auto-Buchungen, Updates und alles Neue prüfen vorher `store.is_open`; vor der Anmeldung nur `start.json` (Port, Adresse, Zertifikat,
   Sprache, Touch ID, Sperrzeit, Offline-Kopie – keine Daten). Ein Schlüssel verschwindet erst, wenn der neue nachweislich jede Datei
   öffnet (auch in `storage.ENC_DIRS`); Unterbrochenes führt die nächste Anmeldung zu Ende. Neue verschlüsselte Ordner gehören in `ENC_DIRS`.
+- Demo (`demo.py`, `DemoApp` in `service.py`): erfundene Welt statt MoneyMoney, ohne Passwort von der Anmeldeseite aus (nicht über
+  eine gültige Sitzung des echten Kontors; höchstens 20 Sitzungen). Eigener Datenordner (temporär, verschlüsselt mit einem Schlüssel
+  nur im Arbeitsspeicher, weg mit „Beenden“ oder der letzten Sitzung; was ein Neustart liegen ließ, beim nächsten Start), eigene
+  Sitzungen; liest nie Kontors Datenordner, Sitzungen, Verläufe, Belege oder Einstellungen (übernimmt nur Sprache, Sperrzeit,
+  „von unterwegs nur ansehen“, Darstellung, Port und die Einstellungen des Assistenten). Beantwortet nur `DEMO_GET`/`DEMO_POST`;
+  jede neue Anfrage des Dienstes kommt in eine der Listen oder in `DEMO_NEVER` (`tests/test_security.py`) – nie etwas über diesen
+  Mac, seine Dateien, Programme, Netz, Updates, Zugang oder den Assistenten selbst; keine Helfer am Mac. Ihr Assistent nutzt das
+  Modell des echten, wie dort eingestellt (startet es bei Bedarf, endet nach derselben Leerlaufzeit; nie von ihr gestoppt oder
+  umgestellt), mit eigener Unterhaltung, eigenen Verläufen, ohne Internet; alles, was der Assistent sich künftig merkt, liegt in
+  `app.store` (so sieht die Demo es nie). Antworten tragen `X-Kontor-Demo` – die Offline-Kopie am iPhone behält nichts davon; die
+  Seite lädt beim Wechsel neu und schreibt in der Demo nichts in den Speicher des Geräts. Ihre Abläufe stehen im Protokoll
+  zwischen „Demo started“ und „Demo ended“.
 - Kommandozeile (`kontor.py`) ohne Zugriff auf Daten: nur start, open (Mac-App, sonst Browser), install, uninstall, password, version; Passwort neu setzen und Deinstallieren nur mit
   Kontor-Passwort oder Touch ID. Alles andere nur angemeldet in der Oberfläche.
 - Kontostände aus MoneyMoney (`mm_history.py`): Datenbankdatei nur per Upload, nur im Arbeitsspeicher; Passwort nur im Swift-Helfer,
@@ -178,6 +190,7 @@ GitHub. Ziel: jeder immer auf dem Stand, Konflikte klein, nichts doppelt.
 | `memory.py` | Gedächtnis des Assistenten: Notizen (Dateien, Prüfung, nie Zugangsdaten), Steckbrief, Sicherung, Namen für den Suchfilter – Tests: `test_memory` (beschädigte Datei, Steckbrief in seiner Grenze, kein Werkzeug schreibt, Vergessenes auch aus dem Protokoll, Sicherung, nur am Mac, Liste im Browser) |
 | `mac_app.py` + `.swift` | Kontors eigene Mac-App: Fenster mit WebKit um die Oberfläche, Menü, Downloads, Mikrofon nur für Kontors Seite; am Mac gebaut (nur bei geänderten Bauteilen) |
 | `web_search.py` / `web_reader.py` | Internetsuche des Assistenten: Quellen und Stufen, Filter gegen eigene Daten, Tavily-Schlüssel und Kontingent / ein Abruf im eigenen, abgeschirmten Prozess |
+| `demo.py` | Demo zum Vorzeigen: erfundene Welt (Konten, Umsätze, Depot, Regeln, Immobilie) und ihr MoneyMoney im Speicher; `DemoApp`/`DemoBox` in `service.py` |
 | `storage.py`, `access.py`, `auth.py`, `updates.py` + `update_guard.py`, `tls_cert.py` | verschlüsselte Ablage, Datenschlüssel nur nach Anmeldung (Schlüsseldatei, Umstellung, Erneuern), Anmeldung/Touch ID, Updates (mit der Prüfung der neuen Dateien vor dem Installieren), Zertifikat |
 | `changelog.py` | Änderungen je Hauptversion für Einstellungen → Updates (`CHANGELOG.md` + `HIGHLIGHTS.md`; getrennt vom Updater) |
 | `web/app.js`, `web/i18n.js` | Oberfläche (eine Datei, Seiten über `#…`), Texte |

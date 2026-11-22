@@ -3,6 +3,7 @@ does not answer in time, links in the receipts folder that point elsewhere -- an
 open a connection, to which hosts, which other programs they start)."""
 import ast
 import glob
+import json
 import os
 import re
 import shutil
@@ -903,6 +904,43 @@ class ReceiptLinks(unittest.TestCase):
 
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+class DemoAnswersOnlyItsOwn(unittest.TestCase):
+    """The demo (service.DemoApp) answers only what DEMO_GET / DEMO_POST name; every request of the service is named in one of
+    them or in DEMO_NEVER -- a new request has to be decided there (refused until then)."""
+
+    def test_every_request_is_decided(self):
+        import service as MA
+        with open(os.path.join(ROOT, "service.py"), encoding="utf-8") as f:
+            src = f.read()
+        handler = src[src.index("def make_handler("):src.index("\nBACKUP_ITER")]
+        paths = set(re.findall(r'(?:u\.)?path == "(/api/[^"]+)"', handler))
+        for group in re.findall(r'path in \(([^)]*)\)', handler):
+            paths |= set(re.findall(r'"(/api/[^"]+)"', group))
+        self.assertGreater(len(paths), 80)
+        paths.discard("/api/session")                           # the demo answers it itself: its own session
+        known = MA.DEMO_GET | MA.DEMO_POST | MA.DEMO_NEVER
+        self.assertEqual(sorted(p for p in paths if p not in known and not p.startswith(MA.DEMO_GET_PREFIX)), [],
+                         "a request the demo has not been decided for: put it into DEMO_GET, DEMO_POST or DEMO_NEVER (service.py)")
+        self.assertEqual(MA.DEMO_NEVER & (MA.DEMO_GET | MA.DEMO_POST), frozenset())
+        self.assertEqual(sorted((MA.DEMO_GET | MA.DEMO_POST | MA.DEMO_NEVER) - paths), [])        # no name for a request that is gone
+        for p in ("/api/setup", "/api/login", "/api/password", "/api/uninstall", "/api/log", "/api/backup", "/api/file/open", "/api/update/install",
+                  "/api/assistant/settings", "/api/assistant/web", "/api/remote", "/api/receipts/link", "/api/securities/lookup"):
+            self.assertFalse(MA.demo_allowed("GET", p) or MA.demo_allowed("POST", p), p)
+        self.assertFalse(MA.demo_allowed("POST", "/api/properties", {"action": "doc_add"}))
+        self.assertTrue(MA.demo_allowed("POST", "/api/properties", {"action": "update"}))
+
+    def test_nothing_of_the_real_kontor_in_its_settings(self):
+        import demo
+        real = {"ui": {"language": "en", "lock_minutes": 9, "bind": "100.64.1.2", "tls_cert": "/x.crt", "port": 9000},
+                "areas": [{"id": "x", "name": "Echt GmbH"}], "receipts": {"folder": "/Users/x/Belege"}, "loans": [{"name": "Echt"}],
+                "assistant": {"enabled": True, "model": "m"}}
+        cfg = demo.config(demo.World(), real, "/tmp/kontor-demo-x/Belege")
+        self.assertEqual(cfg["ui"], {"language": "en", "lock_minutes": 9, "port": 9000, "offline_copy": False})      # the port: so that its Mac helpers find nothing to build
+        self.assertEqual(cfg["receipts"]["folder"], "/tmp/kontor-demo-x/Belege")
+        self.assertNotIn("Echt", json.dumps(cfg, ensure_ascii=False))
+        self.assertEqual(cfg["assistant"], real["assistant"])
 
 
 class NothingGoesOut(unittest.TestCase):

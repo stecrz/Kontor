@@ -5,7 +5,7 @@
 //   (RSA-OAEP). Den privaten Schluessel gibt es auf dem Geraet nur mit dem Kontor-Passwort verschluesselt; entschluesselt wird
 //   in der Seite nach der Anmeldung. Ohne Schluesselpaar wird nichts gespeichert (nie Klartext).
 //   Ist der Mac nicht erreichbar, kommt die gespeicherte Antwort mit den Kennzeichen X-Kontor-Offline und X-Kontor-Enc.
-// - Sitzung, Protokoll, Exporte, Belegdateien werden nie gespeichert; Schreibzugriffe gehen nur zum Mac.
+// - Sitzung, Protokoll, Exporte, Belegdateien und alles aus der Demo (X-Kontor-Demo) werden nie gespeichert; Schreibzugriffe gehen nur zum Mac.
 // Steuerung durch die App ueber den Anfrage-Header X-Kontor-Net:
 //   direct = nur Netz, ohne Zeitlimit (am Mac selbst, und als Gegenprobe bei "langsam oder weg?")
 //   cache  = erst Speicher, dann Netz (Offline-Modus: Seiten sofort anzeigen)
@@ -69,7 +69,8 @@ async function sealed(resp) {
   return new Response(out, {status: resp.status, statusText: resp.statusText, headers: h});
 }
 async function remember(req, resp) {
-  if (resp && resp.ok) { try { const s = await sealed(resp); if (s) { const c = await caches.open(DATA); await c.put(req, s); } } catch (e) {} }
+  // the demo's made-up data (X-Kontor-Demo): never kept
+  if (resp && resp.ok && resp.headers.get('X-Kontor-Demo') !== '1') { try { const s = await sealed(resp); if (s) { const c = await caches.open(DATA); await c.put(req, s); } } catch (e) {} }
   return resp;
 }
 async function fromCache(req) {

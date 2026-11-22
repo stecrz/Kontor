@@ -385,11 +385,19 @@ class Job:
 class Assistant:
     def __init__(self, app, hooks: Dict[str, Callable]):
         """hooks: what the tools use of the service -- history(uuid) / history_set(body) (month-end balances of an account),
-        plan_update(body), transactions(query) -- the same functions the pages use."""
+        plan_update(body), transactions(query) -- the same functions the pages use. In the demo (service.DemoApp, its
+        assistant_peer: the real Kontor's assistant) the models are the real Kontor's, as set there (started when needed, ended
+        after the same idle time, never stopped or changed from here); conversation, saved conversations and changes are this
+        one's own, and the internet is never asked."""
         self.app = app
         self.hooks = hooks
-        self.ai = LocalAI(os.path.join(app.data_dir, FOLDER), app.data_dir, app.program_dir)
-        self.speech = LocalAI(os.path.join(app.data_dir, FOLDER), app.data_dir, app.program_dir, role="speech")       # the model that writes down what is dictated
+        peer = app.assistant_peer() if callable(getattr(app, "assistant_peer", None)) else None
+        self.peer: Optional["Assistant"] = peer
+        if peer is not None:
+            self.ai, self.speech = peer.ai, peer.speech
+        else:
+            self.ai = LocalAI(os.path.join(app.data_dir, FOLDER), app.data_dir, app.program_dir)
+            self.speech = LocalAI(os.path.join(app.data_dir, FOLDER), app.data_dir, app.program_dir, role="speech")       # the model that writes down what is dictated
         self.queue: List[dict] = []                      # "update everything": what is still to come
         self.looked: Optional[float] = None              # the last look for newer versions (by itself or on your click)
         self._recall()
@@ -410,8 +418,9 @@ class Assistant:
         self._help: Dict[str, list] = {}
         self._watching = False
         self.web_fetch: Callable[[dict], dict] = web_search.Reader(app.data_dir, lambda: self.settings()["sandbox"])      # the reader process (tests: a stand-in)
-        self.ai.on_loaded = self._loaded
-        self.ai.on_change = lambda mid: self.speech.stop() if not mid or self.speech.model == mid else None      # its files go: dictating ends first
+        if peer is None:
+            self.ai.on_loaded = self._loaded
+            self.ai.on_change = lambda mid: self.speech.stop() if not mid or self.speech.model == mid else None      # its files go: dictating ends first
         self._chats_move()                             # saved conversations of earlier versions: into their folder
 
     def _loaded(self, model_id: str) -> None:
@@ -426,6 +435,9 @@ class Assistant:
 
     # -- settings and state ------------------------------------------------------------------------------------------------
     def settings(self) -> dict:
+        if self.peer is not None:                      # the demo: as set for the real Kontor (the same model), never the internet
+            st = self.peer.settings()
+            return dict(st, rights=dict(st["rights"], internet=False))
         return settings(self.app.config)
 
     def _watch(self) -> None:
@@ -494,6 +506,9 @@ class Assistant:
                        speech_state=self.speech.state if self.speech.proc is not None or self.speech.state == "error" else "stopped", **self.chat_stats(),
                        speech_in_use=self.speech_model(), speech_early_auto=self._speech_fits(), context_auto_value=DEFAULTS["context"],
                        folder=self.ai.base, folder_exists=os.path.isdir(self.ai.base))          # llama.cpp and every model (also for dictating)
+        if self.peer is not None:                       # the demo: nothing about this Mac's folders or keys
+            for k in ("folder", "folder_exists", "web"):
+                out.pop(k, None)
         return out
 
     def set(self, body: dict) -> dict:
@@ -683,10 +698,12 @@ class Assistant:
         return len(steps)
 
     def stop_all(self) -> None:
-        """Ends the answer being written and the models (the one that answers, the one that takes dictation)."""
+        """Ends the answer being written and the models (the one that answers, the one that takes dictation) -- in the demo
+        only its answer (the models are the real Kontor's)."""
         self.stop()
-        self.ai.stop()
-        self.speech.stop()
+        if self.peer is None:
+            self.ai.stop()
+            self.speech.stop()
 
     # -- dictating ---------------------------------------------------------------------------------------------------------
     def speech_model(self) -> str:
@@ -800,7 +817,9 @@ class Assistant:
         j = self.job
         if j is not None and not j.done:
             j.cancel.set()                               # first the mark (the cut connection is then a stop, not an error)
-            self.ai.abort()
+            pj = self.peer.job if self.peer is not None else None
+            if pj is None or pj.done:                    # the demo: an answer of the real Kontor on the shared model is not cut
+                self.ai.abort()
 
     def reset(self) -> None:
         j = self.job

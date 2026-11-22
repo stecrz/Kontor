@@ -2,10 +2,16 @@
 'use strict';
 
 // ---------------------------------------------------------------- Sprache (alle Texte in web/i18n.js: Schluessel -> [Deutsch, Englisch])
+// what this device keeps for Kontor (theme, language, views, the panel): read and written only here -- the demo (DEMO_PAGE) reads it
+// but keeps what it writes in the page's memory, so nothing of it stays on the device
+const LS = {demo: null,
+  get: k => LS.demo && LS.demo.has(k) ? LS.demo.get(k) : localStorage.getItem(k),
+  set: (k, v) => LS.demo ? LS.demo.set(k, String(v)) : localStorage.setItem(k, v),
+  del: k => LS.demo ? LS.demo.set(k, null) : localStorage.removeItem(k)};
 const LANGS = [['de', 'Deutsch'], ['en', 'English']];      // Auswahl überall als Liste (weitere Sprachen: hier und in i18n.js ergänzen)
 const langOk = l => LANGS.some(([v]) => v === l) ? l : 'de';
 let LANG = 'de';
-try { LANG = langOk(localStorage.getItem('kontor.lang')); } catch (e) {}
+try { LANG = langOk(LS.get('kontor.lang')); } catch (e) {}
 const langOpts = () => LANGS.map(([v, n]) => `<option value="${v}" ${LANG === v ? 'selected' : ''}>${n}</option>`).join('');
 function t(k, ...a) {
   const e = I18N[k], s = e ? (LANG === 'en' && e[1] != null ? e[1] : e[0]) : k;
@@ -14,7 +20,7 @@ function t(k, ...a) {
 function setLang(l, pending) {
   // Sprache wechseln: merken und Oberflaeche neu laden (alle Texte, Formate und Monatsnamen einheitlich)
   l = langOk(l);
-  try { localStorage.setItem('kontor.lang', l); if (pending) localStorage.setItem('kontor.lang.pending', '1'); } catch (e) {}
+  try { LS.set('kontor.lang', l); if (pending) LS.set('kontor.lang.pending', '1'); } catch (e) {}
   if (l !== LANG) location.reload();
 }
 // Kontor's own Mac app (mac_app.swift) around this page: it has no words of its own -- its menu's come from here (sent once
@@ -65,7 +71,7 @@ if (SHELL) {
 const ALPHA_TABS = new Set(['planning', 'properties', 'tax', 'transactions']);
 const alphaTag = (cls = 'alpha-tag') => `<em class="${cls}" title="${t('alpha_tip')}">${t('alpha')}</em>`;
 // appearance, per device: dark (the default), light, or like the system
-const themeGet = () => { try { return ['light', 'auto'].includes(localStorage.getItem('kontor.theme')) ? localStorage.getItem('kontor.theme') : 'dark'; } catch (e) { return 'dark'; } };
+const themeGet = () => { try { return ['light', 'auto'].includes(LS.get('kontor.theme')) ? LS.get('kontor.theme') : 'dark'; } catch (e) { return 'dark'; } };
 function applyTheme(v) {
   const sys = window.matchMedia ? matchMedia('(prefers-color-scheme: dark)') : null;
   const dark = v === 'light' ? false : v === 'auto' ? !!(sys && sys.matches) : true;
@@ -85,7 +91,7 @@ function applyStatic() {
 }
 async function syncLang() {
   // nach der Anmeldung: Auswahl auf der Anmeldeseite an den Dienst geben, sonst die gespeicherte Sprache uebernehmen
-  let pending = false; try { pending = localStorage.getItem('kontor.lang.pending') === '1'; localStorage.removeItem('kontor.lang.pending'); } catch (e) {}
+  let pending = false; try { pending = LS.get('kontor.lang.pending') === '1'; LS.del('kontor.lang.pending'); } catch (e) {}
   const cfg = ((S.CFG || {}).ui || {}).language || 'de';
   if (pending && cfg !== LANG && !OFFLINE.mode) { try { const r = await api('/api/language', {language: LANG}); S.CFG.ui = Object.assign(S.CFG.ui || {}, {language: r.language}); } catch (e) {} return; }
   if (cfg !== LANG) setLang(cfg);
@@ -342,6 +348,7 @@ document.addEventListener('click', e => {
   window.addEventListener('scroll', hide, true); window.addEventListener('resize', hide);
 })();
 
+const DEMO_OFF = new Set(['setup', 'settings', 'log']);          // pages the demo does not have (about this Mac and the real Kontor)
 const S = { tab: 'overview', mode: 'months', plan: true, real: false, all: false, collapsed: {}, csrf: null, area: null, cfEbene: 0, planEbene: 2, cfTog: {'s:operating': true},          /* at the start: main lines, income and expenses open (a level clicked: exactly that level) */ cfZeit: '12m', cfVon: null, cfBis: null, cfPieArt: 'aus',
             DATA: null, CFG: null, KONTEN: [], KATS: [], STATUS: null, steuerJahr: null, steuerEnt: null, proposal: false,
             uf: {entity: '', year: '', account: '', q: '', ohne_beleg: false, uncategorized_flag: false, direction: '', kats: null, date_from: '', date_to: '', title: '', est: false, mitOhne: false, katsLabel: '', rChart: false, ids: null, cfRows: null}, sel: new Set() };
@@ -384,7 +391,7 @@ function banner(msg, kind = '') { const b = $('#banner'); if (!msg) { b.classLis
 
 // Am Mac selbst gibt es keine Offline-Ansicht: der Dienst ist erreichbar oder nicht (Tests können das Gerät als "entfernt" markieren)
 let IS_LOCAL = ['127.0.0.1', 'localhost', '::1', '[::1]'].includes(location.hostname);
-try { if (localStorage.getItem('kontor.testRemote') === '1') IS_LOCAL = false; } catch (e) {}
+try { if (LS.get('kontor.testRemote') === '1') IS_LOCAL = false; } catch (e) {}
 // the last time you touched the page: requests made later than a minute after it (status poll, progress) do not keep the
 // session open -- the idle lock comes after the set minutes even with the window open
 let USER_ACT = Date.now();
@@ -414,6 +421,10 @@ async function api(path, body, method, netMode, renewed) {
     const at = r.headers.get('X-Kontor-Cached-At'); if (at) OFFLINE.as_of = at;
     if (IS_LOCAL) throw new Error(t('err_dienst_antwortet_nicht'));
   } else if (OFFLINE.mode && opts.method === 'GET' && r.ok && path !== '/api/session') { OFFLINE.mode = false; OFFLINE.as_of = null; offlineBanner(); }
+  if (r.ok && !r.headers.get('X-Kontor-Offline') && (r.headers.get('X-Kontor-Demo') === '1') !== DEMO_PAGE && !$('#shell').classList.contains('hidden')) {
+    history.replaceState(null, '', location.pathname); location.reload();          // the demo began or ended in another window: this page anew
+    throw new Error(t('seite_wird_neu_geladen').trim());
+  }
   if (r.status === 401 && path !== '/api/session') { S.csrf = null; if (OFFLINE.mode) { OFFLINE.mode = false; OFFLINE.as_of = null; checkSession(); } else showLogin(); const e = new Error(t('nicht_angemeldet')); e.status = 401; throw e; }
   if (r.status === 403 && data.csrf === 'invalid' && !renewed) {
     // signed in again meanwhile (e.g. in another window): the token of this page is old -- take the current one, try once more
@@ -630,7 +641,7 @@ async function waitAndReload(newVersion) {
 }
 async function checkSession() {
   try { SESSION = await api('/api/session'); } catch (e) { $('#login').classList.remove('hidden'); $('#login-err').textContent = e.message + t('neuer_versuch_in_5_s'); setTimeout(checkSession, 5000); return; }
-  swApply(!IS_LOCAL && SESSION.offline_copy !== false);     // the offline copy is for the iPhone; on the Mac it would only leave stale pages behind (e.g. after a port change)
+  if (!SESSION.demo) swApply(!IS_LOCAL && SESSION.offline_copy !== false);     // the offline copy is for the iPhone; on the Mac it would only leave stale pages behind (e.g. after a port change) -- the demo leaves it as it is (keeps nothing in it)
   if (!SESSION.offline && checkVersion(SESSION.version)) return;
   $('#ver').textContent = 'v' + (PAGE_VERSION || SESSION.version || '');
   if (SESSION.offline && IS_LOCAL) { $('#login').classList.remove('hidden'); $('#login-err').textContent = t('der_kontor_dienst_antwortet_nicht'); setTimeout(checkSession, 5000); return; }
@@ -639,6 +650,7 @@ async function checkSession() {
   if (SESSION.signed_in) { S.csrf = SESSION.csrf; await enterApp(); } else showLogin();
 }
 function showLogin() {
+  if (DEMO_PAGE) { history.replaceState(null, '', location.pathname); location.reload(); return; }      // the demo ended (or locked): loaded anew, nothing of it stays
   asMicStop(false);          // a recording does not run on behind the lock
   $('#shell').classList.add('hidden'); $('#login').classList.remove('hidden'); $('#drawer').classList.remove('open');
   if (FIND.open) findBar(false);
@@ -659,6 +671,7 @@ function showLogin() {
   $('#login-form').classList.toggle('hidden', !!tidMode);
   $('#tid-instead').classList.toggle('hidden', !(tid && LOGIN.pw));
   $('#login-err').textContent = SESSION && SESSION.locked_seconds ? (t('gesperrt_fuer') + SESSION.locked_seconds + t('s_nach_fehlversuchen')) : '';
+  $('#demo-btn').classList.toggle('hidden', !!(setup || OFFLINE.mode || !SESSION || SESSION.setup_local_only));
   if (!tidMode) setTimeout(() => { if (!$('#login').contains(document.activeElement)) $('#login-pw').focus(); }, 50);   // never move the cursor out of a field being filled
   if (tidMode) tryTouchId(true);     // Touch ID at once, without a click -- only while Kontor is the active window (see tryTouchId)
 }
@@ -716,8 +729,25 @@ $('#lang-sel').addEventListener('change', e => setLang(e.target.value, true));
 $('#pw-instead').addEventListener('click', () => { LOGIN.pw = true; showLogin(); });
 $('#tid-instead').addEventListener('click', () => { LOGIN.pw = false; showLogin(); });
 $('#sync-btn').addEventListener('click', () => syncNow(false, true));
-$('.side .brand').addEventListener('click', e => { go(e.target.closest('#ver') ? '#settings/updates' : '#overview'); });
+$('.side .brand').addEventListener('click', e => { go(e.target.closest('#ver') && !demoOn() ? '#settings/updates' : '#overview'); });
 async function lockNow() { try { await api('/api/lock', {}); } catch (e) {} S.csrf = null; OFFKEY = null; TID.skipNext = true; await checkSession(); }
+// the demo: Kontor with made-up data, to show it to someone (nothing of yours in it; "Beenden" deletes everything done in it)
+const demoOn = () => !!(SESSION && SESSION.demo);
+$('#demo-btn').title = t('demo_link_tip');
+$('#demo-btn').addEventListener('click', async () => {
+  const b = $('#demo-btn'); if (b.disabled) return;
+  b.disabled = true; $('#login-err').textContent = t('demo_startet');
+  // the page loads anew -- into the demo and out of it: nothing of one stays in the page's memory for the other
+  try { await api('/api/demo', {}); $('#login-pw').value = ''; history.replaceState(null, '', '#overview'); location.reload(); }
+  catch (err) { if (err.status === 409) location.reload(); else { $('#login-err').textContent = err.message; b.disabled = false; } }      // 409: signed in meanwhile (another window)
+});
+let DEMO_PAGE = false;          // this page shows the demo (set when it opens; it is never shown again without loading anew)
+function demoUi() {
+  const on = demoOn(), lb = $('#lock-btn');
+  $('#demo-badge').classList.toggle('hidden', !on);
+  lb.dataset.i18n = on ? 'demo_beenden' : 'btn_sperren'; lb.textContent = t(lb.dataset.i18n); lb.title = t(on ? 'demo_beenden_tip' : 'sperren_tip');
+  const st = $('#nav a[href="#settings"]'); if (st) st.classList.toggle('hidden', on);
+}
 $('#lock-btn').addEventListener('click', lockNow);
 // ---------------------------------------------------------------- Tastaturkürzel
 // One list for the keys. The page answers them -- in Kontor's Mac app its menu does instead (it gets the list, words and keys,
@@ -873,7 +903,11 @@ function findStep(d) {
 }
 
 async function enterApp() {
+  if (demoOn() !== DEMO_PAGE && (DEMO_PAGE || $('#main').childElementCount)) { history.replaceState(null, '', demoOn() ? '#overview' : location.pathname); location.reload(); return; }     // into or out of the demo: anew
+  DEMO_PAGE = demoOn();
+  if (DEMO_PAGE) LS.demo = new Map();          // the demo changes nothing kept on this device: what it writes stays in the page's memory
   $('#login').classList.add('hidden'); $('#shell').classList.remove('hidden');
+  demoUi();
   // nothing on the page yet (signed in after an update, the service still starting): something that turns, not a dark window
   if (!$('#main').childElementCount) $('#main').innerHTML = `<div class="loading"><span class="spin"></span>${t('0_wird_geladen', 'Kontor')}</div>`;
   await loadAll();
@@ -881,11 +915,12 @@ async function enterApp() {
   await syncLang();
   // straight into the setup, at its first open step: on the very first start (nothing set up yet) and the first time Kontor
   // opens as an app at the Mac (created in step 1 -- the setup goes on here)
-  if (!location.hash && !OFFLINE.mode && setupOpen() && (S.setup || !S.DATA || (APP_MODE && (S.STATUS || {}).local && !((S.CFG || {}).ui || {}).webapp)))
+  if (demoOn() && DEMO_OFF.has((location.hash.slice(1).split(/[/?]/)[0]))) history.replaceState(null, '', '#overview');
+  if (!location.hash && !OFFLINE.mode && !demoOn() && setupOpen() && (S.setup || !S.DATA || (APP_MODE && (S.STATUS || {}).local && !((S.CFG || {}).ui || {}).webapp)))
     history.replaceState(null, '', '#setup');
   route();
-  if (!OFFLINE.mode) asLoad().then(() => { try { if (localStorage.getItem('kontor.assist') === '1' && asOn()) { AS.open = true; asLayout(); } } catch (e) {} if (S.tab === 'assistant' || S.tab === 'setup') route(); });
-  if (!OFFLINE.mode) api('/api/offline/verifier').catch(() => {});       // für die Offline-Ansicht zwischenspeichern
+  if (!OFFLINE.mode) asLoad().then(() => { try { if (LS.get('kontor.assist') === '1' && asOn()) { AS.open = true; asLayout(); } } catch (e) {} if (S.tab === 'assistant' || S.tab === 'setup') route(); });
+  if (!OFFLINE.mode && !demoOn()) api('/api/offline/verifier').catch(() => {});       // für die Offline-Ansicht zwischenspeichern
   if (APP_MODE) webappSeen();
   offlineBanner();
 }
@@ -2607,9 +2642,9 @@ function bindBilanzChart(main) {
   const vs = $('#view-save', main); if (vs) vs.addEventListener('click', () => {
     // one default each for months and years; the one saved last opens at the start
     const v = viewLoad() || {views: {}}; v.views[S.mode] = viewSnap(); v.mode = S.mode;
-    try { localStorage.setItem(VIEW_KEY, JSON.stringify(v)); toast(t(S.mode === 'years' ? 'ansicht_gespeichert_j' : 'ansicht_gespeichert_m')); } catch (e) { toast(e.message, 5000); }
+    try { LS.set(VIEW_KEY, JSON.stringify(v)); toast(t(S.mode === 'years' ? 'ansicht_gespeichert_j' : 'ansicht_gespeichert_m')); } catch (e) { toast(e.message, 5000); }
   });
-  const vr = $('#view-reset', main); if (vr) vr.addEventListener('click', () => { try { localStorage.removeItem(VIEW_KEY); } catch (e) {} viewApply(null); route(); toast(t('ansicht_zurueckgesetzt')); });
+  const vr = $('#view-reset', main); if (vr) vr.addEventListener('click', () => { try { LS.del(VIEW_KEY); } catch (e) {} viewApply(null); route(); toast(t('ansicht_zurueckgesetzt')); });
   $$('#big-chips input', main).forEach(cb => cb.addEventListener('change', () => { S.lcSel = $$('#big-chips input:checked', main).map(x => x.dataset.r); route(); }));
   const bps = $('#big-pos-sel', main); if (bps) bps.addEventListener('change', () => { S.lcPos = bps.value; route(); });
   const bpm = $('#big-pos-mode', main); if (bpm) bpm.addEventListener('click', () => {
@@ -2819,7 +2854,7 @@ const bigType = () => (S.lcOrder || VIEW_ORDER)[0];
 // the table always scrolls to the current month, a zoom on the y axis is not kept. The area is chosen elsewhere.
 const VIEW_KEY = 'kontor.balanceView';
 function viewLoad() {
-  let v = null; try { v = JSON.parse(localStorage.getItem(VIEW_KEY) || 'null'); } catch (e) { v = null; }
+  let v = null; try { v = JSON.parse(LS.get(VIEW_KEY) || 'null'); } catch (e) { v = null; }
   return v && v.views ? v : null;
 }
 const viewSaved = m => ((viewLoad() || {}).views || {})[m] || null;
@@ -3544,12 +3579,12 @@ function cfGroups(D, sec, months) {
 // the order of the charts: chosen with ↑ ↓ (kept in this browser), the default the most important first
 const CF_ORDER_KEY = 'kontor.cfOrder', CF_ORDER_DEF = ['bridge', 'months', 'wealth', 'flow', 'duo'];          // cash: bridge and months; below: net worth bridge and the total -- like ones above each other
 function cfOrder() {
-  let o = null; try { o = JSON.parse(localStorage.getItem(CF_ORDER_KEY) || 'null'); } catch (e) { o = null; }
+  let o = null; try { o = JSON.parse(LS.get(CF_ORDER_KEY) || 'null'); } catch (e) { o = null; }
   const avail = CF.avail || CF_ORDER_DEF;
   o = (Array.isArray(o) ? o : CF_ORDER_DEF).filter(id => avail.includes(id));
   return [...o, ...avail.filter(id => !o.includes(id))];
 }
-const cfOrderOwn = () => { try { return !!localStorage.getItem(CF_ORDER_KEY); } catch (e) { return false; } };
+const cfOrderOwn = () => { try { return !!LS.get(CF_ORDER_KEY); } catch (e) { return false; } };
 const cfMv = id => { const o = cfOrder(), k = o.indexOf(id);
   return `<span class="cf-mv"><button class="th-mv" data-cfmv="${id}" data-d="-1" title="${esc(t('cf_grafik_hoch'))}" aria-label="${esc(t('cf_grafik_hoch'))}"${k <= 0 ? ' disabled' : ''}>↑</button><button class="th-mv" data-cfmv="${id}" data-d="1" title="${esc(t('cf_grafik_runter'))}" aria-label="${esc(t('cf_grafik_runter'))}"${k >= o.length - 1 ? ' disabled' : ''}>↓</button></span>`; };
 function vCfCharts(D) {
@@ -4520,10 +4555,10 @@ function bindCfCharts(main) {
   wrap.addEventListener('pointerdown', e => { CF.touch = e.pointerType === 'touch'; }, true);
   const act = (el, key) => { if (CF.touch && CF.armed !== key) { CF.armed = key; return false; } CF.armed = null; return true; };
   wrap.addEventListener('click', e => {
-    if (e.target.closest('#cf-order-reset')) { try { localStorage.removeItem(CF_ORDER_KEY); } catch (x) {} hide(); route(); toast(t('ansicht_zurueckgesetzt')); return; }
+    if (e.target.closest('#cf-order-reset')) { try { LS.del(CF_ORDER_KEY); } catch (x) {} hide(); route(); toast(t('ansicht_zurueckgesetzt')); return; }
     const mvb = e.target.closest('[data-cfmv]');
     if (mvb) { const o = cfOrder(), id = mvb.dataset.cfmv, k = o.indexOf(id), n = k + +mvb.dataset.d; if (k < 0 || n < 0 || n >= o.length) return;
-      [o[k], o[n]] = [o[n], o[k]]; try { localStorage.setItem(CF_ORDER_KEY, JSON.stringify(o)); } catch (x) {}
+      [o[k], o[n]] = [o[n], o[k]]; try { LS.set(CF_ORDER_KEY, JSON.stringify(o)); } catch (x) {}
       hide(); Promise.resolve(route()).then(() => { const c = $(`.cf-card[data-cfid="${id}"]`); if (c) c.scrollIntoView({block: 'nearest', behavior: 'smooth'}); }); return; }
     const bl = e.target.closest('[data-bal]'); if (bl && !CF.brDragged) { cfToBalance(bl.dataset.bal); return; }
     const fl = e.target.closest('#cf-flow [data-fl]');
@@ -6187,12 +6222,13 @@ async function route() {
   const raw = (location.hash || '#overview').slice(1), [path, qs] = raw.split('?'), [tab, sub] = path.split('/');
   const y0 = pageY();
   if (SCROLL.key) SCROLL.pos[SCROLL.key] = y0;                 // Position des bisherigen Reiters merken
-  S.tab = TITLES[tab] ? tab : 'overview'; S.sub = sub || '';
+  S.tab = TITLES[tab] && !(demoOn() && DEMO_OFF.has(tab)) ? tab : 'overview'; S.sub = S.tab === tab ? sub || '' : '';
+  if (S.tab !== tab && location.hash && demoOn()) history.replaceState(null, '', '#overview');
   const key = S.tab + '/' + S.sub, sameTab = key === SCROLL.key;
   if (!sameTab) KEEP_OPEN.clear();          // folded sections open only while the same page is drawn again
   if (qs && S.tab === 'transactions') { const p = new URLSearchParams(qs); S.uf.uncategorized_flag = p.get('uncategorized') === '1'; S.uf.ohne_beleg = p.get('no_receipt') === '1'; if (p.get('year')) S.uf.year = p.get('year'); if (p.get('entity')) S.uf.entity = p.get('entity'); history.replaceState(null, '', '#transactions'); }
   $$('#nav a').forEach(a => a.classList.toggle('on', a.getAttribute('href') === '#' + (S.tab === 'log' ? 'settings' : S.tab)));          // the log: reached from the settings (and the help)
-  { const ns = $('#nav-setup'); if (ns) ns.classList.toggle('hidden', !setupOpen() && S.tab !== 'setup'); }
+  { const ns = $('#nav-setup'); if (ns) ns.classList.toggle('hidden', demoOn() || (!setupOpen() && S.tab !== 'setup')); }
   $('#page-title').textContent = (S.tab === 'properties' && S.sub ? t('immobilie') : TITLES[S.tab]);
   if (ALPHA_TABS.has(S.tab)) $('#page-title').insertAdjacentHTML('beforeend', alphaTag('alpha-tag big'));
   $('#page-title').insertAdjacentHTML('beforeend', pageHq(S.tab, S.sub));       // what this page is (a click: its help section)
@@ -6426,7 +6462,7 @@ function bind(main) {
     if (!r.available) { wc.classList.remove('busy'); wc.disabled = false; if (busy) busy.classList.add('hidden'); showFindings($('#w-findings'), [], r.text, 'error'); return; }
     S.KONTEN = r.accounts; S.KATS = r.categories || S.KATS; VB.checked = location.hash; await softRoute(); showFindings($('#w-findings'), r.findings, t('verbindung_steht') + r.accounts.length + t('konten_gelesen'), 'ok'); });
   const wr = $('#w-report', main); if (wr) wr.addEventListener('click', () => rebuildReport(true));
-  const et = $('#e-theme', main); if (et) et.addEventListener('change', () => { try { localStorage.setItem('kontor.theme', et.value); } catch (e) {} applyTheme(et.value); route(); });
+  const et = $('#e-theme', main); if (et) et.addEventListener('change', () => { try { LS.set('kontor.theme', et.value); } catch (e) {} applyTheme(et.value); route(); });
   for (const wl of [$('#w-lang', main), $('#e-lang', main)]) if (wl) wl.addEventListener('change', async () => { if (wl.value === LANG) return; try { await api('/api/language', {language: wl.value}); setLang(wl.value); } catch (e) { wl.value = LANG; toast(e.message, 5000); } });
   const abr = $('#add-bereich', main); if (abr) { bindBereichKonten(main); abr.addEventListener('click', () => { $('#bereiche').insertAdjacentHTML('beforeend', bereichForm({name: t('neuer_bereich'), id: '', accounts: [], main_area: false}, $$('#bereiche .item').length)); bindDel(main); bindBereichKonten($('#bereiche .item:last-child')); bereichMvState(); }); }
   const bli = $('#bereiche', main); if (bli) {
@@ -6845,7 +6881,7 @@ const AS_HIDDEN = ['settings', 'log', 'setup', 'assistant'];          // pages t
 // the former setting, else balanced
 const AS_EFFORTS = ['fast', 'balanced', 'thorough'];
 const asEffort = () => {
-  if (!AS.effort) { try { const e = localStorage.getItem('kontor.effort'); if (AS_EFFORTS.includes(e)) AS.effort = e; } catch (x) { /* kept in memory only */ } }
+  if (!AS.effort) { try { const e = LS.get('kontor.effort'); if (AS_EFFORTS.includes(e)) AS.effort = e; } catch (x) { /* kept in memory only */ } }
   return AS.effort || (((AS.st || {}).settings || {}).effort) || 'balanced';
 };
 const asOn = () => !!(AS.st && AS.st.settings && AS.st.settings.enabled && !OFFLINE.mode);
@@ -6884,7 +6920,7 @@ function asWarm() {
 function asShow(open) {
   if (!open) asMicStop(false);
   AS.open = !!open && asOn();
-  try { localStorage.setItem('kontor.assist', AS.open ? '1' : ''); } catch (e) {}
+  try { LS.set('kontor.assist', AS.open ? '1' : ''); } catch (e) {}
   asLayout();
   if (AS.open) { asLoad(); const ta = $('#as-in'); if (ta && matchMedia('(hover: hover)').matches) ta.focus(); }
 }
@@ -7204,7 +7240,7 @@ async function asChGo(c, i, s) {
     plan: fl === 'plan' || fl === 'mixed' ? true : undefined, mark: mark ? {text: mark, column: col} : null};
   AS.hover = AS.sel = null;
   if (matchMedia('(max-width: 900px)').matches && S.tab !== 'assistant') asShow(false);          // the panel covers the page there: it steps aside
-  else if (matchMedia('(max-width: 900px)').matches) { AS.open = false; try { localStorage.setItem('kontor.assist', ''); } catch (e) {} }
+  else if (matchMedia('(max-width: 900px)').matches) { AS.open = false; try { LS.set('kontor.assist', ''); } catch (e) {} }
   await asOpen(ev);
 }
 const asText = m => (m.parts || []).filter(p => p.k === 'text').map(p => p.text).join('\n\n').trim();
@@ -7332,13 +7368,13 @@ const REC_AUDIO = {channelCount: 1, echoCancellation: true, noiseSuppression: tr
 const REC_SETTLE = 150;       // ms from the first sound until red
 const REC_SOUND = 4000;       // ms the first sound is waited for at most where a quiet room is known to be heard
 const REC_QUIET = 2200;       // ... and where it is pure silence, or not known yet
-try { const z = localStorage.getItem('kontor.mic.zeros'); if (z === '0' || z === '1') REC.zeros = z === '1'; } catch (e) {}
+try { const z = LS.get('kontor.mic.zeros'); if (z === '0' || z === '1') REC.zeros = z === '1'; } catch (e) {}
 const asMicCap = () => REC.zeros === false ? REC_SOUND : REC_QUIET;
 // what a recording shows of this microphone: did pure silence arrive between the sounds (in a few of its pieces at least)?
 function asMicLearn() {
   if (!REC.heard || REC.blocks < 24) return;          // (two seconds and more: enough to tell)
   REC.zeros = REC.zeroBlocks >= Math.max(2, REC.blocks * 0.03);
-  try { localStorage.setItem('kontor.mic.zeros', REC.zeros ? '1' : '0'); } catch (e) {}
+  try { LS.set('kontor.mic.zeros', REC.zeros ? '1' : '0'); } catch (e) {}
 }
 const MIC_SVG = '<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><rect x="5.6" y="1.4" width="4.8" height="8.2" rx="2.4" fill="currentColor"/><path d="M3.2 7.6a4.8 4.8 0 0 0 9.6 0M8 12.4v2.2" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>';
 const AS_PLUS = '<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>';
@@ -7758,7 +7794,7 @@ async function asDrawnWait() {          // until the page asked for has been dra
 }
 async function asOpen(ev) {
   // a page opened as the assistant asked (or a click on its chart): its area, view, year and depth -- and what was named marked there
-  if (S.tab === 'assistant' && !matchMedia('(max-width: 900px)').matches) { AS.open = true; try { localStorage.setItem('kontor.assist', '1'); } catch (e) {} }
+  if (S.tab === 'assistant' && !matchMedia('(max-width: 900px)').matches) { AS.open = true; try { LS.set('kontor.assist', '1'); } catch (e) {} }
   if (!/^#[\w/-]+$/.test(ev.route || '')) return null;
   if (ev.area && S.DATA && (S.DATA.areas || {})[ev.area]) { S.area = ev.area; S.collapsed = {}; bereichSeg(); }
   if (ev.view === 'months' || ev.view === 'years') S.mode = ev.view;
@@ -7778,7 +7814,7 @@ async function asUi(ev) {
   const job = AS.job;
   let result = null;
   try {
-    if (S.tab === 'assistant') { AS.open = true; try { localStorage.setItem('kontor.assist', '1'); } catch (e) {} }
+    if (S.tab === 'assistant') { AS.open = true; try { LS.set('kontor.assist', '1'); } catch (e) {} }
     if (ev.action === 'open') {
       result = await asOpen(ev);
     } else if (ev.action === 'mark' && ev.mark) {
@@ -8043,7 +8079,7 @@ function refMarkCol(col) {          // a column by its heading: the heading and 
 async function asRefOpen(r) {
   const g = r && r.go; if (!g || !/^#[\w/-]+$/.test(g.route || '')) return;
   if (matchMedia('(max-width: 900px)').matches && S.tab !== 'assistant') asShow(false);          // the panel covers the page there: it steps aside
-  else if (matchMedia('(max-width: 900px)').matches) { AS.open = false; try { localStorage.setItem('kontor.assist', ''); } catch (e) {} }
+  else if (matchMedia('(max-width: 900px)').matches) { AS.open = false; try { LS.set('kontor.assist', ''); } catch (e) {} }
   const res = await asOpen(Object.assign({}, g, {mark: g.mark && g.mark.text ? g.mark : null, fig: undefined}));
   let found = !g.mark || !!(res && res.found);
   if (g.col) { await asDrawnWait(); found = refMarkCol(g.col); }
@@ -8101,7 +8137,7 @@ $('#assist').addEventListener('click', async e => {
   else if (b.classList.contains('as-hi-all')) asDelChats('');
   else if (b.classList.contains('as-hi-more')) { AS.histN = (AS.histN || 100) + 100; asMsgs(); }
   else if (b.classList.contains('as-ch-open')) { const h = asChFrom(b); if (h) asChGo(h.c, -1, 0); }
-  else if (b.classList.contains('as-big')) { if (S.tab === 'assistant') { AS.open = true; try { localStorage.setItem('kontor.assist', '1'); } catch (x) {} go(AS.prev || '#overview'); } else go('#assistant'); }
+  else if (b.classList.contains('as-big')) { if (S.tab === 'assistant') { AS.open = true; try { LS.set('kontor.assist', '1'); } catch (x) {} go(AS.prev || '#overview'); } else go('#assistant'); }
   else if (b.classList.contains('as-sug')) asSend(b.textContent);
   else if (b.classList.contains('as-do')) { const it = (AS.open_items || [])[+b.dataset.i]; if (it) asSend(t(`ki_do_${it[3]}`)); }
   else if (b.classList.contains('as-copy')) { try { await navigator.clipboard.writeText(b.parentNode.querySelector('pre').textContent); b.textContent = t('ki_kopiert'); setTimeout(() => { b.textContent = t('ki_kopieren'); }, 1500); } catch (x) {} }
@@ -8131,7 +8167,7 @@ $('#assist').addEventListener('click', async e => {
   }
 });
 $('#assist').addEventListener('change', e => {
-  if (e.target.id === 'as-eff') { AS.effort = e.target.value; try { localStorage.setItem('kontor.effort', AS.effort); } catch (x) { /* kept in memory only */ } }
+  if (e.target.id === 'as-eff') { AS.effort = e.target.value; try { LS.set('kontor.effort', AS.effort); } catch (x) { /* kept in memory only */ } }
   else if (e.target.classList.contains('as-w-tick')) { const p = AS.msgs.flatMap(m => m.parts || []).find(y => y.k === 'web' && y.id === e.target.dataset.id), it = p && asWebItems(p).find(y => y.id === e.target.dataset.item); if (it) { it.off = !e.target.checked; asMsgs(); } }          // left out: not fetched
   else if (e.target.classList.contains('as-pick')) { const p = AS.msgs.flatMap(m => m.parts || []).find(y => y.k === 'entry' && y.id === e.target.dataset.id); if (p) { p.off = !e.target.checked; asMsgs(); } }          // left out: not carried out
 });
@@ -8443,11 +8479,11 @@ document.addEventListener('pointerdown', e => {
   if (drawerDirty() && !confirm(t('ungespeicherte_aenderungen_verwerfen'))) return;
   const key = DRW.key; closeDrawer(); DRW.closed = key ? {key, t: Date.now()} : null;
 });
-try { const s = JSON.parse(localStorage.getItem('kontor.ui') || '{}'); Object.assign(S, {plan: s.plan !== false, real: !!s.real, area: s.area || null}); } catch (e) {}
+try { const s = JSON.parse(LS.get('kontor.ui') || '{}'); Object.assign(S, {plan: s.plan !== false, real: !!s.real, area: s.area || null}); } catch (e) {}
 viewApply(viewLoad());
 let SNAP_T = null;
 window.addEventListener('resize', () => { clearTimeout(SNAP_T); SNAP_T = setTimeout(() => { if (!PRINT.on && ['balance', 'cashflow', 'planning'].includes(S.tab)) $$('#main .wrap.snap').forEach(w => { const l = w.scrollLeft; snapTable(w); w.scrollLeft = snapLeft(w, l); }); }, 150); });
-window.addEventListener('beforeunload', () => { try { localStorage.setItem('kontor.ui', JSON.stringify({plan: S.plan, real: S.real, area: S.area})); } catch (e) {} });
+window.addEventListener('beforeunload', () => { try { LS.set('kontor.ui', JSON.stringify({plan: S.plan, real: S.real, area: S.area})); } catch (e) {} });
 setInterval(async () => { if (S.csrf && !document.hidden && !OFFLINE.mode) { try { await pollStatus(); } catch (e) {} } }, 30000);
 // a newer version of the assistant found meanwhile (the service looks once a day): marked without a reload -- only the status, asked on this Mac
 setInterval(async () => { if (S.csrf && !document.hidden && asOn() && AS.st.local && !asLoading() && !(S.tab === 'settings' && S.sub === 'assistant')) { try { const st = await api('/api/assistant/status'); if (asOn()) { AS.st = st; statusMini(); } } catch (e) { /* the next time */ } } }, 600000);

@@ -589,6 +589,11 @@ Beim Installieren lädt Kontor diesen Stand als Archiv von github.com, ersetzt d
 
 Im Terminal aktualisiert dieselbe Zeile wie bei der [Installation](#install).
 
+<a id="demo"></a>
+## Demo zum Vorzeigen
+
+Ganz unten auf der Anmeldeseite öffnet **Demo** Kontor mit erfundenen Beispieldaten – zum Zeigen, ohne Passwort: zwei Jahre eines erfundenen Haushalts mit Wohnung, Depot und zwei Gesellschaften. Die Demo ist ein eigenes Kontor mit eigenem Ordner und eigener Anmeldung; deine Daten, Einstellungen, Belege, gespeicherten Verläufe und das Gedächtnis des Assistenten sieht sie nie. Fast alles lässt sich bedienen – Kategorisieren, Regeln, Belege, auch der Assistent (dein Modell, aber ohne Internet); Einstellungen und Einrichtung gibt es dort nicht. „Beenden“ (⌘L) oder die Sperre nach Leerlauf löscht alles, was in der Demo geschah; die nächste beginnt frisch.
+
 <a id="security"></a>
 ## Sicherheit
 

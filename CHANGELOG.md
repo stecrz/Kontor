@@ -1,5 +1,12 @@
 # Änderungen
 
+## 3.16.87 (2026-11-22 03:31)
+- Demo: Kontor zum Vorzeigen mit erfundenen Beispieldaten – klein und hellgrau unten auf der Anmeldeseite, ohne Passwort
+- Demo: eigener Ordner und eigene Anmeldung – nie deine Daten, Einstellungen, Belege, Verläufe oder das Gedächtnis des Assistenten
+- Demo: fast alles bedienbar, auch der Assistent (dein Modell, ohne Internet); Einstellungen und Einrichtung ausgeblendet
+- Demo: „Beenden“ oder die Sperre löscht alles darin; auf dem Gerät und in der iPhone-Offline-Kopie bleibt nichts davon
+- Entwicklung: jede Anfrage des Dienstes ist für die Demo erlaubt oder abgelehnt (Test)
+
 ## 3.16.86 (2026-11-22 03:19)
 - Mac-App: Fensterknöpfe verdecken „Kontor“ nicht mehr, auch wenn die App seit vor dem Update offen ist
 

@@ -1,6 +1,6 @@
 """The repository is public: no personal data in any file (names, accounts, IBANs, amounts, paths). What a machine can check:
-no IBANs, e-mail addresses or home folders outside the made-up test data -- and there only the sample IBANs from banks'
-documentation, example addresses and placeholder folders."""
+no IBANs, e-mail addresses or home folders outside the made-up test data (and the demo's, demo.py) -- and there only the
+sample IBANs from banks' documentation, example addresses and placeholder folders."""
 import os
 import re
 import subprocess
@@ -35,7 +35,7 @@ class PrivacyTests(unittest.TestCase):
                 text = open(os.path.join(ROOT, name), encoding="utf-8").read()
             except (UnicodeDecodeError, OSError):
                 continue
-            in_tests = name.startswith("tests/")
+            in_tests = name.startswith("tests/") or name == "demo.py"          # made-up data: the tests' and the demo's world
             for m in IBAN.finditer(text):
                 iban = m.group(0).replace(" ", "")
                 if not (in_tests and iban in SAMPLE_IBANS):

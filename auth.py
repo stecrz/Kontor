@@ -122,6 +122,12 @@ class Sessions:
         with self._lock:
             self._s.clear()
 
+    def active(self) -> int:
+        """How many sessions are still valid (the demo ends with its last one)."""
+        now = time.time()
+        with self._lock:
+            return sum(1 for s in self._s.values() if now - s["last"] <= self.idle and now - s["created"] <= self.max)
+
     def rotate(self, token: Optional[str]) -> Optional[str]:
         """The same session under a new token (after a password change: a copy of the old cookie no longer works)."""
         with self._lock:

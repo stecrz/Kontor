@@ -272,6 +272,12 @@ Vier Grafiken aus Bilanz und Cashflow auf einer Bildschirmseite, jede verlinkt a
 - [x] 3.15.14 Kontenspiegel: Paare von Hand nur am selben Tag; mit Tagen Abstand „prüfen“, abgewählt, beide Hälften auf einmal verwerfen.
 - Danach: Hinweis bei gemischten Kategorien (etwa eine Immobilien-Kategorie mit Kaufpreis, Auszahlung und Miete), Kategorisieren je Empfänger in einem Schritt, Fortschritt „sicher zugeordnet / geschätzt“.
 
+## Demo (Wunsch des Nutzers, 2026-11-22)
+- [x] 3.16.87 Demo-Modus zum Vorzeigen: klein und hellgrau unten auf der Anmeldeseite, ohne Passwort; erfundene Beispieldaten
+  (`demo.py`, zwei Jahre bis heute), alles bedienbar außer Einstellungen und Einrichtung; eigener verschlüsselter Ordner,
+  eigene Sitzung, eigener Assistent mit demselben Modell (ohne deine Verläufe, ohne Internet); „Beenden“ oder Sperre löscht alles.
+- Später: Assistent mit vorbereiteten Beispielfragen in der Demo; Demo-Daten mit einer GmbH (Firmenwert aus EBITDA), sobald es die gibt.
+
 ## Laufend
 - Sicherheit vor allem: nichts in MoneyMoney kaputt machen, keine Daten nach außen.
 - Jede Rechenlogik mit Abstimmungstests (Summen müssen aufgehen) und, wo Zustände sich ändern, mit Zufallsläufen.

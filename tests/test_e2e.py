@@ -2273,6 +2273,201 @@ class SecurityHttpTests(_AppBase):
         self.assertEqual(code, 400)
 
 
+class DemoTests(_AppBase):
+    """The demo (DemoApp): from the sign-in page, without a password; made-up data in a folder of its own; never the real
+    Kontor's data, sessions, conversations or files; only the requests it may answer; gone with "Beenden" or its last session."""
+
+    def _files(self, d):
+        return {os.path.relpath(os.path.join(r, n), d): os.stat(os.path.join(r, n)).st_mtime_ns for r, _, ns in os.walk(d) for n in ns}
+
+    def _demo(self):
+        code, r = self.call("/api/demo", {})
+        self.assertEqual(code, 200, r)
+        self.csrf = r["csrf"]
+        return self.app.demo_box.app
+
+    def test_made_up_world_never_the_real_one(self):
+        self.login()
+        self.run_and_wait()
+        real_ids = {k["uuid"] for k in self.app.dataset()["accounts"]}
+        self.assertEqual(self.call("/api/demo", {})[0], 409)                    # not over a session of yours (another window)
+        self.call("/api/lock", {}); self.csrf = None
+        before = self._files(self.dir)
+        d = self._demo()
+        code, s = self.call("/api/session")
+        self.assertTrue(s["signed_in"] and s["demo"]); self.assertFalse(s["setup_needed"] or s["offline_copy"])
+        code, body, head = self.call("/api/dataset", raw=True)
+        ds = json.loads(body)
+        self.assertEqual(head.get("X-Kontor-Demo"), "1")                         # the iPhone's offline copy keeps none of it
+        self.assertTrue(ds["areas"] and not ds["accounts_new"])
+        self.assertFalse({k["uuid"] for k in ds["accounts"]} & real_ids)
+        ums = self.call("/api/transactions?limit=5000")[1]["transactions"]
+        names = {t["name"] for t in ums}
+        self.assertIn("Nordwerk AG", names); self.assertNotIn("Arbeitgeber", names)        # the demo's salary, not the test world's
+        self.assertTrue(all(t["date"] <= TODAY.isoformat() for t in ums))
+        st = self.call("/api/status")[1]
+        self.assertTrue(st["demo"] and st["moneymoney"]["running"]); self.assertEqual((st["storage"]["folder"], st["receipts"]["folder"]), ("", ""))
+        self.assertFalse(d.data_dir.startswith(self.dir)); self.assertTrue(d.store.encrypted)
+        # it works: a sync, a category, a property, a receipt -- all in its own folder
+        was = d.last_run_at
+        self.assertEqual(self.call("/api/run", {"dry_run": False, "force": True})[0], 202)
+        for _ in range(400):
+            if not d.running and d.last_run_at != was:
+                break
+            time.sleep(0.05)
+        tid = next(t["id"] for t in ums if t["name"] == "Baumarkt")
+        code, r = self.call("/api/categories/assign", {"ids": [tid], "category": "Lebenshaltung\\Haushalt"})
+        self.assertEqual(code, 200, r)
+        self.assertEqual(next(x for x in d.world.txs if x["id"] == tid)["categoryPath"], "Lebenshaltung\\Haushalt")
+        code, r = self.call("/api/receipts/upload", {"content": base64.b64encode(b"%PDF-1.4 demo").decode(), "file_name": "Beleg.pdf", "tx_id": tid})
+        self.assertEqual(code, 200, r)
+        self.assertTrue(any(f.endswith(".pdf") for f in self._files(d.data_dir)))
+        # settings it keeps: where receipts lie, access, the assistant -- whatever a page sends
+        cfg = self.call("/api/config")[1]
+        cfg["receipts"] = {"folder": self.dir, "write_comment": True}; cfg["ui"]["remote_read_only"] = False; cfg["assistant"] = {"enabled": False}
+        cfg["areas"][0]["name"] = "Haushalt"
+        code, r = self.call("/api/config", {"config": cfg})
+        self.assertEqual(code, 200, r)
+        self.assertEqual(d.config["areas"][0]["name"], "Haushalt")
+        self.assertTrue(d.config["receipts"]["folder"].startswith(d.data_dir)); self.assertFalse(d.config["receipts"]["write_comment"])
+        self.assertNotEqual(d.config["ui"].get("remote_read_only"), False)
+        self.assertEqual(self._files(self.dir), before)                         # the real folder: not a file written, nothing changed
+        self.assertNotEqual(self.app.config["areas"][0]["name"], "Haushalt")
+        # "Beenden": gone, folder and all; the real Kontor's sign-in as before
+        folder = d.data_dir
+        code, r = self.call("/api/lock", {})
+        self.assertEqual(code, 200)
+        self.assertIsNone(self.app.demo_box.app); self.assertFalse(os.path.exists(folder))
+        code, s = self.call("/api/session")
+        self.assertFalse(s["signed_in"]); self.assertNotIn("demo", s)
+        code, r = self.call("/api/login", {"password": "sehr-geheimes-passwort"})
+        self.assertEqual(code, 200); self.csrf = r["csrf"]
+        self.assertEqual({k["uuid"] for k in self.call("/api/dataset")[1]["accounts"]}, real_ids)
+
+    def test_only_its_own_requests(self):
+        self.login(); self.call("/api/lock", {}); self.csrf = None
+        d = self._demo()
+        for path in ("/api/log", "/api/offline/verifier", "/api/update/status", "/api/remote", "/api/diagnostics", "/api/timemachine",
+                     "/api/remote/acl", "/api/history/mm-status"):
+            self.assertEqual(self.call(path), (403, {"error": "In der Demo nicht verfügbar."}), path)
+        for path in ("/api/password", "/api/uninstall", "/api/reset", "/api/backup", "/api/backup/restore", "/api/key/renew", "/api/setup",
+                     "/api/login", "/api/touchid", "/api/demo", "/api/update/install", "/api/remote", "/api/file/open", "/api/receipts/link",
+                     "/api/receipts/open", "/api/receipts/export", "/api/package/import", "/api/securities/lookup", "/api/language",
+                     "/api/assistant/settings", "/api/assistant/model/download", "/api/assistant/web", "/api/assistant/server", "/api/mac-app/open"):
+            self.assertEqual(self.call(path, {"password": "sehr-geheimes-passwort", "new": "x" * 12})[0], 403, path)
+        code, r = self.call("/api/properties", {"action": "doc_add", "id": "im1", "path": os.path.join(self.dir, "config.json.enc")})
+        self.assertEqual(code, 403)                                              # no file of this Mac linked (nor asked whether it exists)
+        self.assertEqual(self.call("/api/history/mm-import", {})[0], 403)
+        for m in ("uninstall", "uninstall_key", "historie_einlesen", "securities_lookup"):        # and behind the lists: refused anyway
+            with self.assertRaises(ValueError):
+                getattr(d, m)()
+        self.assertEqual(self.app.store.load("auth.json")["hash"], self.store.load("auth.json")["hash"])
+        self.assertFalse(self.app.sessions.active())                            # no session of the real Kontor came from it
+
+    def test_beside_the_real_kontor(self):
+        """A sync of the real Kontor running: the demo waits for it (its rules booked all the same); MoneyMoney's default category
+        stays the real one's; at most 20 sessions."""
+        import categorize
+        import core as C
+        self.login(); self.call("/api/lock", {}); self.csrf = None
+        import mm_categories
+        cats = [dict(c, default=c["name"] == "Umbuchung") for c in mm_categories.with_paths(MockBridge().export_categories())]     # a default category of another name
+        self.app.categories_raw = cats
+        self.assertEqual(categorize.STANDARD, {"Umbuchung"})
+        C.RUN_LOCK.acquire()
+        threading.Timer(1.0, C.RUN_LOCK.release).start()
+        d = self._demo()
+        import service as MA
+        self.assertTrue(MA.kontor_bookings(d.ledger))                           # the demo's rules booked once the real sync was done
+        self.assertEqual(categorize.STANDARD, {"Umbuchung"})
+        self.assertEqual(next(c["name"] for c in d.categories_raw if c.get("default")), "Umbuchung")
+        self.assertEqual(self.call("/api/demo", {})[0], 403)                     # from within the demo: not again
+        for _ in range(19):
+            self.jar.clear()
+            self.assertEqual(self.call("/api/demo", {}, csrf=False)[0], 200)    # another browser: a session of its own in the same demo
+            self.assertIs(self.app.demo_box.app, d)
+        self.jar.clear()
+        self.assertEqual(self.call("/api/demo", {})[0], 429)
+        self.app.demo_box.end()
+        self.app.categories_raw = mm_categories.with_paths(MockBridge().export_categories())
+
+    def test_while_the_real_kontor_is_locked(self):
+        """After a restart nobody has signed in yet (the data key not in memory): the demo starts all the same -- from nothing of
+        the real Kontor's data; its assistant stays switched off (the real one's settings are data)."""
+        self.login(); self.call("/api/lock", {}); self.csrf = None
+        from storage import Store
+        real_store, self.app.store = self.app.store, Store.closed(self.dir)
+        try:
+            d = self._demo()
+            self.assertTrue(self.call("/api/dataset")[1]["areas"])
+            code, st = self.call("/api/assistant/status")
+            self.assertEqual(code, 200); self.assertFalse(st["settings"]["enabled"])
+            self.assertIsNone(d.assistant.peer)
+            self.call("/api/lock", {})
+        finally:
+            self.app.store = real_store
+
+    def test_ends_with_its_last_session_and_starts_anew(self):
+        self.login(); self.call("/api/lock", {}); self.csrf = None
+        d = self._demo()
+        first = d.data_dir
+        tok = next(c.value for c in self.jar if c.name == "kontor_session")
+        d.sessions._s[tok]["last"] -= 3600                                       # locked after the minutes set
+        self.assertEqual(self.call("/api/status")[0], 401)                       # the real Kontor answers: not signed in
+        self.app.demo_box.end(d, idle=True)                                      # (what the watch does every 30 s)
+        self.assertIsNone(self.app.demo_box.app); self.assertFalse(os.path.exists(first))
+        d2 = self._demo()
+        self.assertIsNot(d2, d); self.assertNotEqual(d2.data_dir, first)
+        self.app.demo_box.end(d2, idle=True)                                     # a session still valid: it stays
+        self.assertIs(self.app.demo_box.app, d2)
+        self.app.demo_box.end()
+        self.assertFalse(os.path.exists(d2.data_dir))
+        old, fresh = tempfile.mkdtemp(prefix="kontor-demo-"), tempfile.mkdtemp(prefix="kontor-demo-")      # left behind by a stopped service ...
+        os.utime(old, (time.time() - 3600, time.time() - 3600))
+        import service as MA
+        self.assertGreaterEqual(MA.remove_stale_demos(), 1)                      # ... gone at the next start; one running beside stays
+        self.assertFalse(os.path.exists(old)); self.assertTrue(os.path.exists(fresh))
+        shutil.rmtree(fresh)
+
+    def test_assistant_shares_only_the_model(self):
+        import test_assistant as TA
+        TA.install(self.app)
+        real = self.app.assistant
+        r = real.ask({"question": "Erfundene geheime Frage"}); TA.events(real, r["job"])
+        self.assertEqual(len(real.chats()), 1)
+        real.memory.add("Mein Hund heißt Erfundinand", how="manual", by="settings")          # the real Kontor's memory
+        self.login(); self.call("/api/lock", {}); self.csrf = None
+        d = self._demo()
+        code, st = self.call("/api/assistant/status")
+        self.assertEqual(code, 200); self.assertTrue(st["ready"]); self.assertNotIn("folder", st); self.assertFalse(st["settings"]["rights"]["internet"])
+        self.assertEqual(self.call("/api/assistant/chats")[1]["chats"], [])      # the real conversations: not there
+        with open(os.path.join(os.path.dirname(real.ai.runtime()["path"]), "record"), "w"):
+            pass
+        real.stop_all()                                                         # the model not running: the demo starts it, as set for the real Kontor
+        code, r = self.call("/api/assistant/ask", {"question": "Hallo Demo"})
+        self.assertEqual(code, 200, r)
+        TA.events(d.assistant, r["job"])
+        with open(os.path.join(os.path.dirname(real.ai.runtime()["path"]), "request.json")) as f:
+            sent = f.read()
+        self.assertNotIn("geheime", sent); self.assertNotIn("Erfundinand", sent)       # nothing of the real conversation or memory reached the model
+        self.assertEqual(d.assistant.memory.active(), [])
+        self.assertEqual(self.call("/api/assistant/memory")[0], 403)
+        code, r = self.call("/api/assistant/ask", {"question": "Merk dir: Demo-Kuchen schmeckt"})      # noted in the demo's own memory only
+        self.assertEqual(code, 200, r)
+        TA.events(d.assistant, r["job"])
+        self.assertEqual([n["text"] for n in d.assistant.memory.active()], ["Demo-Kuchen schmeckt"])
+        self.assertEqual([n["text"] for n in real.memory.active()], ["Mein Hund heißt Erfundinand"])
+        self.assertIs(d.assistant.ai, real.ai)                                  # the same model, not a second one in memory
+        self.assertEqual(sorted(c["title"] for c in self.call("/api/assistant/chats")[1]["chats"]), ["Hallo Demo", "Merk dir: Demo-Kuchen schmeckt"])      # its own conversations only
+        self.assertEqual([c["title"] for c in real.chats()], ["Erfundene geheime Frage"])
+        self.call("/api/lock", {})
+        self.assertEqual(real.ai.state, "ready")                                # the demo's end leaves the model running
+        r = real.ask({"question": "Und jetzt echt"}); TA.events(real, r["job"])
+        with open(os.path.join(os.path.dirname(real.ai.runtime()["path"]), "request.json")) as f:
+            self.assertIn("Erfundinand", f.read())                              # (the real Kontor's questions do carry its memory)
+        real.stop_all()
+
+
 class FeatureTests(_AppBase):
     """Bereiche unabhaengig von der MoneyMoney-Gruppierung, Positionen, Verlaufsquellen, inaktive Konten, Ereignisse, Immobilien, Dateiverknuepfungen."""
 
@@ -4605,6 +4800,88 @@ class BrowserTest(unittest.TestCase):
         finally:
             if not stopped:
                 srv.shutdown(); srv.server_close()
+            shutil.rmtree(d, ignore_errors=True)
+
+
+class DemoBrowserTest(unittest.TestCase):
+    """The demo in the browser: a small grey link on the sign-in page; the page loads anew into the demo and out of it (nothing
+    of the real Kontor stays in its memory); no settings; "Beenden" ends it."""
+
+    def test_demo(self):
+        try:
+            from playwright.sync_api import sync_playwright
+        except ImportError:
+            self.skipTest("playwright fehlt")
+        d = tempfile.mkdtemp(prefix="kontor-ui-")
+        store = Store(d, *load_or_create_master_key(d)); store.save("config.json", config_for_test(os.path.join(d, "Belege")))
+        store.save("state.json", dict(ALL_NEW))
+        reset_mock(); patch_today()
+        app = App(store, d, bridge_factory=MockBridge); app.do_run(False, True)
+        srv = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(app)); url = "http://127.0.0.1:%d/" % srv.server_address[1]
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        try:
+            with sync_playwright() as p:
+                b = p.chromium.launch(); pg = b.new_page(viewport={"width": 1360, "height": 820})
+                errors = []; pg.on("pageerror", lambda e: errors.append(str(e)))
+                pg.goto(url); pg.wait_for_selector("#login-pw")
+                self.assertFalse(pg.is_visible("#demo-btn"))                       # not while the password is first set
+                pg.fill("#login-pw", "sehr-geheimes-passwort"); pg.fill("#login-pw2", "sehr-geheimes-passwort"); pg.click("#login-btn")
+                wait_shell(pg); pg.wait_for_selector(".ov-grid")
+                real = pg.evaluate("S.KONTEN.map(k => k.uuid).sort().join()")
+                self.assertTrue(pg.is_hidden("#demo-badge"))
+                pg.click("#lock-btn"); pg.wait_for_selector("#demo-btn", state="visible")
+                small = pg.evaluate("""(() => { const d = getComputedStyle(document.querySelector('#demo-btn')), l = getComputedStyle(document.querySelector('#login-btn'));
+                    const a = document.querySelector('#demo-btn').getBoundingClientRect(), c = document.querySelector('#login .card').getBoundingClientRect();
+                    return [parseFloat(d.fontSize) < parseFloat(l.fontSize), +d.opacity < 1, a.top >= c.bottom, d.backgroundColor === 'rgba(0, 0, 0, 0)']; })()""")
+                self.assertEqual(small, [True, True, True, True])                   # small, grey, below the card, no button face
+                pg.evaluate("localStorage.setItem('kontor.lang', 'de')")
+                pg.click("#demo-btn"); wait_shell(pg); pg.wait_for_selector(".ov-grid")
+                until(pg, "demoOn() && DEMO_PAGE && !!S.KONTEN.length")
+                self.assertNotEqual(pg.evaluate("S.KONTEN.map(k => k.uuid).sort().join()"), real)
+                self.assertTrue(pg.is_visible("#demo-badge")); self.assertEqual(pg.inner_text("#lock-btn"), "Beenden")
+                self.assertTrue(pg.is_hidden("#nav a[href='#settings']")); self.assertTrue(pg.is_hidden("#nav-setup"))
+                pg.goto(url + "#settings"); until(pg, "location.hash === '#overview' && S.tab === 'overview'")
+                for h in ("#balance", "#cashflow", "#transactions", "#categories", "#accounts", "#properties", "#help"):
+                    pg.goto(url + h); until(pg, "S.tab === %s && !document.querySelector('#main .loading')" % json.dumps(h[1:]))
+                demo_areas = pg.evaluate("Object.keys(S.DATA.areas)")
+                pg.evaluate("LS.set('kontor-demo-probe', '1'); LS.del('kontor.lang'); LS.set('kontor.ui', '{}')")      # as the page does it
+                lang = pg.evaluate("LS.get('kontor.lang')")
+                pg.click("#lock-btn"); pg.wait_for_selector("#demo-btn", state="visible")
+                until(pg, "!DEMO_PAGE && !demoOn()")
+                self.assertIsNone(lang)
+                self.assertEqual(pg.evaluate("[localStorage.getItem('kontor-demo-probe'), localStorage.getItem('kontor.lang')]"), [None, "de"])      # nothing of the demo kept on the device
+                self.assertNotIn(pg.evaluate("JSON.parse(localStorage.getItem('kontor.ui') || '{}').area || null"), demo_areas)      # the page remembers nothing of the demo
+                self.assertIsNone(app.demo_box.app)
+                self.assertEqual(pg.evaluate("document.querySelector('#main').childElementCount"), 0)    # loaded anew: nothing of the demo behind the sign-in
+                pg.fill("#login-pw", "sehr-geheimes-passwort"); pg.click("#login-btn"); wait_shell(pg)
+                until(pg, "!!S.KONTEN.length")
+                self.assertEqual(pg.evaluate("S.KONTEN.map(k => k.uuid).sort().join()"), real)
+                self.assertTrue(pg.is_hidden("#demo-badge")); self.assertTrue(pg.is_visible("#nav a[href='#settings']"))
+                # the iPhone: the link at the foot of the screen, apart from the card
+                m = b.new_page(viewport={"width": 390, "height": 844}, is_mobile=True, has_touch=True)
+                m.goto(url); m.wait_for_selector("#demo-btn", state="visible")
+                self.assertTrue(m.evaluate("document.querySelector('#demo-btn').getBoundingClientRect().bottom <= innerHeight"))
+                self.assertEqual(errors, [])
+                # as on the iPhone: the offline copy of the real Kontor stays as it is -- nothing of the demo goes into it, nothing is deleted
+                pg.click("#lock-btn"); pg.wait_for_selector("#login-pw", state="visible")
+                pg.evaluate("localStorage.setItem('kontor.testRemote', '1')"); pg.reload(); pg.wait_for_selector("#login-pw", state="visible")
+                pg.fill("#login-pw", "sehr-geheimes-passwort"); pg.click("#login-btn"); wait_shell(pg)
+                pg.wait_for_function("navigator.serviceWorker && navigator.serviceWorker.controller !== null", timeout=15000)
+                pg.reload(); pg.wait_for_selector(".ov-grid")
+                pg.wait_for_function("caches.open('kontor-data-enc').then(c => c.keys()).then(k => k.some(r => r.url.endsWith('/api/dataset')))", timeout=15000)
+                copy_js = "caches.open('kontor-data-enc').then(c => c.match(location.origin + '/api/dataset')).then(r => r.arrayBuffer()).then(b => new TextDecoder('latin1').decode(b))"
+                before = pg.evaluate(copy_js)
+                pg.click("#lock-btn"); pg.wait_for_selector("#demo-btn", state="visible"); pg.click("#demo-btn"); wait_shell(pg); pg.wait_for_selector(".ov-grid")
+                until(pg, "DEMO_PAGE && !!S.DATA")
+                pg.goto(url + "#balance"); until(pg, "S.tab === 'balance' && !!document.querySelector('tr.pos')")
+                self.assertEqual(pg.evaluate(copy_js), before)
+                self.assertTrue(pg.evaluate("navigator.serviceWorker.getRegistrations().then(r => r.length > 0)"))
+                pg.click("#lock-btn"); pg.wait_for_selector("#demo-btn", state="visible")
+                self.assertEqual(pg.evaluate(copy_js), before)
+                b.close()
+        finally:
+            app.demo_box.end()
+            srv.shutdown()
             shutil.rmtree(d, ignore_errors=True)
 
 
