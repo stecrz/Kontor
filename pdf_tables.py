@@ -145,7 +145,7 @@ def _unit(row: List[Word]) -> float:
     boxes tight around the letters, a PDF around the whole line)."""
     h = sorted(w.h for w in row)[len(row) // 2]
     wide = sorted((w.x1 - w.x0) / len(w.text) for w in row if len(w.text) >= 2)
-    return max(h, 1.8 * wide[len(wide) // 2]) if wide else h
+    return max(h, 1.8 * wide[len(wide) // 2]) if wide else max(w.h for w in row)      # (- 1 -: as high as its figure, not its strokes)
 
 
 def _prose(row: List[Word], unit: float) -> bool:
@@ -219,12 +219,15 @@ def _deskew(words: List[Word]) -> List[Word]:
 
 def _lines(words: List[Word], page: int) -> List[Line]:
     words = sorted(words, key=lambda w: (w.yc, w.x0))
+    # a PDF's own text gives every word the box of its letters: a minus is a thin stroke, a word of small letters lower than
+    # one with capitals -- no word counts as flatter than most of what the page's words are high
+    least = 0.7 * sorted(w.h for w in words)[len(words) // 2] if words else 0.0
     rows: List[List[Word]] = []
     total = 0.0                                          # of the heights of the line so far (kept, not added up again: a page of
     for w in words:                                      # very many words on one height must not take forever)
         if rows:
             last = rows[-1]
-            if abs(w.yc - total / len(last)) <= 0.5 * min(w.h, last[0].h):
+            if abs(w.yc - total / len(last)) <= 0.5 * min(max(w.h, least), max(last[0].h, least)):
                 last.append(w)
                 total += w.yc
                 continue

@@ -75,31 +75,43 @@ func shown(_ page: PDFPage) -> (CGFloat, CGFloat, CGAffineTransform) {
     return (turned ? box.height : box.width, turned ? box.width : box.height, page.transform(for: .cropBox))
 }
 
-func layerItems(_ page: PDFPage) -> [[Any]] {
-    // the words of the page's own text, each with its place: letters up to a blank or a jump (a new line, a new column)
-    guard let string = page.string else { return [] }
-    let text = string as NSString
-    let count = min(text.length, page.numberOfCharacters)
-    let (_, height, turn) = shown(page)
+func layerWords(_ page: PDFPage, _ text: NSString, _ height: CGFloat, _ turn: CGAffineTransform, _ skipBreaks: Bool) -> ([[Any]], Int) {
+    // the words of the page's own text, each with its place: letters up to a blank or a jump (a new line, a new column) --
+    // and how often a word broke off onto another line or backwards (letters and places do not go together then)
+    let places = page.numberOfCharacters
+    let count = text.length
     var out: [[Any]] = []
+    var jumps = 0
     var start = -1
     var rect = CGRect.null
+    var place = 0                                        // the place that belongs to the letter at i
+    var tall: CGFloat = 0                                // the highest letter of the line so far (a word of small letters is not small writing)
     var i = 0
     while i <= count {
         var ends = i == count
         var bounds = CGRect.null
         if !ends {
             let c = text.character(at: i)
-            if c == 32 || c == 9 || c == 10 || c == 13 || c == 0xA0 || c == 0x2028 || c == 0x2029 || c == 0x3000 {
-                ends = true
+            let lineEnd = c == 10 || c == 13
+            if lineEnd { tall = 0 }
+            if lineEnd && skipBreaks {
+                ends = true                              // (a line end PDFKit put into the string: it has no place)
             } else {
-                let r = page.characterBounds(at: i).applying(turn)
-                if r.width > 0 && r.height > 0 && r.origin.x.isFinite && r.origin.y.isFinite {
-                    bounds = r
-                    if start >= 0 && !rect.isNull {
-                        let h = max(r.height, rect.height)
-                        if abs(r.midY - rect.midY) > h * 0.6 || r.minX - rect.maxX > h * 0.18 || r.maxX < rect.minX - h * 0.5 {
-                            ends = true                  // no blank, but apart from the word so far (a gap, another line): a word of its own
+                let at = place
+                place += 1
+                if lineEnd || c == 32 || c == 9 || c == 0xA0 || c == 0x2028 || c == 0x2029 || c == 0x3000 {
+                    ends = true
+                } else if at < places {
+                    let r = page.characterBounds(at: at).applying(turn)
+                    if r.width > 0 && r.height > 0 && r.origin.x.isFinite && r.origin.y.isFinite {
+                        bounds = r
+                        if start >= 0 && !rect.isNull {
+                            let h = max(r.height, rect.height, tall)
+                            let away = abs(r.midY - rect.midY) > h * 0.75 || r.maxX < rect.minX - h * 0.5
+                            if away || r.minX - rect.maxX > h * 0.18 {
+                                ends = true              // no blank, but apart from the word so far (a gap, another line): a word of its own
+                                if away { jumps += 1 }
+                            }
                         }
                     }
                 }
@@ -107,9 +119,11 @@ func layerItems(_ page: PDFPage) -> [[Any]] {
         }
         if ends {
             if start >= 0 && !rect.isNull {
-                let word = text.substring(with: NSRange(location: start, length: i - start))
-                let item: [Any] = [tenths(rect.minX), tenths(height - rect.maxY), tenths(rect.width), tenths(rect.height), String(word.prefix(200))]
-                out.append(item)
+                let word = text.substring(with: NSRange(location: start, length: i - start)).trimmingCharacters(in: .whitespacesAndNewlines)
+                if !word.isEmpty {
+                    let item: [Any] = [tenths(rect.minX), tenths(height - rect.maxY), tenths(rect.width), tenths(rect.height), String(word.prefix(200))]
+                    out.append(item)
+                }
             }
             start = -1
             rect = CGRect.null
@@ -117,12 +131,32 @@ func layerItems(_ page: PDFPage) -> [[Any]] {
         if !bounds.isNull {
             if start < 0 { start = i }
             rect = rect.isNull ? bounds : rect.union(bounds)
+            tall = max(tall, bounds.height)
         } else if !ends && start < 0 {
             start = i                                    // a letter without a place of its own: part of the word that follows
         }
         i += 1
     }
-    return out
+    return (out, jumps)
+}
+
+func layerItems(_ page: PDFPage) -> ([[Any]], [Int]) {
+    // PDFKit's string of a page holds line ends that its places of the letters do not count (the place of letter i is then
+    // i less the line ends before it) -- or, should that differ on another system, does count them: read both ways, the one
+    // whose words stay in a row is the page's. With it: length of the string, places, line ends, jumps counted either way
+    guard let string = page.string else { return ([], []) }
+    let text = string as NSString
+    let (_, height, turn) = shown(page)
+    var breaks = 0
+    for i in 0..<text.length {
+        let c = text.character(at: i)
+        if c == 10 || c == 13 { breaks += 1 }
+    }
+    let counted = layerWords(page, text, height, turn, false)
+    if breaks == 0 { return (counted.0, [text.length, page.numberOfCharacters, 0, counted.1, counted.1]) }
+    let skipped = layerWords(page, text, height, turn, true)
+    let take = skipped.1 < counted.1 || (skipped.1 == counted.1 && page.numberOfCharacters < text.length)
+    return (take ? skipped.0 : counted.0, [text.length, page.numberOfCharacters, breaks, counted.1, skipped.1])
 }
 
 func recognizedItems(_ image: CGImage, _ width: CGFloat, _ height: CGFloat) -> [[Any]] {
@@ -178,7 +212,7 @@ func layout(_ data: Data) -> [String: Any] {
             guard let page = doc.page(at: i) else { continue }
             var (width, height, _) = shown(page)
             var how = "pdf"
-            var list = layerItems(page)
+            var (list, letters) = layerItems(page)
             if list.count < 12 {
                 // hardly any text of its own: a scan (with a stamp or a file number as its only text), or a page that says
                 // little. Read from its picture too -- what finds clearly more words counts
@@ -203,7 +237,8 @@ func layout(_ data: Data) -> [String: Any] {
                 cut = true
                 break
             }
-            pages.append(["n": i + 1, "w": tenths(width), "h": tenths(height), "how": how, "items": list])
+            if how != "pdf" { letters = [] }
+            pages.append(["n": i + 1, "w": tenths(width), "h": tenths(height), "how": how, "items": list, "letters": letters])
         }
     } else if let source = CGImageSourceCreateWithData(data as CFData, nil) {
         let opts: [CFString: Any] = [kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceCreateThumbnailWithTransform: true,

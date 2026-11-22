@@ -31,6 +31,20 @@ def width(text: str, size: float) -> float:
     return sum(WIDTHS.get(c, 556) for c in text) * size / 1000.0
 
 
+# how far Helvetica's letters reach above and below their line (of the size): PDFKit gives each letter the box of its own
+# shape -- a word of small letters is lower than one with capitals, a minus is a thin stroke in mid-air
+REACH = {c: (0.52, 0.0) for c in "acemnorsuvwxz"}
+REACH.update({c: (0.52, -0.21) for c in "gpqy"})
+REACH.update({",": (0.11, -0.15), ".": (0.11, 0.0), ":": (0.52, 0.0), ";": (0.52, -0.15), "-": (0.32, 0.23), "–": (0.29, 0.24), "−": (0.30, 0.22),
+              "+": (0.50, 0.0), "(": (0.74, -0.21), ")": (0.74, -0.21), "j": (0.72, -0.21), "*": (0.72, 0.44), "=": (0.39, 0.12), "·": (0.30, 0.20),
+              "Ä": (0.90, 0.0), "Ö": (0.90, 0.0), "Ü": (0.90, 0.0), "$": (0.77, -0.13), "_": (-0.08, -0.13), "'": (0.72, 0.46)})
+
+
+def reach(word: str):
+    tops, bottoms = zip(*(REACH.get(c, (0.72, 0.0)) for c in word))
+    return max(tops), min(bottoms)
+
+
 def de(x: float, mark: str = "", trail: bool = False) -> str:
     """12345.6 -> '12.345,60' (negative: with the sign in front or, as accounting prints it, behind)."""
     s = "%.2f" % abs(x)
@@ -45,6 +59,8 @@ def de(x: float, mark: str = "", trail: bool = False) -> str:
 class Doc:
     """A document of pages (width, height in points); text is put with its left ("l") or right ("r") edge at x, its line at y
     from the top."""
+
+    tight = False                # the boxes as PDFKit gives them (each word as high as its letters), not as high as the writing
 
     def __init__(self, w: float = 595, h: float = 842):
         self.w, self.h, self.pages = w, h, [[]]
@@ -67,7 +83,8 @@ class Doc:
                 for word in text.split(" "):
                     if word:
                         j = [rnd.randint(-jitter, jitter) for _ in range(3)] if jitter else [0, 0, 0]
-                        out.append([round(x * 10) + j[0], round((y - 0.8 * size) * 10) + j[1], round(width(word, size) * 10), round(size * 10) + j[2], word])
+                        top, bottom = reach(word) if Doc.tight else (0.8, -0.2)
+                        out.append([round(x * 10) + j[0], round((y - top * size) * 10) + j[1], round(width(word, size) * 10), round((top - bottom) * size * 10) + j[2], word])
                     x += width(word + " ", size)
             pages.append({"n": n + 1, "w": round(self.w * 10), "h": round(self.h * 10), "how": how, "items": out})
         return {"pages": pages, "count": len(pages), "cut": False}
@@ -180,6 +197,23 @@ def report():
 
 def grid(sh: dict) -> list:
     return [[sh["cells"].get((r, c), ("", "", ""))[1] for c in range(sh["cols"])] for r in range(sh["rows"])]
+
+
+ACCOUNTING = [("Erlöse", 28028.0, 24028.0), ("Erstattung", 1002.0, -502.0), ("Rücklage", 21006.0, -20506.0), ("Miete", 3000.0, 2900.0), ("Zinsen", 410.0, -12.5)]
+
+
+def accounting_doc(rows, size=11, euro=False) -> Doc:
+    """Excel's accounting format: the minus at the left edge of the cell, the figure at its right."""
+    d = Doc()
+    d.put(40, 60, "Position", size=size); d.put(300, 60, "Plan", "r", size); d.put(420, 60, "Ist", "r", size)
+    for i, (name, plan, ist) in enumerate(rows):
+        y = 76 + (size + 3) * i
+        d.put(40, y, name, size=size)
+        for right, left, v in ((300, 203, plan), (420, 308, ist)):
+            d.put(right, y, de(abs(v)) + (" €" if euro else ""), "r", size)
+            if v < 0:
+                d.put(left, y, "-", size=size)
+    return d
 
 
 class Tables(unittest.TestCase):
@@ -370,7 +404,7 @@ class Tables(unittest.TestCase):
         self.assertEqual((g[2], g[4]), (["Strom", "-", "2400.5"], ["Leasing", "-", "4800"]))
         self.assertEqual((X.sum_range(b, None, "B2:B7")["sum"], X.sum_range(b, None, "C2:C7")["sum"]), ("14570", "22310.5"))
         # a sign a little behind its figure belongs to that figure, not to the balance in the next column
-        for gap in (2.5, 5.0):
+        for gap in (2.5, 4.5):
             d = Doc()
             for i in range(6):
                 v = 250.0 + 10 * i
@@ -447,19 +481,8 @@ class Tables(unittest.TestCase):
         self.assertEqual((grid(b["sheets"][0])[2], X.sum_range(b, None, "B1:B5")["sum"]), ([label, "890"], "901780"))
 
     def test_signs_standing_apart_third_round(self):
-        def accounting(rows, size=11, euro=False):
-            # Excel's accounting format: the minus at the left edge of the cell, the figure at its right
-            d = Doc()
-            d.put(40, 60, "Position", size=size); d.put(300, 60, "Plan", "r", size); d.put(420, 60, "Ist", "r", size)
-            for i, (name, plan, ist) in enumerate(rows):
-                y = 76 + (size + 3) * i
-                d.put(40, y, name, size=size)
-                for right, left, v in ((300, 203, plan), (420, 308, ist)):
-                    d.put(right, y, de(abs(v)) + (" €" if euro else ""), "r", size)
-                    if v < 0:
-                        d.put(left, y, "-", size=size)
-            return P.book(d.layout())
-        rows = [("Erlöse", 28028.0, 24028.0), ("Erstattung", 1002.0, -502.0), ("Rücklage", 21006.0, -20506.0), ("Miete", 3000.0, 2900.0), ("Zinsen", 410.0, -12.5)]
+        accounting = lambda rows, **how: P.book(accounting_doc(rows, **how).layout())
+        rows = ACCOUNTING
         for euro in (False, True):
             b = accounting(rows, euro=euro)
             self.assertEqual(grid(b["sheets"][0])[2:4], [["Erstattung", "1002", "-502"], ["Rücklage", "21006", "-20506"]], euro)
@@ -659,6 +682,16 @@ class Tables(unittest.TestCase):
         self.assertEqual(P.book({"pages": [], "count": 0})["sheets"], [])
 
 
+class TightTables(Tables):
+    """All of the above once more with the boxes PDFKit gives: every word as high as its own letters."""
+
+    def setUp(self):
+        Doc.tight = True
+
+    def tearDown(self):
+        Doc.tight = False
+
+
 @unittest.skipUnless(sys.platform == "darwin" and os.path.exists(R.SANDBOX), "the real helper: on a Mac only")
 class OnMac(unittest.TestCase):
     """The helper itself (PDFKit, Vision) on the documents above -- what it finds must give the same tables."""
@@ -667,7 +700,7 @@ class OnMac(unittest.TestCase):
         d, rows = statement()
         lay = R.layout_of(d.pdf(), tempfile.mkdtemp())
         self.assertEqual((lay["count"], lay["cut"], [p["how"] for p in lay["pages"]]), (4, False, ["pdf"] * 4))
-        print("first words:", lay["pages"][0]["items"][:6])
+        print("first words:", lay["pages"][0]["items"][:6], "letters:", [p.get("letters") for p in lay["pages"]])
         b = P.book(lay)
         g = grid(b["sheets"][0])
         self.assertEqual(X.overview(b), '"pages 1-4" A1:F160', [r for r in g[:8]])
@@ -676,6 +709,22 @@ class OnMac(unittest.TestCase):
         d, rows = report()
         g = grid(P.book(R.layout_of(d.pdf(), tempfile.mkdtemp()))["sheets"][0])
         self.assertEqual(g[4:], rows, g[:6])
+        # signs standing alone (thin strokes for PDFKit): the accounting format's minus, a column of dashes, a page number
+        d = accounting_doc(ACCOUNTING + [("Korrektur", -300.0, 100.0)])
+        d.put(270, 800, "Seite 1 von", size=7); d.put(270 + width("Seite 1 von", 7) + 6, 800, "1", size=7)
+        lay = R.layout_of(d.pdf(), tempfile.mkdtemp())
+        print("signs:", [i for i in lay["pages"][0]["items"] if i[4] in ("-", "1.002,00", "502,00")][:4])
+        b = P.book(lay)
+        g = grid(b["sheets"][0])
+        self.assertEqual(g[:7], [["Position", "Plan", "Ist"], ["Erlöse", "28028", "24028"], ["Erstattung", "1002", "-502"], ["Rücklage", "21006", "-20506"],
+                                 ["Miete", "3000", "2900"], ["Zinsen", "410", "-12.5"], ["Korrektur", "-300", "100"]], g)
+        self.assertEqual((X.sum_range(b, None, "B2:B7")["sum"], X.sum_range(b, None, "C2:C7")["sum"]), ("53146", "6007.5"))
+        d = Doc()
+        d.put(40, 60, "Position"); d.put(300, 60, "2025", "r"); d.put(420, 60, "2026", "r")
+        for i in range(6):
+            d.put(40, 76 + 13 * i, "Posten %d" % i); d.put(294, 76 + 13 * i, "-", "r"); d.put(420, 76 + 13 * i, de(1000.0 + i), "r")
+        b = P.book(R.layout_of(d.pdf(), tempfile.mkdtemp()))
+        self.assertEqual((grid(b["sheets"][0])[1], X.sum_range(b, None, "C2:C7")["sum"]), (["Posten 0", "-", "1000"], "6015"), grid(b["sheets"][0]))
 
     def test_picture_by_text_recognition(self):
         d = Doc(1500, 620)                                # large writing: the page as a picture, read by Apple's text recognition

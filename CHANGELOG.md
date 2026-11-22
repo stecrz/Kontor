@@ -1,5 +1,9 @@
 # Änderungen
 
+## 3.16.90 (2026-11-22 04:30)
+- KI-Assistent: PDF-Tabellen am Mac richtig gelesen – Wörter standen ab der zweiten Zeile an falscher Stelle (der GitHub-Lauf von 3.16.88 war deshalb rot)
+- KI-Assistent: einzelne Minuszeichen und Striche in PDFs bleiben in ihrer Zeile
+
 ## 3.16.89 (2026-11-22 03:59)
 - Belege nur in Kontor: Einstellung „Verweis in MoneyMoney“ entfällt, nie mehr ein Belegpfad im Kommentar eines Umsatzes
 - MoneyMoney-Brücke: bei Umsätzen nur noch die Kategorie, alles andere abgewiesen
