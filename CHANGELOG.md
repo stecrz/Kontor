@@ -1,5 +1,10 @@
 # Änderungen
 
+## 3.16.94 (2026-11-22 05:42)
+- Diktieren: neue Einstellung „Mikrofonfilter“ – aus: das Mikrofon hört sofort nach dem Klick (statt nach etwa 2 s)
+- Diktieren: ohne Filter gleicht Kontor die Lautstärke selbst aus – leise Aufnahmen gelten nicht mehr als Stille
+- Diktieren: Protokoll nennt Mikrofonart und Pegel der Aufnahme
+
 ## 3.16.93 (2026-11-22 05:38)
 - KI-Assistent: zur Frage passende Notizen kommen von selbst mit – auch in anderer Wortform, als Wortteil oder mit Tippfehler
 - KI-Assistent: unter der Antwort „Aus deinen Notizen: …“ – worauf sie beruht

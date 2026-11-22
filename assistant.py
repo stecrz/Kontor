@@ -84,7 +84,7 @@ RIGHTS = ("figures", "transactions", "help", "page", "navigate", "enter_values",
 READ_RIGHTS = ("figures", "transactions", "page")    # one switch in the settings: reading your data
 RIGHTS_VERSION = 2       # 3.16.28: changes on for everyone (each one only after your click), the help always readable
 SPEECH_STARTS = ("early", "click")                 # the speech model starts at once (with the model, when the assistant opens) or with the click on the microphone
-DEFAULTS: Dict[str, Any] = {"enabled": False, "model": "", "speech": "", "speech_start": "", "effort": "balanced", "context": auto_context(physical_ram()), "context_auto": True,
+DEFAULTS: Dict[str, Any] = {"enabled": False, "model": "", "speech": "", "speech_start": "", "speech_filter": True, "effort": "balanced", "context": auto_context(physical_ram()), "context_auto": True,
                             "idle_minutes": 30, "sandbox": "strict", "save_chats": True, "check_mode": "monthly",
                             "rights": {"figures": True, "transactions": True, "help": True, "page": True, "navigate": True,
                                        "enter_values": True, "categorize": True, "book": True, "rules": True, "receipts": True, "internet": False, "remote": False}}       # changes: each one only with your click on the card
@@ -213,6 +213,9 @@ def settings(config: dict) -> dict:
     out["model"] = raw["model"][:200] if isinstance(raw.get("model"), str) else ""
     out["speech"] = raw["speech"] if raw.get("speech") in SPEECH_IDS else ""          # "": the most accurate one on this Mac
     out["speech_start"] = raw["speech_start"] if raw.get("speech_start") in SPEECH_STARTS else ""          # "": by the memory of this Mac
+    # the microphone with the system's filters for speech (echo, noise, level: on a Mac it then hears only after about two
+    # seconds) or without them (it hears at once; Kontor levels the recording itself)
+    out["speech_filter"] = raw["speech_filter"] if isinstance(raw.get("speech_filter"), bool) else DEFAULTS["speech_filter"]
     out["effort"] = raw["effort"] if raw.get("effort") in EFFORTS else DEFAULTS["effort"]
     out["context_auto"] = raw.get("context") not in CONTEXTS                           # not chosen: by the memory of this Mac
     out["context"] = raw["context"] if raw.get("context") in CONTEXTS else DEFAULTS["context"]
@@ -525,7 +528,7 @@ class Assistant:
         web_trusted{sources, hosts} (hosts: a list or a text of websites; one that is no website: refused, nothing saved)."""
         cur = self.settings()
         new = stored(cur)
-        for k in ("enabled", "model", "speech", "speech_start", "effort", "context", "idle_minutes", "sandbox", "save_chats", "check_mode"):
+        for k in ("enabled", "model", "speech", "speech_start", "speech_filter", "effort", "context", "idle_minutes", "sandbox", "save_chats", "check_mode"):
             if k in body:
                 new[k] = body[k]
         if "memory" in body:
@@ -791,22 +794,29 @@ class Assistant:
             self._speech_up(st, mid)
         return {"ready": True}
 
-    def transcribe(self, wav: Any, live: bool = False, start: Any = None) -> dict:
+    def transcribe(self, wav: Any, live: bool = False, start: Any = None, direct: bool = False) -> dict:
         """What was said in a recording, as text for the question field. The recording goes to the speech model on this Mac
         and nowhere else; neither it nor the text is stored or logged. live: the recording so far, while still speaking (shown
         in the field as it grows) -- not worth a line in the log each time. start: how long the start took, in ms, as the
         page measured it -- [until the microphone was open, until the speech model was ready, from then until its first
         sound, until the button turned red, and how much of the recording was pure silence, in percent]; only into the log
-        line (where a slow start comes from, and whether this microphone's filters turn a quiet room into pure silence)."""
+        line (where a slow start comes from, and whether this microphone's filters turn a quiet room into pure silence).
+        direct: recorded without the system's filters for speech -- far quieter, so Kontor levels it itself (see _speech).
+        The log line also says how loud the recording was (never anything of what was said)."""
         st, mid = self._speech_can()
         if not isinstance(wav, (bytes, bytearray)) or len(wav) < 2000 or wav[:4] != b"RIFF" or wav[8:12] != b"WAVE":
             raise ValueError(tr("s_ki_aufnahme_leer"))
         if len(wav) > MAX_AUDIO:
             raise ValueError(tr("s_ki_aufnahme_zu_lang"))
         t0 = time.time()
-        parts = _speech(bytes(wav))
+        info: Dict[str, float] = {}
+        parts = _speech(bytes(wav), level=direct, info=info)
+        heard = ""
+        if info:
+            heard = "; %s microphone, level %.0f dB over %.0f dB%s" % ("direct" if direct else "filtered", info["level"], info["quiet"],
+                                                                         (", made %.0f dB louder" % info["gain"]) if info["gain"] else "")
         if not parts:                                    # nothing but silence or a steady noise: a speech model would invent sentences
-            log.debug("Assistant: dictation without speech (%d kB of audio)", len(wav) // 1000)
+            log.debug("Assistant: dictation without speech (%d kB of audio%s)", len(wav) // 1000, heard)
             return {"text": "", "silent": True}
         texts = []
         with self.speech_lock:
@@ -823,8 +833,8 @@ class Assistant:
         if isinstance(start, list) and len(start) == 5 and all(isinstance(x, (int, float)) and not isinstance(x, bool) and 0 <= x < 6e5 for x in start):
             took = "; started after %.1f s (microphone %.1f s, speech model %.1f s, first sound %.1f s later, pure silence %d %%)" % (
                 start[3] / 1000, start[0] / 1000, start[1] / 1000, start[2] / 1000, min(100, start[4]))
-        (log.debug if live else log.info)("Assistant: dictation written down%s (%d kB of audio, %d part(s), %.1f s%s)", " so far" if live else "", len(wav) // 1000,
-                                          len(parts), time.time() - t0, took)
+        (log.debug if live else log.info)("Assistant: dictation written down%s (%d kB of audio, %d part(s), %.1f s%s%s)", " so far" if live else "", len(wav) // 1000,
+                                          len(parts), time.time() - t0, took, heard)
         return {"text": text[:60000]}
 
     def forget(self) -> None:
@@ -3996,9 +4006,35 @@ class Assistant:
 
 SPEECH_PART = 45.0                                 # seconds of one piece the speech model writes down at a time (a long dictation: several)
 SPEECH_BEFORE, SPEECH_AFTER = 27, 20               # 30 ms pieces kept before the first sound and after the last (0.8 s, 0.6 s)
+# A microphone without the system's filters for speech has no level control: on a MacBook what is said arrives 20 to 30 dB
+# quieter than with them (measured in Kontor's log: such recordings counted as silence for seconds on end). Kontor then levels
+# the recording itself: its loud pieces are brought to SPEECH_LEVEL -- only where they stand clearly above its quiet (noise alone
+# is never made louder: a speech model would invent sentences from it).
+SPEECH_LEVEL = -20.0                               # dBFS the loud pieces are brought to ...
+SPEECH_GAIN = 40.0                                 # ... by this many dB at most
+SPEECH_RANGE = 12.0                                # dB the loud pieces stand above the quiet of the recording at least
+SPEECH_REAL = -90.0                                # dBFS: below it nothing a microphone gives (the zeros before it starts)
+_LOUDER: Dict[int, list] = {}                      # every sample made louder, by half dB steps (the last few tables)
 
 
-def _speech(wav: bytes, longest: float = SPEECH_PART) -> List[bytes]:
+def _louder(part: Any, gain: float) -> Any:
+    """Samples (16 bit) `gain` dB louder, in half dB steps, never past full scale."""
+    key = int(round(gain * 2))
+    if key <= 0:
+        return part
+    table = _LOUDER.get(key)
+    if table is None:
+        f = 10 ** (key / 40.0)
+        table = [max(-32768, min(32767, int(round((v if v < 32768 else v - 65536) * f)))) for v in range(65536)]
+        if len(_LOUDER) >= 6:
+            _LOUDER.clear()
+        _LOUDER[key] = table
+    u = array.array("H")                                 # (the same bytes as numbers from 0: the place in the table)
+    u.frombytes(part.tobytes())
+    return array.array("h", map(table.__getitem__, u))
+
+
+def _speech(wav: bytes, longest: float = SPEECH_PART, level: bool = False, info: Optional[dict] = None) -> List[bytes]:
     """The parts of a recording in which something is heard, each from well before its first sound to well after its last
     (0.8 s and 0.6 s: a soft first word -- "f", "s", "h", a quiet "also" -- is never cut off; quiet around words does the
     model no harm) -- none when there is nothing (silence, a steady hum: a speech model then invents sentences of its own). A long
@@ -4006,7 +4042,11 @@ def _speech(wav: bytes, longest: float = SPEECH_PART) -> List[bytes]:
     that and all of it; without a pause at the quietest moment), so that no sentence is cut and each piece is written
     down with all of its own words around it. Sound: 30 ms pieces clearly louder than the quiet of this recording (10 dB
     above its quietest tenth, at least -55 dBFS; -26 dBFS is always loud enough), in runs of at least 90 ms (a click is no
-    word), together at least a quarter of a second. A recording that is not 16-bit PCM goes on as it is (the model decides)."""
+    word), together at least a quarter of a second. A recording that is not 16-bit PCM goes on as it is (the model decides).
+    level: a recording without level control (see SPEECH_LEVEL) -- made louder before all of that, by what its loud pieces
+    (the loudest hundredth, a quarter of a second at least: a click is not the level) lack to SPEECH_LEVEL, where they stand
+    SPEECH_RANGE above its quiet (both without pure zeros). info: filled with what was measured -- "level" and "quiet" in
+    dBFS, "gain" in dB."""
     try:
         with wave.open(io.BytesIO(wav)) as w:
             ch, width, rate = w.getnchannels(), w.getsampwidth(), w.getframerate()
@@ -4029,6 +4069,13 @@ def _speech(wav: bytes, longest: float = SPEECH_PART) -> List[bytes]:
     if not db:
         return []
     quiet = sorted(db)[len(db) // 10]
+    real = sorted(d for d in db if d > SPEECH_REAL)
+    top, low, gain = (real[-max(8, len(real) // 100)], real[len(real) // 10], 0.0) if len(real) >= 8 else (quiet, quiet, 0.0)
+    if level and top - low >= SPEECH_RANGE:
+        gain = round(max(0.0, min(SPEECH_GAIN, SPEECH_LEVEL - top)) * 2) / 2
+        db, quiet = [d + gain for d in db], low + gain
+    if info is not None:
+        info.update(level=top, quiet=low, gain=gain)
     loud = [d > min(max(quiet + 10, -55.0), -26.0) for d in db] + [False]
     keep, run = [False] * len(db), 0
     for i, v in enumerate(loud):
@@ -4066,7 +4113,7 @@ def _speech(wav: bytes, longest: float = SPEECH_PART) -> List[bytes]:
         if len(k) < 8:                                   # a piece with nothing said in it
             continue
         hi = len(a) if k[-1] + SPEECH_AFTER >= len(db) else (k[-1] + SPEECH_AFTER) * flen        # (at the end: all of it)
-        part = a[max(f0, k[0] - SPEECH_BEFORE) * flen:min(hi, len(a) if f1 >= len(db) else f1 * flen)]
+        part = _louder(a[max(f0, k[0] - SPEECH_BEFORE) * flen:min(hi, len(a) if f1 >= len(db) else f1 * flen)], gain)
         if sys.byteorder == "big":
             part.byteswap()
         buf = io.BytesIO()

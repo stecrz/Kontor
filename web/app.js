@@ -204,7 +204,7 @@ const H = {
   tls: t('optional_zertifikat_schluessel_pem_fue'),
   updates: t('einzige_netzverbindung_von_kontor_einm'),
   assistent: t('h_assistent'), ki_abschirmung: t('h_ki_abschirmung'), ki_kontext: t('h_ki_kontext'), ki_leerlauf: t('h_ki_leerlauf'),
-  ki_eintragen: t('h_ki_eintragen'), ki_eigenes: t('h_ki_eigenes'), ki_diktat: t('h_ki_diktat'), ki_sp_start: t('h_ki_sp_start'), ki_speichern: t('h_ki_speichern'), ki_internet: t('h_ki_internet'), ki_tavily: t('h_ki_tavily'), ki_vertraut: t('h_ki_vertraut'), ki_websites: t('h_ki_websites'),
+  ki_eintragen: t('h_ki_eintragen'), ki_eigenes: t('h_ki_eigenes'), ki_diktat: t('h_ki_diktat'), ki_sp_start: t('h_ki_sp_start'), ki_mikrofilter: t('h_ki_mikrofilter'), ki_speichern: t('h_ki_speichern'), ki_internet: t('h_ki_internet'), ki_tavily: t('h_ki_tavily'), ki_vertraut: t('h_ki_vertraut'), ki_websites: t('h_ki_websites'),
   ki_gedaechtnis: t('h_ki_gedaechtnis'),
   ki_programm: t('h_ki_programm'), ki_auto_suchen: t('h_ki_auto_suchen'), ki_modelle: t('h_ki_modelle'), ki_ablage: t('h_ki_ablage'),
   darlehen_iban: t('die_rate_wird_am_gegenkonto'),
@@ -264,7 +264,7 @@ const HELP_AT = {area: 'areas', main_area: 'areas', share: 'areas', gruppenwahl:
   h_co_rueck: 'rules-back', h_co_takt: 'rules-companies', h_co_schwelle: 'rules-companies', h_co_gp: 'rules-companies', method: 'planning', inflation: 'planning', steig_ein: 'planning',
   rendite: 'planning', event: 'planning', wert_bereich: 'planning', fern: 'iphone', fern_was: 'iphone', offline: 'iphone', bind: 'iphone', tls: 'iphone',
   port: 'iphone', touchid: 'security', package: 'backup', timemachine: 'backup', datenschluessel: 'security', diagnose: 'troubleshooting', einrichtung_knoepfe: 'setup', updates: 'updates',
-  update_quelle: 'updates', belege_ordner: 'receipts', belege_sub: 'receipts', documents: 'properties', immo_planung: 'properties', assistent: 'assistant', ki_diktat: 'assistant-dictation', ki_sp_start: 'assistant-dictation', ki_abschirmung: 'assistant-safety', ki_kontext: 'assistant-setup', ki_leerlauf: 'assistant-setup', ki_auto_suchen: 'assistant-setup', ki_eintragen: 'assistant-rights', ki_eigenes: 'assistant-setup', ki_speichern: 'assistant', ki_programm: 'assistant-setup', ki_modelle: 'assistant-setup', ki_ablage: 'assistant-setup', ki_internet: 'assistant-internet', ki_tavily: 'assistant-internet', ki_vertraut: 'assistant-internet', ki_websites: 'assistant-internet'};
+  update_quelle: 'updates', belege_ordner: 'receipts', belege_sub: 'receipts', documents: 'properties', immo_planung: 'properties', assistent: 'assistant', ki_diktat: 'assistant-dictation', ki_sp_start: 'assistant-dictation', ki_mikrofilter: 'assistant-dictation', ki_abschirmung: 'assistant-safety', ki_kontext: 'assistant-setup', ki_leerlauf: 'assistant-setup', ki_auto_suchen: 'assistant-setup', ki_eintragen: 'assistant-rights', ki_eigenes: 'assistant-setup', ki_speichern: 'assistant', ki_programm: 'assistant-setup', ki_modelle: 'assistant-setup', ki_ablage: 'assistant-setup', ki_internet: 'assistant-internet', ki_tavily: 'assistant-internet', ki_vertraut: 'assistant-internet', ki_websites: 'assistant-internet'};
 const more = id => ` <a href="#help/${id}" class="more">${t('mehr_in_der_hilfe')}</a>`;   // Verweis auf einen Abschnitt der Hilfe
 // beside a page's title: what the page does in a line, a click opens its part of the help (settings and Konten & Regeln: per tab)
 const PAGE_HELP = {overview: 'overview', balance: 'balance-sheet', cashflow: 'cash-flow', planning: 'planning', properties: 'properties', tax: 'tax',
@@ -7359,10 +7359,18 @@ function asFit(ta) {
 // The click starts at once: the microphone opens and is kept from then on, while the speech model loads beside it if it does not
 // run yet (a few seconds). The button turns red and its time starts only once dictating truly runs -- the model is ready and the
 // microphone truly hears; until then it turns (what is said meanwhile is written down too).
-const REC = {on: false, busy: false, starting: false, cap: false, flow: false, heard: false, zeros: null, blocks: 0, zeroBlocks: 0, gen: 0, asked: false, drop: false, go: false, ctx: null, stream: null, node: null, pcm: [], m: 0, rate: 0, sum: 0, cnt: 0, pos: 0, next: 0, t0: 0, timer: null, live: null};
+const REC = {on: false, busy: false, starting: false, cap: false, flow: false, heard: false, direct: false, zeros: null, blocks: 0, zeroBlocks: 0, gen: 0, asked: false, drop: false, go: false, ctx: null, stream: null, node: null, pcm: [], m: 0, rate: 0, sum: 0, cnt: 0, pos: 0, next: 0, t0: 0, timer: null, live: null};
 const REC_MAX = 600;          // seconds: then it ends by itself and the text is taken
 // the microphone with the filters for speech (echo, noise, level): they keep out what plays on the Mac and the hum around it
 const REC_AUDIO = {channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true};
+// ... and without them (Einstellungen -> KI-Assistent -> Diktieren -> Mikrofonfilter: aus): it hears at once (measured on a MacBook,
+// in Kontor's Mac app: 0.1 s each time, also after a pause), far more quietly -- Kontor levels such a recording itself before it is
+// written down (assistant.py, _speech). No echo or noise filter then: what the Mac plays can get into the text.
+const REC_DIRECT = {channelCount: 1, echoCancellation: false, noiseSuppression: false, autoGainControl: true};
+const REC_DIRECT_WAIT = 600;  // ms its first sound is waited for at most (a microphone that is muted: red anyway)
+const asMicDirect = () => ((AS.st || {}).settings || {}).speech_filter === false;
+// how long red waits: for the first sound at most, and from it on (without the filters nothing fades in: red with the first sound)
+const asMicWait = direct => direct ? [REC_DIRECT_WAIT, 0] : [asMicCap(), REC_SETTLE];
 // A microphone opened after a pause hears nothing at first: macOS takes about two seconds to start it with its filters (measured
 // on a MacBook, in Kontor's Mac app: 1.9 s each time), and until then only silence (zeros) arrives -- within a few seconds after a
 // recording it is still running and hears at once (0.1 s). So red waits for the first sound (a room's hum is enough) and a moment
@@ -7375,7 +7383,7 @@ try { const z = LS.get('kontor.mic.zeros'); if (z === '0' || z === '1') REC.zero
 const asMicCap = () => REC.zeros === false ? REC_SOUND : REC_QUIET;
 // what a recording shows of this microphone: did pure silence arrive between the sounds (in a few of its pieces at least)?
 function asMicLearn() {
-  if (!REC.heard || REC.blocks < 24) return;          // (two seconds and more: enough to tell)
+  if (REC.direct || !REC.heard || REC.blocks < 24) return;          // (two seconds and more: enough to tell; only of the microphone with its filters)
   REC.zeros = REC.zeroBlocks >= Math.max(2, REC.blocks * 0.03);
   try { LS.set('kontor.mic.zeros', REC.zeros ? '1' : '0'); } catch (e) {}
 }
@@ -7452,19 +7460,19 @@ async function asMic() {
   if (REC.on) { asMicStop(true); return; }
   const ta = $('#as-in'); if (!ta) return;
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { toast(t('ki_mikro_fehlt'), 6000); return; }
-  const gen = ++REC.gen, AC = window.AudioContext || window.webkitAudioContext;
+  const gen = ++REC.gen, AC = window.AudioContext || window.webkitAudioContext, direct = asMicDirect();
   let ctx = null;
   try { ctx = new AC(); if (ctx.state === 'suspended') ctx.resume().catch(() => {}); } catch (e) { ctx = null; }          // still in the click: Safari starts sound only from one
   const c0 = Date.now(), took = [0, 0, 0, 0, 0];          // how long the start took (into Kontor's log with the text: where a slow start comes from)
   const ready = api('/api/assistant/listen', {}).then(() => { took[1] = Date.now() - c0; return ''; }, e => (e && e.message) || '?');          // the speech model, loaded beside the microphone
   const at = ta.selectionStart == null ? ta.value.length : ta.selectionStart, to = ta.selectionEnd == null ? at : ta.selectionEnd;
   REC.live = {gen: (REC.live ? REC.live.gen : 0) + 1, busy: false, sent: 0, seg: 0, done: [], cur: '', before: ta.value.slice(0, at), after: ta.value.slice(to)};
-  Object.assign(REC, {starting: true, asked: true, flow: false, heard: false, heardAt: 0, blocks: 0, zeroBlocks: 0, t1: 0, took: null, pcm: [], m: 0});
+  Object.assign(REC, {starting: true, asked: true, direct, flow: false, heard: false, heardAt: 0, blocks: 0, zeroBlocks: 0, t1: 0, took: null, pcm: [], m: 0});
   ta.readOnly = true;          // from now on the field shows what is said (typing would be written over)
   asDictPut(''); asMicDraw();
   const drop = st => { st.getTracks().forEach(x => x.stop()); if (ctx) ctx.close().catch(() => {}); };
   let stream = null;
-  try { stream = await navigator.mediaDevices.getUserMedia({audio: REC_AUDIO}); }
+  try { stream = await navigator.mediaDevices.getUserMedia({audio: direct ? REC_DIRECT : REC_AUDIO}); }
   catch (e) { if (ctx) ctx.close().catch(() => {}); if (gen === REC.gen) { asMicStop(false); toast(t('ki_mikro_verweigert'), 7000); } return; }
   if (gen !== REC.gen) { drop(stream); return; }          // ended while the browser asked
   if (!asMicMay()) { drop(stream); asMicStop(false); return; }          // locked or closed meanwhile: nothing is recorded
@@ -7487,8 +7495,8 @@ async function asMic() {
     t1 = REC.t1 = Date.now(); took[0] = t1 - c0;
   } catch (e) { if (!REC.ctx) drop(stream); asMicStop(false); return; }          // whatever fails after the microphone was opened: it is let go again
   // red only once it truly runs: the speech model ready, the microphone hearing (its first sound and a moment more -- or the wait over)
-  const err = await ready, most = asMicCap();
-  while (gen === REC.gen && !err && !(REC.heard ? Date.now() - REC.heardAt >= REC_SETTLE : Date.now() - t1 >= most)) await new Promise(r => setTimeout(r, 20));
+  const err = await ready, [most, settle] = asMicWait(direct);
+  while (gen === REC.gen && !err && !(REC.heard ? Date.now() - REC.heardAt >= settle : Date.now() - t1 >= most)) await new Promise(r => setTimeout(r, 20));
   if (gen !== REC.gen) return;          // ended meanwhile (✕, Escape, sent, the panel closed, locked)
   if (err) { asMicStop(false); toast(err, 7000); return; }          // the model does not start: said now, not after speaking
   REC.starting = false; REC.on = true; REC.t0 = Date.now(); asMicDraw(); REC.timer = setInterval(() => { asMicDraw(); asLive(); }, 500);
@@ -7552,7 +7560,7 @@ function asLive() {
   if (m - L.seg < k * 0.8 || m - L.sent < k * 1.5) return;
   const end = m - L.seg > k * 24 ? asQuiet(L.seg + k * 16, m - k * 0.3) : m, close = end < m, from = L.seg, gen = L.gen;
   L.busy = true; L.sent = m;
-  api('/api/assistant/transcribe', {audio: asB64(asWav(asPcmPart(from, end))), live: true})
+  api('/api/assistant/transcribe', Object.assign({audio: asB64(asWav(asPcmPart(from, end))), live: true}, REC.direct ? {direct: true} : {}))
     .then(r => {
       if (!REC.on || !REC.live || REC.live.gen !== gen) return;
       const text = (r.text || '').trim();
@@ -7579,7 +7587,7 @@ async function asMicStop(send, go) {
   let send_ = false;
   try {
     if (REC.took) { REC.took[2] = (REC.heard ? REC.heardAt : Date.now()) - REC.t1; REC.took[4] = REC.blocks ? Math.round(100 * REC.zeroBlocks / REC.blocks) : 0; }          // the first sound after the microphone opened (none: until the end); pure silence in percent
-    const r = await api('/api/assistant/transcribe', Object.assign({audio: asB64(asWav(pcm))}, REC.took ? {start: REC.took} : {})), text = (r.text || '').trim();          // all of it once more: the text that stays
+    const r = await api('/api/assistant/transcribe', Object.assign({audio: asB64(asWav(pcm))}, REC.took ? {start: REC.took} : {}, REC.direct ? {direct: true} : {})), text = (r.text || '').trim();          // all of it once more: the text that stays
     REC.busy = false;
     if (REC.drop) asDictPut('');          // thrown away meanwhile (✕)
     else if (!text) { toast(t('ki_diktat_nichts'), 4000); asDictPut(''); }
@@ -8251,6 +8259,7 @@ async function vEinstellungenAssistent() {
       ${!m.installed || m.newer ? `<button class="small secondary as-dl" data-id="${esc(m.id)}" data-name="${esc(m.name)}" data-fit="" ${busy}>${t(m.installed ? 'ki_aktualisieren' : 'ki_laden')}</button>` : ''}
       ${m.installed ? `<button class="small secondary as-del" data-id="${esc(m.id)}" data-name="${esc(m.name)}" ${busy}>${t('ki_loeschen')}</button>` : ''}</span></div>`).join('')}
     ${a.dictation ? `<div class="as-item"><span><b>${t('ki_sp_start')}</b>${hq('ki_sp_start')}</span><span class="as-act"><select id="as-speech-start" aria-label="${esc(t('ki_sp_start'))}">${opt('', t(a.speech_early_auto ? 'ki_sp_auto_early' : 'ki_sp_auto_click'), st.speech_start || '')}${opt('early', t('ki_sp_early'), st.speech_start || '')}${opt('click', t('ki_sp_click'), st.speech_start || '')}</select></span></div>
+    <div class="as-item"><span><b>${t('ki_mikrofilter')}</b>${hq('ki_mikrofilter')}</span><span class="as-act"><select id="as-speech-filter" aria-label="${esc(t('ki_mikrofilter'))}">${opt('1', t('ki_mikrofilter_an'), st.speech_filter === false ? '0' : '1')}${opt('0', t('ki_mikrofilter_aus'), st.speech_filter === false ? '0' : '1')}</select></span></div>
     <div id="as-mic-perm"></div>` : ''}</div>
   ${prog('speech')}${err('speech')}
   <h2>${t('ki_aktualisierung')}${hq('ki_auto_suchen')}</h2>
@@ -8359,6 +8368,7 @@ function bindAssistent(main) {
   on('input[name="as-model"]', 'change', el => set({model: el.value}));
   on('input[name="as-speech"]', 'change', el => set({speech: el.value}));
   on('#as-speech-start', 'change', el => set({speech_start: el.value}));
+  on('#as-speech-filter', 'change', el => set({speech_filter: el.value === '1'}));
   on('#as-context', 'change', el => set({context: +el.value}));
   on('#as-idle', 'change', el => set({idle_minutes: +el.value}));
   on('#as-save', 'change', el => set({save_chats: el.checked}));

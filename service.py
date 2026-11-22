@@ -3131,7 +3131,7 @@ def make_handler(app: App):
                         wav = base64.b64decode(str(body.get("audio") or ""), validate=True)
                     except (ValueError, binascii.Error):
                         raise ValueError(tr("s_ki_aufnahme_leer"))
-                    return self._json(200, a.transcribe(wav, live=bool(body.get("live")), start=body.get("start")))          # live: while still speaking
+                    return self._json(200, a.transcribe(wav, live=bool(body.get("live")), start=body.get("start"), direct=body.get("direct") is True))          # live: while still speaking
                 if path == "/api/assistant/attach":               # a receipt for the next question: in memory only (assistant.attach)
                     try:
                         data = base64.b64decode(str(body.get("content") or ""), validate=True)

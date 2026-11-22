@@ -6,6 +6,7 @@ its command line, without tools of its own; what the assistant reads equals what
 the user's click, and it can be taken back; settings only at the Mac and never by the assistant; nothing of a conversation in
 the log.
 """
+import array
 import base64
 import copy
 import hashlib
@@ -25,6 +26,7 @@ import unittest
 import unittest.mock
 from unittest import mock
 import urllib.error
+import wave
 import zipfile
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -1546,6 +1548,39 @@ class Tools(_Assist):
         n = int(re.search(r"(\d+)", self.a.transcribe(pcm([("quiet", 1, 40), ("voice", 0.4, 150), ("voice", 1, 6000), ("quiet", 1, 40)]))["text"]).group(1))
         self.assertGreater(n, 16000 * 2 * 1.9)
         self.assertNotEqual(self.a.transcribe(pcm([("quiet", 1, 0), ("voice", 1, 150), ("quiet", 1, 0)]))["text"], "")
+        # a microphone without the system's filters has no level control -- what is said arrives far quieter and counts as silence
+        # as it is (seen in the log of a MacBook: seconds of speech "without speech"); Kontor levels such a recording itself: found,
+        # and made louder for the model. Noise, a hum, a click, the zeros before the microphone starts: never louder, never text
+        soft = [("quiet", 1, 8), ("voice", 1.5, 60), ("quiet", 1, 8)]
+        self.assertEqual(self.a.transcribe(pcm(soft)), {"text": "", "silent": True})
+        with self.assertLogs("kontor.assistant", "INFO") as cm:
+            n = int(re.search(r"(\d+)", self.a.transcribe(pcm(soft), direct=True)["text"]).group(1))
+        self.assertTrue(16000 * 2 * 2.6 < n < 16000 * 2 * 3.1, n)                      # the 1.5 s of voice, 0.8 s before and 0.6 s after
+        self.assertRegex(cm.output[0], r"; direct microphone, level -5\d dB over -7\d dB, made 3\d dB louder\)$")
+        self.assertEqual(self.a.transcribe(pcm(soft), live=True, direct=True)["text"], "Diktat mit %d Bytes." % n)
+        samples = lambda w: (lambda f: array.array("h", f.readframes(f.getnframes())))(wave.open(io.BytesIO(w)))
+        for lead in ([], [("quiet", 0.4, 0)]):                                        # (also with the zeros before the microphone starts)
+            info = {}
+            out = A._speech(pcm(lead + soft), level=True, info=info)
+            self.assertEqual((len(out), info["gain"]), (1, 38.0), info)
+            self.assertTrue(-59 < info["level"] < -57 and -74 < info["quiet"] < -72, info)
+            self.assertTrue(3000 < max(samples(out[0])) < 8000, max(samples(out[0])))  # 60 before
+        for parts in ([("quiet", 3, 8)], [("quiet", 3, 300)], [("quiet", 0.5, 0), ("quiet", 2.5, 8)], [("hum", 3, 60)], [("quiet", 1, 8), ("voice", 0.06, 3000), ("quiet", 1, 8)]):
+            info = {}
+            self.assertEqual((A._speech(pcm(parts), level=True, info=info), info["gain"]), ([], 0.0), parts)
+            self.assertEqual(self.a.transcribe(pcm(parts), direct=True), {"text": "", "silent": True}, parts)
+        loud = pcm([("quiet", 1, 40), ("voice", 1, 6000), ("quiet", 1, 40)])
+        self.assertEqual(A._speech(loud, level=True), A._speech(loud))                # loud enough already: as it is
+        with self.assertLogs("kontor.assistant", "INFO") as cm:
+            self.a.transcribe(loud)
+        self.assertRegex(cm.output[0], r"; filtered microphone, level -1\d dB over -5\d dB\)$")
+        self.assertEqual(list(A._louder(array.array("h", [-32768, -20000, -1, 0, 1, 100, 20000, 32767]), 6)), [-32768, -32768, -2, 0, 2, 200, 32767, 32767])
+        quiet = array.array("h", [5, -5]); self.assertIs(A._louder(quiet, 0), quiet)
+        # ... which microphone it is, the user sets (with the filters unless chosen otherwise)
+        self.assertIs(self.a.settings()["speech_filter"], True)
+        self.a.set({"speech_filter": False}); self.assertIs(self.a.settings()["speech_filter"], False)
+        self.assertIs(self.a.status(False)["settings"]["speech_filter"], False)       # (the page asks for the microphone by it, also on the iPhone)
+        self.a.set({"speech_filter": "aus"}); self.assertIs(self.a.settings()["speech_filter"], True)
         self.assertEqual(self.a.transcribe(pcm([("voice", 2, 5000)]))["text"], "Diktat mit %d Bytes." % len(pcm([("voice", 2, 5000)])))      # all voice: all of it
         # a long dictation: piece by piece, each piece at most 45 s and cut in a pause, the texts one after the other
         for parts in ([("quiet", 0.5, 40)] + [("voice", 6, 5000), ("quiet", 0.6, 40)] * 15, [("quiet", 0.5, 40), ("voice", 100, 5000)]):
@@ -3710,6 +3745,9 @@ class Http(_Assist):
             wav = b"RIFF" + (36 + 16000).to_bytes(4, "little") + b"WAVEfmt " + bytes(20) + b"data" + (16000).to_bytes(4, "little") + bytes(16000)
             self.a.ai.download_model("qwen3-asr-1.7b"); self.assertEqual(wait_job(self.a.ai)["state"], "done")
             self.assertEqual(self.call("/api/assistant/listen", {}), (200, {"ready": True}))
+            soft = base64.b64encode(pcm([("quiet", 1, 8), ("voice", 1.5, 60), ("quiet", 1, 8)])).decode()        # recorded without the system's filters: levelled
+            self.assertEqual(self.call("/api/assistant/transcribe", {"audio": soft}), (200, {"text": "", "silent": True}))
+            self.assertRegex(self.call("/api/assistant/transcribe", {"audio": soft, "direct": True})[1]["text"], r"^Diktat mit \d+ Bytes\.$")
             code, r = self.call("/api/assistant/transcribe", {"audio": base64.b64encode(wav).decode()})
             self.assertEqual((code, r), (200, {"text": "Diktat mit %d Bytes." % len(wav)}))
             for bad in ({"audio": "kein base64 !!"}, {"audio": ""}, {}, {"audio": base64.b64encode(b"MP3" + bytes(4000)).decode()}):
@@ -4061,6 +4099,13 @@ class Browser(unittest.TestCase):
                 # dictation: the speech model at once or only with the click -- not chosen, by the memory of this Mac
                 self.assertEqual(pg.evaluate("[...document.querySelectorAll('#as-speech-start option')].map(o => o.textContent)"), ["Automatisch (sofort)", "Sofort", "Erst beim Diktieren"])
                 pg.select_option("#as-speech-start", "click"); until(pg, "AS.st.settings.speech_start === 'click' && !AS.st.speech_early")
+                # ... and the microphone with the system's filters for speech (hears after about two seconds) or without them (at once)
+                pg.wait_for_selector("#as-speech-filter")
+                self.assertEqual(pg.evaluate("[document.querySelector('#as-speech-filter').value, ...[...document.querySelectorAll('#as-speech-filter option')].map(o => o.textContent)]"),
+                                 ["1", "An – hört nach etwa 2 s", "Aus – hört sofort"])
+                pg.select_option("#as-speech-filter", "0"); until(pg, "AS.st.settings.speech_filter === false && asMicDirect()")
+                pg.wait_for_selector("#as-speech-filter"); self.assertEqual(pg.input_value("#as-speech-filter"), "0")
+                pg.select_option("#as-speech-filter", "1"); until(pg, "AS.st.settings.speech_filter === true && !asMicDirect()")
                 pg.click("#as-log summary"); until(pg, "/noch nichts geändert/.test(document.querySelector('#as-log-list').innerText)")
                 self.assertTrue(app.assistant.settings()["rights"]["enter_values"])
                 # the panel beside the page: the page makes room, its charts stay in view
@@ -4288,6 +4333,27 @@ class Browser(unittest.TestCase):
                 self.assertEqual(pg.evaluate(learn, [100, 1, True]), [False, 4000, "0"])          # (one piece: a gap, not the room)
                 self.assertEqual(pg.evaluate(learn, [100, 30, True]), [True, 2200, "1"])
                 pg.evaluate("(() => { REC.zeros = null; localStorage.removeItem('kontor.mic.zeros'); })()")
+                # the microphone without the system's filters (Mikrofonfilter: aus): asked for without them; red with its first sound
+                # (nothing fades in), a muted one after a short wait; the recording is marked, so that Kontor levels it; what it shows
+                # says nothing about the microphone with its filters
+                self.assertEqual(pg.evaluate("[asMicWait(true), asMicWait(false)[1] === REC_SETTLE, REC_DIRECT_WAIT < REC_QUIET]"), [[600, 0], True, True])
+                app.assistant.set({"speech_filter": False})
+                pg.evaluate("asLoad()"); until(pg, "asMicDirect()")
+                pg.evaluate("""(() => { const g = navigator.mediaDevices.getUserMedia; window.__gum = g; window.__asked = [];
+                    navigator.mediaDevices.getUserMedia = c => { window.__asked.push(c.audio); return g.call(navigator.mediaDevices, c); }; })()""")
+                pg.click("#as-mic"); until(pg, "REC.on && REC.blocks >= 24")
+                self.assertEqual(pg.evaluate("[REC.direct, window.__asked.length, window.__asked[0].echoCancellation, window.__asked[0].noiseSuppression, REC.heard]"), [True, 1, False, False, True])
+                with self.assertLogs("kontor.assistant", "INFO") as cm:
+                    pg.click("#as-mic"); until(pg, "!REC.on && !REC.busy", 20)
+                self.assertTrue(any("direct microphone, level" in x for x in cm.output), cm.output)
+                self.assertTrue(re.search(r"Diktat mit \d+ Bytes\.", pg.input_value("#as-in")), pg.input_value("#as-in"))
+                self.assertEqual(pg.evaluate("[REC.zeros, localStorage.getItem('kontor.mic.zeros')]"), [None, None])
+                app.assistant.set({"speech_filter": True})
+                pg.evaluate("asLoad()"); until(pg, "!asMicDirect()")
+                pg.click("#as-mic"); until(pg, "REC.on")
+                self.assertEqual(pg.evaluate("[REC.direct, window.__asked.length, window.__asked[1].echoCancellation, window.__asked[1].noiseSuppression]"), [False, 2, True, True])
+                pg.keyboard.press("Escape"); until(pg, "!REC.on && !REC.starting")
+                pg.evaluate("(() => { navigator.mediaDevices.getUserMedia = window.__gum; REC.zeros = null; localStorage.removeItem('kontor.mic.zeros'); })()")
                 app.assistant.set({"speech_start": "click"})
                 pg.fill("#as-in", said)
                 pg.fill("#as-in", "")
