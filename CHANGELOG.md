@@ -1,5 +1,9 @@
 # Änderungen
 
+## 3.16.69 (2026-11-22 01:25)
+- Schmales Fenster: Bereichsauswahl mittig
+- Mac-App, schmales Fenster: Menü und Seitentitel oben neben den Fensterknöpfen
+
 ## 3.16.68 (2026-11-22 01:25)
 - Mac-App: Suche schließt mit erneutem ⌘F oder einem Klick daneben
 - Mac-App: geschlossene oder geleerte Suche ohne gelbe Markierungen
