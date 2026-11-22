@@ -3,14 +3,12 @@ does not answer in time, links in the receipts folder that point elsewhere -- an
 open a connection, to which hosts, which other programs they start)."""
 import ast
 import glob
-import json
 import os
 import re
 import shutil
 import subprocess
 import sys
 import tempfile
-import threading
 import unittest
 from unittest import mock
 
@@ -158,7 +156,7 @@ class FakeKeychain:
     """A made-up keychain for storage._security (never the real one): entries per account; fail_write: accounts that refuse."""
 
     def __init__(self):
-        self.entries, self.fail_write, self.calls = {}, set(), []
+        self.entries, self.fail_write, self.fail_delete, self.calls = {}, set(), set(), []
 
     def __call__(self, args, input_text=None):
         self.calls.append(args)
@@ -171,13 +169,161 @@ class FakeKeychain:
             self.entries[acc] = args[args.index("-w") + 1]
             return (0, "", "")
         if args[0] == "delete-generic-password":
+            if acc in self.fail_delete:
+                return (1, "", "refused")
             return (0, "", "") if self.entries.pop(acc, None) is not None else (44, "", "not found")
         return (1, "", "?")
 
 
+class FakeEnclave:
+    """A made-up Secure Enclave for auth.touchid_* (never the real one): a key per handle; it unwraps only while confirm is
+    True (Touch ID or the Mac's password confirmed in the macOS window)."""
+
+    def __init__(self):
+        self.by_handle, self.by_pub, self.confirm, self.asked = {}, {}, True, 0
+
+    def new_key(self):
+        import base64
+        import hashlib
+        sec = os.urandom(32)
+        handle, pub = base64.b64encode(os.urandom(24)).decode(), base64.b64encode(hashlib.sha256(sec).digest()).decode()
+        self.by_handle[handle], self.by_pub[pub] = sec, sec
+        return handle, pub
+
+    def _kek(self, sec, eph, salt):
+        import hashlib
+        import hmac
+        return hmac.new(sec, (eph + salt).encode(), hashlib.sha256).digest()
+
+    def seal(self, pub, salt):
+        import base64
+        sec = self.by_pub.get(pub)
+        if sec is None:
+            return None
+        eph = base64.b64encode(os.urandom(33)).decode()
+        return eph, self._kek(sec, eph, salt)
+
+    def unseal(self, se, eph, salt, reason=""):
+        self.asked += 1
+        sec = self.by_handle.get(se)
+        return self._kek(sec, eph, salt) if self.confirm and sec is not None else None
+
+    def patches(self):
+        return [mock.patch.object(auth, "touchid_available", return_value=True), mock.patch.object(auth, "_helper_current", return_value=True),
+                mock.patch.object(auth, "touchid_new_key", self.new_key),
+                mock.patch.object(auth, "touchid_seal", self.seal), mock.patch.object(auth, "touchid_unseal", self.unseal)]
+
+
+class SecretsStayInside(unittest.TestCase):
+    """The secret openssl encrypts with never in its environment (other programs of this user read that, `ps -E`) -- a pipe; and
+    the key Touch ID releases reaches Kontor wrapped for that one request, even though it passes a file."""
+
+    def test_openssl_gets_the_secret_over_a_pipe(self):
+        seen, real = [], storage.subprocess.run
+
+        def watch(cmd, **kw):
+            seen.append((cmd, dict(kw.get("env") or {}), kw.get("pass_fds")))
+            return real(cmd, **kw)
+        key = os.urandom(32)
+        with mock.patch.object(storage.subprocess, "run", watch), mock.patch.object(storage, "_PASS", None):
+            blob = storage.encrypt(key, b"geheim")
+            self.assertEqual(storage.decrypt(key, blob), b"geheim")
+            self.assertEqual(storage._PASS, "fd")
+        enc_secret = storage._subkeys(key)[0]
+        for cmd, env, fds in seen:
+            self.assertNotIn(enc_secret, " ".join(cmd)); self.assertNotIn(enc_secret, env.values())
+        work = [x for x in seen if x[2]]
+        self.assertTrue(work and all(c[-1].startswith("fd:") for c, _, _ in work[-2:]))
+        # the old way still opens what the pipe wrote and the other way round (the same secret)
+        with mock.patch.object(storage, "_PASS", "env"):
+            self.assertEqual(storage.decrypt(key, blob), b"geheim")
+            old = storage.encrypt(key, b"alt")
+        self.assertEqual(storage.decrypt(key, old), b"alt")
+        # an openssl that cannot read a pipe: the environment, as before (found out with a made-up secret)
+        def no_fd(cmd, **kw):
+            if any(str(a).startswith("fd:") for a in cmd):
+                return subprocess.CompletedProcess(cmd, 1, b"", b"bad option")
+            return real(cmd, **kw)
+        with mock.patch.object(storage.subprocess, "run", no_fd), mock.patch.object(storage, "_PASS", None):
+            self.assertEqual(storage.decrypt(key, storage.encrypt(key, b"x")), b"x")
+            self.assertEqual(storage._PASS, "env")
+
+    def test_x25519_and_hkdf(self):
+        nine = (9).to_bytes(32, "little")                # RFC 7748 6.1, RFC 5869 A.1
+        a = bytes.fromhex("77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a")
+        b = bytes.fromhex("5dab087e624a8a4b79e17f8b83800ee66f3bb1292618b6fd1c2f8b27ff88e0eb")
+        self.assertEqual(auth._x25519(a, nine).hex(), "8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a")
+        self.assertEqual(auth._x25519(b, nine).hex(), "de9edb7d7b7dc1b4d35b61c2ece435373f8343c85b78674dadfc7e146f882b4f")
+        self.assertEqual(auth._x25519(a, auth._x25519(b, nine)).hex(), "4a5d9d5ba4ce2de1728e3bf480350f25e07e21c947d19e3376f09b3c1e161742")
+        self.assertEqual(auth._x25519(nine, nine).hex(), "422c8e7a6227d7bca1350b3e2bb7279f7897b87bb6854b783c60e80311ae3079")
+        self.assertEqual(auth._hkdf(bytes.fromhex("0b" * 22), bytes.fromhex("000102030405060708090a0b0c"), bytes.fromhex("f0f1f2f3f4f5f6f7f8f9"), 42).hex(),
+                         "3cb25f25faacd57a90434f64d0362f2a2d2d0a90cf1a5a4c5db02d56ecc4c5bf34007208d5b887185865")
+
+    def helper_answer(self, kek, theirs_pub, nonce, tamper=False):
+        """What touchid.swift --unseal prints, done the same way here."""
+        import base64
+        import hashlib
+        import hmac
+        mine = os.urandom(32)
+        okm = auth._hkdf(auth._x25519(mine, theirs_pub), nonce.encode(), auth._TRANSPORT_INFO, 64)
+        ct = bytes(x ^ y for x, y in zip(kek, okm[:32]))
+        tag = hmac.new(okm[32:], ct, hashlib.sha256).hexdigest()
+        if tamper:
+            ct = bytes([ct[0] ^ 1]) + ct[1:]
+        pub = base64.b64encode(auth._x25519(mine, (9).to_bytes(32, "little"))).decode()
+        return "ok %s %s %s %s\n" % (nonce, pub, ct.hex(), tag)
+
+    def test_touch_id_answer_is_wrapped_for_the_request(self):
+        kek, files = os.urandom(32), []
+
+        def fake_open(cmd, **kw):
+            out = cmd[cmd.index("--stdout") + 1]
+            args = cmd[cmd.index("--args") + 1:]
+            self.assertEqual(args[0], "--unseal"); self.assertEqual(len(args), 7)
+            import base64
+            nonce, theirs = args[2], base64.b64decode(args[6])
+            text = self.helper_answer(kek, theirs, nonce, tamper=self.tamper) if not self.gone else "gone %s\n" % nonce
+            with open(out, "w") as f:
+                f.write(text)
+            files.append(text)
+            return subprocess.CompletedProcess(cmd, 0, b"", b"")
+        with mock.patch.object(auth, "_helper_current", return_value=True), mock.patch.object(auth.sys, "platform", "darwin"), \
+                mock.patch.object(auth.subprocess, "run", fake_open):
+            self.tamper = self.gone = False
+            self.assertEqual(auth.touchid_unseal("aGFuZGxl", "ZXBo", "00" * 16), kek)
+            self.assertNotIn(kek.hex(), files[-1])                 # the file never holds the key itself
+            self.tamper = True
+            self.assertIsNone(auth.touchid_unseal("aGFuZGxl", "ZXBo", "00" * 16))
+            self.tamper, self.gone = False, True
+            with self.assertRaises(auth.TouchIdGone):
+                auth.touchid_unseal("aGFuZGxl", "ZXBo", "00" * 16)
+            self.assertIsNone(auth.touchid_unseal("nicht base64!", "ZXBo", "00" * 16))      # only what Kontor made goes to the helper
+        with mock.patch.object(auth, "_helper_current", return_value=False):               # an older build (right after an update): not asked
+            self.assertIsNone(auth.touchid_unseal("aGFuZGxl", "ZXBo", "00" * 16))
+            self.assertIsNone(auth.touchid_new_key())
+
+    def test_a_touch_id_key_from_another_mac_goes(self):
+        import access
+        d = tempfile.mkdtemp(prefix="kontor-gone-")
+        self.addCleanup(shutil.rmtree, d, True)
+        se, key = FakeEnclave(), os.urandom(32)
+        storage.Store(d, key, "login").save("config.json", {})
+        with mock.patch.object(storage, "_security", FakeKeychain()):
+            for p in se.patches():
+                p.start(); self.addCleanup(p.stop)
+            access.complete(d, key, "ein-langes-passwort"); access.set_touchid(d, key, True)
+            self.assertTrue(access.touchid_ready(d))
+            with mock.patch.object(auth, "touchid_unseal", side_effect=auth.TouchIdGone()):
+                self.assertIsNone(access.unlock_touchid(d))
+            self.assertFalse(access.touchid_ready(d)); self.assertTrue(storage.key_record(d)["password"])
+            self.assertEqual(access.unlock_password(d, "ein-langes-passwort"), (key, "password"))
+            self.assertTrue(access.set_touchid(d, key, True))      # set up again for this Mac after the sign-in
+            self.assertEqual(access.unlock_touchid(d), (key, "touchid"))
+
+
 class KeyRenewal(unittest.TestCase):
-    """Datenschluessel erneuern: everything re-encrypted, the old key gone only once all files open with the new one; an
-    interruption is finished at the next start; a failure before that changes nothing. Only made-up keys and a made-up keychain."""
+    """From before (the key in the keychain): a renewal that broke off is finished before the switch to the key file; the old key
+    goes only once all files open with the new one. Only made-up keys and a made-up keychain."""
 
     def setUp(self):
         self.dir = tempfile.mkdtemp(prefix="kontor-renew-")
@@ -201,44 +347,6 @@ class KeyRenewal(unittest.TestCase):
             with open(os.path.join(self.dir, n), "rb") as f:
                 storage.decrypt(key, f.read())
         return True
-
-    def test_renew(self):
-        self.assertEqual(self.store.renew_key(), 3)
-        new = bytes.fromhex(self.kc.entries["kontor"])
-        self.assertNotEqual(new, self.old); self.assertEqual(self.store.master, new)
-        self.assertTrue(self.opens_all(new)); self.assertNotIn("kontor-next", self.kc.entries)
-        with self.assertRaises(storage.StoreError):
-            self.opens_all(self.old)
-        self.assertEqual(self.store.load("state.json"), {"b": [1, 2]})               # the running Kontor reads on
-        self.assertEqual(storage.Store(self.dir, *storage.load_or_create_master_key(self.dir)).load("config.json"), {"a": 1})
-        self.assertFalse([n for n in os.listdir(self.dir) if n.endswith((".renew", ".tmp", ".next"))])
-
-    def test_renew_includes_the_chats_folder(self):
-        # saved conversations lie in a folder of their own: a new key reaches them too, nothing stays with the old one
-        self.store.save("chats/assistant-chat-aaaaaaaa.json", {"turns": [1]})
-        self.assertTrue(os.path.isfile(os.path.join(self.dir, "chats", "assistant-chat-aaaaaaaa.json.enc")))
-        self.assertEqual(oct(os.stat(os.path.join(self.dir, "chats")).st_mode & 0o777), "0o700")
-        self.assertEqual(self.store.renew_key(), 4)
-        new = bytes.fromhex(self.kc.entries["kontor"])
-        with open(os.path.join(self.dir, "chats", "assistant-chat-aaaaaaaa.json.enc"), "rb") as f:
-            self.assertEqual(json.loads(storage.decrypt(new, f.read())), {"turns": [1]})
-        self.assertFalse([n for n in os.listdir(os.path.join(self.dir, "chats")) if n.endswith((".renew", ".tmp"))])
-
-    def test_keychain_refuses_the_new_key_nothing_changes(self):
-        self.kc.fail_write.add("kontor-next")
-        before = {n: open(os.path.join(self.dir, n), "rb").read() for n in self.files()}
-        with self.assertRaises(storage.StoreError):
-            self.store.renew_key()
-        self.assertEqual({n: open(os.path.join(self.dir, n), "rb").read() for n in self.files()}, before)
-        self.assertEqual(self.kc.entries, {"kontor": self.old.hex()}); self.assertEqual(self.store.master, self.old)
-        self.assertFalse([n for n in os.listdir(self.dir) if n.endswith(".renew")])
-
-    def test_a_file_that_does_not_open_stops_it(self):
-        with open(os.path.join(self.dir, "fremd.json.enc"), "wb") as f:
-            f.write(storage.encrypt(os.urandom(32), b"{}"))
-        with self.assertRaises(storage.StoreError):
-            self.store.renew_key()
-        self.assertEqual(self.kc.entries, {"kontor": self.old.hex()}); self.assertEqual(self.store.master, self.old)
 
     def test_interrupted_after_the_new_key_is_kept(self):
         """The Mac went off after the new key was kept and some files were replaced: the next start re-encrypts the rest and
@@ -277,53 +385,6 @@ class KeyRenewal(unittest.TestCase):
         with self.assertRaises(storage.StoreError):
             storage.read_master_key(self.dir)
 
-    def test_only_with_the_keychain(self):
-        """A key in a file (keychain not usable): no renewal -- a file key could not be finished after an interruption."""
-        storage._security = lambda args, input_text=None: (127, "", "no security")
-        d = tempfile.mkdtemp(prefix="kontor-renew-f-")
-        try:
-            key, src = storage.load_or_create_master_key(d)
-            st = storage.Store(d, key, src); st.save("config.json", {"x": 1})
-            with self.assertRaises(storage.StoreError):
-                st.renew_key()
-            self.assertEqual(storage.load_or_create_master_key(d), (key, "file"))
-            with open(os.path.join(d, "master.key"), "w") as f:
-                f.write("kaputt")
-            with self.assertRaises(storage.StoreError):        # a broken key file next to the data is never replaced
-                storage.load_or_create_master_key(d)
-            self.assertEqual(open(os.path.join(d, "master.key")).read(), "kaputt")
-        finally:
-            shutil.rmtree(d, ignore_errors=True)
-
-    def test_half_done_blocks_a_second_renewal(self):
-        """The main entry did not take the new key: the running Kontor uses it, a second renewal is refused (its key would be
-        lost), the next start finishes it."""
-        self.kc.fail_write.add("kontor")
-        with self.assertRaises(storage.StoreError):
-            self.store.renew_key()
-        new = self.store.master
-        self.assertNotEqual(new, self.old); self.assertEqual(self.kc.entries["kontor-next"], new.hex()); self.assertTrue(self.opens_all(new))
-        self.assertEqual(self.store.load("config.json"), {"a": 1})
-        with self.assertRaises(storage.StoreError) as e:
-            self.store.renew_key()
-        self.assertEqual(str(e.exception), storage.tr("s_schluessel_erneuern_halb"))
-        self.assertEqual(self.kc.entries["kontor-next"], new.hex())
-        self.assertEqual(storage._finish_renewal(self.dir), new)          # main entry still refuses: starts with the new key anyway
-        self.kc.fail_write.discard("kontor")
-        self.assertEqual(storage._finish_renewal(self.dir), new)
-        self.assertEqual(self.kc.entries, {"kontor": new.hex()})
-
-    def test_keychain_without_answer_before_renewing(self):
-        """The keychain does not answer when renewing starts: refused with its own message, nothing changed."""
-        before = {n: open(os.path.join(self.dir, n), "rb").read() for n in self.files()}
-        calls = self.kc
-        storage._security = lambda args, input_text=None: (124, "", "timeout") if "kontor-next" in args else calls(args, input_text)
-        with self.assertRaises(storage.StoreError) as e:
-            self.store.renew_key()
-        self.assertEqual(str(e.exception), storage.tr("s_schluessel_erneuern_nicht"))
-        self.assertEqual({n: open(os.path.join(self.dir, n), "rb").read() for n in self.files()}, before)
-        self.assertEqual(self.kc.entries, {"kontor": self.old.hex()}); self.assertEqual(self.store.master, self.old)
-
     def test_keychain_without_answer_during_finishing(self):
         """An unfinished renewal and the keychain does not answer at start: Kontor stops instead of starting with the old key."""
         self.kc.entries["kontor-next"] = os.urandom(32).hex()
@@ -333,14 +394,17 @@ class KeyRenewal(unittest.TestCase):
             storage._finish_renewal(self.dir)
         self.assertIn("kontor-next", self.kc.entries)
 
-
     def half_done(self):
-        """The main entry refused the new key: all files open with the new key, which is only in kontor-next."""
-        self.kc.fail_write.add("kontor")
-        with self.assertRaises(storage.StoreError):
-            self.store.renew_key()
-        self.kc.fail_write.discard("kontor")
-        return self.store.master
+        """From before: the main entry refused the new key -- all files open with the new key, which is only in kontor-next."""
+        new = os.urandom(32)
+        for n in self.files():
+            p = os.path.join(self.dir, n)
+            with open(p, "rb") as f:
+                plain = storage.decrypt(self.old, f.read())
+            with open(p, "wb") as f:
+                f.write(storage.encrypt(new, plain))
+        self.kc.entries["kontor-next"] = new.hex()
+        return new
 
     def test_read_only_takes_the_key_that_opens(self):
         """Uninstalling from the terminal in that state: the key that opens the data is found, nothing is moved."""
@@ -360,25 +424,113 @@ class KeyRenewal(unittest.TestCase):
             self.assertEqual(storage.load_or_create_master_key(self.dir), (new, "keychain"))
         self.assertEqual(self.kc.entries, {"kontor": new.hex()})
 
-    def test_keychain_asked_before_the_files_are_locked(self):
-        """A slow keychain does not hold up reading and writing: the first two questions come before the lock."""
-        kc, free = self.kc, []
+class KeyFileRenewal(unittest.TestCase):
+    """Datenschluessel erneuern with the key file: everything re-encrypted (also in the store's folders), the old key gone only
+    once all files open with the new one; a failure before that changes nothing, one after it locks Kontor and the next sign-in
+    finishes it. Made-up keys and a made-up Secure Enclave only."""
+    PW = "ein-langes-passwort"
 
-        def sec(args, input_text=None):
-            if args[0] == "find-generic-password":
-                got = []
+    def setUp(self):
+        import access
+        self.A = access
+        self.dir = tempfile.mkdtemp(prefix="kontor-renew2-")
+        self._sec = storage._security
+        storage._security = FakeKeychain()               # never the real keychain
+        self.old = os.urandom(32)
+        self.store = storage.Store(self.dir, self.old, "login")
+        self.store.save("config.json", {"a": 1}); self.store.save("state.json", {"b": [1, 2]}); self.store.save("chats/assistant-chat-aaaaaaaa.json", {"t": 1})
+        self.assertTrue(access.complete(self.dir, self.old, self.PW))
 
-                def probe():
-                    got.append(self.store._key_lock.acquire(blocking=False))
-                    if got[0]:
-                        self.store._key_lock.release()
-                t = threading.Thread(target=probe)
-                t.start(); t.join()
-                free.append(got[0])
-            return kc(args, input_text)
-        storage._security = sec
-        self.assertEqual(self.store.renew_key(), 3)
-        self.assertEqual(free[:2], [True, True]); self.assertIn(False, free)      # the probe sees the lock when it is held
+    def tearDown(self):
+        storage._security = self._sec
+        shutil.rmtree(self.dir, ignore_errors=True)
+
+    def files(self):
+        return {n: open(os.path.join(self.dir, n), "rb").read() for n in storage._enc_files(self.dir)}
+
+    def pw_key(self):
+        return storage.open_password_entry(storage.key_record(self.dir)["password"], self.PW)
+
+    def test_renew(self):
+        self.assertEqual(self.A.renew(self.store, self.PW), 3)
+        new = self.store.master
+        self.assertNotEqual(new, self.old); self.assertEqual(self.pw_key(), (new, None))
+        self.assertEqual(storage.files_not_opening(new, self.dir), [])
+        self.assertEqual(len(storage.files_not_opening(self.old, self.dir)), 3)          # the chats folder too
+        self.assertEqual(self.store.load("chats/assistant-chat-aaaaaaaa.json"), {"t": 1})
+        self.assertFalse([n for n in storage._names(self.dir) if n.endswith((".renew", ".tmp"))])
+        self.assertEqual(self.A.unlock_password(self.dir, self.PW), (new, "password"))
+
+    def test_a_failure_before_the_files_change_nothing(self):
+        before, rec = self.files(), storage.key_record(self.dir)
+        with mock.patch.object(storage, "write_key_record", side_effect=storage.StoreError("x")):
+            with self.assertRaises(storage.StoreError):
+                self.A.renew(self.store, self.PW)
+        self.assertEqual(self.files(), before); self.assertEqual(storage.key_record(self.dir), rec)
+        self.assertFalse([n for n in storage._names(self.dir) if n.endswith(".renew")])
+        self.assertFalse(self.store.is_open)              # the key file may have taken the next key: locked until a sign-in
+        self.assertEqual(self.A.unlock_password(self.dir, self.PW), (self.old, "password"))
+        self.store.unlock(self.old, "login")
+        with open(os.path.join(self.dir, "chats", "assistant-chat-bbbbbbbb.json.enc"), "wb") as f:
+            f.write(storage.encrypt(os.urandom(32), b"{}"))                # a file the key does not open: stops before anything
+        before = self.files()
+        with self.assertRaises(storage.StoreError):
+            self.A.renew(self.store, self.PW)
+        self.assertEqual(self.files(), before); self.assertEqual(self.pw_key(), (self.old, None))
+
+    def test_broken_off_after_the_next_key_was_kept(self):
+        """The renaming fails half-way (or the key file does not take the new key): neither key in memory would do -- Kontor
+        locks, the next sign-in finishes it."""
+        real, n = os.replace, [0]
+
+        def off(a, b):
+            if a.endswith(".renew"):
+                n[0] += 1
+                if n[0] > 1:
+                    raise OSError("disk full")
+            return real(a, b)
+        with mock.patch.object(storage.os, "replace", off):
+            with self.assertRaises(storage.StoreError):
+                self.A.renew(self.store, self.PW)
+        self.assertFalse(self.store.is_open)
+        with self.assertRaises(storage.StoreLocked):
+            self.A.renew(self.store, self.PW)
+        key, how = self.A.unlock_password(self.dir, self.PW)
+        self.assertNotEqual(key, self.old); self.assertEqual(self.pw_key(), (key, None))
+        self.assertEqual(storage.files_not_opening(key, self.dir), [])
+        self.assertFalse([x for x in storage._names(self.dir) if x.endswith(".renew")])
+        self.store.unlock(key, "login")
+        real_write, calls = storage.write_key_record, [0]
+
+        def second(d, r):
+            calls[0] += 1
+            if calls[0] == 2:
+                raise storage.StoreError("x")
+            return real_write(d, r)
+        with mock.patch.object(storage, "write_key_record", second):
+            with self.assertRaises(storage.StoreError):
+                self.A.renew(self.store, self.PW)
+        self.assertFalse(self.store.is_open)
+        newer, _ = self.A.unlock_password(self.dir, self.PW)
+        self.assertNotEqual(newer, key); self.assertEqual(storage.files_not_opening(newer, self.dir), []); self.assertEqual(self.pw_key(), (newer, None))
+
+    def test_only_with_the_key_file(self):
+        os.remove(os.path.join(self.dir, storage.KEY_FILE))
+        with self.assertRaises(storage.StoreError) as e:
+            self.A.renew(self.store, self.PW)
+        self.assertEqual(str(e.exception), storage.tr("s_schluessel_erneuern_nicht"))
+        self.assertEqual(storage.files_not_opening(self.old, self.dir), [])
+
+    def test_touch_id_follows_the_new_key(self):
+        se = FakeEnclave()
+        for p in se.patches():
+            p.start(); self.addCleanup(p.stop)
+        self.assertTrue(self.A.set_touchid(self.dir, self.old, True))
+        self.assertEqual(self.A.unlock_touchid(self.dir), (self.old, "touchid"))
+        self.A.renew(self.store, self.PW)
+        self.assertEqual(self.A.unlock_touchid(self.dir), (self.store.master, "touchid"))
+        se.confirm = False
+        self.assertIsNone(self.A.unlock_touchid(self.dir))
 
 
 class LockedStore(unittest.TestCase):
@@ -404,7 +556,7 @@ class LockedStore(unittest.TestCase):
         for call in (lambda: st.load("config.json"), lambda: st.load("nope.json", {}), lambda: st.load_shared("config.json"),
                      lambda: st.save("config.json", {}), lambda: st.save("memory/x.json", {}), lambda: st.update("state.json", lambda o: None, {}),
                      lambda: st.read_bytes("x.bin"), lambda: st.write_bytes("y.bin", b""), lambda: st.delete("config.json"),
-                     lambda: st.exists("config.json"), lambda: st.stamp("config.json"), lambda: st.renew_key()):
+                     lambda: st.exists("config.json"), lambda: st.stamp("config.json"), lambda: st.renew_key(lambda o, n: None, lambda n: None)):
             with self.assertRaises(storage.StoreLocked):
                 call()
         self.assertEqual(self.listing(), before)                     # not even a folder for a file that was refused
@@ -528,6 +680,33 @@ class CommandLine(unittest.TestCase):
                 mock.patch.object(self.K.getpass, "getpass", side_effect=["drittes-passwort-789", "drittes-passwort-789"]):
             self.assertEqual(self.K.cmd_passwort(argparse.Namespace()), 0)          # Touch ID instead of the password
         self.assertTrue(auth.verify_password("drittes-passwort-789", fresh()))
+
+    def test_password_with_the_key_file(self):
+        """kontor.py password once the key file holds the key: the current password (or Touch ID) opens it, the new one wraps it
+        -- the data key stays the same, the old password opens nothing any more."""
+        import argparse
+        import access
+        sec = storage._security
+        storage._security = FakeKeychain()                # never the real keychain
+        self.addCleanup(setattr, storage, "_security", sec)
+        key = os.urandom(32)
+        storage.Store(self.dir, key, "login").save("config.json", {})
+        access.complete(self.dir, key, "altes-passwort-123")
+        opens = lambda pw: access.unlock_password(self.dir, pw)
+        with mock.patch.object(self.K.time, "sleep"):
+            with mock.patch.object(self.K.getpass, "getpass", side_effect=["falsch"] * 3):
+                self.assertEqual(self.K.cmd_passwort(argparse.Namespace()), 1)
+            with mock.patch.object(self.K.getpass, "getpass", side_effect=["altes-passwort-123", "neues-passwort-456", "neues-passwort-456"]):
+                self.assertEqual(self.K.cmd_passwort(argparse.Namespace()), 0)
+        self.assertIsNone(opens("altes-passwort-123")); self.assertEqual(opens("neues-passwort-456"), (key, "password"))
+        se = FakeEnclave()
+        for p in se.patches():
+            p.start(); self.addCleanup(p.stop)
+        self.assertTrue(access.set_touchid(self.dir, key, True))
+        with mock.patch.object(self.K.getpass, "getpass", side_effect=["drittes-passwort-789", "drittes-passwort-789"]):
+            self.assertEqual(self.K.cmd_passwort(argparse.Namespace()), 0)          # forgotten: Touch ID (or the Mac's password) instead
+        self.assertEqual(se.asked, 1); self.assertEqual(opens("drittes-passwort-789"), (key, "password"))
+        self.assertEqual(access.unlock_touchid(self.dir), (key, "touchid"))      # Touch ID's entry stays
 
     def test_only_these_commands(self):
         """Everything that reads or changes your data goes through the interface (signed in) -- not through the terminal."""

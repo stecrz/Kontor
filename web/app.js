@@ -644,7 +644,8 @@ function showLogin() {
   const setup = SESSION && SESSION.setup_needed && !OFFLINE.mode;
   $('#login-text').textContent = OFFLINE.mode ? t('der_mac_ist_nicht_erreichbar')
     : setup ? t('erster_start_passwort_festlegen_mindes')
-    : (SESSION && SESSION.setup_local_only ? t('noch_kein_passwort_festgelegt_die') : '');
+    : SESSION && SESSION.setup_local_only ? t('noch_kein_passwort_festgelegt_die')
+    : SESSION && SESSION.switch ? t('anmeldung_umstellung') : SESSION && SESSION.waiting ? t('anmeldung_wartet') : '';
   $('#login-text').hidden = !$('#login-text').textContent;
   // Touch ID eingeschaltet (am Mac): nur Touch ID, Passwort erst auf Wunsch – nie beides gleichzeitig
   const tid = !setup && !OFFLINE.mode && SESSION && SESSION.touchid;
@@ -5870,7 +5871,7 @@ async function vEinstellungenZugang() {
     <div class="full note">${t('adresse_port_neustart')}</div>
   </div></details>
   <div class="actions"><button id="save-settings">${t('einstellungen_speichern')}</button></div><div id="findings-e" class="findings"></div>
-  <h2>${t('passwort')}</h2><div class="form"><label>${t('altes_passwort')}</label><input type="password" id="pw-alt" autocomplete="current-password"><label>${t('neues_passwort')}</label><input type="password" id="pw-neu" autocomplete="new-password"></div><div class="actions"><button id="pw-save" class="secondary">${t('passwort_aendern')}</button></div>`;
+  <h2>${t('passwort')}</h2><div class="form"><label>${t('altes_passwort')}</label><input type="password" id="pw-alt" autocomplete="current-password"${S.STATUS.touchid && S.STATUS.touchid_active && lokal ? ` placeholder="${esc(t('leer_touch_id'))}"` : ''}><label>${t('neues_passwort')}</label><input type="password" id="pw-neu" autocomplete="new-password"></div><div class="actions"><button id="pw-save" class="secondary">${t('passwort_aendern')}</button></div>`;
   h += `<h2>${t('zugriff_vom_iphone')} ${hq('fern')}</h2>`;
   if (!r && S.remoteLoading) return h + `<div class="note"><span class="spin"></span> ${t('wird_geladen')}</div>`;
   if (r && r.active) {
@@ -5940,10 +5941,10 @@ function vEinstellungenUpdates() {
   <div class="actions"><button id="save-settings">${t('einstellungen_speichern')}</button></div><div id="findings-e" class="findings"></div>`;
 }
 function vEinstellungenDaten() {
-  return `<h2>${t('daten')}</h2><div class="kv"><div>${t('datenordner')}</div><div>${esc(S.STATUS.storage.folder)}</div>${S.STATUS.storage.program_folder ? `<div>${t('programmordner')}</div><div>${esc(S.STATUS.storage.program_folder)}</div>` : ''}<div>${t('verschluesselung')}</div><div>${S.STATUS.storage.encrypted ? t('aes_256_schluessel_im') + (S.STATUS.storage.key_source === 'keychain' ? t('macos_schluesselbund') : t('dateisystem_0600')) : t('keine_verschluesselung')}</div><div>${t('belegordner')}</div><div><a href="#settings/receipts" title="${esc(t('belegordner_aendern'))}">${esc(S.STATUS.receipts.folder)}</a></div>
+  return `<h2>${t('daten')}</h2><div class="kv"><div>${t('datenordner')}</div><div>${esc(S.STATUS.storage.folder)}</div>${S.STATUS.storage.program_folder ? `<div>${t('programmordner')}</div><div>${esc(S.STATUS.storage.program_folder)}</div>` : ''}<div>${t('verschluesselung')}</div><div>${!S.STATUS.storage.encrypted ? t('keine_verschluesselung') : S.STATUS.storage.key_source === 'login' ? t('aes_256_nach_anmeldung', t(S.STATUS.storage.touchid_unlock ? 'passwort_oder_touch_id' : 'passwort')) : t('aes_256_schluessel_im') + (S.STATUS.storage.key_source === 'keychain' ? t('macos_schluesselbund') : t('dateisystem_0600'))}</div><div>${t('belegordner')}</div><div><a href="#settings/receipts" title="${esc(t('belegordner_aendern'))}">${esc(S.STATUS.receipts.folder)}</a></div>
     <div>Time Machine ${hq('timemachine')}</div><div><span id="tm-state" class="muted">…</span> <button id="tm-toggle" class="secondary small hidden"></button></div>
     <div>${t('protokoll')}</div><div><a href="#log">${t('protokoll_und_diagnose')}</a></div></div>
-  ${S.STATUS.storage.encrypted && S.STATUS.storage.key_source === 'keychain' ? `<h2>${t('datenschluessel_h')} ${hq('datenschluessel')}</h2>
+  ${S.STATUS.storage.encrypted && S.STATUS.storage.key_source === 'login' ? `<h2>${t('datenschluessel_h')} ${hq('datenschluessel')}</h2>
   <div class="row tight"><input type="password" id="dk-pw" placeholder="${t('passwort_zur_bestaetigung')}" autocomplete="current-password" style="width:220px"><button id="dk-go" class="secondary" ${S.STATUS.local ? '' : t('disabled_title_nur_am_mac')}>${t('datenschluessel_erneuern')}</button></div><div id="dk-report"></div>` : ''}`;
 }
 const posRow = (k, v) => `<div class="row tight pos-row"><input type="text" class="p-kat" value="${esc(k)}" placeholder="${t('kategorie_oder_oberkategorie')}"><input type="text" class="p-pos" value="${esc(v)}" placeholder="${t('z_b_sonderausgaben_vorsorge')}"><button class="danger small del-row">×</button></div>`;

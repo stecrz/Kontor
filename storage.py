@@ -1,16 +1,15 @@
 """Verschluesselte Ablage der Programmdaten.
 
-Alle Dateien im Datenordner (Konfiguration, Planwerte, Zustand, Bericht) liegen
-verschluesselt: AES-256-CBC (ueber /usr/bin/openssl, auf jedem Mac vorhanden)
-plus HMAC-SHA256 ueber den Chiffretext (Encrypt-then-MAC). Der Hauptschluessel
-(32 Byte Zufall) liegt im macOS-Schluesselbund des Benutzers; ohne Schluesselbund
-(nicht-macOS, Zugriff verweigert) als Datei mit Rechten 0600 -- die Oberflaeche
-zeigt dann einen Hinweis.
+Alle Dateien im Datenordner (Konfiguration, Planwerte, Zustand, Bericht, Ordner aus ENC_DIRS) liegen verschluesselt:
+AES-256-CBC (ueber /usr/bin/openssl, auf jedem Mac vorhanden) plus HMAC-SHA256 ueber den Chiffretext (Encrypt-then-MAC).
+Der Hauptschluessel (32 Byte Zufall) liegt nur verpackt in key.json -- mit einem Schluessel aus dem Passwort (und per Touch
+ID, access.py); erst die Anmeldung gibt ihn frei, danach liegt er nur im Arbeitsspeicher des Dienstes. Bis dahin ist der Store
+gesperrt (Store.closed, is_open): jedes Lesen und Schreiben wirft StoreLocked.
+
+Frueher lag der Schluessel im macOS-Schluesselbund (ohne Schluesselbund als Datei master.key): die Funktionen dafuer bleiben
+fuer die Umstellung (access.complete), die ihn danach entfernt.
 
 Dateiformat: b"MMT1" + openssl-Ausgabe ("Salted__" + Salt + Chiffretext) + 32 Byte HMAC.
-Das Passwort der Oberflaeche ist davon unabhaengig (es regelt den Zugang, nicht den
-Schluessel), damit der Dienst nach dem Anmelden am Mac ohne Eingabe laufen kann --
-wie MoneyMoney mit "Passwort im Schluesselbund sichern".
 """
 from __future__ import annotations
 
@@ -25,7 +24,7 @@ import secrets
 import subprocess
 import sys
 import threading
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Callable, Dict, Optional, Tuple
 from i18n import tr
 
 _MISSING = object()
@@ -295,16 +294,53 @@ def _subkeys(master: bytes) -> Tuple[str, bytes]:
 # Verschluesselung
 # ---------------------------------------------------------------------------
 
-def _openssl(args, data: bytes, secret: str) -> bytes:
-    env = dict(os.environ, MMTOOLS_SECRET=secret)
+_PASS: Optional[str] = None      # how openssl gets the secret: "fd" (a pipe) or "env" (an openssl that cannot read a pipe)
+
+
+def _openssl_run(args, data: bytes, secret: str, how: str) -> bytes:
+    """openssl enc with the secret over a pipe (fd: no other program of this user sees it -- the environment of a process
+    they can read, `ps -E`) or, only where openssl cannot read a pipe, in its environment as before."""
+    opts = args + ["-aes-256-cbc", "-md", "sha256"]
     try:
-        r = subprocess.run(["openssl", "enc"] + args + ["-aes-256-cbc", "-md", "sha256", "-pass", "env:MMTOOLS_SECRET"],
-                           input=data, capture_output=True, timeout=600, env=env)
-    except (FileNotFoundError, subprocess.TimeoutExpired) as e:
+        if how == "fd":
+            rfd, wfd = os.pipe()
+            try:
+                os.write(wfd, secret.encode("ascii"))     # 64 hex digits: far below what a pipe holds, never blocks
+                os.close(wfd)
+                wfd = -1
+                r = subprocess.run(["openssl", "enc"] + opts + ["-pass", "fd:%d" % rfd], input=data, capture_output=True, timeout=600, pass_fds=(rfd,))
+            finally:
+                os.close(rfd)
+                if wfd >= 0:
+                    os.close(wfd)
+        else:
+            r = subprocess.run(["openssl", "enc"] + opts + ["-pass", "env:MMTOOLS_SECRET"], input=data, capture_output=True, timeout=600,
+                               env=dict(os.environ, MMTOOLS_SECRET=secret))
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError) as e:
         raise StoreError(tr("s_openssl_nicht_verfuegbar_s") % e)
     if r.returncode != 0:
         raise StoreError(tr("s_openssl_fehler_s") % r.stderr.decode(errors="replace")[:200])
     return r.stdout
+
+
+def _pass_mode() -> str:
+    """Once: does openssl take the secret over a pipe exactly as from its environment? Checked with a made-up secret --
+    encrypted over the pipe, decrypted the old way. Only then the pipe; else the environment as before (logged)."""
+    global _PASS
+    if _PASS is None:
+        probe, secret = secrets.token_bytes(64), secrets.token_hex(32)
+        try:
+            same = _openssl_run(["-d"], _openssl_run(["-salt"], probe, secret, "fd"), secret, "env") == probe
+        except StoreError:
+            same = False
+        _PASS = "fd" if same else "env"
+        if not same:
+            log.warning("openssl does not read the secret from a pipe -- it gets it in its environment, as before")
+    return _PASS
+
+
+def _openssl(args, data: bytes, secret: str) -> bytes:
+    return _openssl_run(args, data, secret, _pass_mode())
 
 
 def encrypt(master: bytes, data: bytes) -> bytes:
@@ -617,23 +653,16 @@ class Store:
             os.replace(tmp, p)
             os.chmod(p, 0o600)
 
-    def renew_key(self) -> int:
-        """A new data key: every encrypted file in the folder is decrypted with the old key and written anew with the new one.
-        The old key stays until all files provably open with the new one: first everything is written beside the files and
-        checked, then the new key is kept in its own keychain entry and checked, only then the files are replaced and the new
-        key takes the main entry. Interrupted after that, the next start finishes it (_finish_renewal). Only with the keychain,
-        and never while an earlier renewal is unfinished (its key would be lost). Returns the number of files."""
+    def renew_key(self, keep: Callable[[bytes, bytes], None], take: Callable[[bytes], None]) -> int:
+        """A new data key: every encrypted file of the store (also in its folders, ENC_DIRS) is decrypted with the old key and
+        written anew with the new one. The old key stays until all files provably open with the new one: first everything is
+        written beside the files and checked, then keep(old, new) keeps the new key beside the old one (the key file), only then
+        the files are replaced and take(new) lets the new key take the old one's place. Interrupted after keep, the next sign-in
+        finishes it. Returns the number of files."""
         self._need_key()
         if not self.encrypted:
             raise StoreError(tr("s_ohne_verschluesselung"))
-        if self.key_source != "keychain":
-            raise StoreError(tr("s_schluessel_erneuern_schluesselbund"))
-        rc_next, nxt = _kc_read(KEYCHAIN_NEXT)        # asked before the lock: a slow keychain does not hold up the files
-        rc_main, main = _kc_read(KEYCHAIN_ACCOUNT)
         with self._key_lock:
-            if rc_next != 44 or rc_main != 0 or main != self.master:
-                half = rc_next == 0 and nxt == self.master            # this Kontor runs with a key the main entry did not take
-                raise StoreError(tr("s_schluessel_erneuern_halb" if half else "s_schluessel_erneuern_nicht"))
             old = self.master
             names = _enc_files(self.data_dir)
             plain: Dict[str, bytes] = {}
@@ -643,7 +672,7 @@ class Store:
             new = secrets.token_bytes(32)
             if new == old or not selftest(new):
                 raise StoreError(tr("s_ohne_verschluesselung"))
-            written = []
+            written, kept = [], False
             try:
                 for n, data in plain.items():
                     p = os.path.join(self.data_dir, n + ".renew")
@@ -652,20 +681,31 @@ class Store:
                     with open(p, "rb") as f:
                         if decrypt(new, f.read()) != data:
                             raise StoreError(tr("s_schluessel_erneuern_fehler"))
-                if not _kc_write(KEYCHAIN_NEXT, new):
-                    raise StoreError(tr("s_schluesselbund_nicht_nutzbar"))
-            except Exception:
+                kept = True
+                keep(old, new)
+            except Exception as e:
                 for p in written:
                     _remove(p)
-                _security(["delete-generic-password", "-s", KEYCHAIN_SERVICE, "-a", KEYCHAIN_NEXT])     # no file uses it yet
-                raise
-            for n in names:                              # from here on the new key opens every replaced file
-                os.replace(os.path.join(self.data_dir, n + ".renew"), os.path.join(self.data_dir, n))
-            if not _kc_write(KEYCHAIN_ACCOUNT, new):
-                self.master = new                        # the files need it now; the next start moves it into the main entry
-                raise StoreError(tr("s_schluessel_erneuern_halb"))
-            _security(["delete-generic-password", "-s", KEYCHAIN_SERVICE, "-a", KEYCHAIN_NEXT])
-            self.master = new
+                if not kept:
+                    raise
+                # the key file may hold the next key already: the old one in memory must not write on -- locked, the next
+                # sign-in sees the key file as it is and finishes (or, without a next key there, simply opens)
+                log.warning("Renewal of the data key not finished (%s) -- locked, finished at the next sign-in", type(e).__name__)
+                self.close()
+                raise StoreError(tr("s_schluessel_erneuern_halb")) from e
+            try:
+                for n in names:                          # from here on the new key opens every replaced file
+                    os.replace(os.path.join(self.data_dir, n + ".renew"), os.path.join(self.data_dir, n))
+                self.master = new                        # the files need it now
+                with self._cache_lock:
+                    self._cache.clear()
+                take(new)
+            except Exception as e:
+                # some files may have the new key, others the old one: neither key in memory would do -- the store locks, and
+                # the next sign-in finishes it from the key file (both keys wait there)
+                log.warning("Renewal of the data key not finished (%s) -- locked, finished at the next sign-in", type(e).__name__)
+                self.close()
+                raise StoreError(tr("s_schluessel_erneuern_halb")) from e
             plain.clear()
             log.warning("Data key renewed: %d files encrypted with the new key", len(names))
             return len(names)

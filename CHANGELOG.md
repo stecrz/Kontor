@@ -1,5 +1,14 @@
 # Änderungen
 
+## 3.16.83 (2026-11-22 02:44)
+- Sicherheit: Daten erst nach Anmeldung lesbar – Datenschlüssel nur mit Passwort oder Touch ID, danach nur im Arbeitsspeicher; nicht mehr im Schlüsselbund
+- Sicherheit: nach Neustart oder Update einmal anmelden (Mac und iPhone); Abgleich und Auto-Buchungen warten, danach laufen sie weiter, auch gesperrt
+- Sicherheit: Umstellung bei der ersten Anmeldung mit Passwort; alter Schlüssel erst weg, wenn der neue jede Datei öffnet
+- Sicherheit: openssl bekommt das Geheimnis über eine Pipe statt in der Umgebung (für andere Programme unsichtbar)
+- Touch ID: öffnet die Daten auch nach einem Neustart (Secure Enclave); Passwort vergessen: beim Ändern altes Feld leer lassen
+- Einstellungen: Datenschlüssel erneuern über die Anmeldung, Abbruch wird bei der nächsten Anmeldung abgeschlossen; Zurücksetzen mit Passwort löscht ihn mit
+- Entwicklung: vor der Anmeldung ist `app.store.is_open` falsch – nichts darf die Ablage lesen (Zeitplan, Threads, Neues: vorher prüfen); neue verschlüsselte Ordner in `storage.ENC_DIRS`
+
 ## 3.16.82 (2026-11-22 02:37)
 - Tastenkürzel: ⌘R lädt die Seite neu – wie im Browser, auch in der Mac-App und Safaris Dock-App
 - Tastenkürzel: Mit MoneyMoney abgleichen jetzt ⇧⌘R

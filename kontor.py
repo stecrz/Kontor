@@ -11,8 +11,9 @@ Commands (everything else only in the interface, after signing in -- the termina
   version           version number
 
 Datenordner: ~/Library/Application Support/Kontor (oder Umgebungsvariable KONTOR_DIR).
-Alle Dateien dort sind verschluesselt (Schluessel im macOS-Schluesselbund); nur kontor.log ist Klartext
-und enthaelt keine Kontonummern, Salden oder Passwoerter.
+Alle Daten dort sind verschluesselt; den Schluessel gibt nur die Anmeldung frei (Passwort oder Touch ID, access.py). Klartext
+sind nur kontor.log (ohne Kontonummern, Salden oder Passwoerter), start.json (Port, Adresse, Sprache -- keine Daten) und
+key.json (der Schluessel nur verpackt).
 """
 from __future__ import annotations
 
@@ -32,6 +33,7 @@ from typing import List, Optional
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
+import access  # noqa: E402
 import auth  # noqa: E402
 import updates  # noqa: E402
 import i18n  # noqa: E402
@@ -117,6 +119,14 @@ def load_config(store: Store) -> dict:
     return cfg
 
 
+def start_config() -> dict:
+    """What the commands need without the data (they never read them): port, address, certificate, language."""
+    access.prepare(DATA_DIR)
+    cfg = merged_config({"ui": access.start_settings(DATA_DIR)})
+    i18n.set_lang((cfg.get("ui") or {}).get("language") or "de")
+    return cfg
+
+
 class Lock:
     def __init__(self, name: str):
         self.path = os.path.join(DATA_DIR, name)
@@ -141,8 +151,8 @@ class Lock:
 def cmd_start(args) -> int:
     from service import App, serve
     with Lock("service.lock"):
-        store = open_store(finish=True)
-        app = App(store, DATA_DIR)
+        access.prepare(DATA_DIR)
+        app = App(Store.closed(DATA_DIR), DATA_DIR)         # locked: the data key comes with the first sign-in
         serve(app)
     return 0
 
@@ -157,8 +167,7 @@ def ui_url(cfg: dict) -> str:
 
 
 def cmd_oeffnen(args) -> int:
-    store = open_store()
-    cfg = load_config(store)
+    cfg = start_config()
     import mac_app
     if mac_app.ready():                         # Kontor's own app on this Mac, else the browser
         mac_app.set_address(ui_port(cfg))
@@ -166,6 +175,38 @@ def cmd_oeffnen(args) -> int:
             return 0
     subprocess.run(["open", ui_url(cfg)])
     return 0
+
+
+def unlock_cli(read_only: bool = False) -> Optional[Store]:
+    """The data key in the terminal -- only as in the interface: Touch ID where it is switched on and set up, else (or after a
+    cancel) the Kontor password, three tries. From before (no key file yet): the key in the keychain, confirmed the same way.
+    None: not confirmed. Nothing set up yet (no password, no data): an empty store without a key. read_only (uninstalling): a
+    key from before is only read, nothing finished or moved."""
+    st = access.state(DATA_DIR)
+    if st == "broken":
+        raise storage.StoreError(tr("s_schluesseldatei_kaputt"))
+    if st == "new":
+        return Store(DATA_DIR, None)
+    if st == "legacy":
+        store = Store(DATA_DIR, *storage.read_master_key(DATA_DIR)) if read_only else open_store()
+        return store if confirm_identity(store) else None
+    cfg = start_config()
+    if (cfg.get("ui") or {}).get("touchid", True) and access.touchid_ready(DATA_DIR):
+        print(tr("s_cli_touchid"))
+        got = access.unlock_touchid(DATA_DIR)
+        if got:
+            return Store(DATA_DIR, got[0], "login")
+    for _ in range(3):
+        try:
+            pw = getpass.getpass(tr("s_cli_passwort"))
+        except (EOFError, KeyboardInterrupt):
+            return None
+        got = access.unlock_password(DATA_DIR, pw, finish=False)
+        if got:
+            return Store(DATA_DIR, got[0], "login")
+        time.sleep(1)
+        print(tr("s_passwort_falsch"))
+    return None
 
 
 def confirm_identity(store: Store) -> bool:
@@ -192,20 +233,26 @@ def confirm_identity(store: Store) -> bool:
 
 
 def cmd_passwort(args) -> int:
-    store = open_store()
     try:
-        ok = confirm_identity(store)
+        store = unlock_cli()
     except Exception as e:                  # the password check does not open: nothing is changed
         print(tr("s_fehler_s") % e); return 1
-    if not ok:
+    if store is None:
         print(tr("s_cli_nicht_bestaetigt")); return 1
+    if not store.encrypted:
+        print(tr("s_noch_kein_passwort_wird_beim")); return 1
     pw = getpass.getpass(tr("s_neues_passwort_fuer_die_oberflaeche"))
     if pw != getpass.getpass(tr("s_cli_wiederholen")):
         print(tr("s_stimmt_nicht_ueberein")); return 1
     err = auth.password_ok(pw)
     if err:
         print(err); return 1
-    store.save("auth.json", auth.with_offline(auth.hash_password(pw), pw))
+    try:
+        if access.state(DATA_DIR) == "login":   # the key wrapped with the new password (from before: the interface switches at the next sign-in)
+            access.change_password(DATA_DIR, store.master, pw)
+        store.save("auth.json", auth.with_offline(auth.hash_password(pw), pw))
+    except storage.StoreError as e:
+        print(tr("s_fehler_s") % e); return 1
     print(tr("s_passwort_gesetzt_laufende_sitzungen_bl"))
     return 0
 
@@ -220,9 +267,8 @@ def build_touchid() -> str:
 
 
 def cmd_install(args) -> int:
-    store = open_store()
-    cfg = load_config(store)
-    if not store.load("auth.json", None):
+    cfg = start_config()
+    if not access.password_set(DATA_DIR):
         print(tr("s_noch_kein_passwort_wird_beim"))
     print(tr("s_touchid_helfer") % build_touchid())
     import mac_app
@@ -324,20 +370,13 @@ def cmd_uninstall(args) -> int:
             return 1
     # the key first: encrypted data that cannot be opened stay, and so does everything else (the key might still be needed)
     try:
-        key, source = storage.read_master_key(DATA_DIR)
-        store = Store(DATA_DIR, key, source)
-    except Exception as e:
-        if storage._enc_files(DATA_DIR):
-            print(tr("s_fehler_s") % e)
-            return 1
-        store = Store(DATA_DIR, None)       # nothing encrypted is there: nothing to open
-    try:
-        cfg = merged_config(store.load("config.json", {}) or {})
-        ok = confirm_identity(store)        # as in the interface: only with the Kontor password (or Touch ID)
+        store = unlock_cli(read_only=True)  # as in the interface: only with the Kontor password (or Touch ID)
+        if store is not None:
+            cfg = merged_config(store.load("config.json", {}) or {})
     except Exception as e:                  # the settings do not open: nothing is deleted
         print(tr("s_fehler_s") % e)
         return 1
-    if not ok:
+    if store is None:
         print(tr("s_cli_nicht_bestaetigt")); return 1
     if sys.platform == "darwin":            # stop the service: launchd would start it again
         subprocess.run(["launchctl", "bootout", "gui/%d/%s" % (os.getuid(), LAUNCHD_LABEL)], capture_output=True)

@@ -2894,22 +2894,18 @@ class FeatureTests(_AppBase):
         shutil.rmtree(prog, ignore_errors=True)
 
     def test_renew_data_key(self):
-        """Datenschluessel erneuern: only at the Mac, with the password; afterwards everything opens with the new key."""
+        """Datenschluessel erneuern: only at the Mac, with the password; afterwards everything opens with the new key, and the key
+        file holds only the new one (wrapped with the password)."""
         import storage as ST
-        from test_security import FakeKeychain
         self.login(); self.run_and_wait()
         old = self.app.store.master
-        kc, sec = FakeKeychain(), ST._security
-        kc.entries["kontor"] = old.hex()
-        self.addCleanup(setattr, ST, "_security", sec)
-        self.assertEqual(self.call("/api/key/renew", {"password": "sehr-geheimes-passwort"})[0], 409)     # key in a file: not here
-        ST._security = kc; self.app.store.key_source = "keychain"            # a made-up keychain, never the real one
         self.assertEqual(self.call("/api/key/renew", {"password": "falsch"})[0], 401)
         self.assertEqual(self.app.store.master, old)
         code, r = self.call("/api/key/renew", {"password": "sehr-geheimes-passwort"})
         self.assertEqual(code, 200, r); self.assertGreater(r["files"], 3); self.assertNotEqual(self.app.store.master, old)
-        self.assertEqual(kc.entries, {"kontor": self.app.store.master.hex()})
-        self.assertTrue(Store(self.dir, self.app.store.master, "keychain").load("config.json")["areas"])
+        self.assertEqual(ST.open_password_entry(ST.key_record(self.dir)["password"], "sehr-geheimes-passwort"), (self.app.store.master, None))
+        self.assertTrue(Store(self.dir, self.app.store.master, "login").load("config.json")["areas"])
+        self.assertTrue(ST.files_not_opening(old, self.dir))
         self.assertEqual(self.call("/api/dataset")[0], 200)
 
     def test_uninstall_keeps_the_key_while_data_remain(self):
@@ -4701,6 +4697,386 @@ class WebAppTest(unittest.TestCase):
             srv.shutdown(); srv.server_close()
             app.stop.set()
             shutil.rmtree(d, ignore_errors=True)
+
+
+class DataAfterSignIn(unittest.TestCase):
+    """Daten erst nach Anmeldung: before a sign-in nothing in the service reads the data; the password (or Touch ID) opens the
+    data key, which then lies only in memory; the switch from the keychain loses nothing -- also when it breaks off midway, in
+    every folder of the store. Made-up keys, a made-up keychain and a made-up Secure Enclave only."""
+    PW = "sehr-geheimes-passwort"
+
+    def setUp(self):
+        import access as AC
+        import storage as ST
+        from test_security import FakeKeychain
+        self.ST, self.AC = ST, AC
+        self.dir = tempfile.mkdtemp(prefix="kontor-key-")
+        self.kc, sec = FakeKeychain(), ST._security
+        ST._security = self.kc                       # never the real keychain
+        self.addCleanup(setattr, ST, "_security", sec)
+        self.belege = os.path.join(self.dir, "Belege")
+        self.servers = []
+        reset_mock()
+        patch_today()
+
+    def tearDown(self):
+        for srv in self.servers:
+            srv.shutdown(); srv.server_close()
+        shutil.rmtree(self.dir, ignore_errors=True)
+
+    def legacy(self):
+        """The data as an earlier Kontor left them: the key in the keychain, the password in auth.json, a saved conversation."""
+        import auth
+        key = os.urandom(32)
+        self.kc.entries["kontor"] = key.hex()
+        st = Store(self.dir, key, "keychain")
+        st.save("config.json", config_for_test(self.belege)); st.save("state.json", dict(ALL_NEW))
+        st.save("auth.json", auth.with_offline(auth.hash_password(self.PW), self.PW))
+        st.save("chats/assistant-chat-aaaaaaaa.json", {"turns": [1]})
+        return key
+
+    def start(self):
+        """The service as launchd starts it (or after an update): locked."""
+        self.AC.prepare(self.dir)
+        self.app = App(Store.closed(self.dir), self.dir, bridge_factory=MockBridge)
+        srv = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(self.app))
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        self.servers.append(srv)
+        self.port, self.csrf = srv.server_address[1], None
+        self.opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(CookieJar()))
+        return self.app
+
+    def call(self, path, body=None):
+        req = urllib.request.Request("http://127.0.0.1:%d%s" % (self.port, path), data=json.dumps(body).encode() if body is not None else None,
+                                     method="POST" if body is not None else "GET")
+        req.add_header("Content-Type", "application/json")
+        if self.csrf:
+            req.add_header("X-CSRF-Token", self.csrf)
+        try:
+            with self.opener.open(req) as r:
+                out = r.status, json.loads(r.read().decode() or "{}")
+        except urllib.error.HTTPError as e:
+            out = e.code, json.loads(e.read().decode() or "{}")
+        if isinstance(out[1], dict) and out[1].get("csrf"):
+            self.csrf = out[1]["csrf"]
+        return out
+
+    def files(self):
+        return {n: open(os.path.join(self.dir, n), "rb").read() for n in self.ST._enc_files(self.dir)}
+
+    def no_key_on_disk(self, key):
+        import base64
+        for root, _, names in os.walk(self.dir):
+            for n in names:
+                raw = open(os.path.join(root, n), "rb").read()
+                for form in (key, key.hex().encode(), base64.b64encode(key)):
+                    self.assertNotIn(form, raw, n)
+
+    def test_nothing_reads_the_data_before_a_sign_in(self):
+        key = self.legacy()
+        self.AC.complete(self.dir, key, self.PW)                 # switched already: the key file
+        self.assertEqual(self.kc.entries, {})
+        tried, decrypted = [], []
+        need, dec = self.ST.Store._need_key, self.ST.decrypt
+
+        def watch(st):
+            if not st.is_open:
+                tried.append(1)
+            return need(st)
+        with mock.patch.object(self.ST.Store, "_need_key", watch), mock.patch.object(self.ST, "decrypt", lambda k, b: decrypted.append(1) or dec(k, b)):
+            app = self.start()
+            t = threading.Thread(target=app.scheduler, daemon=True); t.start()
+            time.sleep(0.5)
+            code, s = self.call("/api/session")
+            self.assertEqual(code, 200)
+            self.assertEqual((s["signed_in"], s["setup_needed"], s["waiting"], s["switch"], s["touchid"]), (False, False, True, False, False))
+            for page in ("/api/status", "/api/dataset", "/api/config", "/api/accounts", "/api/offline/verifier", "/api/transactions"):
+                self.assertEqual(self.call(page)[0], 401, page)
+            for page in ("/api/run", "/api/config", "/api/backup", "/api/key/renew", "/api/assistant/ask"):
+                self.assertEqual(self.call(page, {"x": 1})[0], 401, page)
+            app.heartbeat()
+            app.stop.set(); t.join(5)
+            self.assertEqual((tried, decrypted), ([], []))            # nothing even tried to read the data
+            self.assertFalse(app.store.is_open)
+        self.assertEqual(self.call("/api/login", {"password": "falsch-falsch"})[0], 401)
+        self.assertFalse(self.app.store.is_open)
+        code, r = self.call("/api/login", {"password": self.PW})
+        self.assertEqual(code, 200, r)
+        self.assertTrue(self.app.store.is_open); self.assertEqual(self.app.store.master, key)
+        self.assertTrue(self.app.config["areas"])                     # the settings read after the sign-in
+        self.assertEqual(self.call("/api/status")[0], 200)
+        self.assertEqual(self.call("/api/status")[1]["storage"]["key_source"], "login")
+        self.no_key_on_disk(key)
+        # the interface locks: the key stays in memory, the schedule goes on; a restart needs a sign-in again
+        self.assertEqual(self.call("/api/lock", {})[0], 200)
+        self.assertTrue(self.app.store.is_open)
+        self.start()
+        self.assertFalse(self.app.store.is_open); self.assertEqual(self.call("/api/status")[0], 401)
+
+    def test_switch_from_the_keychain(self):
+        key = self.legacy()
+        before = self.files()
+        self.start()
+        s = self.call("/api/session")[1]
+        self.assertTrue(s["switch"]); self.assertTrue(s["waiting"]); self.assertFalse(s["touchid"]); self.assertFalse(s["setup_needed"])
+        self.assertEqual(self.call("/api/login", {"password": "falsch-falsch"})[0], 401)
+        self.assertIn("kontor", self.kc.entries); self.assertIsNone(self.ST.key_record(self.dir))
+        self.assertEqual(self.call("/api/login", {"password": self.PW})[0], 200)
+        self.assertEqual(self.kc.entries, {})                         # the old key is gone ...
+        rec = self.ST.key_record(self.dir)
+        self.assertEqual(self.ST.open_password_entry(rec["password"], self.PW), (key, None))     # ... the same key, only with the password
+        self.assertEqual(self.files(), before)                       # no file touched
+        self.assertEqual(self.ST.files_not_opening(key, self.dir), [])
+        self.no_key_on_disk(key)
+        self.start()                                                  # after a restart: the key file
+        s = self.call("/api/session")[1]
+        self.assertFalse(s["switch"]); self.assertTrue(s["waiting"])
+        self.assertEqual(self.call("/api/login", {"password": self.PW})[0], 200)
+        self.assertEqual(self.app.store.master, key)
+        code, b = self.call("/api/backup", {"password": "sicherung-1234"})          # the backup: its own password, as before
+        self.assertEqual(code, 200, b)
+        code, r = self.call("/api/backup/restore", {"backup": b, "password": "sicherung-1234"})
+        self.assertEqual(code, 200, r); self.assertTrue(self.app.config["areas"])
+
+    def test_switch_waits_while_a_file_does_not_open(self):
+        key = self.legacy()
+        odd = os.path.join(self.dir, "chats", "assistant-chat-bbbbbbbb.json.enc")
+        with open(odd, "wb") as f:
+            f.write(self.ST.encrypt(os.urandom(32), b"{}"))            # a file in a folder of the store with another key
+        self.start()
+        self.assertEqual(self.call("/api/login", {"password": self.PW})[0], 200)      # the data open with the key from before
+        self.assertEqual(self.kc.entries, {"kontor": key.hex()}); self.assertIsNone(self.ST.key_record(self.dir))
+        os.remove(odd)
+        self.start()
+        self.assertEqual(self.call("/api/login", {"password": self.PW})[0], 200)
+        self.assertEqual(self.kc.entries, {}); self.assertEqual(self.ST.open_password_entry(self.ST.key_record(self.dir)["password"], self.PW)[0], key)
+
+    def test_switch_after_an_unfinished_renewal_from_before(self):
+        """From before, a renewal of the key broke off (the next key in its own keychain entry, one file with it): the sign-in
+        finishes it, then the key file holds the new key and both entries go."""
+        key = self.legacy()
+        new = os.urandom(32)
+        self.kc.entries["kontor-next"] = new.hex()
+        data = Store(self.dir, key, "keychain").read_bytes("chats/assistant-chat-aaaaaaaa.json")
+        with open(os.path.join(self.dir, "chats", "assistant-chat-aaaaaaaa.json.enc"), "wb") as f:
+            f.write(self.ST.encrypt(new, data))
+        self.start()
+        self.assertEqual(self.call("/api/login", {"password": self.PW})[0], 200)
+        self.assertEqual(self.app.store.master, new); self.assertEqual(self.kc.entries, {})
+        self.assertEqual(self.ST.files_not_opening(new, self.dir), [])
+        self.assertEqual(self.ST.open_password_entry(self.ST.key_record(self.dir)["password"], self.PW)[0], new)
+
+    def test_switch_broken_off_midway(self):
+        """The Mac goes off (or something refuses) at every step of the switch: the next sign-in carries on, nothing is lost."""
+        key = self.legacy()
+        before = self.files()
+        real = self.ST._write_atomic
+
+        def off(p, payload):
+            if p.endswith("key.json"):
+                raise OSError("power off")
+            return real(p, payload)
+        with mock.patch.object(self.ST, "_write_atomic", off):        # 1. while the key file is written
+            self.start()
+            self.assertEqual(self.call("/api/login", {"password": self.PW})[0], 200)
+        self.assertIsNone(self.ST.key_record(self.dir)); self.assertEqual(self.kc.entries, {"kontor": key.hex()})
+        with mock.patch.object(self.AC, "_drop_legacy", side_effect=OSError("power off")):     # 2. after the key file, before the old key goes
+            self.start()
+            self.assertEqual(self.call("/api/login", {"password": self.PW})[0], 200)
+        self.assertIsNotNone(self.ST.key_record(self.dir)); self.assertEqual(self.kc.entries, {"kontor": key.hex()})
+        self.kc.fail_delete.add("kontor")                             # 3. the keychain does not delete
+        self.start()
+        self.assertEqual(self.call("/api/login", {"password": self.PW})[0], 200)
+        self.assertEqual(self.kc.entries, {"kontor": key.hex()})
+        self.assertEqual(self.call("/api/status")[1]["storage"]["key_source"], "keychain")      # shown as it is: still in the keychain
+        self.kc.fail_delete.clear()                                   # 4. done at the next sign-in
+        self.start()
+        self.assertEqual(self.call("/api/login", {"password": self.PW})[0], 200)
+        self.assertEqual(self.kc.entries, {}); self.assertEqual(self.app.store.master, key)
+        self.assertEqual(self.files(), before); self.assertEqual(self.ST.files_not_opening(key, self.dir), [])
+
+    def test_a_broken_key_file(self):
+        """The key file does not read: with the key from before still there, the sign-in makes it anew; without, nothing is
+        changed and the message says what helps -- never a new key over the data."""
+        key = self.legacy()
+        with open(os.path.join(self.dir, "key.json"), "w") as f:
+            f.write("{kaputt")
+        self.start()
+        self.assertFalse(self.call("/api/session")[1]["setup_needed"])
+        self.assertEqual(self.call("/api/login", {"password": self.PW})[0], 200)
+        self.assertEqual(self.ST.open_password_entry(self.ST.key_record(self.dir)["password"], self.PW)[0], key)
+        self.assertEqual(self.kc.entries, {})
+        with open(os.path.join(self.dir, "key.json"), "w") as f:
+            f.write("{kaputt")
+        self.start()
+        code, r = self.call("/api/login", {"password": self.PW})
+        self.assertEqual(code, 409); self.assertIn("Sicherung", r["error"]); self.assertFalse(self.app.store.is_open)
+        self.assertEqual(self.call("/api/setup", {"password": "ein-neues-passwort"})[0], 403)
+        self.assertEqual(open(os.path.join(self.dir, "key.json")).read(), "{kaputt")
+
+    def test_settings_that_do_not_read_keep_it_locked(self):
+        key = self.legacy()
+        self.AC.complete(self.dir, key, self.PW)
+        Store(self.dir, key, "login").write_bytes("config.json", b"{kaputt")
+        self.start()
+        self.assertEqual(self.call("/api/login", {"password": self.PW})[0], 409)
+        self.assertFalse(self.app.store.is_open)                      # not open on defaults (nothing overwritten)
+        self.assertEqual(Store(self.dir, key, "login").read_bytes("config.json"), b"{kaputt")
+
+    def test_renewal_broken_off_midway(self):
+        key = self.legacy()
+        self.start(); self.assertEqual(self.call("/api/login", {"password": self.PW})[0], 200)
+        before = self.files()
+        real = self.ST.write_key_record
+        with mock.patch.object(self.ST, "write_key_record", side_effect=self.ST.StoreError("x")):     # the next key cannot be kept
+            self.assertEqual(self.call("/api/key/renew", {"password": self.PW})[0], 409)
+        self.assertEqual(self.files(), before); self.assertFalse(self.app.store.is_open)
+        self.assertEqual(self.call("/api/login", {"password": self.PW})[0], 200); self.assertEqual(self.app.store.master, key)
+        self.assertEqual(self.ST.open_password_entry(self.ST.key_record(self.dir)["password"], self.PW), (key, None))
+        self.assertFalse([n for n in self.ST._names(self.dir) if n.endswith(".renew")])
+        real_replace, n = os.replace, [0]
+
+        def off(a, b):
+            if a.endswith(".renew"):
+                n[0] += 1
+                if n[0] > 2:
+                    raise OSError("power off")
+            return real_replace(a, b)
+        with mock.patch.object(self.ST.os, "replace", off):          # broken off after the next key was kept and two files replaced
+            self.assertEqual(self.call("/api/key/renew", {"password": self.PW})[0], 409)
+        rec = self.ST.key_record(self.dir)
+        self.assertTrue(rec["password"].get("next"))
+        self.assertFalse(self.app.store.is_open)                       # neither key would do: locked
+        self.assertEqual(self.call("/api/status")[0], 401)
+        self.assertEqual(self.call("/api/login", {"password": self.PW})[0], 200)      # the next sign-in finishes it
+        rec = self.ST.key_record(self.dir)
+        self.assertNotIn("next", rec["password"])
+        new = self.ST.open_password_entry(rec["password"], self.PW)[0]
+        self.assertNotEqual(new, key); self.assertEqual(self.app.store.master, new)
+        self.assertEqual(self.ST.files_not_opening(new, self.dir), []); self.assertEqual(set(self.files()), set(before))
+        self.assertFalse([x for x in self.ST._names(self.dir) if x.endswith(".renew")])
+        self.assertEqual(self.app.store.load("chats/assistant-chat-aaaaaaaa.json"), {"turns": [1]})
+        calls = [0]
+
+        def second_fails(d, r):
+            calls[0] += 1
+            if calls[0] == 2:
+                raise self.ST.StoreError("x")
+            return real(d, r)
+        with mock.patch.object(self.ST, "write_key_record", second_fails):     # the new key replaced the files, not yet the old key
+            self.assertEqual(self.call("/api/key/renew", {"password": self.PW})[0], 409)
+        self.assertFalse(self.app.store.is_open)
+        self.start()                                                  # also after a restart
+        self.assertEqual(self.call("/api/login", {"password": self.PW})[0], 200)
+        newer = self.app.store.master
+        self.assertNotEqual(newer, new); self.assertEqual(self.ST.files_not_opening(newer, self.dir), [])
+        self.assertNotIn("next", self.ST.key_record(self.dir)["password"])
+        self.assertEqual(self.app.store.load("chats/assistant-chat-aaaaaaaa.json"), {"turns": [1]})
+
+    def test_touch_id_opens_the_data_after_a_restart(self):
+        import auth
+        from test_security import FakeEnclave
+        se = FakeEnclave()
+        for p in se.patches():
+            p.start(); self.addCleanup(p.stop)
+        key = self.legacy()
+        self.start()
+        self.assertFalse(self.call("/api/session")[1]["touchid"])       # from before: once with the password
+        self.assertEqual(self.call("/api/login", {"password": self.PW})[0], 200)
+        rec = self.ST.key_record(self.dir)
+        self.assertTrue(rec["touchid"]); self.no_key_on_disk(key)
+        self.start()
+        self.assertTrue(self.call("/api/session")[1]["touchid"])
+        se.confirm = False
+        self.assertEqual(self.call("/api/touchid", {})[0], 401); self.assertFalse(self.app.store.is_open)
+        se.confirm = True
+        self.assertEqual(self.call("/api/touchid", {})[0], 200); self.assertEqual(self.app.store.master, key)
+        # signed in: the key in memory -- after the lock Touch ID only confirms you (no new unwrapping)
+        self.call("/api/lock", {})
+        asked = se.asked
+        with mock.patch.object(auth, "touchid_verify", return_value=True):
+            self.assertEqual(self.call("/api/touchid", {})[0], 200)
+        self.assertEqual(se.asked, asked)
+        # forgotten password: at the Mac with Touch ID, the old field left empty -- Touch ID's entry stays
+        with mock.patch.object(auth, "touchid_verify", return_value=False):
+            self.assertEqual(self.call("/api/password", {"old": "", "new": "neues-passwort-123"})[0], 401)
+        with mock.patch.object(auth, "touchid_verify", return_value=True):
+            self.assertEqual(self.call("/api/password", {"old": "", "new": "neues-passwort-123"})[0], 200)
+        self.assertEqual(self.ST.key_record(self.dir)["touchid"], rec["touchid"])
+        self.start()
+        self.assertEqual(self.call("/api/login", {"password": self.PW})[0], 401)
+        self.assertEqual(self.call("/api/login", {"password": "neues-passwort-123"})[0], 200)
+        # switched off: its entry goes -- after a restart only the password
+        cfg = self.call("/api/config")[1]
+        cfg["ui"]["touchid"] = False
+        self.assertEqual(self.call("/api/config", {"config": cfg})[0], 200)
+        self.assertIsNone(self.ST.key_record(self.dir)["touchid"])
+        self.start()
+        self.assertFalse(self.call("/api/session")[1]["touchid"]); self.assertEqual(self.call("/api/touchid", {})[0], 403)
+        self.assertEqual(self.AC.start_settings(self.dir).get("touchid"), False)
+
+    def test_reset_with_the_password_forgets_the_key(self):
+        key = self.legacy()
+        self.start(); self.assertEqual(self.call("/api/login", {"password": self.PW})[0], 200)
+        self.assertEqual(self.call("/api/reset", {"password": self.PW, "with_password": True})[0], 200)
+        self.assertEqual(self.ST._enc_files(self.dir), []); self.assertIsNone(self.ST.key_record(self.dir))
+        self.assertEqual(self.kc.entries, {}); self.assertFalse(self.app.store.is_open)
+        s = self.call("/api/session")[1]
+        self.assertTrue(s["setup_needed"]); self.assertFalse(s["waiting"])
+        self.assertEqual(self.call("/api/setup", {"password": "ein-neues-passwort"})[0], 200)
+        self.assertTrue(self.app.store.is_open); self.assertNotEqual(self.app.store.master, key)
+        self.start()
+        self.assertEqual(self.call("/api/login", {"password": "ein-neues-passwort"})[0], 200)
+
+    def test_reset_without_the_password_keeps_the_key(self):
+        key = self.legacy()
+        st = Store(self.dir, key, "keychain")
+        cfg = st.load("config.json"); cfg["ui"]["bind"] = "100.64.1.2"; st.save("config.json", cfg)
+        self.start(); self.assertEqual(self.call("/api/login", {"password": self.PW})[0], 200)
+        self.assertEqual(self.AC.start_settings(self.dir).get("bind"), "100.64.1.2")
+        self.assertEqual(self.call("/api/reset", {"password": self.PW})[0], 200)
+        self.assertNotEqual(self.AC.start_settings(self.dir).get("bind"), "100.64.1.2")     # reached only at this Mac again
+        self.assertIsNotNone(self.ST.key_record(self.dir))
+        self.start()
+        self.assertEqual(self.call("/api/login", {"password": self.PW})[0], 200); self.assertEqual(self.app.store.master, key)
+
+    def test_first_password_on_a_fresh_mac(self):
+        self.start()
+        s = self.call("/api/session")[1]
+        self.assertTrue(s["setup_needed"]); self.assertFalse(s["waiting"])
+        self.assertEqual(self.call("/api/status")[0], 401)
+        self.assertEqual(self.call("/api/setup", {"password": self.PW, "language": "en"})[0], 200)
+        key = self.app.store.master
+        self.assertEqual(self.ST.open_password_entry(self.ST.key_record(self.dir)["password"], self.PW)[0], key)
+        self.assertEqual(self.AC.start_settings(self.dir).get("language"), "en")
+        self.assertEqual(self.kc.entries, {}); self.assertFalse(os.path.exists(os.path.join(self.dir, "master.key")))
+        self.assertEqual(self.call("/api/setup", {"password": "noch-ein-passwort"})[0], 403)
+        self.start()
+        self.assertEqual(self.app.config["ui"]["language"], "en")          # from the start settings, before the sign-in
+        self.assertEqual(self.call("/api/login", {"password": self.PW})[0], 200)
+        self.no_key_on_disk(key)
+
+    def test_start_settings_hold_no_data(self):
+        key = self.legacy()
+        st = Store(self.dir, key, "keychain")
+        cfg = st.load("config.json"); cfg["ui"].update(port=9876, language="en", lock_minutes=5, bind="100.64.1.2")
+        st.save("config.json", cfg)
+        self.start()                                                  # from before: taken from the settings once
+        got = self.AC.start_settings(self.dir)
+        self.assertEqual((got["port"], got["language"], got["lock_minutes"], got["bind"]), (9876, "en", 5, "100.64.1.2"))
+        self.assertLessEqual(set(json.load(open(os.path.join(self.dir, "start.json")))), set(self.AC.START_KEYS))
+        self.assertEqual(self.app.config["ui"]["port"], 9876)
+        self.assertEqual(self.app.sessions.idle, 5 * 60)
+
+    def test_uninstall_takes_the_key_file(self):
+        import service as MA
+        self.legacy()
+        self.start(); self.assertEqual(self.call("/api/login", {"password": self.PW})[0], 200)
+        self.app.program_dir = "/nonexistent"
+        with mock.patch.object(MA.updates, "plist_path", return_value=os.path.join(self.dir, "none.plist")):
+            r = self.app.uninstall(program=False)
+        self.assertTrue(r["key_removed"], r)
+        self.assertFalse(os.path.exists(self.dir) and set(os.listdir(self.dir)) - {"Belege"})
 
 
 class MacAppTests(_AppBase):

@@ -6,13 +6,17 @@
 * Fehlversuche: nach 5 Fehlern 5 Minuten Sperre je Adresse.
 * Touch ID: kleiner Helfer (touchid.swift, bei der Installation uebersetzt),
   der den macOS-Dialog zeigt. Nur fuer Anfragen von diesem Mac (127.0.0.1) --
-  von einem anderen Geraet aus zaehlt nur das Passwort.
+  von einem anderen Geraet aus zaehlt nur das Passwort. Derselbe Helfer haelt einen
+  Schluessel in der Secure Enclave, den nur Touch ID (oder das Mac-Passwort) nutzbar
+  macht: damit oeffnet Touch ID auch nach einem Neustart die Daten (access.py).
 """
 from __future__ import annotations
 
+import base64
 import hashlib
 import hmac
 import os
+import re
 import secrets
 import shutil
 import subprocess
@@ -20,7 +24,7 @@ import sys
 import tempfile
 import threading
 import time
-from typing import Dict, Optional
+from typing import Callable, Dict, List, Optional, Tuple, Union
 from i18n import tr
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -39,6 +43,7 @@ TOUCHID_PLIST = """<?xml version="1.0" encoding="UTF-8"?>
 """
 TOUCHID_REASON = "s_touchid_reason"          # Schluessel in web/i18n.js (Text im macOS-Fenster)
 PBKDF2_ROUNDS = 600_000
+_HELPER_ARG = re.compile(r"[A-Za-z0-9+/=]{1,4096}")         # what goes to the helper besides its mode: base64 or hex Kontor made
 
 
 def hash_password(password: str, salt: Optional[bytes] = None) -> Dict[str, str]:
@@ -149,14 +154,14 @@ class Sessions:
                 return int(300 - (now - fails[0])) + 1
             return 0
 
-    def check_password(self, remote: str, password: str, rec: Optional[dict]) -> Optional[bool]:
+    def check_password(self, remote: str, password: str, rec: Union[Optional[dict], Callable[[str], bool]]) -> Optional[bool]:
         """Kontor's password, checked for this address: one check at a time and every wrong one counted -- after five within
         five minutes the address waits, also when the attempts come all at once and also behind a session. None: it has to
-        wait (nothing was checked)."""
+        wait (nothing was checked). rec: the stored record, or a function that checks (it opens the data key)."""
         with self._check:
             if self.locked(remote):
                 return None
-            if rec and verify_password(password, rec):
+            if (rec(password) if callable(rec) else bool(rec) and verify_password(password, rec)):
                 self.clear_fails(remote)
                 return True
             self.fail(remote)
@@ -222,6 +227,137 @@ def touchid_verify(reason: str = "") -> bool:
         return r.returncode == 0
     except (subprocess.TimeoutExpired, OSError):
         return False
+
+
+class TouchIdGone(Exception):
+    """The Secure Enclave of this Mac cannot use the key in the key file (it was made on another Mac)."""
+
+
+def _helper_current() -> bool:
+    """The helper is built from the touchid.swift beside it -- an older build (right after an update, until the service has
+    built it anew) would take a mode for the text of its window."""
+    try:
+        return touchid_available() and os.path.getmtime(TOUCHID_BIN) >= os.path.getmtime(TOUCHID_SRC)
+    except OSError:
+        return False
+
+
+def _helper_line(args: List[str]) -> Optional[str]:
+    """Kontor's own helper without a window (a new key in the Secure Enclave, wrapping with its public key): its one line of
+    output over a pipe, or None. Only fixed modes and values Kontor made itself (base64, hex)."""
+    if not _helper_current() or not args or args[0] not in ("--create", "--seal") or not all(_HELPER_ARG.fullmatch(a) for a in args[1:]):
+        return None
+    try:
+        r = subprocess.run([TOUCHID_BIN] + args, capture_output=True, text=True, timeout=30)
+    except (subprocess.TimeoutExpired, OSError):
+        return None
+    return r.stdout.strip() if r.returncode == 0 else None
+
+
+def touchid_new_key() -> Optional[Tuple[str, str]]:
+    """A new key in this Mac's Secure Enclave, usable only with Touch ID or the Mac's password (making it asks nothing):
+    (its handle, its public key), both base64 -- the handle is of no use on any other Mac. None where the Mac cannot."""
+    out = (_helper_line(["--create"]) or "").split()
+    return (out[0], out[1]) if len(out) == 2 and all(_HELPER_ARG.fullmatch(x) for x in out) else None
+
+
+def touchid_seal(pub: str, salt: str) -> Optional[Tuple[str, bytes]]:
+    """A key to wrap the data key with, that only the Secure Enclave's key (Touch ID) can make again: (the public half of a
+    fresh key pair, base64; the 32-byte key). Asks nothing."""
+    out = (_helper_line(["--seal", pub, salt]) or "").split()
+    if len(out) != 2 or not _HELPER_ARG.fullmatch(out[0]) or not re.fullmatch(r"[0-9a-f]{64}", out[1]):
+        return None
+    return out[0], bytes.fromhex(out[1])
+
+
+# The helper's answer of --unseal goes through a file (LaunchServices gives it its output that way): the key in it is wrapped
+# for this request only -- X25519 between a key pair made here (its private half never leaves this process) and one the helper
+# makes, HKDF-SHA256 to a one-time pad and an HMAC key. What lands in the file is of no use to anyone reading it.
+_P25519 = 2 ** 255 - 19
+_TRANSPORT_INFO = b"kontor-touchid-transport-v1"
+
+
+def _x25519(k: bytes, u: bytes) -> bytes:
+    """X25519 (RFC 7748): scalar k times the point with u-coordinate u, both 32 bytes little-endian."""
+    kb = bytearray(k)
+    kb[0] &= 248
+    kb[31] &= 127
+    kb[31] |= 64
+    n, x1 = int.from_bytes(bytes(kb), "little"), int.from_bytes(u, "little") & ((1 << 255) - 1)
+    x2, z2, x3, z3, swap = 1, 0, x1, 1, 0
+    for t in range(254, -1, -1):
+        bit = (n >> t) & 1
+        swap ^= bit
+        if swap:
+            x2, x3, z2, z3 = x3, x2, z3, z2
+        swap = bit
+        a, b, c, d = x2 + z2, x2 - z2, x3 + z3, x3 - z3
+        aa, bb = a * a % _P25519, b * b % _P25519
+        e, da, cb = aa - bb, d * a % _P25519, c * b % _P25519
+        x3, z3 = (da + cb) ** 2 % _P25519, x1 * (da - cb) ** 2 % _P25519
+        x2, z2 = aa * bb % _P25519, e * (aa + 121665 * e) % _P25519
+    if swap:
+        x2, z2 = x3, z3
+    return (x2 * pow(z2, _P25519 - 2, _P25519) % _P25519).to_bytes(32, "little")
+
+
+def _hkdf(ikm: bytes, salt: bytes, info: bytes, n: int) -> bytes:
+    """HKDF-SHA256 (RFC 5869)."""
+    prk, out, t, i = hmac.new(salt, ikm, hashlib.sha256).digest(), b"", b"", 1
+    while len(out) < n:
+        t = hmac.new(prk, t + info + bytes([i]), hashlib.sha256).digest()
+        out, i = out + t, i + 1
+    return out[:n]
+
+
+def _unwrap_transport(mine: bytes, nonce: str, line: str) -> Optional[bytes]:
+    """The key out of the helper's answer "ok <nonce> <its public key> <wrapped key> <tag>" -- None unless it checks out."""
+    m = re.fullmatch(r"ok " + nonce + r" ([A-Za-z0-9+/=]{44}) ([0-9a-f]{64}) ([0-9a-f]{64})", line.strip())
+    if not m:
+        return None
+    try:
+        theirs = base64.b64decode(m.group(1), validate=True)
+    except (ValueError, TypeError):
+        return None
+    shared = _x25519(mine, theirs) if len(theirs) == 32 else bytes(32)
+    if shared == bytes(32):
+        return None
+    okm = _hkdf(shared, nonce.encode("ascii"), _TRANSPORT_INFO, 64)
+    ct = bytes.fromhex(m.group(2))
+    if not hmac.compare_digest(hmac.new(okm[32:], ct, hashlib.sha256).hexdigest(), m.group(3)):
+        return None
+    return bytes(a ^ b for a, b in zip(ct, okm[:32]))
+
+
+def touchid_unseal(se: str, eph: str, salt: str, reason: str = "") -> Optional[bytes]:
+    """The key touchid_seal made, again -- only after Touch ID (or the Mac's password) in the macOS window. None when not
+    confirmed; TouchIdGone when this Mac's Secure Enclave cannot use the key. As touchid_verify: through LaunchServices with
+    focus, the answer in a fresh private folder, tied to this request by a random nonce -- and wrapped for it (above)."""
+    reason = reason or tr(TOUCHID_REASON)
+    if sys.platform != "darwin" or not _helper_current() or not all(_HELPER_ARG.fullmatch(a) for a in (se, eph, salt)):
+        return None
+    mine = secrets.token_bytes(32)
+    pub = base64.b64encode(_x25519(mine, (9).to_bytes(32, "little"))).decode("ascii")
+    nonce, d = secrets.token_hex(16), tempfile.mkdtemp(prefix="kontor-tid-")
+    out = os.path.join(d, "result")
+    try:
+        r = subprocess.run(["open", "-n", "-W", "--stdout", out, "-a", TOUCHID_APP, "--args", "--unseal", reason, nonce, se, eph, salt, pub],
+                           capture_output=True, timeout=95)
+        if r.returncode != 0:
+            return None
+        with open(out, encoding="utf-8") as f:
+            text = f.read()
+        if ("gone " + nonce) in text:
+            raise TouchIdGone()
+        for line in text.splitlines():
+            key = _unwrap_transport(mine, nonce, line)
+            if key is not None:
+                return key
+        return None
+    except (subprocess.TimeoutExpired, OSError):
+        return None
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
 
 
 def is_loopback(remote: str) -> bool:

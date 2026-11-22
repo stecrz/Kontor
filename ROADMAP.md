@@ -48,7 +48,7 @@ anhängen – nie löschen.
 - **Daten erst nach Anmeldung:** Kontors Daten sind ohne Anmeldung (Passwort oder Touch ID) unlesbar, auch für jemanden am
   entsperrten Mac; der Schlüssel liegt danach nur im Arbeitsspeicher, bis der Dienst endet. Nach Neustart oder Update einmal
   anmelden, danach läuft alles im Hintergrund weiter, auch bei gesperrtem Kontor. (Heute liegt der Schlüssel im Schlüsselbund und
-  ist dort für jedes Programm des Nutzers ohne Rückfrage lesbar.)
+  ist dort für jedes Programm des Nutzers ohne Rückfrage lesbar.) (umgesetzt in 3.16.83)
 - **Data-Warehouse (BigQuery):** eigener Zugang nur zum Lesen (Dienstkonto mit Leserecht auf die nötigen Daten und Recht zum
   Abfragen), einmal am Mac eingerichtet; Kontor speichert ihn selbst verschlüsselt, an die Anmeldung gebunden (nicht frei lesbar im
   Schlüsselbund), nur im Arbeitsspeicher entschlüsselt; nie im Protokoll, in Sicherungen, Paketen oder für die KI erreichbar.
@@ -115,18 +115,20 @@ anhängen – nie löschen.
   Grafikkarte, Zugang je Konto über einen sicheren Kanal, gemeinsames Gedächtnis; widerspricht heute „alles auf diesem Mac“ –
   erst nach ausdrücklicher Entscheidung. (Ein Gedächtnis über Finanzen hinaus, nur auf diesem Mac: entschieden, siehe Gedächtnis.)
 
-## 1. Daten erst nach Anmeldung (Sicherheit)
+## 1. Daten erst nach Anmeldung (Sicherheit) – umgesetzt in 3.16.83
 Ziel: Wer den entsperrten Mac hat, aber nicht bei Kontor angemeldet ist, kommt an keine Kontor-Daten.
 
 Fertig, wenn
-- der Hauptschlüssel nur mit der Anmeldung freikommt (aus dem Passwort abgeleitet bzw. per Touch ID) und nur im Arbeitsspeicher
-  des Dienstes liegt; nichts davon frei lesbar im Schlüsselbund oder auf der Festplatte;
-- nach Neustart oder Update nur die Anmeldung erscheint (am Mac und vom iPhone); Zeitplan und Auto-Buchungen warten sichtbar
-  bis dahin und laufen danach weiter, auch gesperrt;
-- die Umstellung ohne Datenverlust geht: der alte Schlüssel verschwindet erst, wenn feststeht, dass der neue alle Daten öffnet;
+- ~~der Hauptschlüssel nur mit der Anmeldung freikommt (aus dem Passwort abgeleitet bzw. per Touch ID) und nur im Arbeitsspeicher
+  des Dienstes liegt; nichts davon frei lesbar im Schlüsselbund oder auf der Festplatte;~~ (3.16.83: `key.json`, Secure Enclave; openssl
+  bekommt das Geheimnis über eine Pipe statt der Umgebung)
+- ~~nach Neustart oder Update nur die Anmeldung erscheint (am Mac und vom iPhone); Zeitplan und Auto-Buchungen warten sichtbar
+  bis dahin und laufen danach weiter, auch gesperrt;~~ (3.16.83)
+- ~~die Umstellung ohne Datenverlust geht: der alte Schlüssel verschwindet erst, wenn feststeht, dass der neue alle Daten öffnet;
   Passwort ändern oder vergessen (Touch ID bzw. Mac-Passwort), Touch ID an/aus, Sicherung, Zurücksetzen und Deinstallieren
-  funktionieren;
-- Tests: ohne Anmeldung liest nichts im Dienst die Daten; Abbruch mitten in der Umstellung; Agent `reviewer`.
+  funktionieren;~~ (3.16.83)
+- ~~Tests: ohne Anmeldung liest nichts im Dienst die Daten; Abbruch mitten in der Umstellung; Agent `reviewer`.~~ (3.16.83)
+- offen: am Mac mit echter Secure Enclave prüfen (Touch ID nach Neustart, „Passwort vergessen“, Datenordner von einem anderen Mac)
 
 ## 2. KI-Assistent: digitaler CFO
 Ziel: Ein lernender, verlässlicher Mitarbeiter, der die Finanzen kennt, sich erinnert, von selbst auf Wichtiges hinweist und

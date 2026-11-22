@@ -126,9 +126,9 @@ RULES = {"service.py": ("bind_allowed", "_sec_headers", "_host_ok", "_origin_ok"
 # functions that look themselves at what they are handed before it reaches out (a fixed program, a fixed address, a path that
 # is checked): who calls them cannot make them do anything else, so their callers are not followed. Each is kept as a whole.
 CHECKED: Dict[str, Tuple[str, ...]] = {
-    "storage.py": ("encrypt", "decrypt", "_kc_read", "_kc_write"),        # openssl / security with fixed commands; the key goes in as a value
+    "storage.py": ("encrypt", "decrypt", "_kc_read", "_kc_write", "_openssl_run", "_pass_mode"),     # openssl / security with fixed commands; the key goes in as a value (over a pipe)
     "mm_bridge.py": ("_call",),                                           # one fixed script, only the listed commands of MoneyMoney
-    "auth.py": ("touchid_verify",),                                       # Kontor's own helper; the text is what its window says
+    "auth.py": ("touchid_verify", "touchid_unseal", "_helper_line"),     # Kontor's own helper; the text is what its window says, the rest base64/hex Kontor made
     "kontor.py": ("service_answers",),                                    # 127.0.0.1 only
     "llm_local.py": ("_open", "_env", "ensure", "install_runtime"),       # allowed hosts only; program and model from Kontor's own lists
     "mm_history.py": ("_wipe", "decrypt_in_place", "_page1_ok", "receive", "MemDB", "keys_from_dialog", "run"),     # the uploaded bytes, in memory

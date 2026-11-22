@@ -36,6 +36,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Callable, Dict, List, Optional, Tuple
 from urllib.parse import parse_qs, urlparse
 
+import access
 import auth
 import i18n
 import mac_app
@@ -57,7 +58,7 @@ from model import Ledger, Tx, accounts_from_export, ledger_from_bytes, ledger_to
 from report import ROLES, account_balance_series, account_months, account_roles, apply_plan, role_label
 from model import marks_in
 from rules import Seen, TAG_RE, bkey as rules_bkey, plan_all as plan_rules
-from storage import Store, _names as storage_names
+from storage import Store, StoreError, StoreLocked, _names as storage_names
 from excel import Sheet, workbook
 from i18n import tr
 
@@ -480,13 +481,15 @@ class App:
         self.data_dir = data_dir
         self.program_dir = HERE                      # what an uninstall may remove besides the data (tests: a copy)
         self.bridge_factory = bridge_factory
-        self.config = merged_config(store.load("config.json", {}) or {})
+        # before anyone signs in the store is locked: only the start settings (no data) -- unlock() reads the rest
+        self.config = merged_config(store.load("config.json", {}) or {}) if store.is_open else merged_config({"ui": access.start_settings(data_dir)})
+        self._open_lock = threading.Lock()
         self.apply_language()
         self.sessions = auth.Sessions(idle_minutes=int(self.config["ui"].get("lock_minutes", 15)))
         self.ledger: Optional[Ledger] = None            # letzter Stand aus MoneyMoney
         self.ledger_time: Optional[datetime] = None
         self.umsaetze: Optional[list] = None            # kompakte Umsatzliste des letzten Berichts (sonst aus umsaetze.json)
-        st = store.load("state.json", {}) or {}
+        st = (store.load("state.json", {}) or {}) if store.is_open else {}
         self.categories_raw: list = mm_categories.with_paths(st.get("categories_raw") or [])
         self.started = datetime.now()
         self.instance = secrets.token_hex(6)              # changes with every (re)start; the page waits for a new one after a restart
@@ -512,7 +515,8 @@ class App:
         self.check_lock = threading.Lock()
         self.ledger_cache_fp: Optional[str] = None
         self.ledger_from_cache = False
-        threading.Thread(target=self._load_ledger_cache, name="kontor-cache", daemon=True).start()
+        if store.is_open:
+            threading.Thread(target=self._load_ledger_cache, name="kontor-cache", daemon=True).start()
         self.mmh: dict = {"running": False, "step": None, "result": None}   # Kontostaende aus MoneyMoney einlesen
         if sys.platform == "darwin":          # Touch-ID-Helfer bei Bedarf (neu) uebersetzen
             threading.Thread(target=lambda: log.info("Touch ID helper: %s", auth.build_touchid()), name="kontor-touchid", daemon=True).start()
@@ -535,11 +539,114 @@ class App:
         self._mm_seen = False                           # lief MoneyMoney beim letzten Blick? (bestimmt den Takt)
         self._hb_written = 0.0
         self.prev_seen: Optional[datetime] = None       # wann der Dienst vor diesem Start zuletzt lief
+        self._read_prev_seen()
+
+    def _read_prev_seen(self) -> None:
         try:
-            ps = (store.load("state.json", {}) or {}).get("service_last")
+            ps = (self.store.load("state.json", {}) or {}).get("service_last") if self.store.is_open else None
             self.prev_seen = datetime.fromisoformat(ps) if ps else None
         except Exception:
             self.prev_seen = None
+
+    # -- the data key: only with a sign-in (access.py) ----------------------------------------------------------------------
+    def unlock(self, key: bytes, how: str) -> None:
+        """The data key after a sign-in: the store opens, the settings and the last state are read, the schedule goes on --
+        also once the interface locks again (the key stays in memory until the service ends)."""
+        with self._open_lock:
+            if self.store.is_open:
+                return
+            self.store.unlock(key, "login" if how in ("password", "touchid") else how)
+            try:
+                cfg = merged_config(self.store.load("config.json", {}) or {})
+                st = self.store.load("state.json", {}) or {}
+            except Exception:                            # the settings do not read: locked again, nothing runs on defaults
+                self.store.close()
+                raise
+            self.config = cfg
+            self.apply_language()
+            self.sessions.set_idle(int(self.config["ui"].get("lock_minutes", 15)))
+            self.categories_raw = mm_categories.with_paths(st.get("categories_raw") or [])
+            self._read_prev_seen()
+            threading.Thread(target=self._load_ledger_cache, name="kontor-cache", daemon=True).start()
+            access.write_start(self.data_dir, self.config)
+            log.info("Data opened after sign-in (%s) -- schedule and auto bookings go on", how)
+
+    def password_set(self) -> bool:
+        if not self.store.encrypted:                     # without encryption (tests only): Kontor's password in its record
+            return bool(self.auth_record())
+        return access.password_set(self.data_dir)
+
+    def sign_in(self, password: str) -> bool:
+        """Kontor's password: opens the data key (the store is locked) or checks it against the key in use."""
+        if self.store.is_open:
+            return self.check_password(password)
+        got = access.unlock_password(self.data_dir, password, finish=True)
+        if got is None:
+            return False
+        self.unlock(*got)
+        self.key_complete(password)
+        return True
+
+    def sign_in_touchid(self) -> bool:
+        """Touch ID (at the Mac): with the key in memory the macOS window confirms you; otherwise the Secure Enclave's key opens
+        the data key -- after Touch ID or the Mac's password."""
+        if self.store.is_open:
+            return auth.touchid_verify()
+        got = access.unlock_touchid(self.data_dir)
+        if got is None:
+            return False
+        self.unlock(*got)
+        self.key_complete(None)
+        return True
+
+    def check_password(self, password: str) -> bool:
+        """Kontor's password while signed in (something weighty): does it open the key in use?"""
+        if not self.store.encrypted:
+            rec = self.auth_record()
+            return bool(rec) and auth.verify_password(password, rec)
+        ok = access.verify_password(self.data_dir, self.store.master, password)
+        if ok and access.state(self.data_dir) != "login":
+            self.key_complete(password)                  # from before: the key file follows with this password
+        return ok
+
+    def key_complete(self, password: Optional[str]) -> None:
+        """After a sign-in: the key file (from before: made with the password), the key from before gone once the key file
+        provably opens every file, Touch ID's entry as switched. A failure is logged -- the next sign-in tries again."""
+        try:
+            access.complete(self.data_dir, self.store.master, password)
+        except Exception:
+            log.exception("Key file not completed -- tried again at the next sign-in")
+        self.sync_touchid()
+
+    def sync_touchid(self) -> None:
+        if not self.store.encrypted or not self.store.is_open:
+            return
+        try:
+            access.set_touchid(self.data_dir, self.store.master, self.touchid_on())
+        except Exception:
+            log.exception("Touch ID's key not set up")
+
+    def first_password(self, password: str) -> None:
+        """The first password (setup): the key in use -- or from before, or a new one where no data are -- wrapped with it."""
+        if self.store.encrypted or not self.store.is_open:
+            key = access.setup_key(self.data_dir, self.store)
+            opened = not self.store.is_open
+            if opened:
+                self.unlock(key, "password")
+            try:
+                if not access.complete(self.data_dir, key, password) and access.state(self.data_dir) != "login":
+                    raise StoreError(tr("s_schluessel_passt_nicht"))
+            except Exception:
+                if opened:                               # a key kept nowhere: not used (nothing was written with it)
+                    self.store.close()
+                raise
+        self.store.save("auth.json", auth.with_offline(auth.hash_password(password), password))
+        self.sync_touchid()
+
+    def set_password(self, password: str) -> None:
+        if self.store.encrypted:
+            access.change_password(self.data_dir, self.store.master, password)
+        self.store.save("auth.json", auth.with_offline(auth.hash_password(password), password))
 
     # -- assistant (a language model on this Mac; assistant.py) --------------------------------------------------------------
     @property
@@ -594,6 +701,9 @@ class App:
         self.config = new
         self.store.save("config.json", self.config)
         log.info("Configuration saved (changed: %s)", ", ".join(changed) or "nothing")
+        access.write_start(self.data_dir, self.config)          # what the service needs before the next sign-in
+        if "ui" in changed:
+            self.sync_touchid()
         self.sessions.set_idle(int(self.config["ui"].get("lock_minutes", 15)))
         self.apply_language()
         if i18n.lang() != old_lang and self.ledger is not None:
@@ -933,6 +1043,11 @@ class App:
             log.info("Restarting service for new access settings")
             threading.Timer(1.5, restart_process).start()
 
+    def remote_retry(self) -> None:
+        bind = ((self.config.get("ui") or {}).get("bind") or "127.0.0.1").strip()
+        if bind != "127.0.0.1" and not self.remote_listening and self._handler is not None and time.time() - self.remote_tried >= 60:
+            self.start_remote()
+
     def start_remote(self) -> None:
         """Zweiten Zugang auf der eingestellten Tailscale-Adresse oeffnen (mit TLS, wenn ein Zertifikat eingetragen ist).
         Klappt das nicht (Tailscale noch nicht verbunden), versucht es der Zeitplaner jede Minute erneut."""
@@ -1190,7 +1305,7 @@ class App:
             self.store.update("state.json", upd, {})
 
     def heartbeat(self) -> None:
-        if time.time() - self._hb_written >= 300:
+        if self.store.is_open and time.time() - self._hb_written >= 300:
             self._hb_written = time.time()
             now = datetime.now().isoformat(timespec="seconds")
             self.store.update("state.json", lambda cur: cur.__setitem__("service_last", now), {})
@@ -1220,6 +1335,15 @@ class App:
 
     def scheduler(self) -> None:
         while not self.stop.is_set():
+            if not self.store.is_open:                   # nobody signed in since the start: nothing reads the data -- the schedule waits
+                try:
+                    if self.restart_if_code_changed():
+                        return
+                    self.remote_retry()
+                except Exception:  # pragma: no cover
+                    log.exception("Scheduler (locked)")
+                self.stop.wait(2)
+                continue
             try:
                 if self.restart_if_code_changed():
                     return
@@ -1267,9 +1391,7 @@ class App:
             except Exception:  # pragma: no cover
                 log.exception("Scheduler")
             try:
-                bind = ((self.config.get("ui") or {}).get("bind") or "127.0.0.1").strip()
-                if bind != "127.0.0.1" and not self.remote_listening and self._handler is not None and time.time() - self.remote_tried >= 60:
-                    self.start_remote()
+                self.remote_retry()
             except Exception:  # pragma: no cover
                 log.exception("Remote access")
             try:
@@ -1592,7 +1714,7 @@ class App:
         foreign, failed = _remove_own_files(data, keep)
         (left if failed else done).append(data)
         key = False
-        if not any(n.endswith((".enc", ".enc.tmp")) for n in (storage_names(data) if os.path.isdir(data) else [])):     # also in its folders (chats)
+        if not any(n.endswith((".enc", ".enc.tmp", ".enc.renew")) for n in (storage_names(data) if os.path.isdir(data) else [])):     # also in its folders (chats)
             key = self.uninstall_key()
         log.warning("Uninstalled: %d removed, %d left, key %s", len(done), len(left), "removed" if key else "kept")
         return {"ok": True, "removed": done, "kept": left, "key_removed": key, "foreign": foreign,
@@ -1614,13 +1736,9 @@ class App:
         return [os.path.expanduser(p) for p in out if isinstance(p, str)]
 
     def uninstall_key(self) -> bool:
-        """Deletes Kontor's data key in the keychain (only its own entry). True when it is gone."""
-        if self.store.key_source != "keychain":
-            return False
-        import storage
-        storage._security(["delete-generic-password", "-s", storage.KEYCHAIN_SERVICE, "-a", storage.KEYCHAIN_NEXT])
-        rc, _, _ = storage._security(["delete-generic-password", "-s", storage.KEYCHAIN_SERVICE, "-a", storage.KEYCHAIN_ACCOUNT])
-        return rc == 0
+        """Deletes Kontor's data key: the key file and a key from before (only Kontor's own keychain entries, master.key) --
+        only when no encrypted file is left. True when no key is left."""
+        return access.remove_keys(self.data_dir)
 
     def uninstall_finish(self) -> None:
         """After the answer: launchd drops the service (it stops this process) -- else the process ends by itself; launchd
@@ -1652,7 +1770,8 @@ class App:
             "moneymoney": {"running": is_running(), "locked": self.moneymoney_gesperrt(max_age=3.0 if frisch else 45.0), "from_cache": self.ledger_from_cache,
                            "as_of": self.ledger_time.strftime("%Y-%m-%d %H:%M") if self.ledger_time else None,
                            "bank_fetch": self.bankabruf(), "gaps": len(st.get("gaps") or []), "problem_text": st.get("sync_problem"), "history": st.get("mm_history_src")},
-            "storage": {"encrypted": self.store.encrypted, "key_source": self.store.key_source, "folder": self.data_dir, "program_folder": self.program_dir},
+            "storage": {"encrypted": self.store.encrypted, "key_source": access.key_source(self.data_dir, self.store), "folder": self.data_dir,
+                        "program_folder": self.program_dir, "touchid_unlock": access.touchid_ready(self.data_dir)},
             "receipts": {"folder": os.path.expanduser(bcfg.get("folder") or "~/Documents/Kontor-Belege")},
             "dry_run": self.config.get("dry_run", True),
             "last_run": st.get("last_run"),
@@ -2210,6 +2329,8 @@ def make_handler(app: App):
 
         def _session(self) -> Optional[dict]:
             # a request the page sends without you having touched it for a minute (status poll, progress) is no activity
+            if not app.store.is_open:                    # no data key in memory: nobody is signed in
+                return None
             return app.sessions.get(self._cookie(), touch=self.headers.get("X-Kontor-Background") != "1")
 
         def _sec_headers(self) -> None:
@@ -2251,7 +2372,7 @@ def make_handler(app: App):
         def _wrong_password(self, pw, key: str = "s_passwort_falsch") -> bool:
             """Kontor's password, asked again for something weighty: False when it is right. Otherwise the answer is sent
             (wrong -- counted like a failed sign-in --, or: too many wrong ones, wait) and True comes back."""
-            ok = app.sessions.check_password(self._remote(), str(pw or ""), app.auth_record())
+            ok = app.sessions.check_password(self._remote(), str(pw or ""), app.check_password)
             if ok:
                 return False
             if ok is None:
@@ -2317,11 +2438,16 @@ def make_handler(app: App):
             q = {k: v[0] for k, v in parse_qs(u.query).items()}
             if u.path == "/api/session":
                 s = self._session()
-                rec = app.auth_record()
+                setup = not app.password_set()           # nothing of the data is read here: the key file, the start settings
+                locked = not app.store.is_open
                 return self._json(200, {"signed_in": s is not None, "csrf": s["csrf"] if s else None,
-                                        "setup_needed": not rec and self._loopback(),
-                                        "setup_local_only": not rec and not self._loopback(),
-                                        "touchid": auth.touchid_available() and self._loopback() and app.touchid_on(),
+                                        "setup_needed": setup and self._loopback(),
+                                        "setup_local_only": setup and not self._loopback(),
+                                        # after a restart Touch ID opens the data only with its key in the key file (not from before)
+                                        "touchid": auth.touchid_available() and self._loopback() and app.touchid_on() and not setup
+                                                   and (not locked or access.touchid_ready(app.data_dir)),
+                                        "waiting": locked and not setup,           # the schedule and auto bookings wait for a sign-in
+                                        "switch": locked and access.state(app.data_dir) == "legacy",     # from before: once with the password
                                         "touchid_available": auth.touchid_available() and self._loopback(),
                                         "locked_seconds": app.sessions.locked(self._remote()), "local": self._loopback(), "instance": app.instance,
                                         "offline_copy": app.offline_copy(), "version": version()})
@@ -2604,12 +2730,15 @@ def make_handler(app: App):
             remote = self._remote()
 
             if u.path == "/api/setup":
-                if app.auth_record() or not self._loopback():
+                if app.password_set() or not self._loopback():
                     return self._json(403, {"error": tr("s_einrichtung_nur_einmal_und_nur")})
                 err = auth.password_ok(str(body.get("password", "")))
                 if err:
                     return self._json(400, {"error": err})
-                app.store.save("auth.json", auth.with_offline(auth.hash_password(str(body["password"])), str(body["password"])))
+                try:
+                    app.first_password(str(body["password"]))
+                except StoreError as e:
+                    return self._json(409, {"error": str(e)})
                 if isinstance(body.get("touchid"), bool) or body.get("language") in i18n.LANGS:
                     cfg = copy.deepcopy(app.config)
                     if isinstance(body.get("touchid"), bool):
@@ -2624,13 +2753,20 @@ def make_handler(app: App):
                 wait = app.sessions.locked(remote)
                 if wait:
                     return self._json(429, {"error": tr("s_zu_viele_fehlversuche") % wait})
-                rec = app.auth_record()
-                if not rec:
+                if not app.password_set():
                     return self._json(403, {"error": tr("s_noch_kein_passwort_festgelegt_einricht")})
-                ok = app.sessions.check_password(remote, str(body.get("password", "")), rec)
+                try:
+                    ok = app.sessions.check_password(remote, str(body.get("password", "")), app.sign_in)
+                except StoreError as e:                  # the key file does not read, or its key does not open the data
+                    log.error("Sign-in: %s", e)
+                    return self._json(409, {"error": str(e)})
+                except Exception as e:
+                    log.exception("Sign-in")
+                    return self._json(500, {"error": tr("s_interner_fehler_s") % e})
                 if ok is None:
                     return self._json(429, {"error": tr("s_zu_viele_fehlversuche") % app.sessions.locked(remote)})
                 if ok:
+                    rec = app.auth_record()
                     if not rec.get("offline"):
                         app.store.save("auth.json", auth.with_offline(rec, str(body.get("password", ""))))
                         log.info("Offline verifier for the iPhone view created")
@@ -2644,9 +2780,17 @@ def make_handler(app: App):
                     return self._json(403, {"error": tr("s_touch_id_nur_an_diesem")})
                 if not app.touchid_on():
                     return self._json(403, {"error": tr("s_touch_id_ist_in_den")})
-                if not app.auth_record():
+                if not app.password_set():
                     return self._json(403, {"error": tr("s_zuerst_ein_passwort_festlegen")})
-                if auth.touchid_verify():
+                try:
+                    ok = app.sign_in_touchid()
+                except StoreError as e:
+                    log.error("Sign-in with Touch ID: %s", e)
+                    return self._json(409, {"error": str(e)})
+                except Exception as e:
+                    log.exception("Sign-in with Touch ID")
+                    return self._json(500, {"error": tr("s_interner_fehler_s") % e})
+                if ok:
                     s = app.sessions.create(remote, "touchid")
                     log.info("Login with Touch ID")
                     return self._json(200, {"ok": True, "csrf": s["csrf"]}, self._set_cookie(s["token"]))
@@ -2789,12 +2933,18 @@ def make_handler(app: App):
                 app.sessions.drop_all()
                 return self._json(200, {"ok": True}, self._set_cookie("", clear=True))
             if path == "/api/password":
-                if self._wrong_password(body.get("old"), "s_altes_passwort_falsch"):
+                if not body.get("old") and local and app.touchid_on() and auth.touchid_available():
+                    if not auth.touchid_verify():                # forgotten: Touch ID (or the Mac's password) instead, at the Mac
+                        return self._json(401, {"error": tr("s_touch_id_nicht_bestaetigt")})
+                elif self._wrong_password(body.get("old"), "s_altes_passwort_falsch"):
                     return
                 err = auth.password_ok(str(body.get("new", "")))
                 if err:
                     return self._json(400, {"error": err})
-                app.store.save("auth.json", auth.with_offline(auth.hash_password(str(body["new"])), str(body["new"])))
+                try:
+                    app.set_password(str(body["new"]))
+                except StoreError as e:
+                    return self._json(409, {"error": str(e)})
                 n = app.sessions.drop_others(s["token"])                # other devices have to sign in with the new password
                 new = app.sessions.rotate(s["token"])                    # and this one goes on under a new token
                 log.info("Password changed, %d other session(s) ended, this one renewed", n)
@@ -3140,6 +3290,9 @@ def make_handler(app: App):
                 app.config = merged_config({})
                 app.ledger, app.ledger_time, app.categories_raw, app.last_result, app.last_run_at, app.umsaetze = None, None, [], None, None, None
                 app.sessions.drop_all()
+                access.write_start(app.data_dir, app.config)      # the access as after a fresh setup (only this Mac) from the next start
+                if body.get("with_password") and app.store.encrypted:
+                    access.forget(app.store)             # the data key goes with the password (and every file it opened)
                 log.warning("Program reset (%s); receipt files and log kept", ", ".join(dateien))
                 return self._json(200, {"ok": True, "setup_again": bool(body.get("with_password"))}, self._set_cookie("", clear=True))
             if path == "/api/uninstall":
@@ -3159,9 +3312,8 @@ def make_handler(app: App):
                     return self._json(403, {"error": tr("s_nur_von_diesem_mac_aus")})
                 if self._wrong_password(body.get("password")):
                     return
-                from storage import StoreError
                 try:
-                    n = app.store.renew_key()
+                    n = access.renew(app.store, str(body.get("password") or ""))
                 except StoreError as e:
                     return self._json(409, {"error": str(e)})
                 return self._json(200, {"ok": True, "files": n})
@@ -3630,7 +3782,8 @@ ASSISTANT_ASK = ("/api/assistant/ask", "/api/assistant/stop", "/api/assistant/re
 
 _KONTOR_FILE = re.compile(r"(?:^|\s)(?:(?:auth|cf-ids|config|dataset|plan|receipts|state|transactions|categories|mm-history|offline[\w-]*|assistant-chats|assistant-changes|assistant-web|memory-[a-z]+(?:-\d{4,6})?"
                           r"|assistant-chat-[0-9a-f]{8,32})\.json(?:\.enc)?(?:\.tmp|\.renew)?"
-                          r"|moneymoney-ledger\.bin(?:\.enc)?(?:\.tmp|\.renew)?|kontor\.log[\w.]*|service\.(?:out\.log|err\.log|lock)|master\.key|tls|assistant|chats)(?=\s|$)")
+                          r"|moneymoney-ledger\.bin(?:\.enc)?(?:\.tmp|\.renew)?|kontor\.log[\w.]*|service\.(?:out\.log|err\.log|lock)|master\.key|key\.json(?:\.tmp)?|key\.lock"
+                          r"|start\.json(?:\.tmp)?|tls|assistant|chats)(?=\s|$)")
 
 
 def _remove_own_files(data: str, keep: List[str]) -> Tuple[List[str], List[str]]:
@@ -3639,9 +3792,10 @@ def _remove_own_files(data: str, keep: List[str]) -> Tuple[List[str], List[str]]
     from receipts import _canon
     foreign, failed, kept = [], [], False
     # a key in a file goes last, and only when no encrypted file is left (a key is never deleted while data it opens remain)
-    for name in sorted(os.listdir(data), key=lambda n: (n == "master.key", n)):
+    keys = ("master.key", "key.json")
+    for name in sorted(os.listdir(data), key=lambda n: (n in keys, n)):
         full = os.path.join(data, name)
-        if name == "master.key" and any(n.endswith((".enc", ".enc.tmp", ".enc.renew")) for n in storage_names(data)):
+        if name in keys and any(n.endswith((".enc", ".enc.tmp", ".enc.renew")) for n in storage_names(data)):
             failed.append(name); continue
         if any(_canon(full) == k or k.startswith(_canon(full).rstrip(os.sep) + os.sep) for k in keep):
             kept = True; continue
@@ -3781,7 +3935,10 @@ def serve(app: App) -> None:
         log.error("Port %d on 127.0.0.1 not usable (%s) -- is Kontor already running? Change the port in the settings.", port, e)
         raise SystemExit(2)
     app._handler = handler
-    app.assistant                           # a model left over from before this start is ended
+    try:
+        app.assistant                       # a model left over from before this start is ended
+    except StoreLocked:                     # it reads the data: made with its first use after the sign-in
+        app._assistant = None
     atexit.register(app.assistant_stop)
 
     def _term(signum, frame):               # the service is ended (launchd, logout): the model ends first, then as before
