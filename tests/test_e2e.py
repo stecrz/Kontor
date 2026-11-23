@@ -4815,6 +4815,7 @@ class BrowserTest(unittest.TestCase):
                 # what Kontor needs: present or missing, following a change in the table at once
                 pg.evaluate("document.querySelector('details.kb').open = true")
                 n0 = pg.inner_text("#kb-sum"); self.assertRegex(n0, r"^\d+ von \d+ vorhanden$")
+                kb = pg.inner_text(".kb-table"); self.assertIn("Finanzierung", kb); self.assertIn("Am besten jedes Darlehen", kb); self.assertIn("Empfohlen in MoneyMoney", kb)
                 pg.select_option('.kp-table tr[data-p="Umbuchung"] .kp-pos', "living"); pg.wait_for_timeout(100)
                 self.assertNotEqual(pg.inner_text("#kb-sum"), n0); self.assertIn("fehlt", pg.inner_text(".kb-table"))
                 pg.select_option('.kp-table tr[data-p="Umbuchung"] .kp-pos', ""); pg.wait_for_timeout(100); self.assertEqual(pg.inner_text("#kb-sum"), n0)

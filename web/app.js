@@ -5817,11 +5817,15 @@ async function vPositionen() {
   });
   return h + '</tbody></table></div>' + vAnlageEmpfaenger() + '</div>';
 }
-// what Kontor needs from your categories in MoneyMoney: per need, whether one of yours counts there (and which), else what to
-// create -- updated as you change a position below; the why of each need in its tooltip
-const KB_NEEDS = [['work_income', ['work_income']], ['capital_income', ['capital_income']], ['housing', ['housing']], ['living', ['living']],
-  ['more', ['mobility', 'insurance', 'health', 'leisure', 'taxes']], ['saving', ['saving']], ['loans', ['repayment', 'loan_interest']],
-  ['property', ['property']], ['property_buy', ['property_saving']], ['transfer', ['transfer']]];
+// what Kontor needs from your categories in MoneyMoney: the recommended tree, grouped like the positions' menu, each group
+// with how it is best set up; per row whether one of yours counts there (and which) -- updated as you change a position below
+// [key (text kb_<key>: the category to create, kb_<key>_sub its subcategories, kb_<key>_tip why), group, positions, only if needed]
+const KB_TREE = [['work_income', 'einnahmen', ['work_income']], ['capital_income', 'einnahmen', ['capital_income']],
+  ['housing', 'ausgaben', ['housing']], ['living', 'ausgaben', ['living']], ['mobility', 'ausgaben', ['mobility']],
+  ['insurance', 'ausgaben', ['insurance']], ['health', 'ausgaben', ['health']], ['leisure', 'ausgaben', ['leisure']],
+  ['taxes', 'ausgaben', ['taxes']], ['saving', 'sek_investitionen', ['saving'], true], ['loans', 'finanzierung', ['repayment', 'loan_interest'], true],
+  ['transfer', 'sonstiges', ['transfer']], ['property', 'kb_g_property', ['property']], ['property_buy', 'kb_g_property', ['property_saving'], true]];
+const KB_SAME_TIP = ['mobility', 'insurance', 'health', 'leisure', 'taxes'];      // one reason for these (kb_more_tip)
 let kbSeen = false;
 function kbCard() {
   if (!kbSeen && setupOpen()) KEEP_OPEN.add('kp-kb');          // open while you set Kontor up (closed afterwards: as you left it)
@@ -5835,19 +5839,23 @@ function kbRefresh(eff) {
   for (const r of eff) { const k = r.obj ? (r.eff === 'saving' ? 'property_saving' : ['repayment', 'loan_interest', 'ignore'].includes(r.eff) ? r.eff : 'property') : r.eff;
     if (k) { if (!at.has(k)) at.set(k, []); at.get(k).push(r.path); } }
   const props = ((S.CFG || {}).real_estate || []).length > 0 || eff.some(r => r.obj);
-  const needs = KB_NEEDS.filter(([k]) => props || !k.startsWith('property'));
-  let ok = 0;
-  const rows = needs.map(([k, ps]) => {
+  let ok = 0, all = 0, grp = '', rows = '';
+  for (const [k, g, ps, opt] of KB_TREE) {
+    if (g === 'kb_g_property' && !props) continue;
     const mine = ps.flatMap(p => at.get(p) || []), have = mine.length > 0, miss = ps.filter(p => !(at.get(p) || []).length);
     if (have) ok++;
+    if (have || !opt) all++;
+    if (g !== grp) { grp = g; const how = I18N[`kb_how_${g}`] ? t(`kb_how_${g}`) : '';
+      rows += `<tr class="kb-sec"><td colspan="3"><b>${esc(t(g))}</b>${how ? ` <span class="small muted">${esc(how)}</span>` : ''}</td></tr>`; }
     const names = mine.slice(0, 2).map(CP).join(', ') + (mine.length > 2 ? ' ' + t('kb_und_n', mine.length - 2) : '');
     const part = have && miss.length && ps.length > 1 ? ` · <span class="kb-miss">${esc(t('kb_fehlt_noch', miss.map(p => posLabel(p)).join(', ')))}</span>` : '';
-    const tip = t(`kb_${k}_tip`) + (have ? '' : ' ' + t('kb_anlegen', t(`kb_${k}_bsp`)));
-    return `<tr class="${have ? 'kb-ok' : ''}"><td><span class="kb-mark">${have ? '✓' : '○'}</span>${esc(t(`kb_${k}`))}<span class="hq" tabindex="0" data-tip="${esc(tip)}">?</span></td>`
-      + `<td class="${have ? '' : 'muted'}">${have ? esc(names) + part : esc(t('kb_fehlt_bsp', t(`kb_${k}_bsp`)))}</td></tr>`;
-  }).join('');
-  body.innerHTML = `<table class="plain kb-table"><tbody>${rows}</tbody></table>`;
-  const sum = $('#kb-sum'); if (sum) sum.textContent = t('kb_n_von', ok, needs.length);
+    const sub = I18N[`kb_${k}_sub`] ? t(`kb_${k}_sub`) : '', tip = t(`kb_${KB_SAME_TIP.includes(k) ? 'more' : k}_tip`) + (have ? '' : ' ' + t('kb_anlegen'));
+    rows += `<tr class="${have ? 'kb-ok' : opt ? 'kb-opt' : ''}"><td class="kb-mark">${have ? '✓' : '○'}</td>`
+      + `<td>${esc(t(`kb_${k}`))}${sub ? ` <span class="muted">› ${esc(sub)}</span>` : ''}<span class="hq" tabindex="0" data-tip="${esc(tip)}">?</span></td>`
+      + `<td>${have ? esc(names) + part : esc(t(opt ? 'kb_bei_bedarf' : 'kb_fehlt'))}</td></tr>`;
+  }
+  body.innerHTML = `<table class="plain kb-table"><thead><tr><th></th><th>${t('kb_empfohlen')}</th><th>${t('kb_bei_dir')}</th></tr></thead><tbody>${rows}</tbody></table>`;
+  const sum = $('#kb-sum'); if (sum) sum.textContent = t('kb_n_von', ok, all);
 }
 // the target account a saving category gets by itself (from the recipients in the cash flow): not needed (transfers to your
 // own accounts), found, or missing -- shown in its menu, so it is clear whether to choose

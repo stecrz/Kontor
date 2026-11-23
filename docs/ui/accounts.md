@@ -93,10 +93,15 @@ transactions in the user's areas are listed. Choices count after "Speichern"; th
 categories are never changed; Kontor creates none.
 
 ### accounts.positions.needs — Was Kontor von deinen Kategorien braucht
-A folded card; its title shows "X von Y vorhanden". One row per need – Einkommen, Kapitalerträge, Wohnen, Lebenshaltung, Weitere
-Ausgaben, Sparen & Anlegen, Darlehen (Tilgung and Zinsen), Umbuchung; with a property also "Immobilie: Miete und Kosten" and
-"Immobilie: Kauf". ✓ = at least one of the user's categories counts there (named, "und N weitere"; "fehlt noch: …" when only part of
-a need is covered); ○ = none yet, with an example of a category to create in MoneyMoney. It follows the table below live.
+A folded card; its title shows "X von Y vorhanden" (Y: the recommended rows plus those "bei Bedarf" that are present). The
+recommended category tree for MoneyMoney, grouped like the position menu – Einnahmen, Ausgaben, Investitionen, Finanzierung,
+Sonstiges, with a property also "Je Immobilie" –, each group with one line on how it is best set up. Investitionen and
+Finanzierung: best every investment and every loan as an account in MoneyMoney; then Kontor splits by the account's kind (and
+shows payout, repayment and interest per loan) with no category – the rows "Sparen & Anlegen" (money to an investment without
+transactions in MoneyMoney) and "Darlehen › Tilgung · Zinsen" (a loan without an account) are only "bei Bedarf". Column
+**Empfohlen in MoneyMoney**: the category to create, its subcategories after "›". Column **Bei dir**: ✓ = at least one of the
+user's categories counts there (named, "und N weitere"; "fehlt noch: …" when only part is covered); ○ with "fehlt" or "bei
+Bedarf" = none yet. It follows the table below live.
 
 ### accounts.positions.table — Kategorien und Positionen
 One row per category, indented under its parent (parents in bold).

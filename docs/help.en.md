@@ -330,11 +330,13 @@ Above the table stands what Kontor needs from your categories in MoneyMoney – 
 | Category in MoneyMoney | Position |
 |---|---|
 | Gehalt, Kapitalerträge, Wohnen › Miete …, Lebenshaltung › …, Mobilität, Versicherungen … | the one of the same name each |
-| Sparen › one per investment (portfolio, fixed deposit, pension plan with capital …) | Saving & investing, target account per subcategory |
-| Darlehen › Tilgung, Zinsen | Repayment, Interest |
+| Sparen & Anlegen – only for money to investments without transactions in MoneyMoney (pension plan, building savings); one category is enough | Saving & investing, target account beside it or per recipient |
+| Darlehen › Tilgung, Zinsen – only for loans without an account in MoneyMoney | Repayment, Interest |
 | Immobilie ‹name› › Miete, Kosten | the property's rows (Properties → category) |
 | Immobilie ‹name› › Kauf (purchase price, costs) | Saving & investing (choose it), target account: the property's account |
 | Umbuchung | Transfer – between your accounts and areas, also contributions and withdrawals |
+
+Investing and financing are best set up through accounts: every investment (portfolio, fixed deposit, pension plan as a manual account) and every loan as an account of its own in MoneyMoney. Kontor then finds savings by their counter-booking, splits investing by the kind of account (securities, property, participations …) and shows payout, repayment and interest per loan – with no category at all. That is why there are no further positions for them; the categories above are only for money whose destination is no account with transactions in MoneyMoney (the card calls them “if needed”). A loan payout counts as a loan taken up only through a loan account.
 
 Kontor recognises these (German) names and proposes the position itself; a ✓ means one of your categories counts there already. You create them in MoneyMoney – Kontor creates no categories. Payments between two of your areas (a contribution to your partnership, say) count as a contribution or withdrawal as long as their category is no income or expense – clearest with “Umbuchung”. If you also book them against a manual capital account (at home a participation or receivable, in the company a liability), Kontor links the payment with that counter-booking: the net worth stays, no change in value arises. If the account does not visibly belong to the other area (its name, an account mirror, the participation) and the booking fits another payment without an IBAN just as well, it stays as it is – the payment then counts as a plain contribution or withdrawal.
 

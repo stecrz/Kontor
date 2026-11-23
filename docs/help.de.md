@@ -330,11 +330,13 @@ Die Planung plant jede Position und die Kategorien darin; ein Budget aus MoneyMo
 | Kategorie in MoneyMoney | Position |
 |---|---|
 | Gehalt, Kapitalerträge, Wohnen › Miete …, Lebenshaltung › …, Mobilität, Versicherungen … | jeweils die gleichnamige |
-| Sparen › je Anlage eine (Depot, Festgeld, Rentenversicherung mit Kapital …) | Sparen & Anlegen, Zielkonto je Unterkategorie |
-| Darlehen › Tilgung, Zinsen | Tilgung, Zinsen |
+| Sparen & Anlegen – nur für Geld an Anlagen ohne Umsätze in MoneyMoney (Rentenversicherung, Bausparvertrag); eine Kategorie reicht | Sparen & Anlegen, Zielkonto daneben oder je Empfänger |
+| Darlehen › Tilgung, Zinsen – nur für Darlehen ohne Konto in MoneyMoney | Tilgung, Zinsen |
 | Immobilie ‹Name› › Miete, Kosten | die Zeilen der Immobilie (Immobilien → Kategorie) |
 | Immobilie ‹Name› › Kauf (Kaufpreis, Nebenkosten) | Sparen & Anlegen (selbst wählen), Zielkonto: das Konto der Immobilie |
 | Umbuchung | Umbuchung – zwischen deinen Konten und Bereichen, auch Einlagen und Entnahmen |
+
+Investitionen und Finanzierung stellst du am besten über Konten auf: jede Anlage (Depot, Festgeld, Rentenversicherung als manuelles Konto) und jedes Darlehen als eigenes Konto in MoneyMoney. Dann erkennt Kontor Sparraten an der Gegenbuchung, teilt die Investitionen nach Art des Kontos auf (Wertpapiere, Immobilien, Beteiligungen …) und zeigt Aufnahme, Tilgung und Zinsen je Darlehen – ganz ohne Kategorie. Weitere Positionen dafür gibt es deshalb nicht; die Kategorien oben brauchst du nur für Geld, dessen Ziel nicht als Konto mit Umsätzen in MoneyMoney steht (die Karte nennt sie „bei Bedarf“). Eine Darlehensauszahlung zählt nur über ein Darlehenskonto als Aufnahme.
 
 Diese Namen erkennt Kontor und schlägt die Position selbst vor; ein ✓ heißt, dass eine deiner Kategorien schon dort zählt. Anlegen musst du sie in MoneyMoney – Kontor legt keine Kategorien an. Zahlungen zwischen zwei deiner Bereiche (etwa eine Einlage in deine GbR) zählen als Einlage oder Entnahme, solange ihre Kategorie keine Einnahme oder Ausgabe ist – am klarsten mit „Umbuchung“. Buchst du sie zusätzlich in einem manuellen Kapitalkonto gegen (bei dir eine Beteiligung oder Forderung, in der Gesellschaft eine Verbindlichkeit), verbindet Kontor die Zahlung mit dieser Gegenbuchung: Das Nettovermögen bleibt, eine Wertänderung entsteht nicht. Gehört das Konto nicht erkennbar zum anderen Bereich (sein Name, ein Kontenspiegel, die Beteiligung) und passt die Buchung genauso gut zu einer anderen Zahlung ohne IBAN, bleibt sie, wie sie ist – die Zahlung zählt dann als schlichte Einlage oder Entnahme.
 

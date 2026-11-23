@@ -1,5 +1,9 @@
 # Änderungen
 
+## 3.17.30 (2026-11-23 22:05)
+- Cashflow-Positionen: „Was Kontor von deinen Kategorien braucht“ als empfohlener Kategorienbaum, gegliedert wie die Positionen, je Gruppe wie am besten aufgestellt.
+- Cashflow-Positionen: Investitionen und Finanzierung am besten über Konten in MoneyMoney; „Sparen & Anlegen“ und „Darlehen“ nur bei Bedarf, eine Kategorie reicht.
+
 ## 3.17.29 (2026-11-23 21:18)
 - KI-Assistent: größere Modelle in mehreren Dateien – jede Datei per SHA-256 geprüft, ein Fortschritt, Platz vorab für alle, eingesetzt erst, wenn alle stimmen
 - KI-Assistent: Gruppe „Für einen stärkeren Rechner“ mit Qwen3.8 Flash Next (ca. 94 GB) – sichtbar auf jedem Mac, ladbar erst ab 128 GB Arbeitsspeicher, nie empfohlen
