@@ -8,6 +8,7 @@ text it reads changes nothing); in the backup, never in the log; a reset deletes
 import json
 import logging
 import os
+import re
 import secrets
 import shutil
 import sys
@@ -413,7 +414,8 @@ class Carried(_Mem):
     def test_one_file_to_read_and_for_programs(self):
         self.filled()
         odd = ("- 3 % Rendite wären zu wenig", "1. Januar: Miete steigt", "# kein Titel", "> kein Zitat", "*kein* _Schmuck_ und `kein` Code",
-               "<img src=x onerror=alert(1)> ![Bild](https://example.org/x.png) [Link](https://example.org)", "``` und ~~~ und &amp; \\ am Ende \\")
+               "<img src=x onerror=alert(1)> ![Bild](https://example.org/x.png) [Link](https://example.org)", "``` und ~~~ und &amp; \\ am Ende \\",
+               "Seite https://example.org/a?b=1 und www.example.org, Post an otto@example.org, HTTP://EXAMPLE.ORG und x://y")
         for text in odd:
             self.m.add(text)
         self.told.clear()
@@ -424,7 +426,7 @@ class Carried(_Mem):
         text = out["text"]
         lines = text.split("\n")
         self.assertEqual(lines[0], "# Gedächtnis des KI-Assistenten")
-        self.assertRegex(lines[2], r"^Exportiert aus Kontor 9\.8\.7 am \d\d\.\d\d\.\d{4} um \d\d:\d\d Uhr · 11 Notizen · Format kontor-memory, Version 1$")
+        self.assertRegex(lines[2], r"^Exportiert aus Kontor 9\.8\.7 am \d\d\.\d\d\.\d{4} um \d\d:\d\d Uhr · 12 Notizen · Format kontor-memory, Version 1$")
         read, _, rest = text.partition("\n## Daten\n")
         self.assertEqual(rest.count("```"), 2)                                    # one block, whatever the notes say
         # for programs: the head and every note with what there is to know about it
@@ -433,7 +435,7 @@ class Carried(_Mem):
         self.assertRegex(doc["exported"], self.ISO)
         self.assertEqual(list(doc), ["format", "version", "exported", "kontor", "notes"])
         notes = {n["text"]: n for n in doc["notes"]}
-        self.assertEqual(len(notes), 11)
+        self.assertEqual(len(notes), 12)
         for n in doc["notes"]:
             self.assertRegex(n["created"], self.ISO)
             self.assertIn(n["origin"], ("chat", "pasted", "manual", "backup", "import"))
@@ -459,10 +461,12 @@ class Carried(_Mem):
         self.assertIn("\n- Frau Ottilie Wolkenstein betreut das Depot\n  - %s · in den Einstellungen notiert\n" % time.strftime("%d.%m.%Y"), read)
         # ... and nothing a note says is taken for a list, a heading, a quote, emphasis, code, a picture, a link or HTML
         for shown in ("- \\- 3 % Rendite wären zu wenig", "- 1\\. Januar: Miete steigt", "- \\# kein Titel", "- \\> kein Zitat", "- \\*kein\\* \\_Schmuck\\_ und \\`kein\\` Code",
-                      "- \\<img src=x onerror=alert(1)> !\\[Bild\\](https://example.org/x.png) \\[Link\\](https://example.org)", "- \\`\\`\\` und \\~\\~\\~ und \\&amp; \\\\ am Ende \\\\"):
+                      "- \\<img src=x onerror=alert(1)> !\\[Bild\\](https\\://example.org/x.png) \\[Link\\](https\\://example.org)", "- \\`\\`\\` und \\~\\~\\~ und \\&amp; \\\\ am Ende \\\\",
+                      "- Seite https\\://example.org/a?b=1 und www\\.example.org, Post an otto\\@example.org, HTTP\\://EXAMPLE.ORG und x\\://y"):
             self.assertIn("\n" + shown + "\n", read)
         self.assertEqual([ln for ln in read.split("\n") if ln.startswith(("#", ">", "<", "`", "~", "1.", "- -", "- #", "- >", "- <", "- 1."))],
                          ["# Gedächtnis des KI-Assistenten", "## Notizen"])
+        self.assertFalse(re.findall(r"(?i)https?:|www\.|[^\\\\]@", read))            # no address a reader would make a link of
         self.assertEqual([M._unmarked(ln[2:]) for ln in read.split("\n") if ln.startswith("- ")], [n["text"] for n in doc["notes"]])     # (what a reader shows is what the data say)
         # in English: the same file with English words
         MA.i18n.set_lang("en")
@@ -472,7 +476,7 @@ class Carried(_Mem):
             MA.i18n.set_lang("de")
         self.assertRegex(en["name"], r"^Kontor-Memory-\d{4}-\d\d-\d\d\.md$")
         self.assertIn("# Memory of the AI assistant\n\nExported from Kontor 9.8.7 on ", en["text"])
-        self.assertIn(" · 11 notes · format kontor-memory, version 1\n\n## Notes\n", en["text"])
+        self.assertIn(" · 12 notes · format kontor-memory, version 1\n\n## Notes\n", en["text"])
         self.assertIn("\n- Ziel: mit 45 finanziell frei\n  - %s · said in a conversation · pinned\n  - replaces: Ziel: mit 50 finanziell frei (%s)\n" % ((time.strftime("%d/%m/%Y"),) * 2), en["text"])
         self.assertEqual(self.data(en["text"])["notes"], doc["notes"])
 
@@ -585,7 +589,7 @@ class Carried(_Mem):
         came = [n for n in self.m.active() if n["id"] != mine["id"]]
         self.assertEqual(len(came), 7)
         for n in came:
-            self.assertEqual((n["source"], n.get("pinned"), n.get("named"), n.get("kind"), n["names"]), ({"how": "import"}, None, None, None, ["Fantasie"]))
+            self.assertEqual((n["source"]["how"], sorted(n["source"]), n.get("pinned"), n.get("named"), n.get("kind"), n["names"]), ("import", ["as", "at", "batch", "how"], None, None, None, ["Fantasie"]))
             self.assertLessEqual(n["created"], now); self.assertLessEqual(n["changed"], now)
             self.assertEqual([self.m.get(r)["text"][:22] for r in n["replaces"]], ["Ein früherer Wortlaut "])        # only what the file itself brought
         self.assertEqual((self.m.stats()["notes"], self.m.stats()["pinned"], self.m.stats()["replaced"]), (8, 1, 7))
@@ -646,8 +650,8 @@ class Carried(_Mem):
         self.assertEqual((got["kind"], got["ok"], got["problems"]), ("list", False, [{"at": 4, "why": "secret"}]))
         got = self.m.import_file("# Liste\n\n- Erste Notiz\n- Zweite Notiz\n")
         self.assertEqual((got["kind"], got["added"]), ("list", 2))
-        self.assertEqual([(n["text"], n["source"], n["created"][:10]) for n in self.m.active()],       # ... in the file's order: its first on top
-                         [("Erste Notiz", {"how": "import"}, time.strftime("%Y-%m-%d")), ("Zweite Notiz", {"how": "import"}, time.strftime("%Y-%m-%d"))])
+        self.assertEqual([(n["text"], n["source"]["how"], n["created"][:10]) for n in self.m.active()],       # ... in the file's order: its first on top
+                         [("Erste Notiz", "import", time.strftime("%Y-%m-%d")), ("Zweite Notiz", "import", time.strftime("%Y-%m-%d"))])
 
     def test_what_is_no_such_file(self):
         self.filled()
@@ -772,7 +776,7 @@ class Carried(_Mem):
         import random
         rnd = random.Random(20261123)
         signs = list("abcdefghijklmnopqrstuvwxyzäöüßABCXYZ0123456789") + [" "] * 12 + list("\\`*_[]<>~&#+-=.()!|:;,'\"/%€@^{}$?") + \
-            ["**", "__", "```", "~~~", "- ", "1. ", "# ", "> ", "&amp;", "&#x41;", "<b>", "![", "](", "\t", "\u200b", "é", "\u65e5\u672c", "  "]
+            ["**", "__", "```", "~~~", "- ", "1. ", "# ", "> ", "&amp;", "&#x41;", "<b>", "![", "](", "\t", "\u200b", "é", "\u65e5\u672c", "  ", "https://", "www.", "@", "://"]
         text = lambda: "".join(rnd.choice(signs) for _ in range(rnd.randint(1, 60)))
         for _ in range(1500):
             c = M.clean(text())
@@ -813,6 +817,72 @@ class Carried(_Mem):
                 continue
             self.assertIsInstance(got["ok"], bool); self.assertNotIn("added", got)
         self.assertEqual((self.m.active(), self.files(), self.told), ([], [], []))
+
+    def test_an_import_taken_back_in_one_step(self):
+        """Exactly the notes of that import which are as they came go (with the earlier wordings the file brought for them);
+        what was changed, pinned or replaced since stays and is counted; what was there before is untouched."""
+        mine = self.m.add("Schon vorher da")
+        self.assertIsNone(self.m.last_import())
+        first = self.m.import_file("Erste Fuhre eins\nErste Fuhre zwei\n")
+        got = self.m.import_file(self.doc("Bleibt wie gekommen", {"text": "Hausbank: Volksbank", "replaces": ["Hausbank: Sparkasse"]}, "Wird geändert", "Wird angeheftet", "Wird ersetzt",
+                                          {"text": "Kopf wird geändert", "replaces": ["Frühere Fassung dazu"]}))
+        self.assertEqual((got["added"], len(got["batch"])), (6, 12))
+        by = {n["text"]: n for n in self.m.listing(replaced=True)["items"]}
+        self.assertEqual(self.m.get(by["Bleibt wie gekommen"]["id"])["source"]["batch"], got["batch"])
+        self.m.edit(by["Wird geändert"]["id"], "Wurde geändert")
+        self.m.pin(by["Wird angeheftet"]["id"], True)
+        self.m.add("Ersetzt das Importierte", replaces=[by["Wird ersetzt"]["id"]])
+        self.m.edit(by["Kopf wird geändert"]["id"], "Kopf wurde geändert")
+        last = self.m.last_import()
+        self.assertEqual((last["batch"], last["notes"], last["stay"]), (got["batch"], 2, 3))          # (the replaced one counts no more)
+        self.assertRegex(last["at"], r"^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d$")
+        self.told.clear()
+        forgot = []
+        self.m.on_forget = lambda notes, everything: forgot.append((sorted(n["text"] for n in notes), everything))
+        with self.assertRaises(M.NoteError):
+            self.m.undo_import("0123456789ab")
+        self.assertEqual(self.m.undo_import(got["batch"], by="settings"), {"removed": 2, "stay": 3})
+        self.assertEqual(forgot, [(["Bleibt wie gekommen", "Hausbank: Sparkasse", "Hausbank: Volksbank"], False)])       # forgotten as any note is
+        self.assertEqual([(t[0], t[2]["count"], t[2]["by"]) for t in self.told], [("import_undo", 2, "settings")])
+        want = sorted(["Erste Fuhre eins", "Erste Fuhre zwei", "Ersetzt das Importierte", "Frühere Fassung dazu", "Kopf wurde geändert", "Schon vorher da", "Wird angeheftet", "Wird ersetzt", "Wurde geändert"])
+        self.assertEqual(sorted(n["text"] for n in self.m.listing(replaced=True)["items"]), want)
+        self.assertEqual(sorted(n["text"] for n in self.again().listing(replaced=True)["items"]), want)          # ... and in the files
+        self.assertEqual(self.m.get(mine["id"])["text"], "Schon vorher da")
+        self.assertEqual(self.m.search("Volksbank"), [])
+        with self.assertRaises(M.NoteError):
+            self.m.undo_import(got["batch"])                                      # nothing of it left to take back
+        last = self.m.last_import()                                               # now the import before it
+        self.assertEqual((last["batch"], last["notes"], last["stay"]), (first["batch"], 2, 0))
+        self.assertEqual(self.m.undo_import(first["batch"]), {"removed": 2, "stay": 0})
+        self.assertIsNone(self.m.last_import())
+        self.assertEqual(self.m.import_file("Erste Fuhre eins\n")["added"], 1)   # what was taken back can come again
+        # a backup's notes are no import to take back; a file cannot name a batch for its notes
+        m2, _ = self.other()
+        m2.merge(json.loads(json.dumps(self.m.export())))
+        self.assertIsNone(m2.last_import()); self.assertEqual({json.dumps(n["source"]) for n in m2.listing(replaced=True) and M.Memory(m2.store).active()}, {'{"how": "backup"}'})
+        m2.import_file(self.doc({"text": "Mit fremder Kennung", "source": {"how": "import", "batch": last["batch"]}, "batch": last["batch"]}))
+        self.assertNotEqual(m2.last_import()["batch"], last["batch"])
+
+    def test_taking_an_import_back_that_cannot_be_written(self):
+        with mock.patch.object(M, "SEGMENT", 3):
+            self.m.add("Schon vorher da")
+            got = self.m.import_file("".join("Obst im Garten: %s\n" % x for x in ("Apfel", "Birne", "Kirsche", "Dattel", "Feige")))
+            real, calls = self.store.write_bytes, []
+
+            def flaky(name, data):
+                calls.append(name)
+                if name.startswith("memory-notes") and len([c for c in calls if c.startswith("memory-notes")]) == 1:
+                    raise OSError("disk full")
+                return real(name, data)
+            self.told.clear()
+            with mock.patch.object(self.store, "write_bytes", side_effect=flaky):
+                with self.assertRaises(OSError):
+                    self.m.undo_import(got["batch"])
+            self.assertEqual(self.told, [])
+            self.assertEqual(sorted(n["text"] for n in self.m.active()), sorted(n["text"] for n in self.again().active()))      # as the files have it
+            left = self.m.last_import()
+            self.assertEqual(self.m.undo_import(got["batch"])["removed"], left["notes"])       # again: the rest
+            self.assertEqual([n["text"] for n in self.again().active()], ["Schon vorher da"])
 
     def test_nothing_before_the_sign_in(self):
         self.m.add("Ziel: mit 45 finanziell frei")
@@ -2173,6 +2243,7 @@ class Http(_Assist):
         finally:
             self.remote(False)
         self.assertEqual((len(self.notes()), logged()), (2, [("import", 2), ("export", 2)]))
+        self.assertIn("/api/assistant/memory/import/undo", MA.MAC_ONLY)
         self.assertIn("/api/assistant/memory/import", MA.MAC_ONLY)               # ... nor from an added iPhone, also with Face ID (the export: _at_mac)
         with mock.patch.object(A.Assistant, "_log_write", side_effect=OSError("disk full")):          # no entry in the log, no file
             code, raw, head = self.call("/api/assistant/memory/export", raw=True)
@@ -2182,6 +2253,30 @@ class Http(_Assist):
             code, r = self.call(path, body)
             self.assertEqual((code, sorted(r)), (401, ["error"]), (path, r))
         self.assertEqual(len(self.notes()), 2)
+
+    def test_an_import_taken_back_over_the_service(self):
+        self.call("/api/assistant/memory", {"action": "add", "text": "Schon vorher da"})
+        code, r = self.call("/api/assistant/memory")
+        self.assertEqual((code, r["last_import"]), (200, None))
+        code, r = self.call("/api/assistant/memory/import", {"text": "Blaue Hortensie am Zaun\nGelbe Rose am Tor\nRoter Mohn im Beet\n"})
+        self.assertEqual((code, r["added"], r["last_import"]["notes"], r["last_import"]["stay"], "batch" in r), (200, 3, 3, 0, False))
+        batch = r["last_import"]["batch"]
+        nid = next(n["id"] for n in self.a.memory.active() if n["text"].startswith("Roter"))
+        self.call("/api/assistant/memory", {"action": "pin", "id": nid, "pinned": True})
+        self.remote()
+        try:
+            code, r = self.call("/api/assistant/memory/import/undo", {"batch": batch})
+            self.assertEqual(code, 403, r)
+        finally:
+            self.remote(False)
+        code, r = self.call("/api/assistant/memory/import/undo", {"batch": "nichts"})
+        self.assertEqual(code, 400, r)
+        code, r = self.call("/api/assistant/memory/import/undo", {"batch": batch})
+        self.assertEqual((code, r["removed"], r["stay"], r["notes"], r["last_import"], sorted(x["text"] for x in r["items"])), (200, 2, 1, 2, None, ["Roter Mohn im Beet", "Schon vorher da"]))
+        log = self.a.changes()
+        self.assertEqual([(c["what"], c.get("count"), c["by"], c["title"], c["rows"]) for c in log[:2]], [("import_undo", 2, "settings", "", []), ("import", 3, "settings", "", [])])
+        self.assertNotIn("Hortensie", json.dumps(log, ensure_ascii=False))
+        self.assertFalse(MA.demo_allowed("POST", "/api/assistant/memory/import/undo", {"batch": batch}))
 
     def test_the_demo_hands_out_nothing_of_it(self):
         """The demo has no settings: it neither exports nor imports -- and were it asked all the same, its memory is its own
@@ -2828,7 +2923,7 @@ class Browser(unittest.TestCase):
             pg.wait_for_selector("#as-mem-list .as-item")
             until(pg, "document.querySelector('#as-mem-list').textContent.includes('Noch nichts gemerkt')")
             self.assertTrue(pg.is_disabled("#as-mem-export")); self.assertFalse(pg.is_disabled("#as-mem-import"))      # nothing to export yet
-            self.assertEqual(pg.evaluate("[...document.querySelectorAll('.as-mem-foot :is(button, label)')].map(b => b.textContent)"), ["Exportieren", "Importieren …", "Alles vergessen"])
+            self.assertEqual(pg.evaluate("[...document.querySelectorAll('.as-mem-foot :is(button, label):not(.hidden)')].map(b => b.textContent)"), ["Exportieren", "Importieren …", "Alles vergessen"])
             look = "(q => { const c = getComputedStyle(document.querySelector(q)); return [c.fontSize, c.fontWeight, c.backgroundColor, c.borderTopColor, c.borderRadius, c.paddingLeft, c.height].join(' '); })"
             self.assertEqual(pg.evaluate(look + "('#as-mem-import')"), pg.evaluate(look + "('#as-mem-all')"))      # what opens the file window looks like the buttons beside it
             pg.focus("#as-mem-file"); self.assertEqual(pg.evaluate("document.activeElement.id"), "as-mem-file")       # ... and the keyboard reaches it
@@ -2880,10 +2975,24 @@ class Browser(unittest.TestCase):
             until(pg, count + " === 4")
             self.assertEqual(pg.text_content("#as-mem-report"), "")              # what was said about the file before is gone
             self.assertEqual(sorted(n["text"] for n in m.active())[:2], ["März teurer: Urlaub in Italien", "Name: Otto Beispiel"])
+            # the latest import taken back in one step: what was pinned since stays, and the question says so
+            self.assertEqual(pg.text_content("#as-mem-unimport"), "Import zurücknehmen")
+            keep = next(n["id"] for n in m.active() if n["text"] == "Wohnt in Musterstadt")
+            pg.click('#as-mem-list .as-mem-it[data-id="%s"] .as-mem-pin' % keep)
+            until(pg, "document.querySelector('#as-mem-n').textContent.includes('1 angeheftet')")
+            asked = []
+            pg.on("dialog", lambda d: asked.append(d.message))               # (accepted by the page's own listener above)
+            pg.click("#as-mem-unimport")
+            until(pg, count + " === 3")
+            self.assertTrue(asked and asked[0].startswith("1 Notiz aus dem Import vom ") and "1 bleibt: seitdem geändert, angeheftet oder ersetzt." in asked[0], asked)
+            until(pg, toast("1 Notiz entfernt · 1 bleibt"))
+            self.assertEqual(sorted(n["text"] for n in m.active()), ["März teurer: Urlaub in Italien", "Wohnt in Musterstadt", "Ziel: mit 45 finanziell frei <b>frei</b>"])
+            until(pg, "document.querySelector('#as-mem-unimport').textContent === 'Import zurücknehmen' && !document.querySelector('#as-mem-unimport').classList.contains('hidden')")       # (the import before it)
             pg.click("#as-log summary")                                           # the log: how many, never what
             until(pg, "document.querySelector('#as-log-list table')")
             logged = pg.text_content("#as-log-list")
             self.assertIn("Exportiert · 2 Notizen", logged); self.assertIn("Importiert · 2 Notizen", logged); self.assertNotIn("Otto Beispiel", logged)
+            self.assertIn("Import zurückgenommen · 1 Notiz", logged)
         self.page(steps)
 
     def test_said_in_the_chat_noted_under_the_answer_and_taken_back(self):

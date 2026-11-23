@@ -1485,6 +1485,9 @@ class Assistant:
             self.offered.clear()
         if gone:                                         # (never found again in the saved conversations: made sure before it went, _memory_forgetting)
             self._scrub(nid, str(note.get("text") or "")) if what == "forget" else self._scrub()
+        if what == "import_undo":                        # an import taken back: its notes are forgotten, each as one is
+            for n in more.get("notes") or []:
+                self._scrub(str(n.get("id") or ""), str(n.get("text") or ""))
         if what == "restore":                            # brought back: it counts again (what rests on it from now on is found)
             try:
                 self.talks.gone.back([nid])
@@ -1492,7 +1495,7 @@ class Assistant:
                 log.warning("Assistant: a note brought back still listed as forgotten (%s)", type(e).__name__)
         rec = {"id": secrets.token_hex(6), "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "kind": "memory", "what": what,
                "title": "" if gone else str(note.get("text") or "")[:memory_mod.TEXT_MAX], "sub": "", "reason": "", "state": "done",
-               "chat": str(src.get("chat") or ""), "by": str(more.get("by") or ""), "note": nid, **({"count": int(more.get("count") or 0)} if what in ("forget_all", "backup", "import", "export") else {}),
+               "chat": str(src.get("chat") or ""), "by": str(more.get("by") or ""), "note": nid, **({"count": int(more.get("count") or 0)} if what in ("forget_all", "backup", "import", "export", "import_undo") else {}),
                "olds": [] if gone else [str(o) for o in more.get("old_ids") or []],
                "rows": [] if gone else [{"text": str(o)[:memory_mod.TEXT_MAX]} for o in more.get("old") or []]}
 
@@ -1698,6 +1701,7 @@ class Assistant:
         ids = {n["id"] for n in self.memory.profile(memory_mod.profile_budget(st["context"]))}
         for it in out["items"]:
             it["profile"] = it["id"] in ids
+        out["last_import"] = self.memory.last_import()   # (what "Import zurücknehmen" would take back)
         out.update(on=bool(st["memory"]), profile=len(ids), pinned_out=sum(1 for n in self.memory.active() if n.get("pinned") and n["id"] not in ids),
                    text_max=memory_mod.TEXT_MAX)
         key = self._meaning_key()
@@ -1746,11 +1750,19 @@ class Assistant:
         if not isinstance(body.get("text"), str):
             raise ValueError(tr("s_ki_g_x_leer"))
         out = self.memory.import_file(body["text"], check=body.get("check") is True, by="settings")
+        out.pop("batch", None)
         if "added" not in out:                           # only looked at -- or refused: nothing changed
             return out
         log.info("Assistant: file read into the memory (%d note(s) new, %d known)", out["added"], out["known"])       # never what a note says
         if out["added"]:
             self.index_notes()
+        return dict(self.memory_list({"q": body.get("q"), "limit": body.get("limit")}), **out)
+
+    def memory_import_undo(self, body: dict) -> dict:
+        """... -> Import zurücknehmen (only at the Mac): the latest import taken back in one step -- exactly its notes that were
+        not changed since (memory.undo_import); how many went and how many stay comes back with the list."""
+        out = self.memory.undo_import(str(body.get("batch") or ""), by="settings")
+        log.info("Assistant: import taken back (%d note(s), %d stay)", out["removed"], out["stay"])       # never what a note says
         return dict(self.memory_list({"q": body.get("q"), "limit": body.get("limit")}), **out)
 
     # -- remembering in a conversation -------------------------------------------------------------------------------------------
@@ -4196,7 +4208,8 @@ class Assistant:
         model = web_search.CLAUDE_MODELS.get(str(p.get("model") or ""), "") if p["what"] == "search" else ""
         used = {k: usage[k] for k in ("in", "out", "searches") if isinstance(usage.get(k), int) and not isinstance(usage.get(k), bool) and usage[k] >= 0} if isinstance(usage, dict) else {}
         rec = {"id": entry or secrets.token_hex(6), "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "kind": "web", "what": p["what"],
-               "title": str(p["query"])[:300], "sub": " · ".join(x for x in (_web_label_of(p), model, tr("ki_w_stufe", p["tier"])) if x), "reason": reason or "",
+               "title": str(p["query"])[:web_search.CLAUDE_QUESTION if model else 300],          # (a question to Claude whole, as it was sent)
+               "sub": " · ".join(x for x in (_web_label_of(p), model, tr("ki_w_stufe", p["tier"])) if x), "reason": reason or "",
                "state": state, "chat": chat, **({"count": count} if count else {}), **({"usage": used} if used else {}), "rows": []}
 
         def put(new: dict) -> Callable[[list], None]:

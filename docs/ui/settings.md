@@ -134,6 +134,8 @@ the format's version, the time of the export, Kontor's version; per note `text`,
 whole file first, shows the notes it would bring and takes all of it or nothing: a note that is empty, longer than a note may be
 or holds a credential refuses the file, named by its line or number. What comes in is marked "importiert", is never pinned and
 replaces nothing that was there; notes remembered already are left out. The log of changes says how many notes, never what.
+"Import zurücknehmen" (shown while there is an import with notes as they came): removes the notes of the latest import that were
+not changed, pinned or replaced since – with the earlier wordings it brought for them; the rest stays and is counted.
 
 ### settings.assistant.rights — Was der KI-Assistent darf
 Each right on its own: **Lesen** (the user's figures, transactions and the page in view; the help always), **Zeigen** (open

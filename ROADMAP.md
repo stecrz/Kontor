@@ -167,6 +167,8 @@ anhängen – nie löschen.
   die Form einer Tabelle liefern. Der Kern (Dienst, Zugang, Schlüssel, Freigaben, Update-Prüfung) bleibt Standardbibliothek.
 - **Gedächtnis übertragbar** (Nutzer, 2026-11-23): Notizen lassen sich am Mac in einem offenen Format exportieren und wieder
   einlesen, damit ein anderes System sie übernehmen kann. (umgesetzt in 3.17.11)
+  Ergänzt (Nutzer, 2026-11-23): „Import zurücknehmen“ in einem Schritt unter Gedächtnis (nur am Mac) – nimmt genau die Notizen dieses
+  Imports zurück, die seitdem nicht geändert wurden, und nennt den Rest; im Änderungsprotokoll mit Anzahl. (umgesetzt in 3.17.19)
 - **Tailscale prüfen** (Nutzer, 2026-11-23): Kontor prüft (nur lesend), ob Tailnet Lock aktiv ist und Kontor nicht über Funnel/serve
   aus dem Internet erreichbar ist, und erklärt sonst, wie man es behebt. (umgesetzt in 3.17.10)
 - **Antworten vor Tempo** (Nutzer, 2026-11-23): Saubere, richtige Antworten sind wichtiger als Geschwindigkeit. Die Einbindung
@@ -332,7 +334,7 @@ Fertig, wenn
     Datei oder eine Liste mit einer Notiz je Zeile aus einem anderen System; vorab ganz geprüft, ganz oder gar nicht, jede Notiz
     geprüft wie eine von Hand, gekennzeichnet, nie angeheftet, ersetzt nichts, Doppelte bleiben draußen. Nur am Mac, nie in der
     Demo; im Änderungsprotokoll nur die Anzahl. (umgesetzt in 3.17.11)
-    Offen: ein Import lässt sich nur Notiz für Notiz zurücknehmen (kein „Import zurücknehmen“ in einem Schritt). Am Mac prüfen:
+    „Import zurücknehmen“ in einem Schritt (Entscheidung vom 23.11.2026, siehe Entschieden): 3.17.19. Am Mac prüfen:
     in der Mac-App landet der Export unter „Downloads“, „Importieren …“ öffnet das Dateifenster.
 - **Hinweise von selbst:** nach jedem Abgleich prüft Kontor (fester Code) auf Auffälliges – gestiegene Ausgaben, ungewöhnliche
   Umsätze, Fristen (Voranmeldung, Zinsbindung), Liquidität, offene Kategorien, Sicherheitslage (Zugang, Freigaben, Updates) –

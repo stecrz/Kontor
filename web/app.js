@@ -9007,7 +9007,7 @@ async function vEinstellungenAssistent() {
     <div class="as-mem-bar"><input type="search" id="as-mem-q" placeholder="${esc(t('ki_g_suchen'))}" aria-label="${esc(t('ki_g_suchen'))}" value="${esc(AS.memQ || '')}"></div>
     <div id="as-mem-warn"></div>
     <div class="as-list" id="as-mem-list"><div class="as-item muted small"><span>${t('ki_laedt_kurz')}</span></div></div>
-    <div class="row tight as-mem-foot"><button class="small secondary" id="as-mem-export" title="${esc(t('ki_g_exportieren_tip'))}" disabled>${t('ki_g_exportieren')}</button><input type="file" id="as-mem-file" class="file-in" accept=".md,.markdown,.txt,.json,text/markdown,text/plain,application/json"><label for="as-mem-file" class="file-btn" id="as-mem-import" title="${esc(t('ki_g_importieren_tip'))}">${t('ki_g_importieren')}</label><button class="small secondary" id="as-mem-all" disabled>${t('ki_g_alles_vergessen')}</button></div>
+    <div class="row tight as-mem-foot"><button class="small secondary" id="as-mem-export" title="${esc(t('ki_g_exportieren_tip'))}" disabled>${t('ki_g_exportieren')}</button><input type="file" id="as-mem-file" class="file-in" accept=".md,.markdown,.txt,.json,text/markdown,text/plain,application/json"><label for="as-mem-file" class="file-btn" id="as-mem-import" title="${esc(t('ki_g_importieren_tip'))}">${t('ki_g_importieren')}</label><button class="small secondary hidden" id="as-mem-unimport"></button><button class="small secondary" id="as-mem-all" disabled>${t('ki_g_alles_vergessen')}</button></div>
     <div id="as-mem-report" class="findings"></div></div>
   </div><div data-ex="settings.assistant.rights"><h2>${t('ki_rechte')}</h2>
   <div class="as-rights">${[['ki_rg_lesen', ['read']], ['ki_rg_zeigen', ['navigate']], ['ki_rg_aendern', ['enter_values', 'categorize', 'book', 'rules', 'receipts']], ['ki_rg_zugang', ['remote']], ['ki_rg_internet', ['internet']]].map(([g, ks]) =>
@@ -9016,12 +9016,12 @@ async function vEinstellungenAssistent() {
   </div><details class="as-log" id="as-log" data-ex="settings.assistant.changes"><summary>${t('ki_aenderungen')}</summary><div id="as-log-list" class="muted small">${t('ki_laedt_kurz')}</div></details></div>`;
 }
 // Einstellungen -> KI-Assistent -> Gedächtnis: what it was told to remember -- look, add, change, pin, forget (only at the Mac)
-async function asMemLoad(body, more) {
+async function asMemLoad(body, more, path) {
   // body: a change (add, edit, pin, delete, forget_all) -- the list comes back with it; more: the next piece of a long list, appended
   if (!$('#as-mem-list')) return null;
   const had = ((AS.mem || {}).items || []).length, q = AS.memQ || '', n = Math.min(200, Math.max(50, more ? 100 : had));
   let r;
-  try { r = body ? await api('/api/assistant/memory', Object.assign({q, limit: n}, body)) : await api(`/api/assistant/memory?q=${encodeURIComponent(q)}&limit=${n}${more ? '&offset=' + had : ''}`); }
+  try { r = body ? await api(path || '/api/assistant/memory', Object.assign({q, limit: n}, body)) : await api(`/api/assistant/memory?q=${encodeURIComponent(q)}&limit=${n}${more ? '&offset=' + had : ''}`); }
   catch (e) { toast(e.message, 6000); return null; }
   if (more && AS.mem && q === (AS.memQ || '')) r.items = AS.mem.items.concat(r.items.filter(x => !AS.mem.items.some(y => y.id === x.id)));
   AS.mem = r; asMemDraw(); return r;
@@ -9031,6 +9031,8 @@ function asMemDraw() {
   const n = $('#as-mem-n'); if (n) n.textContent = r.notes ? tn('ki_g_n', r.notes, asN(r.notes)) + (r.pinned ? ' · ' + t('ki_g_angeheftet_n', asN(r.pinned)) : '') + (r.meaning && r.meaning.done < r.meaning.total ? ' · ' + t('ki_g_bedeutung_n', asN(r.meaning.done), asN(r.meaning.total)) : '') : '';
   const all = $('#as-mem-all'); if (all) all.disabled = !r.notes;
   const ex = $('#as-mem-export'); if (ex) ex.disabled = !r.notes;
+  const un = $('#as-mem-unimport'), li = r.last_import;          // the latest import of which something can be taken back
+  if (un) { un.classList.toggle('hidden', !li); if (li) { un.textContent = t('ki_g_import_zurueck'); un.title = t('ki_g_import_zurueck_tip', FDT(li.at)); } }
   const warn = $('#as-mem-warn'); if (warn) warn.innerHTML = (r.pinned_out ? `<div class="banner small">${esc(tn('ki_g_zu_viel', r.pinned_out, asN(r.pinned_out)))}</div>` : '') + (r.broken ? `<div class="banner err small">${esc(tn('ki_g_defekt', r.broken, asN(r.broken)))}</div>` : '');
   const some = r.profile < r.notes;          // not everything goes with every question: the notes that do say so
   const row = x => AS.memEdit === x.id
@@ -9077,7 +9079,7 @@ async function asChangesLoad() {
   let r; try { r = await api('/api/assistant/changes'); } catch (x) { el.textContent = x.message; return; }
   const kind = k => asKind(k) || k || '';
   const list = r.changes || [];
-  const mem = c => `<tr><td class="nowrap">${esc(FDT(c.time))}</td><td><b>${esc(t(`ki_a_g_${c.what}`))}</b>${c.title ? ' · ' + esc(c.title) : ''}${['forget_all', 'backup', 'import', 'export'].includes(c.what) && c.count ? ' · ' + esc(tn('ki_g_n', c.count, asN(c.count))) : ''}${(c.rows || []).map(x => `<div class="muted small">${esc(t('ki_a_g_vorher', x.text || ''))}</div>`).join('')}</td><td>${c.by ? t(`ki_a_g_by_${c.by}`) : '–'}</td><td class="nowrap">${t('ki_e_done')}</td></tr>`;
+  const mem = c => `<tr><td class="nowrap">${esc(FDT(c.time))}</td><td><b>${esc(t(`ki_a_g_${c.what}`))}</b>${c.title ? ' · ' + esc(c.title) : ''}${['forget_all', 'backup', 'import', 'export', 'import_undo'].includes(c.what) && c.count ? ' · ' + esc(tn('ki_g_n', c.count, asN(c.count))) : ''}${(c.rows || []).map(x => `<div class="muted small">${esc(t('ki_a_g_vorher', x.text || ''))}</div>`).join('')}</td><td>${c.by ? t(`ki_a_g_by_${c.by}`) : '–'}</td><td class="nowrap">${t('ki_e_done')}</td></tr>`;
   // each change as the card showed it (before and after, each booking), folded
   const num = (c, v) => v == null ? t('ki_e_leer') : c.kind === 'params' ? (+v).toLocaleString(LOCALE, {maximumFractionDigits: 2}) : fmt.format(v);
   const row = (c, r) => 'old_text' in r || 'new_text' in r ? `<tr><td>${esc(r.label || '')}</td><td class="muted">${esc(r.old_text || '–')}</td><td><b>${esc(r.new_text || '–')}</b></td></tr>`
@@ -9140,6 +9142,13 @@ function bindAssistent(main) {
   on('#as-mem-export', 'click', () => { download('/api/assistant/memory/export'); toast(t('ki_g_exportiert'), 5000); });
   // (its label opens the file window; emptied: the same file can be chosen again -- one import at a time)
   on('#as-mem-file', 'change', el => { const f = el.files[0]; el.value = ''; if (f && !AS.memIn) { AS.memIn = true; asMemImport(f).finally(() => { AS.memIn = false; }); } });
+  on('#as-mem-unimport', 'click', async () => {
+    const li = (AS.mem || {}).last_import; if (!li) return;
+    if (!confirm(tn('ki_g_import_zurueck_frage', li.notes, asN(li.notes), FDT(li.at)) + (li.stay ? '\n\n' + tn('ki_g_import_bleibt', li.stay, asN(li.stay)) : ''))) return;
+    memEnd();
+    const r = await asMemLoad({action: 'undo', batch: li.batch}, false, '/api/assistant/memory/import/undo');
+    if (r) { toast(tn('ki_g_import_zurueck_n', r.removed, asN(r.removed)) + (r.stay ? ' · ' + tn('ki_g_import_bleibt', r.stay, asN(r.stay)) : ''), 6000); if (($('#as-log') || {}).open) asChangesLoad(); }
+  });
   on('#as-mem-all', 'click', () => { const n = (AS.mem || {}).notes || 0; if (n && confirm(tn('ki_g_alles_frage', n, asN(n)))) { memEnd(); asMemLoad({action: 'forget_all'}); } });
   on('#as-mem-list', 'click', (box, e) => {
     const b = e.target.closest('button'), it = b && b.closest('.as-mem-it'), id = it && it.dataset.id, x = id && ((AS.mem || {}).items || []).find(y => y.id === id);

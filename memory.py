@@ -518,6 +518,9 @@ def _valid(n: Any) -> Optional[dict]:
         out["source"]["chat"] = src["chat"]
     if src.get("pasted") is True:
         out["source"]["pasted"] = True
+    if out["source"]["how"] == "import" and re.fullmatch(r"[0-9a-f]{12}", str(src.get("batch") or "")):
+        # which import brought it, when, and a key of its text as it came (to take that import back: only what is unchanged)
+        out["source"].update(batch=src["batch"], at=_stamp(src.get("at"), created), **({"as": src["as"]} if re.fullmatch(r"[0-9a-f]{16}", str(src.get("as") or "")) else {}))
     if n.get("pinned") is True:
         out["pinned"] = True
     if n.get("kind") in KINDS and n.get("kind"):
@@ -582,6 +585,7 @@ def _count(n: int) -> str:
 _MD_SIGN = re.compile(r"[\\`*_\[\]<~]")
 _MD_ENTITY = re.compile(r"&(?=(?:#[0-9]{1,7}|#[xX][0-9a-fA-F]{1,6}|[A-Za-z][A-Za-z0-9]{1,31});)")
 _MD_START = re.compile(r"-(?=[ \t-]|$)|\+(?=[ \t]|$)|#(?=[ \t#]|$)|>|[0-9]{1,9}(?=[.)](?:[ \t]|$))")
+_MD_LINK = re.compile(r"(?i)(?<=[a-z0-9]):(?=//)|(?<![a-z0-9])www\.")      # where an address begins: the sign that makes it one
 _MD_ESCAPED = re.compile(r"\\([!-/:-@\[-`{-~])")
 _MD_KEPT = re.compile("[\ue021-\ue07e]")
 _MD_MARKED = (re.compile(r"\*\*(?=\S)(.+?)(?<=\S)\*\*"), re.compile(r"(?<![\w*])\*(?=[^\s*])([^*]+?)(?<=[^\s*])\*(?![\w*])"), re.compile(r"`([^`]+)`"))
@@ -589,8 +593,9 @@ _MD_MARKED = (re.compile(r"\*\*(?=\S)(.+?)(?<=\S)\*\*"), re.compile(r"(?<![\w*])
 
 def _md(text: str) -> str:
     """A note's text for a Markdown list, so that a reader shows it letter for letter: nothing in it is taken for emphasis,
-    code, a link, a picture, HTML, a heading, a quote or a list of its own."""
+    code, a link (also an address by itself), a picture, HTML, a heading, a quote or a list of its own."""
     t = _MD_ENTITY.sub(r"\\&", _MD_SIGN.sub(lambda m: "\\" + m.group(0), text))
+    t = _MD_LINK.sub(lambda m: m.group(0)[:-1] + "\\" + m.group(0)[-1], t).replace("@", "\\@")      # (an address stays text: readers link https://…, www.…, name@host by themselves)
     m = _MD_START.match(t)
     if m is None:
         return t
@@ -1363,6 +1368,8 @@ class Memory:
                 if n is None or n["id"] in notes or n["id"] in ids or same_text(n["text"]) in have or secret_problem(n["text"]):
                     continue
                 n["source"]["how"] = "backup"
+                for k in ("batch", "at", "as"):          # (what an import had noted with it: a backup's notes are no import to take back)
+                    n["source"].pop(k, None)
                 n.pop("pinned", None)
                 have.add(same_text(n["text"]))
                 ids.add(n["id"])
@@ -1543,6 +1550,7 @@ class Memory:
                 return dict(out, added=0)
             now = _now()
             ids: Set[str] = set()
+            batch = secrets.token_hex(6)                 # this import, named in each of its notes (undo_import)
 
             def note(text: str, created: Any, changed: Any = None, **more) -> dict:
                 made = _when(created, now)
@@ -1550,7 +1558,7 @@ class Memory:
                 while nid in notes or nid in ids:  # pragma: no cover - 40 random bits
                     nid = "n" + secrets.token_hex(5)
                 ids.add(nid)
-                n = _valid(dict(more, id=nid, text=text, created=made, changed=_when(changed, made), source={"how": "import"}))
+                n = _valid(dict(more, id=nid, text=text, created=made, changed=_when(changed, made), source={"how": "import", "batch": batch, "at": now, "as": _text_key(text)}))
                 assert n is not None
                 return n
 
@@ -1606,7 +1614,92 @@ class Memory:
             self.epoch += 1
         log.info("Memory: %d note(s) imported from a file", len(fresh))
         self._tell("import", {}, count=len(fresh), by=by)
-        return dict(out, added=len(fresh))
+        return dict(out, added=len(fresh), batch=batch)
+
+    def _imports(self) -> Dict[str, Tuple[str, List[dict], List[dict]]]:
+        """The imports there are notes of: batch -> (when, its notes that can be taken back, its notes that stay). Taken back
+        is what is as it came: the same text, not pinned, not replaced by a note from elsewhere -- and with it the earlier
+        wordings the file brought for it (those of a note that stays, stay). Called with the lock held."""
+        notes = self._notes or {}
+        mine: Dict[str, List[dict]] = {}
+        for n in notes.values():
+            b = n["source"].get("batch")
+            if b:
+                mine.setdefault(b, []).append(n)
+        out = {}
+        for b, lst in mine.items():
+            ids = {n["id"] for n in lst}
+            same = lambda n: n["source"].get("as") == _text_key(n["text"]) and not n.get("pinned")
+            go = {n["id"] for n in lst if n["id"] not in self._replaced and same(n)}
+            more = True
+            while more:                                  # the earlier wordings of what goes, all the way back
+                more = False
+                for n in lst:
+                    if n["id"] not in go and self._replaced.get(n["id"]) in go and self._replaced[n["id"]] in ids and same(n):
+                        go.add(n["id"])
+                        more = True
+            out[b] = (max(n["source"].get("at", "") for n in lst), [n for n in lst if n["id"] in go], [n for n in lst if n["id"] not in go])
+        return out                                       # (in the order the imports came: notes are kept in the order they were made)
+
+    def last_import(self) -> Optional[dict]:
+        """The latest import of which something can be taken back: {"batch", "at", "notes": how many notes that count would
+        go, "stay": how many stay (changed, pinned or replaced since)} -- None: there is none."""
+        with self.lock:
+            self._load()
+            best = None
+            for b, (at, go, stay) in self._imports().items():
+                if go and (best is None or at >= best["at"]):      # (in one second: the later one)
+                    count = lambda lst: sum(1 for n in lst if n["id"] not in self._replaced)
+                    best = {"batch": b, "at": at, "notes": count(go), "stay": count(stay)}
+            return best
+
+    def undo_import(self, batch: str, by: str = "") -> dict:
+        """An import taken back in one step: exactly its notes that are as they came (see _imports) are forgotten -- as any
+        note is (first what makes it last: on_forget; their embeddings; gone from their files) --, the others stay and are
+        counted. All of it or nothing: a file that cannot be written leaves the notes as the files have them, and raises.
+        Told to the log (how many). Returns {"removed": notes that counted, "stay"}; NoteError: no such import (any more)."""
+        with self.lock:
+            self._load()
+            hit = self._imports().get(str(batch))
+            gone = [dict(n) for n in hit[1]] if hit else []
+        if not gone:
+            raise NoteError(tr("s_ki_g_import_weg"))
+        if self.on_forget is not None:                   # (outside the lock: it reads the saved conversations)
+            self.on_forget(gone, False)
+        with self.lock:
+            notes = self._load()
+            hit = self._imports().get(str(batch))
+            ids = {n["id"] for n in gone}
+            if not hit or {n["id"] for n in hit[1]} != ids:      # changed meanwhile: asked again
+                raise NoteError(tr("s_ki_g_import_weg"))
+            removed = sum(1 for i in ids if i not in self._replaced)
+            stay = sum(1 for n in hit[2] if n["id"] not in self._replaced)
+            segs = {self._seg[i] for i in ids}
+            try:
+                for i in ids:
+                    self._vec.pop(i, None)
+                for seg in sorted(segs):                 # the embeddings first, as when one note is forgotten
+                    self._by_seg[seg] = [i for i in self._by_seg[seg] if i not in ids]
+                    self._write_vectors(seg)
+                for i in ids:
+                    notes.pop(i)
+                    self._seg.pop(i)
+                    self._used.pop(i, None)
+                for seg in sorted(segs):
+                    self._write(seg)
+            except Exception:
+                self._notes, self._ix = None, None       # as the files have it (read anew with the next use)
+                self._rev += 1
+                raise
+            try:
+                self.store.save(USED_FILE, {"v": FORMAT, "used": self._used})
+            except Exception as e:
+                log.warning("Memory: used notes not written (%s)", type(e).__name__)
+            self._relink()
+            self.epoch += 1
+        log.info("Memory: an import taken back (%d note(s))", removed)
+        self._tell("import_undo", {}, count=removed, by=by, notes=gone)
+        return {"removed": removed, "stay": stay}
 
     def unnamed(self, limit: int) -> List[dict]:
         """Notes that count whose names nobody has named yet: typed in the settings or back from a backup (a note from a

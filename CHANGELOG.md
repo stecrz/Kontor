@@ -1,5 +1,10 @@
 # Änderungen
 
+## 3.17.19 (2026-11-23 17:41)
+- KI-Assistent: „Import zurücknehmen“ unter Gedächtnis – nimmt den letzten Import in einem Schritt zurück, nur Notizen, die seitdem nicht geändert, angeheftet oder ersetzt wurden; der Rest bleibt und wird genannt (nur am Mac, im Änderungsprotokoll mit Anzahl)
+- KI-Assistent: Gedächtnis-Export – Adressen in Notizen (https://…, www.…, E-Mail) bleiben Text, kein Link
+- KI-Assistent: Änderungsprotokoll zeigt eine Frage an Claude ganz (bis 1.000 Zeichen), nicht nur den Anfang
+
 ## 3.17.18 (2026-11-23 17:38)
 - Entwicklung: Prüfsatz für den Assistenten (`tests/assistant_eval`) – 73 Aufgaben durch den Assistenten auf der Demo-Welt; am Mac mit dem echten Modell
 - Entwicklung: Fahrplan – Bildeingabe und Prüfsatz in Kontor unter Offen

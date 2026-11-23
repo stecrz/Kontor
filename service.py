@@ -2181,7 +2181,7 @@ DEMO_NEVER = frozenset(("/api/setup", "/api/login", "/api/touchid", "/api/touchi
                         "/api/assistant/settings", "/api/assistant/check", "/api/assistant/runtime/install", "/api/assistant/runtime/remove",
                         "/api/assistant/model/files", "/api/assistant/model/download", "/api/assistant/model/cancel", "/api/assistant/model/delete",
                         "/api/assistant/web", "/api/assistant/server", "/api/assistant/update-all",
-                        "/api/assistant/memory", "/api/assistant/memory/export", "/api/assistant/memory/import",
+                        "/api/assistant/memory", "/api/assistant/memory/export", "/api/assistant/memory/import", "/api/assistant/memory/import/undo",
                         # the iPhones added at the Mac and their passkeys: the demo knows none (a sign-in with one opens the demo in the real Kontor)
                         "/api/passkey/options", "/api/passkey/login", "/api/pair/begin", "/api/pair/finish", "/api/devices",
                         "/api/devices/pair", "/api/devices/set", "/api/devices/remove",
@@ -4211,6 +4211,8 @@ def make_handler(app: App):
                 return self._json(403, {"error": tr("s_nur_von_diesem_mac_aus")})
             if path == "/api/assistant/memory/import":           # an exported memory (or a plain list) read in: checked as a whole first, all of it or nothing
                 return self._json(200, a.memory_import(body))
+            if path == "/api/assistant/memory/import/undo":      # the latest import taken back: its notes that were not changed since
+                return self._json(200, a.memory_import_undo(body))
             if path == "/api/assistant/settings":
                 a.set(body)
             elif path == "/api/assistant/check":
@@ -5383,7 +5385,7 @@ MAC_ONLY = frozenset(("/api/password", "/api/remote", "/api/devices/pair", "/api
                       "/api/history/mm-import", "/api/history/mm-reveal", "/api/file/choose", "/api/file/open", "/api/file/reveal", "/api/receipts/open",
                       "/api/assistant/settings", "/api/assistant/check", "/api/assistant/update-all", "/api/assistant/runtime/install",
                       "/api/assistant/runtime/remove", "/api/assistant/model/files", "/api/assistant/model/download", "/api/assistant/model/cancel",
-                      "/api/assistant/model/delete", "/api/assistant/web", "/api/assistant/server", "/api/assistant/memory/import", "/api/python"))
+                      "/api/assistant/model/delete", "/api/assistant/web", "/api/assistant/server", "/api/assistant/memory/import", "/api/assistant/memory/import/undo", "/api/python"))
 # Requests that change nothing: from another device without Face ID (reading, computing what something would do, asking
 # the assistant, locking, the challenge for a confirmation). Every other request from another device changes something and
 # waits for Face ID on the iPhone it was signed in from (service: _remote_check) -- one not named here is a change.

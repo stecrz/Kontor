@@ -579,7 +579,7 @@ body.as-page .as-head { border-bottom:0; padding:0 10px 4px 16px; } body.as-page
 .as-mem { max-width:820px; margin-top:10px; } .as-mem-bar { display:flex; gap:8px; align-items:center; margin:0 0 8px; } .as-mem-bar input { flex:1; min-width:0; }
 .as-mem .as-list { max-width:none; } .as-mem-it { align-items:flex-start; } .as-mem-t { flex:1; min-width:0; overflow-wrap:anywhere; line-height:1.45; } .as-mem-ta { flex:1; min-width:0; min-height:0; resize:vertical; font:inherit; }
 .as-mem-it .icon { color:var(--muted); } .as-mem-it .icon:hover { color:var(--fg); } .as-mem-it .as-mem-del:hover { color:var(--neg); } .as-mem-it .as-mem-pin.on { color:var(--accent-fg); } .as-mem-pin.on svg { fill:currentColor; }
-.as-mem-foot #as-mem-all { margin-left:auto; } .as-mem .findings:empty { display:none; }
+.as-mem-foot #as-mem-all { margin-left:auto; } .as-mem-foot { flex-wrap:wrap; } .as-mem .findings:empty { display:none; }
 .file-in { position:absolute; width:1px; height:1px; opacity:0; overflow:hidden; clip-path:inset(50%); pointer-events:none; }      /* its label is the button (Tab reaches it, Space opens the file window) */
 .file-btn { display:inline-block; background:var(--group); color:var(--fg); border:1px solid var(--line); border-radius:var(--radius-s); padding:4px 10px; font-size:12px; font-weight:600; cursor:pointer; transition:transform .08s, filter .15s; }
 .file-btn:hover { filter:brightness(1.06); } .file-btn:active { transform:scale(.98); } .file-in:focus-visible + .file-btn { outline:2px solid var(--accent); outline-offset:1px; }

@@ -1121,6 +1121,21 @@ class Claude(_Web):
     def used(self):
         return self.a.set_web({})["claude_used"]
 
+    def test_the_log_keeps_the_whole_question(self):
+        """What went to Claude stands in the log of changes as it was sent -- the whole question, up to its limit (other
+        searches: their few words)."""
+        words = ["Zinsen", "Europa", "Anleihen", "Inflation", "Wachstum", "Notenbank", "Prognose", "Haushalt"]
+        q = ("Wie entwickeln sich " + ", ".join(words[i % len(words)] + " im Jahr %d" % (2020 + i % 7) for i in range(40)))[:W.CLAUDE_QUESTION - 1] + "?"
+        self.assertGreater(len(q), 600)
+        job, card, evs = self.ask_claude(q)
+        self.assertFalse(self.failed(evs))
+        logged = [c for c in self.a.changes() if c.get("kind") == "web"]
+        self.assertEqual(logged[0]["title"], q)
+        self.assertEqual(len(self.a._log_web({"what": "search", "query": "x" * 2000, "source": "claude", "tier": 4, "model": "claude-opus-5-5"}, "Grund", "c1", "done") and
+                             next(c for c in self.a.changes() if c.get("kind") == "web")["title"]), W.CLAUDE_QUESTION)
+        self.a._log_web({"what": "search", "query": "y" * 2000, "source": "ecb", "tier": 1}, "Grund", "c1", "done")
+        self.assertEqual(len(next(c for c in self.a.changes() if c.get("kind") == "web")["title"]), 300)
+
     def test_named_to_the_model_only_with_a_key(self):
         spec = lambda: next(t for t in self.a._specs(self.a.settings()) if t["function"]["name"] == "web_search")["function"]
         sources = lambda: spec()["parameters"]["properties"]["searches"]["items"]["properties"]["source"]["enum"]
