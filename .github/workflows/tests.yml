@@ -124,9 +124,8 @@ jobs:
         timeout-minutes: 30                 # today 4 min per half: room for many more tests
         env:
           TZ: Europe/Berlin
-        run: python -m pytest -q -rs --durations=10 ${{ matrix.tests }}       # -rs: what was skipped, and why; then the slowest tests
-        env:
           KONTOR_FUZZ_SEEDS: "12"      # few fixed random cases per push (and all found before): the nightly run checks 1000 and new ones
+        run: python -m pytest -q -rs --durations=10 ${{ matrix.tests }}       # -rs: what was skipped, and why; then the slowest tests
 
   # Kontor runs only on the Mac: what only a Mac can check -- Apple's own Python and Kontor's own (the build it names, really
   # loaded: checked, tried, switched to, damaged, updated to from the version before), the Swift helpers (Touch ID,

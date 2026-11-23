@@ -1,5 +1,9 @@
 # Änderungen
 
+## 3.17.23 (2026-11-23 19:16)
+- Entwicklung: Tests auf GitHub starten wieder – seit 3.17.21 (anderer Chat) stand `env:` im Schritt „Tests“ doppelt, GitHub lehnte die Datei ab
+- Entwicklung: neuer Test prüft alle Workflow-Dateien auf doppelte Schlüssel
+
 ## 3.17.22 (2026-11-23 18:45)
 - KI-Assistent: Nachdenken lässt der Antwort immer Platz – auch bei kleinem Kontext und „Gründlich“ (keine abgeschnittene Antwort mehr)
 - KI-Assistent: vergessene Notiz verschwindet auch aus den Gedanken der Unterhaltung
