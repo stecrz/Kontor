@@ -1,0 +1,92 @@
+Sonnhalde Naturkost GmbH · Talstadt          Blatt 1
+Wertenachweis zur Bilanz
+Kontennachweis je Bilanzposten
+zum 31. Dezember 2025
+Beraternr. 48213   Mandantennr. 1207   Währung EUR
+
+Konto  Bezeichnung                                                  31.12.2025  31.12.2024
+------------------------------------------------------------------------------------------
+       AKTIVA
+       A. Anlagevermögen
+         I. Immaterielle Vermögensgegenstände                        18.420,00   24.150,00
+0027       EDV-Software                                              18.420,00   24.150,00
+       II. Sachanlagen
+           1. Technische Anlagen und Maschinen                      186.400,00  214.800,00
+0420         Technische Anlagen (Kältetechnik)                      186.400,00  214.800,00
+           2. Andere Anlagen, Betriebs- und Geschäftsausstattung    487.200,00  470.400,00
+0320         Pkw                                                     21.350,00   31.550,00
+0430         Ladeneinrichtung                                       412.700,00  381.300,00
+0490         Sonstige Betriebs- und Geschäftsausstattung             38.900,00   41.200,00
+0650         Büroeinrichtung                                         14.250,00   16.350,00
+       B. Umlaufvermögen
+         I. Vorräte                                                 486.300,00  462.800,00
+3980       Bestand Waren                                            486.300,00  462.800,00
+       II. Forderungen und sonstige Vermögensgegenstände
+           1. Forderungen aus Lieferungen und Leistungen             18.640,50   15.310,20
+1400         Forderungen aus Lieferungen und Leistungen              18.640,50   15.310,20
+           2. Sonstige Vermögensgegenstände                          67.620,44   67.370,10
+1525         Kautionen                                               64.500,00   64.500,00
+1548         Vorsteuer im Folgejahr abziehbar                         3.120,44    2.870,10
+         III. Kassenbestand, Guthaben bei Kreditinstituten          629.465,97  476.169,97
+
+Brandauer & Kessel Steuerberatungsgesellschaft mbH
+
+Sonnhalde Naturkost GmbH · Talstadt          Blatt 2
+Wertenachweis zur Bilanz
+Kontennachweis je Bilanzposten
+zum 31. Dezember 2025
+Beraternr. 48213   Mandantennr. 1207   Währung EUR
+
+Konto  Bezeichnung                           31.12.2025    31.12.2024
+---------------------------------------------------------------------
+1000       Kasse                              24.380,60     21.940,30
+1200       Bank Talbank                      544.265,37    398.199,67
+1210       Sparkasse Talstadt                 52.400,00     48.120,00
+1360       Geldtransit                         8.420,00      7.910,00
+       C. Rechnungsabgrenzungsposten           7.840,00      7.260,00
+0980     Aktive Rechnungsabgrenzung            7.840,00      7.260,00
+       --------------------------------------------------------------
+       Summe Aktiva                        1.901.886,91  1.738.260,27
+
+       PASSIVA
+       A. Eigenkapital
+         I. Gezeichnetes Kapital              50.000,00     50.000,00
+0800       Gezeichnetes Kapital               50.000,00     50.000,00
+         II. Kapitalrücklage                 150.000,00    150.000,00
+0840       Kapitalrücklage                   150.000,00    150.000,00
+         III. Gewinnvortrag                  366.660,72    318.420,17
+0860       Gewinnvortrag vor Verwendung      366.660,72    318.420,17
+         IV. Jahresüberschuss                146.655,00    168.240,55
+       --------------------------------------------------------------
+       Summe Eigenkapital                    713.315,72    686.660,72
+       B. Rückstellungen
+         1. Steuerrückstellungen              42.600,00     38.900,00
+0950       Steuerrückstellungen               42.600,00     38.900,00
+         2. Sonstige Rückstellungen           75.450,00     67.800,00
+
+Brandauer & Kessel Steuerberatungsgesellschaft mbH
+
+Sonnhalde Naturkost GmbH · Talstadt          Blatt 3
+Wertenachweis zur Bilanz
+Kontennachweis je Bilanzposten
+zum 31. Dezember 2025
+Beraternr. 48213   Mandantennr. 1207   Währung EUR
+
+Konto  Bezeichnung                                                31.12.2025    31.12.2024
+------------------------------------------------------------------------------------------
+0970       Sonstige Rückstellungen                                 12.300,00      9.800,00
+0971       Rückstellungen für Urlaub                               48.750,00     44.200,00
+0977       Rückstellungen für Abschluss und Prüfung                14.400,00     13.800,00
+       C. Verbindlichkeiten
+         1. Verbindlichkeiten gegenüber Kreditinstituten          598.000,00    514.000,00
+0630       Darlehen Talbank 3,2 %                                 412.000,00    514.000,00
+0640       Darlehen Ladenbau 2025                                 186.000,00          0,00
+         2. Verbindlichkeiten aus Lieferungen und Leistungen      386.450,30    352.118,75
+1600       Verbindlichkeiten aus Lieferungen und Leistungen       386.450,30    352.118,75
+         3. Sonstige Verbindlichkeiten                             86.070,89     78.780,80
+1741       Verbindlichkeiten aus Lohn- und Kirchensteuer           24.830,12     22.910,40
+1790       Umsatzsteuer Vorjahr                                    61.240,77     55.870,40
+       -----------------------------------------------------------------------------------
+       Summe Passiva                                            1.901.886,91  1.738.260,27
+
+Brandauer & Kessel Steuerberatungsgesellschaft mbH

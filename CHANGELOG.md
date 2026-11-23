@@ -1,5 +1,9 @@
 # Änderungen
 
+## 3.17.18 (2026-11-23 17:38)
+- Entwicklung: Prüfsatz für den Assistenten (`tests/assistant_eval`) – 73 Aufgaben durch den Assistenten auf der Demo-Welt; am Mac mit dem echten Modell
+- Entwicklung: Fahrplan – Bildeingabe und Prüfsatz in Kontor unter Offen
+
 ## 3.17.17 (2026-11-23 16:41)
 - KI-Assistent: sucht Ursachen statt Zeilen aufzuzählen – über Konten, größte Umsätze und Beteiligungen bis in die Gesellschaft dahinter
 - KI-Assistent: trennt Belegtes von Vermutetem („vermutlich …, weil …“)

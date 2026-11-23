@@ -243,6 +243,20 @@ anhängen – nie löschen.
 - Claude als Recherche-Stufe, Protokoll: Die Frage steht wie bei jeder Suche im Protokoll der Änderungen und Abrufe (verschlüsselt, nur auf
   dem Mac), von der Antwort nur Zahlen (Token, Websuchen). Der Auftrag sagte „nur Zahlen, nie Inhalte“ – soll auch die Frage nicht hinein?
   Empfehlung: so lassen, damit nachvollziehbar bleibt, was hinausging.
+- Prüfsatz für den Assistenten in Kontor selbst (heute nur Entwickler-Werkzeug, `tests/assistant_eval`) – Vorschlag, Entscheidung
+  steht aus: unter Einstellungen → KI-Assistent stellt sich ein geladenes Modell auf Klick den Aufgaben (nur erfundene Daten der
+  Demo, nichts geht hinaus; dauert Stunden, der Mac ist so lange belegt). Kontor zeigt das Ergebnis neben dem des bisherigen
+  Modells – Punkte je Gruppe, Dauer – und schlägt den Wechsel vor, wenn das neue besser ist; gewechselt wird nur nach Klick, nie
+  von selbst. Empfehlung: erst entscheiden, wenn Läufe am Mac zeigen, wie gut der Prüfsatz Modelle unterscheidet.
+- Bilder für das Modell (Wunsch des Nutzers, 2026-11-23: ein Modell, das Bilder lesen kann, soll sie bekommen) – noch nicht
+  umgesetzt, Vorschlag: der Bildteil des Modells (zweite Datei „mmproj“, etwa 1 GB) wird wie die Modelldatei geladen und per
+  SHA-256 geprüft (heute nur bei den Diktiermodellen), das Modell startet damit, und ein Bild aus dem Chat geht zusätzlich zum
+  erkannten Text an das Modell – nur als Daten in der Anfrage, nur im Arbeitsspeicher, gewertet wie der Text eines Belegs. Kontor
+  erkennt schon, ob das laufende Modell Bilder liest (`LocalAI.caps`, 3.17.17). Zu entscheiden: Zahlen weiter nur aus der
+  Texterkennung (Entschieden: Zahlen nie aus einem Modell) und das Bild nur für das, was Text nicht hergibt (Aufbau, Stempel,
+  Grafik) – Empfehlung: ja; den Bildteil mit dem Modell laden oder mit eigenem Klick (etwa 1 GB mehr Arbeitsspeicher) –
+  Empfehlung: eigener Klick; PDF-Seiten als Bild erst danach. Vorher am Mac prüfen: zu Qwen3.8 27B gibt es laut Modell-Recherche
+  offene Meldungen über Abstürze beim Laden eines Bildes.
 
 ## 1. Daten erst nach Anmeldung (Sicherheit) – umgesetzt in 3.16.83 (3.17.0: Umstellung von früher entfernt, nur Neueinrichtung)
 Ziel: Wer den entsperrten Mac hat, aber nicht bei Kontor angemeldet ist, kommt an keine Kontor-Daten.
@@ -276,7 +290,7 @@ knapp vor der Frage, ein Klick darauf öffnet die Stelle wieder (3.16.23); im se
 Kasten am Mauszeiger, nicht im Chat), Wert/Zeile/Spalte kopieren, im Bezug die Stelle in der Grafik und der Pfad der Zeile (3.16.27); Zahlen in Grafiken und Karten mit Zeile und Wert, beim Klick
 auf den Bezug genau diese Zahl markiert; Gedanken und Schritte einer Antwort als ein Eintrag (3.16.35); gespeicherte Verläufe im eigenen Ordner `chats`, Anzahl/Größe in den Einstellungen,
 ältere als ein Jahr löschbar, Hinweis bei sehr vielen (3.16.51); Stil ab Werk kurz, direkt, inhaltsdicht (3.16.23); Denkaufwand mit klarer Bedeutung (Schnell: ohne Nachdenken,
-Ausgewogen: bis 2.000 Token je Antwort, Gründlich: ohne Grenze; nur oben im Assistenten, je Gerät gemerkt – 3.16.72) und unter jeder Antwort „nachgedacht · Abfragen · Token/s“ (3.16.23). Kontors eigene Mac-App statt Safaris Dock-App: macOS fragt nur einmal nach dem Mikrofon, danach nie wieder; Menüleiste, Downloads, Dock-Abzeichen (3.16.42); ohne eigene Titelleiste: Fensterknöpfe in der Seitenleiste, Seiten wie im Browser (3.16.60, 3.16.63); ⌘F sucht (Seitensuche oder Suchleiste in der App), Tastaturkürzel im Menü und in den Tooltips, die Suche der Hilfe bleibt sichtbar (3.16.64). Beschreibung jeder Stelle jeder Seite für den Assistenten (`docs/ui`, `data-ex`, 3.17.1): Rechtsklick, Fragen zur Seite und `search_help` wissen, was jede Zahl ist – Wert des Zeitraums, Anteil oder Veränderung –, der Rechtsklick benennt jeden Teil einer Beschriftung nach der Hoverbox; Werkzeuge mit den Begriffen der Seiten. Das Modell wird gefragt, wie sein Hersteller es empfiehlt (3.17.17: Werte je Modellfamilie, Gedanken bleiben zwischen den Abfragen einer Antwort, „Ausgewogen“ denkt vor jedem Schritt, Ergebnisse so lang, wie der Kontext trägt). Ursachen statt Aufzählung (3.17.17, Wunsch des Nutzers vom 23.11.2026): Arbeitsweise für Warum-Fragen im Systemtext (Treiber, eine Ebene tiefer, Verknüpfungen, belegt/vermutet – ohne feste Fälle) und das Lese-Werkzeug `get_net_worth_drivers`, das eine Veränderung über Konten, größte Umsätze und Beteiligungen bis in die Gesellschaft dahinter verfolgt; in der Demo als Fall (Kaufnebenkosten der Parkweg GbR). Am Mac prüfen: ob ein echtes Modell daraus die Ursache schließt.
+Ausgewogen: bis 2.000 Token je Antwort, Gründlich: ohne Grenze; nur oben im Assistenten, je Gerät gemerkt – 3.16.72) und unter jeder Antwort „nachgedacht · Abfragen · Token/s“ (3.16.23). Kontors eigene Mac-App statt Safaris Dock-App: macOS fragt nur einmal nach dem Mikrofon, danach nie wieder; Menüleiste, Downloads, Dock-Abzeichen (3.16.42); ohne eigene Titelleiste: Fensterknöpfe in der Seitenleiste, Seiten wie im Browser (3.16.60, 3.16.63); ⌘F sucht (Seitensuche oder Suchleiste in der App), Tastaturkürzel im Menü und in den Tooltips, die Suche der Hilfe bleibt sichtbar (3.16.64). Beschreibung jeder Stelle jeder Seite für den Assistenten (`docs/ui`, `data-ex`, 3.17.1): Rechtsklick, Fragen zur Seite und `search_help` wissen, was jede Zahl ist – Wert des Zeitraums, Anteil oder Veränderung –, der Rechtsklick benennt jeden Teil einer Beschriftung nach der Hoverbox; Werkzeuge mit den Begriffen der Seiten. Das Modell wird gefragt, wie sein Hersteller es empfiehlt (3.17.17: Werte je Modellfamilie, Gedanken bleiben zwischen den Abfragen einer Antwort, „Ausgewogen“ denkt vor jedem Schritt, Ergebnisse so lang, wie der Kontext trägt). Ursachen statt Aufzählung (3.17.17, Wunsch des Nutzers vom 23.11.2026): Arbeitsweise für Warum-Fragen im Systemtext (Treiber, eine Ebene tiefer, Verknüpfungen, belegt/vermutet – ohne feste Fälle) und das Lese-Werkzeug `get_net_worth_drivers`, das eine Veränderung über Konten, größte Umsätze und Beteiligungen bis in die Gesellschaft dahinter verfolgt; in der Demo als Fall (Kaufnebenkosten der Parkweg GbR). Messbar (3.17.18): Prüfsatz mit 73 Aufgaben auf Deutsch, gestellt durch den Assistenten auf der Demo-Welt (`tests/assistant_eval`, Entwickler-Werkzeug: Dokumente lesen, rechnen, Gedächtnis, Ehrlichkeit, Kontors Zahlen, Ursachen) – bei jedem Push mit Ersatzmodell (prüft den Ablauf), am Mac mit dem echten Modell (README dort); dort prüfen, ob ein echtes Modell die Ursache schließt (Gruppe u).
 
 Fertig, wenn
 - **Gedächtnis** wie unter Entschieden („März teurer: Urlaub“, „Ziel: mit 45 finanziell frei“): von selbst und auf „Merk dir“,
@@ -331,6 +345,9 @@ Fertig, wenn
 - **eingeschleuste Befehle wirkungslos:** Tests mit präparierten Buchungstexten, Dateien, Belegen – nichts gemerkt, keine Regel,
   kein Eintrag ohne Klick;
 - am Mac mit echten Modellen geprüft: Abschirmung (kein Netz, kein Zugriff auf Kontors Daten), Start, Antworten, Stoppen, Diktieren;
+- bekannt und nicht in Kontors Hand: Qwen3.6 35B-A3B kann in llama.cpp nach mehreren Fragen hängen bleiben (dort gemeldet als
+  #22450, keine Abhilfe bekannt); Kontor gibt eine Anfrage ohne Antwort erst nach 15 Minuten auf, das Modell läuft dann weiter.
+  Offen: früher erkennen (llama.cpp meldet den Fortschritt einer Anfrage) und das Modell von selbst neu starten;
 - ~~Kategorien zuordnen als Vorschlag mit Klick möglich ist, wie unter Kategorisieren~~ (3.16.19).
 - am iPhone ein Bezug ohne Rechtsklick geht (langes Drücken öffnet dort schon Zeilen);
 

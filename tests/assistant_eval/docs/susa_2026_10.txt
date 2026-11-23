@@ -1,0 +1,134 @@
+Sonnhalde Naturkost GmbH · Talstadt          Blatt 1
+Summen- und Saldenliste
+Sachkonten
+Oktober 2026
+Beraternr. 48213   Mandantennr. 1207   Währung EUR
+
+Konto  Beschriftung                                                EB-Wert  Okt/2026 Soll  Okt/2026 Haben   Jan-Okt Soll  Jan-Okt Haben         Saldo
+-----------------------------------------------------------------------------------------------------------------------------------------------------
+0027   EDV-Software                                            18.420,00 S           0,00          920,00       6.800,00       9.200,00   16.020,00 S
+0320   Pkw                                                     21.350,00 S           0,00          850,00           0,00       8.500,00   12.850,00 S
+0420   Technische Anlagen (Kältetechnik)                      186.400,00 S           0,00        5.600,00      28.500,00      56.000,00  158.900,00 S
+0430   Ladeneinrichtung                                       412.700,00 S      18.950,00        6.900,00      18.950,00      69.000,00  362.650,00 S
+0480   Geringwertige Wirtschaftsgüter                                 0,00       1.431,95        1.431,95      10.353,26      10.353,26          0,00
+0490   Sonstige Betriebs- und Geschäftsausstattung             38.900,00 S           0,00          600,00           0,00       6.000,00   32.900,00 S
+0630   Darlehen Talbank 3,2 %                                 412.000,00 H       8.500,00            0,00      85.000,00           0,00  327.000,00 H
+0640   Darlehen Ladenbau 2025                                 186.000,00 H       4.150,00            0,00      41.500,00           0,00  144.500,00 H
+0650   Büroeinrichtung                                         14.250,00 S           0,00          400,00           0,00       4.000,00   10.250,00 S
+0800   Gezeichnetes Kapital                                    50.000,00 H           0,00            0,00           0,00           0,00   50.000,00 H
+0840   Kapitalrücklage                                        150.000,00 H           0,00            0,00           0,00           0,00  150.000,00 H
+0860   Gewinnvortrag vor Verwendung                           513.315,72 H           0,00            0,00           0,00           0,00  513.315,72 H
+0950   Steuerrückstellungen                                    42.600,00 H           0,00            0,00      31.200,00           0,00   11.400,00 H
+0970   Sonstige Rückstellungen                                 12.300,00 H           0,00            0,00           0,00           0,00   12.300,00 H
+0971   Rückstellungen für Urlaub                               48.750,00 H           0,00            0,00           0,00           0,00   48.750,00 H
+0977   Rückstellungen für Abschluss und Prüfung                14.400,00 H           0,00        1.200,00      14.400,00      12.000,00   12.000,00 H
+0980   Aktive Rechnungsabgrenzung                               7.840,00 S           0,00          650,00       7.920,00       6.500,00    9.260,00 S
+       ----------------------------------------------------------------------------------------------------------------------------------------------
+       Summe Klasse 0                                         729.505,72 H      33.031,95       18.551,95     244.623,26     181.553,26  666.435,72 H
+1000   Kasse                                                   24.380,60 S     291.902,97      290.891,68   2.929.262,26   2.931.143,03   22.499,83 S
+1200   Bank Talbank                                           544.265,37 S   1.119.540,28    1.066.856,17  10.131.396,79  10.165.215,50  510.446,66 S
+1210   Sparkasse Talstadt                                      52.400,00 S       2.226,75        1.395,41      20.462,95      17.531,12   55.331,83 S
+1360   Geldtransit                                              8.420,00 S     290.891,68      289.937,52   2.931.143,03   2.929.414,60   10.148,43 S
+1400   Forderungen aus Lieferungen und Leistungen              18.640,50 S       6.995,44        7.207,94      64.693,68      63.899,57   19.434,61 S
+1525   Kautionen                                               64.500,00 S           0,00            0,00           0,00           0,00   64.500,00 S
+1548   Vorsteuer im Folgejahr abziehbar                         3.120,44 S           0,00            0,00           0,00       3.120,44          0,00
+1571   Abziehbare Vorsteuer 7 %                                       0,00      49.205,03            0,00     465.528,98           0,00  465.528,98 S
+1576   Abziehbare Vorsteuer 19 %                                      0,00      30.456,69            0,00     281.656,77           0,00  281.656,77 S
+1590   Durchlaufende Posten                                           0,00         242,31          231,10       5.242,97       5.113,02      129,95 S
+1600   Verbindlichkeiten aus Lieferungen und Leistungen       386.450,30 H     927.768,13      948.123,43   8.944.014,48   8.932.568,13  375.003,95 H
+1740   Verbindlichkeiten aus Lohn und Gehalt                          0,00     140.598,81      140.598,81   1.397.577,49   1.397.577,49          0,00
+1741   Verbindlichkeiten aus Lohn- und Kirchensteuer           24.830,12 H      25.375,05       25.137,36     249.562,63     249.869,87   25.137,36 H
+1742   Verbindlichkeiten im Rahmen der sozialen Sicherheit            0,00      87.271,75       87.271,75     866.569,43     866.569,43          0,00
+1771   Umsatzsteuer 7 %                                               0,00           0,00       78.522,60           0,00     735.471,01  735.471,01 H
+1776   Umsatzsteuer 19 %                                              0,00           0,00       38.546,59           0,00     360.755,47  360.755,47 H
+1780   Umsatzsteuer-Vorauszahlungen                                   0,00      34.799,36            0,00     357.133,26           0,00  357.133,26 S
+1790   Umsatzsteuer Vorjahr                                    61.240,77 H           0,00            0,00      61.240,77           0,00          0,00
+
+Brandauer & Kessel Steuerberatungsgesellschaft mbH
+
+Sonnhalde Naturkost GmbH · Talstadt          Blatt 2
+Summen- und Saldenliste
+Sachkonten
+Oktober 2026
+Beraternr. 48213   Mandantennr. 1207   Währung EUR
+
+Konto  Beschriftung                                            EB-Wert  Okt/2026 Soll  Okt/2026 Haben   Jan-Okt Soll  Jan-Okt Haben           Saldo
+---------------------------------------------------------------------------------------------------------------------------------------------------
+       --------------------------------------------------------------------------------------------------------------------------------------------
+       Summe Klasse 1                                     243.205,72 S   3.007.274,25    2.974.720,36  28.705.485,49  28.658.248,68    290.442,53 S
+2100   Zinsen und ähnliche Aufwendungen                           0,00       3.158,82            0,00      32.713,02          20,62     32.692,40 S
+2200   Körperschaftsteuer                                         0,00           0,00            0,00      29.620,10         220,10     29.400,00 S
+2208   Solidaritätszuschlag                                       0,00           0,00            0,00       1.617,00           0,00      1.617,00 S
+2300   Sonstige Aufwendungen (unregelmäßig)                       0,00           0,00            0,00         556,15           0,00        556,15 S
+2650   Sonstige Zinsen und ähnliche Erträge                       0,00           0,00          142,82           0,00       1.466,63      1.466,63 H
+2700   Sonstige Erträge                                           0,00           0,00        3.240,32           0,00      23.719,49     23.719,49 H
+       --------------------------------------------------------------------------------------------------------------------------------------------
+       Summe Klasse 2                                             0,00       3.158,82        3.383,14      64.506,27      25.426,84     39.079,43 S
+3300   Wareneingang 7 % Vorsteuer                                 0,00     702.929,10            0,00   6.650.414,80           0,00  6.650.414,80 S
+3400   Wareneingang 19 % Vorsteuer                                0,00     120.820,76            0,00   1.106.708,29           0,00  1.106.708,29 S
+3980   Bestand Waren                                      486.300,00 S           0,00            0,00           0,00           0,00    486.300,00 S
+       --------------------------------------------------------------------------------------------------------------------------------------------
+       Summe Klasse 3                                     486.300,00 S     823.749,86            0,00   7.757.123,09           0,00  8.243.423,09 S
+4110   Löhne                                                      0,00      10.965,00            0,00     111.912,06         108,03    111.804,03 S
+4120   Gehälter                                                   0,00     181.504,50            0,00   1.797.181,02           0,00  1.797.181,02 S
+4124   Geschäftsführergehälter der GmbH-Gesellschafter            0,00      12.500,00            0,00     125.102,65         102,65    125.000,00 S
+4130   Gesetzliche soziale Aufwendungen                           0,00      42.535,77            0,00     422.425,00         539,29    421.885,71 S
+4138   Beiträge zur Berufsgenossenschaft                          0,00       1.074,62            0,00      10.484,25          13,92     10.470,33 S
+4140   Freiwillige soziale Aufwendungen                           0,00       1.571,76            0,00      12.966,65           0,00     12.966,65 S
+4190   Aushilfslöhne                                              0,00       8.059,00            0,00      83.722,16         165,48     83.556,68 S
+4199   Pauschale Abgaben für Aushilfen                            0,00       2.512,00            0,00      26.080,26          35,64     26.044,62 S
+4210   Miete                                                      0,00      86.400,00            0,00     864.451,02         451,02    864.000,00 S
+4230   Heizung                                                    0,00       3.742,51            0,00      34.505,65           0,00     34.505,65 S
+4240   Gas, Strom, Wasser                                         0,00      23.742,26            0,00     232.451,88           0,00    232.451,88 S
+4250   Reinigung                                                  0,00       6.458,23            0,00      63.967,15         102,89     63.864,26 S
+4260   Instandhaltung betrieblicher Räume                         0,00       5.295,87            0,00      28.985,21          30,19     28.955,02 S
+4280   Sonstige Raumkosten                                        0,00       1.376,31            0,00      14.565,70           0,00     14.565,70 S
+4320   Gewerbesteuer                                              0,00           0,00            0,00      33.600,00           0,00     33.600,00 S
+4340   Sonstige Betriebssteuern                                   0,00         290,55            0,00       2.798,72           0,00      2.798,72 S
+4360   Versicherungen                                             0,00       2.726,69            0,00      27.790,17          38,22     27.751,95 S
+4380   Beiträge                                                   0,00       1.150,51            0,00      11.181,14           0,00     11.181,14 S
+4390   Sonstige Abgaben                                           0,00         378,25            0,00       3.862,59           0,00      3.862,59 S
+4520   Kfz-Versicherungen                                         0,00         640,00            0,00       6.400,00           0,00      6.400,00 S
+4530   Laufende Kfz-Betriebskosten                                0,00       2.061,50            0,00      19.077,76           0,00     19.077,76 S
+4540   Kfz-Reparaturen                                            0,00         910,40            0,00       5.258,34           0,00      5.258,34 S
+4600   Werbekosten                                                0,00       9.394,29            0,00      87.658,88         259,33     87.399,55 S
+4650   Bewirtungskosten                                           0,00         490,91            0,00       4.339,42           0,00      4.339,42 S
+
+Brandauer & Kessel Steuerberatungsgesellschaft mbH
+
+Sonnhalde Naturkost GmbH · Talstadt          Blatt 3
+Summen- und Saldenliste
+Sachkonten
+Oktober 2026
+Beraternr. 48213   Mandantennr. 1207   Währung EUR
+
+Konto  Beschriftung                                            EB-Wert  Okt/2026 Soll  Okt/2026 Haben   Jan-Okt Soll  Jan-Okt Haben            Saldo
+----------------------------------------------------------------------------------------------------------------------------------------------------
+4660   Reisekosten Arbeitnehmer                                   0,00         217,92            0,00       5.957,95           0,00       5.957,95 S
+4710   Verpackungsmaterial                                        0,00       4.478,69           80,19      44.251,01          80,19      44.170,82 S
+4730   Ausgangsfrachten                                           0,00       1.419,28            0,00      12.542,76          10,95      12.531,81 S
+4780   Fremdarbeiten (Vertrieb)                                   0,00       2.583,41            0,00      20.854,95          60,63      20.794,32 S
+4800   Reparaturen techn. Anlagen und Maschinen                   0,00       6.341,09            0,00      55.890,66          46,04      55.844,62 S
+4805   Reparaturen Betriebs- und Geschäftsausstattung             0,00         712,10            0,00      13.347,56           0,00      13.347,56 S
+4822   Abschreibungen auf immaterielle Vermögensgegenstände       0,00         920,00            0,00       9.200,00           0,00       9.200,00 S
+4830   Abschreibungen auf Sachanlagen                             0,00      14.350,00            0,00     143.500,00           0,00     143.500,00 S
+4855   Sofortabschreibung geringwertiger Wirtschaftsgüter         0,00       1.431,95            0,00      10.357,97           4,71      10.353,26 S
+4910   Porto                                                      0,00         344,07            0,00       3.151,88           0,00       3.151,88 S
+4920   Telefon                                                    0,00       1.229,07            0,00      12.376,56           0,00      12.376,56 S
+4930   Bürobedarf                                                 0,00         720,29            0,00       6.527,85           0,00       6.527,85 S
+4950   Rechts- und Beratungskosten                                0,00       2.020,11           36,78      16.423,78          36,78      16.387,00 S
+4955   Buchführungskosten                                         0,00       2.450,00            0,00      24.544,73          44,73      24.500,00 S
+4957   Abschluss- und Prüfungskosten                              0,00       1.200,00            0,00      12.000,00           0,00      12.000,00 S
+4970   Nebenkosten des Geldverkehrs                               0,00       7.319,23           33,77      68.263,71          33,77      68.229,94 S
+4980   Betriebsbedarf                                             0,00       2.673,98            0,00      29.728,94           0,00      29.728,94 S
+       ---------------------------------------------------------------------------------------------------------------------------------------------
+       Summe Klasse 4                                             0,00     456.192,12          150,74   4.519.687,99       2.164,46   4.517.523,53 S
+8300   Erlöse 7 % USt                                             0,00           0,00    1.121.751,54       5.530,72  10.512.260,18  10.506.729,46 H
+8400   Erlöse 19 % USt                                            0,00           0,00      202.876,80       1.499,42   1.900.212,75   1.898.713,33 H
+8590   Verrechnete sonstige Sachbezüge                            0,00           0,00        1.972,47           0,00      18.590,07      18.590,07 H
+       ---------------------------------------------------------------------------------------------------------------------------------------------
+       Summe Klasse 8                                             0,00           0,00    1.326.600,81       7.030,14  12.431.063,00  12.424.032,86 H
+       ---------------------------------------------------------------------------------------------------------------------------------------------
+       Summe Sachkonten                                           0,00   4.323.407,00    4.323.407,00  41.298.456,24  41.298.456,24             0,00
+
+Brandauer & Kessel Steuerberatungsgesellschaft mbH
