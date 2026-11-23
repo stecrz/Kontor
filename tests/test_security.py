@@ -1195,7 +1195,8 @@ class NothingGoesOut(unittest.TestCase):
     COMMANDS_BY_PATH = {"auth.py", "mm_history.py", "llm_local.py", "tls_cert.py", "receipt_text.py", "web_search.py",     # receipt_text: its text recognition, sealed; web_search: python3 -I web_reader.py (in the sandbox)
                         "pyboot.py", "pyruntime.py"}        # Kontor's own Python, only from inside .python/ in the program folder: the starter runs the service in it; a build is tried before
     # where links on the pages lead (opened by you, in a new window; the pages themselves only talk to Kontor)
-    LINKS = {"github.com", "tailscale.com", "login.tailscale.com", "apps.apple.com", "www.w3.org"}
+    LINKS = {"github.com", "tailscale.com", "login.tailscale.com", "apps.apple.com", "www.w3.org",
+             "huggingface.co"}             # Einstellungen -> Updates, "Verwendete Programme": the page of a model, where its licence stands
     HOST = re.compile(r"(?:https?|wss?|ftp)://([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+)")
 
     @classmethod

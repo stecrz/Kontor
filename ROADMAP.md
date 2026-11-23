@@ -156,6 +156,10 @@ anhängen – nie löschen.
   Nutzer, 23.11.: kein Rückweg nötig – immer das aktuellste Python. (Der Knopf zurück zum Python des Macs entfällt; geladen wird das
   neueste stabile Python, mit dem Kontors Tests grün sind – heute 3.15.2; neuere bietet ein Update von Kontor an, geladen nach Klick.
   Bleibt: vor dem Umschalten geprüft und probegestartet, sonst wird nicht umgeschaltet; Python 3.9 als Startpython und in CI vorerst.)
+- **Fremdes sichtbar benannt** (Nutzer, 2026-11-23): Alles Fremde, das Kontor nutzt – das neue Python, llama.cpp, die Modelle und
+  künftige Bibliotheken –, steht für den Nutzer mit Name, Version, Lizenz, Herkunft und „abgeschirmt ja/nein“ in einer Liste unter
+  Einstellungen (Updates → „Verwendete Programme“) und kurz in der Hilfe; so angelegt, dass eine künftige Bibliothek nur einen
+  Eintrag braucht. (umgesetzt in 3.17.13: `components.py`)
 - **Fertige Bibliotheken statt Eigenbau** (Nutzer, 2026-11-23): Wo bewährte offene Bibliotheken oder Modelle eine Aufgabe besser
   lösen – vor allem PDF- und Excel-Lesen, auch KI-Dokumentmodelle für schwierige PDFs –, nutzt Kontor sie: nur in abgeschirmten
   Hilfsprozessen, mit fester Version und Prüfsumme, geladen nach Klick, für den Nutzer mit Name, Version, Lizenz und Herkunft
@@ -219,7 +223,8 @@ anhängen – nie löschen.
   Programme, keine Apple-Events, liest im Benutzerordner nur sein Programm und seine Pakete, nie Kontors oder MoneyMoneys Daten,
   schreibt nur in einen Zwischenordner je Aufruf; ohne Sandbox startet er nicht.
   Pakete: nur fertige Wheels (nie Quellpakete, nie `pip`, kein Installationsskript), je Paket Name, Version, Datei, Größe, SHA-256,
-  Lizenz und Herkunft fest im Code – ein Eintrag, aus dem auch die Liste „Verwendete Programme“ entsteht; geladen nur nach Klick,
+  Lizenz und Herkunft fest im Code – ein Eintrag in `components.LIBRARIES`, aus dem auch die Liste „Verwendete Programme“ entsteht
+  (die Liste und ihr Test stehen seit 3.17.13; `components.loaded` nennt dann, was auf dem Mac liegt); geladen nur nach Klick,
   entpackt und verglichen wie das Python (`pyruntime`: laden → entpacken → jede Datei gegen das Archiv → Probe im Helfer → erst
   dann umbenennen), abhängige Pakete einzeln genannt, nichts wird aufgelöst. Ort: `.python/libs/<name>-<version>/` im
   Programmordner (nie im Datenordner; Deinstallieren entfernt ihn mit; ein anderes Python verwirft ihn, weil die Pakete nicht

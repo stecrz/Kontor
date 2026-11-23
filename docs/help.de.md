@@ -670,6 +670,18 @@ Kontor ist in Python geschrieben. Ab Werk läuft es mit dem Python, das zu macOS
 - **Neuere Versionen** bringt ein Update von Kontor mit (Version und Prüfsumme stehen im Programm). Die Seite zeigt dann „neuer“; geladen wird erst nach deinem Klick.
 - **Fragt macOS danach neu**, ob Python MoneyMoney steuern oder – bei eingeschalteter Firewall, für den Zugriff vom iPhone – eingehende Verbindungen annehmen darf: erlauben.
 
+<a id="components"></a>
+### Verwendete Programme
+
+Kontor selbst ist frei (Apache 2.0) und bringt keine fremden Bibliotheken mit. Was es darüber hinaus nutzt, steht unter Einstellungen → Updates → **Verwendete Programme** – je Eintrag Name, Version, Lizenz, Herkunft und ob er abgeschirmt läuft:
+
+- **Python** – darin läuft Kontor: das Python des Macs (Teil von macOS) oder Kontors eigenes ([Python](#python); Lizenz der Python Software Foundation – PSF 2.0 –, von python-build-standalone bei GitHub; es enthält unter anderem OpenSSL und SQLite, alle Lizenztexte liegen in seinem Ordner). Nicht abgeschirmt – es ist Kontor selbst.
+- **llama.cpp** (Lizenz MIT, von GitHub) führt die Modelle des [Assistenten](#assistant-safety) aus, in der Abschirmung von macOS.
+- **Modelle** des Assistenten, zum Diktieren und für die Suche nach Bedeutung (von Hugging Face) – jedes mit seiner Datei und seiner Lizenz. Sie laufen nur in llama.cpp, also in derselben Abschirmung. Bei einem Modell, das du selbst hinzugefügt hast, nennt seine Seite die Lizenz.
+- **macOS** – Bordmittel, die Kontor aufruft: das Python des Macs (es startet Kontor, auch wenn Kontor in seinem eigenen läuft), `openssl`, `osascript`, Swift, die Sandbox, die Texterkennung.
+
+„Abgeschirmt“ heißt: in der Sandbox von macOS, ohne Netz und ohne Zugriff auf Kontors Daten; die Stufe stellst du unter KI-Assistent ein. Was Kontor davon lädt (sein Python, llama.cpp, Modelle), lädt es nur nach deinem Klick und prüft es an seiner Prüfsumme. Kommt später eine Bibliothek dazu, steht sie hier.
+
 <a id="demo"></a>
 ## Demo zum Vorzeigen
 

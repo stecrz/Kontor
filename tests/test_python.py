@@ -662,6 +662,7 @@ class Loading(unittest.TestCase):
         for junk in ("x.tar.gz.part", "x.tar.gz"):
             open(os.path.join(root, junk), "w").close()
         os.makedirs(os.path.join(root, "cpython-2.0.0-1.tmp", "python"))
+        os.makedirs(os.path.join(root, R.LIBS, "x-1.0"))                     # (the place for libraries of shielded helpers, once there are any)
         put_build(self.here, name="cpython-1.0.0-1", state=False)
         with Build():
             st = self.rt.status()
@@ -670,16 +671,20 @@ class Loading(unittest.TestCase):
             self.assertEqual(wait(self.rt)["state"], "done", self.rt.job)
             self.assertFalse(self.rt.status()["newer"])
         # what earlier tries left is gone; the build that was in use until now stays until the next start has left it
-        self.assertEqual(sorted(os.listdir(root)), sorted([NAME, "cpython-3.0.0-20200101", pyboot.STATE]))
+        self.assertEqual(sorted(os.listdir(root)), sorted([NAME, "cpython-3.0.0-20200101", pyboot.STATE, R.LIBS]))
         self.assertTrue(os.path.isfile(old))
         self.rt.sweep()
-        self.assertEqual(sorted(os.listdir(root)), sorted([NAME, pyboot.STATE]))
+        self.assertEqual(sorted(os.listdir(root)), sorted([NAME, pyboot.STATE, R.LIBS]))
         # never the one this very process runs in, whatever the state file says
         put_build(self.here, name="cpython-3.0.0-20200101", state=False)
         with mock.patch.object(pyboot, "running", lambda: old):
             self.assertEqual(pyboot.serving(self.here), old)
             self.rt.sweep()
         self.assertTrue(os.path.isfile(old))
+        # the libraries' place stayed through every sweep -- and goes with Kontor's own Python
+        self.assertTrue(os.path.isdir(os.path.join(root, R.LIBS, "x-1.0")))
+        self.rt.remove()
+        self.assertEqual(os.listdir(root), [pyboot.STATE])
 
     def test_where_there_is_no_build_and_no_room(self):
         keep = R.FILES

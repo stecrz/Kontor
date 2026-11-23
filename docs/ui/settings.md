@@ -173,6 +173,19 @@ works: a bar with "Laden … x von y MB", then "Prüfen und entpacken", "Testen"
 failed (nothing was switched then). "gilt ab dem nächsten Start von Kontor": chosen, not yet what runs. A green line right
 after a switch names the version Kontor runs with now.
 
+### settings.updates.components — Verwendete Programme
+Everything foreign Kontor uses on this Mac, one row each: name and version in bold; below it what it is for, for a model its
+file, "Lizenz <name>" (the licence as under KI-Assistent, e.g. "Apache 2.0", "MIT"; "PSF 2.0" is the Python Software
+Foundation's; "Lizenz: siehe Herkunft" when Kontor does not know it – a model the user added by
+its repository), and where it comes from (a link to GitHub or Hugging Face that opens in the browser; "Teil von macOS (Apple)"
+for the Mac's own Python and tools). The pill on the right: "abgeschirmt" (runs in the macOS sandbox at the level set under
+KI-Assistent: no network, no access to Kontor's data), "abgeschirmt (einfach)" (the weaker level) or "nicht abgeschirmt"
+(Python and macOS's tools: Kontor itself runs in them; llama.cpp and models only when the user switched the sandbox off).
+Rows, in this order: Python (the one Kontor runs in; Kontor's own build also says what it includes), llama.cpp, each model on
+this Mac (assistant, dictation, finding by meaning), libraries (none yet), macOS (its built-in tools, among them the Mac's
+own Python, which starts Kontor even when Kontor runs in its own). Nothing here can be changed; loading and
+removing is done under Python above and under KI-Assistent.
+
 ### settings.updates.changes — Änderungen
 "Neu in …": all changes since the installed version, when one is available. "Änderungen je Hauptversion": per major version (e.g.
 3.17 = 3.16.1 … 3.17.0; one not out yet "in Arbeit") a short overview of its big topics, its single versions folded, older major

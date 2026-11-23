@@ -13,3 +13,11 @@ The optional assistant downloads llama.cpp (MIT licence,
 https://github.com/ggml-org/llama.cpp) and language model files from Hugging
 Face at the user's request. They are not part of Kontor and come under their
 own licences.
+
+At the user's request Kontor downloads a build of CPython (Python Software
+Foundation License 2; built by python-build-standalone,
+https://github.com/astral-sh/python-build-standalone) to run in. It is not
+part of Kontor and comes under its own licences, which lie in its folder.
+
+Kontor names everything of this kind it uses on a Mac, with version, licence
+and origin, under Settings -> Updates.

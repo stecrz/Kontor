@@ -670,6 +670,18 @@ Kontor is written in Python. Out of the box it runs with the Python that belongs
 - **Newer versions** come with an update of Kontor (version and checksum are written in the program). The page then shows “newer”; it is downloaded only after your click.
 - **If macOS asks anew afterwards** whether Python may control MoneyMoney or – with the firewall on, for access from the iPhone – accept incoming connections: allow.
 
+<a id="components"></a>
+### Software Kontor uses
+
+Kontor itself is free (Apache 2.0) and ships no foreign libraries. Whatever it uses beyond that is listed under Settings → Updates → **Software Kontor uses** – for each entry its name, version, licence, where it comes from and whether it runs shielded:
+
+- **Python** – Kontor runs in it: the Mac's Python (part of macOS) or Kontor's own ([Python](#python); the Python Software Foundation's licence – PSF 2.0 –, from python-build-standalone on GitHub; it includes OpenSSL and SQLite, among others, and all licence texts are in its folder). Not shielded – it is Kontor itself.
+- **llama.cpp** (MIT licence, from GitHub) runs the [assistant's](#assistant-safety) models, inside the macOS sandbox.
+- **Models** for the assistant, for dictation and for finding by meaning (from Hugging Face) – each with its file and its licence. They run only inside llama.cpp, so in the same sandbox. For a model you added yourself, its page names the licence.
+- **macOS** – built-in tools Kontor calls: the Mac's Python (it starts Kontor, even when Kontor runs in its own), `openssl`, `osascript`, Swift, the sandbox, text recognition.
+
+“Shielded” means: inside the macOS sandbox, without a network and without access to Kontor's data; you set the level under AI assistant. What Kontor downloads of these (its Python, llama.cpp, models) it downloads only after your click and checks by its checksum. A library that comes later will be listed here.
+
 <a id="demo"></a>
 ## Demo for showing
 

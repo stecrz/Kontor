@@ -201,7 +201,7 @@ const H = {
   months_back: t('wie_viele_monate_historie_gelesen'),
   bind: t('auf_diesem_mac_ist_die'),
   tls: t('optional_zertifikat_schluessel_pem_fue'),
-  updates: t('einzige_netzverbindung_von_kontor_einm'), python: t('h_python'),
+  updates: t('einzige_netzverbindung_von_kontor_einm'), python: t('h_python'), programme: t('h_programme'),
   assistent: t('h_assistent'), ki_abschirmung: t('h_ki_abschirmung'), ki_kontext: t('h_ki_kontext'), ki_leerlauf: t('h_ki_leerlauf'),
   ki_eintragen: t('h_ki_eintragen'), ki_eigenes: t('h_ki_eigenes'), ki_diktat: t('h_ki_diktat'), ki_bedeutung: t('h_ki_bedeutung'), ki_sp_start: t('h_ki_sp_start'), ki_mikrofilter: t('h_ki_mikrofilter'), ki_speichern: t('h_ki_speichern'), ki_internet: t('h_ki_internet'), ki_tavily: t('h_ki_tavily'), ki_vertraut: t('h_ki_vertraut'), ki_websites: t('h_ki_websites'),
   ki_gedaechtnis: t('h_ki_gedaechtnis'),
@@ -263,7 +263,7 @@ const HELP_AT = {als_app: 'app', berechtigung: 'setup', immo_abrechnung: 'proper
   h_l_gp: 'rules-loans', h_l_kt: 'rules-loans', h_l_kz: 'rules-loans', h_co_anteil: 'areas', h_co_bet: 'rules-companies', h_co_gk: 'rules-mirrors', h_gk_rueck: 'rules-mirrors',
   h_co_rueck: 'rules-back', h_co_takt: 'rules-companies', h_co_schwelle: 'rules-companies', h_co_gp: 'rules-companies', method: 'planning', plan_modell: 'planning', inflation: 'planning', steig_ein: 'planning',
   rendite: 'planning', event: 'planning', wert_bereich: 'planning', fern: 'iphone', fern_was: 'iphone', offline: 'iphone', bind: 'iphone', tls: 'iphone',
-  port: 'iphone', touchid: 'security', package: 'backup', timemachine: 'backup', datenschluessel: 'security', diagnose: 'troubleshooting', einrichtung_knoepfe: 'setup', updates: 'updates', python: 'python',
+  port: 'iphone', touchid: 'security', package: 'backup', timemachine: 'backup', datenschluessel: 'security', diagnose: 'troubleshooting', einrichtung_knoepfe: 'setup', updates: 'updates', python: 'python', programme: 'components',
   update_quelle: 'updates', belege_ordner: 'receipts', belege_sub: 'receipts', documents: 'properties', assistent: 'assistant', ki_diktat: 'assistant-dictation', ki_bedeutung: 'assistant-memory', ki_sp_start: 'assistant-dictation', ki_mikrofilter: 'assistant-dictation', ki_abschirmung: 'assistant-safety', ki_kontext: 'assistant-setup', ki_leerlauf: 'assistant-setup', ki_auto_suchen: 'assistant-setup', ki_eintragen: 'assistant-rights', ki_eigenes: 'assistant-setup', ki_speichern: 'assistant', ki_programm: 'assistant-setup', ki_modelle: 'assistant-setup', ki_ablage: 'assistant-setup', ki_internet: 'assistant-internet', ki_tavily: 'assistant-internet', ki_vertraut: 'assistant-internet', ki_websites: 'assistant-internet'};
 const more = id => ` <a href="#help/${id}" class="more">${t('mehr_in_der_hilfe')}</a>`;   // Verweis auf einen Abschnitt der Hilfe
 // beside a page's title: what the page does in a line, a click opens its part of the help (settings and Konten & Regeln: per tab)
@@ -6602,6 +6602,22 @@ function pyBind() {
   on('py-remove', () => pyDo('remove'));
   if ($('#py-cancel')) pyWatch();
 }
+// Einstellungen -> Updates: everything foreign Kontor uses, named (components.py) -- what it is and its version, what it is for,
+// its licence, where it comes from (a link you open) and whether it runs in the Mac's sandbox. Nothing to click but the links.
+const VP_SITES = {github: ['GitHub', 'https://github.com/'], huggingface: ['Hugging Face', 'https://huggingface.co/'], apple: ['Apple', '']};
+function vpRow(c) {
+  const site = VP_SITES[c.site], model = c.kind === 'model', sys = c.kind === 'system';
+  const from = !site ? '' : site[1] && c.path ? `<a href="${site[1]}${esc(encodeURI(c.path))}" target="_blank" rel="noopener">${site[0]}: ${esc(c.path.split('/releases/')[0])}</a>` : c.kind === 'python' || sys ? t('vp_teil_von_macos') : site[0];
+  const lic = sys || (c.kind === 'python' && c.site === 'apple') ? '' : c.licence ? t('vp_lizenz', esc(c.licence)) : t('vp_lizenz_unbekannt');
+  const pill = c.shielded === 'strict' ? `<span class="pill ok">${t('vp_abgeschirmt')}</span>` : c.shielded === 'basic' ? `<span class="pill ok">${t('vp_abgeschirmt_basic')}</span>`
+    : `<span class="pill ${c.shielded === 'off' ? 'warn' : 'neutral'}">${t('vp_nicht_abgeschirmt')}</span>`;
+  const sub = [t(c.use), model && c.version ? esc(c.version) : '', lic, from].filter(Boolean).join(' · ');
+  return `<div class="as-item vp-item"><span><b>${esc(c.name)}${!model && c.version ? ' ' + esc(c.version) : ''}</b><br><span class="muted small">${sub}${c.holds ? '<br>' + t('vp_enthaelt') : ''}</span></span><span class="as-act">${pill}</span></div>`;
+}
+function vpBox(list) {
+  if (!list || !list.length) return '';
+  return `<div data-ex="settings.updates.components" id="vp-box"><h2>${t('vp_titel')}${hq('programme')}</h2><div class="as-list">${list.map(vpRow).join('')}</div></div>`;
+}
 async function vUpdates(form) {
   const r = await api('/api/update/status'), st = S.STATUS, info = r.info, finds = upFinds(info);
   let h = `<div data-ex="settings.updates"><div class="cards"><div class="card"><div class="l">${t('installiert')}</div><div class="v">${esc(r.version)}${r.date ? `<span class="vdate">${t('vom_0', FDT(r.date))}</span>` : ''}</div><div class="d">${t('programmordner_wird_beim_update_ersetz')}</div></div>
@@ -6610,6 +6626,7 @@ async function vUpdates(form) {
     ${upReview(info)}
     ${pyBox(r.python)}
     ${form || ''}
+    ${vpBox(r.components)}
     <div data-ex="settings.updates.changes">${info && info.notes && info.newer ? `<h2>${t('neu_in_0', esc(info.since && info.since !== info.available ? t('0_bis_1', info.since, info.available) : info.available))}</h2>${clHtml(info.notes)}` : ''}
     ${clHistory(r.history)}</div>
     <div class="note">${t('updates_note', esc('https://github.com/' + ((S.CFG.updates || {}).repo || 'stecrz/Kontor')))}${more('updates')}</div></div>`;

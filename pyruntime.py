@@ -66,6 +66,9 @@ TRY_SECONDS = 180
 # until when a line of Python gets security fixes (python.org) -- said of the Python Kontor runs in when it is past
 ENDED = {(3, 9): "2025-10-31"}
 STEPS = ("load", "unpack", "try", "switch")
+# in .python/: the place for the libraries of shielded helpers, once there are any (components.LIBRARIES; ROADMAP.md,
+# "Bibliotheken in abgeschirmten Helfern") -- left alone by a sweep, gone with Kontor's own Python
+LIBS = "libs"
 
 
 class Cancelled(Exception):
@@ -418,7 +421,7 @@ class Runtime:
         root = pyboot.folder(self.here)
         if not os.path.isdir(root):
             return
-        keep = {pyboot.STATE, pyboot.REMOVE, str(pyboot.read_state(self.here).get("dir") or "")}
+        keep = {pyboot.STATE, pyboot.REMOVE, LIBS, str(pyboot.read_state(self.here).get("dir") or "")}
         mine = pyboot.serving(self.here)
         for name in os.listdir(root):
             path = os.path.join(root, name)

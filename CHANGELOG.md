@@ -1,5 +1,10 @@
 # Änderungen
 
+## 3.17.13 (2026-11-23 13:50)
+- Updates: „Verwendete Programme“ – alles Fremde, das Kontor nutzt, mit Version, Lizenz, Herkunft und ob es abgeschirmt läuft: Python, llama.cpp, jedes Modell, Bordmittel von macOS
+- Hilfe: Abschnitt „Verwendete Programme“
+- Entwicklung: `components.py` – künftige Bibliotheken brauchen dort einen Eintrag; ein Test verlangt die Lizenz zu jedem Modell der Listen; Platz für Bibliotheken neben Kontors Python reserviert
+
 ## 3.17.12 (2026-11-23 13:50)
 - Python: Kontor läuft auf Wunsch mit einem eigenen, aktuellen Python 3.15 statt Apples 3.9 (ohne Sicherheitsupdates) – Einstellungen → Updates → Python
 - Python: geladen nur nach Klick von GitHub – Prüfsumme, Vergleich jeder Datei, Test mit allen Teilen von Kontor, erst dann umgestellt

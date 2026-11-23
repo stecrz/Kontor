@@ -55,6 +55,7 @@ import updates
 import changelog
 import pyboot
 import pyruntime
+import components
 import assistant as assistant_mod
 import demo
 import devices as devices_mod
@@ -1377,6 +1378,16 @@ class App:
         if st["newer"]:
             return "newer"
         return "old" if st["supported"] and st["running"]["ended"] and not st["use"] else ""
+
+    def components(self) -> list:
+        """Everything foreign Kontor uses, for Einstellungen -> Updates (components.py): the Python it runs in, llama.cpp and
+        the models on this Mac, what macOS brings along. Without the assistant (not there, the data locked): the rest."""
+        try:
+            a = self.assistant
+            ai, sandbox = a.ai, a.settings()["sandbox"]
+        except Exception:
+            ai, sandbox = None, "strict"
+        return components.listing(self.python.status(), ai, sandbox, self.program_dir)
 
     def remote_retry(self) -> None:
         bind = ((self.config.get("ui") or {}).get("bind") or "127.0.0.1").strip()
@@ -3562,7 +3573,7 @@ def make_handler(app: App):
                 return self._json(200, dict(getattr(app, "read_state", {"running": False}), now=time.time()))
             if path == "/api/update/status":
                 return self._json(200, {"info": app.update_info, "verified": app.update_checked, "version": version(), "date": updates.installed_date(),
-                                        "history": changelog.history(), "python": app.python.status()})
+                                        "history": changelog.history(), "python": app.python.status(), "components": app.components()})
             if path == "/api/python":                    # while it is loaded and tried: how far it is
                 return self._json(200, {"python": app.python.status(), "instance": app.instance})
             if path == "/api/history":
