@@ -16,7 +16,11 @@ description: Jede Änderung an Kontor abschließen – prüfen (auch mit Python 
    - Python 3.9 (Apples Version auf dem Mac): `TZ=Europe/Berlin ~/py39/bin/python -m pytest -q tests` (~1 min; Browser-Tests
      laufen nur mit dem aktuellen Python). Fehlt `~/py39`, einmal einrichten: `uv python install 3.9 && uv venv -q -p 3.9 ~/py39 &&
      VIRTUAL_ENV=~/py39 uv pip install -q pytest cryptography` (ohne Playwright).
-2. **Mitpflegen** nach der Tabelle „Was wo gepflegt wird“ in `CLAUDE.md`: Texte und Tooltips (`web/i18n.js`), was jede neue oder
+2. **Mitpflegen** – GitHub ist das einzige Gedächtnis (`CLAUDE.md`, Arbeitsweise): ein neuer Chat kennt nur das Repo. Jede
+   Entscheidung des Nutzers aus diesem Chat (`ROADMAP.md`, „Entschieden“/„Offen“), jede geänderte Regel oder jeder geänderte
+   Ablauf (`CLAUDE.md`, Skills, Hooks) und jedes geänderte Verhalten gehört in diese Version – ohne Erinnerung durch den Nutzer.
+   Frage vor dem Commit: Würde ein neuer Chat mit nur diesem Repo richtig weiterarbeiten? Nichts Persönliches (öffentlich).
+   Nach der Tabelle „Was wo gepflegt wird“ in `CLAUDE.md`: Texte und Tooltips (`web/i18n.js`), was jede neue oder
    geänderte Stelle zeigt (`docs/ui/<seite>.md` + `data-ex`, für den Assistenten), Hilfe (`docs/help.de.md` und `docs/help.en.md`,
    gleiche Anker) und README, wo die Änderung sie betrifft. **Oberfläche geändert:** Skill `ui-check`. Hilfe-Bilder (`tests/screenshots.py`) **nur beim großen Versionssprung**
    (zweite Stelle) – bei kleinen Versionen keine Bilder neu erzeugen.

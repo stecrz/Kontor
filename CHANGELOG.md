@@ -1,5 +1,9 @@
 # Änderungen
 
+## 3.17.8 (2026-11-23 05:49)
+- Buchungsregeln: getilgtes oder überzahltes Darlehen – keine Zinsen mehr (auch bei Jahresbasis), Hinweis solange überzahlt; ebenso im Darlehensplan
+- Entwicklung: Regel „GitHub ist das einzige Gedächtnis“; Entscheidungen zum iPhone-Zugang und zu überzahlten Darlehen im Fahrplan
+
 ## 3.17.7 (2026-11-23 04:42)
 - Entwicklung: Entscheidungen vom 23.11. im Fahrplan – KI-Plattform, Claude als Recherche-Stufe, Abschirmung, aktuelles Python, fertige Bibliotheken, Gedächtnis-Export, Tailscale-Prüfung, Antworten vor Tempo
 

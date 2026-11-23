@@ -445,8 +445,21 @@ def plan_loan(ledger: Ledger, cfg: dict, today: date, config: Optional[dict] = N
     stale: List[str] = []
     unclear: List[date] = [t.booking_date for t in again]
 
+    def owed_at(day: date) -> float:
+        """What is owed that day (a loan given: what is owed to you); below 0: overpaid."""
+        return (ledger.balance_at(loan.uuid, day) + sum(d for t, d in fixes if t <= day)) * sign
+
     def debt_fixed(day: date) -> float:
-        return abs(ledger.balance_at(loan.uuid, day) + sum(d for t, d in fixes if t <= day))
+        """What is owed that day -- never below 0: past zero the loan is overpaid, and an overpayment bears no interest
+        (decided 2026-11-23)."""
+        return max(0.0, owed_at(day))
+
+    def paid_off(y: int, m: int) -> bool:
+        """Nothing owed before this month (repaid or overpaid): no interest for it, in either model -- in the yearly one the
+        year's base no longer applies once the loan is gone; a base you set for the year applies as set."""
+        if modell == "yearly_base" and str(y) in overrides:
+            return False
+        return owed_at(date(y, m, 1) - timedelta(days=1)) <= 0.005
 
     per_cache: Dict[int, float] = {}
 
@@ -484,14 +497,15 @@ def plan_loan(ledger: Ledger, cfg: dict, today: date, config: Optional[dict] = N
                 continue
             was = _written_interest(texts["interest_text"], marks[tag].purpose, "%02d/%04d" % (m, y), tag)
             if modell == "yearly_base":
-                known = year_basis(y)[2] > 0
+                known = year_basis(y)[0] > 0 or year_basis(y)[1] > 0
                 rate_now, base_now = year_basis(y)[1], year_basis(y)[0]
             else:
                 rate_now = _rate_at(rates, date(y, m, 1))
                 base_now = debt_fixed(date(y, m, 1) - timedelta(days=1))
                 known = rate_now is not None
             if was is not None and known and rate_now is not None:
-                then, now = _interest_of(modell, was[0], was[1], m), _interest_of(modell, base_now, rate_now, m)
+                then = _interest_of(modell, was[0], was[1], m)
+                now = 0.0 if paid_off(y, m) else _interest_of(modell, base_now, rate_now, m)
                 if abs(marks[tag].amount - sign * then) >= 0.005:          # as Kontor computed it up to 3.16.99: its own as well
                     then = _interest_floats(modell, was[0], was[1], m)
                 if abs(marks[tag].amount - sign * then) < 0.005 and abs(now - then) >= STALE_MIN:
@@ -517,12 +531,15 @@ def plan_loan(ledger: Ledger, cfg: dict, today: date, config: Optional[dict] = N
                 held.append(bday)
             if auto or _skipped(hold, loan.uuid, tag):
                 continue
+        if paid_off(y, m):
+            continue                                     # nothing owed (repaid or overpaid): no interest
         if modell == "yearly_base":
             base, rate, yearly = year_basis(y)
             if yearly <= 0:
                 continue
             per = monthly(y)
-            interest = cents(yearly - 11 * per) if m == 12 else per
+            whole = not any(paid_off(y, k) for k in range(1, 12))
+            interest = cents(yearly - 11 * per) if m == 12 and whole else per
         else:
             rate = _rate_at(rates, date(y, m, 1))
             base = debt_fixed(date(y, m, 1) - timedelta(days=1))           # as if the interest noted above were corrected
@@ -539,6 +556,17 @@ def plan_loan(ledger: Ledger, cfg: dict, today: date, config: Optional[dict] = N
         res.info.append(tr("s_zins_selbst_gebucht") % (rule, ", ".join(own_months[:12]) + (" …" if len(own_months) > 12 else "")))
     if stale:
         res.warnings.append(tr("s_zins_veraltet") % (rule, ", ".join(stale)))
+    if owed_at(today) < -0.005 and not (modell == "yearly_base" and str(today.year) in overrides):
+        # overpaid now (only then the note; not with a base you set for the year, which applies as set): the month it became
+        # so -- back over the month ends it already was, as far as the loan's bookings go
+        first = ledger.earliest_tx(loan.uuid) or ab
+        y, m = today.year, today.month
+        for _ in range(600):
+            end = date(y, m, 1) - timedelta(days=1)
+            if end < first or owed_at(end) >= -0.005:
+                break
+            y, m = end.year, end.month
+        res.warnings.append(tr("s_darlehen_ueberzahlt") % (rule, "%02d/%04d" % (m, y)))
     return res
 
 

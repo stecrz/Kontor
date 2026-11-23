@@ -85,7 +85,8 @@ One row per loan of the area that has repayment or interest rows in the cash flo
 planned by their method instead), "Modell" ("Restschuld monatlich": each month's interest on the current remaining debt;
 "Jahresbasis (31.12.)": on the debt at the end of the year before; without an own entry a loan with a booking rule uses the rule's
 model, and the selection shows it), "Zahlung je Monat" (interest + repayment per month; empty = the average of the
-last up to 12 closed months).
+last up to 12 closed months). A loan with nothing owed (repaid, or overpaid: its balance on the other side of what its booking rule or its account's role
+says) gets no interest and no repayment in the plan.
 
 Per plan month: interest = debt (Jahresbasis: the debt at the end of the year before) × rate ÷ 12, repayment = payment − interest
 (not below 0, never more than the debt left), the debt falls by the repayment. These values fill the loan's rows Zinsen and Tilgung

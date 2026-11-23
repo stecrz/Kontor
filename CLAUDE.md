@@ -17,6 +17,12 @@ Ziel, Leitlinien, „Entschieden“ und „Offen“ ändert nur der Nutzer (oder
 Entschiedenes nie löschen, nach der Umsetzung „(umgesetzt in X.Y.Z)“ anhängen. `GoalTests` in `tests/test_rules.py` prüft, dass alles da ist.
 
 ## Arbeitsweise
+- **GitHub ist das einzige Gedächtnis** (Nutzer, 2026-11-23): Jeder künftige Chat kennt nur, was im Repo steht – nicht
+  frühere Chats, nicht Claudes Erinnerung. Deshalb kommt mit derselben Version ins Repo, von selbst und ohne dass der Nutzer
+  daran erinnern muss: jede Entscheidung des Nutzers (`ROADMAP.md`, „Entschieden“/„Offen“), jede neue oder geänderte Regel und
+  jeder geänderte Ablauf (`CLAUDE.md`, Skills, Hooks, Tests), jedes geänderte Verhalten (Hilfe, `docs/ui`, Tooltips – siehe
+  „Was wo gepflegt wird“). Vor jedem Release fragen: Würde ein neuer Chat mit nur diesem Repo richtig weiterarbeiten? Das Repo ist
+  öffentlich: nie etwas Persönliches oder auf den Nutzer Zurückführbares (siehe Sicherheit).
 - Was als Nächstes kommt und wann es fertig ist: `ROADMAP.md`. Erledigtes dort abhaken, Neues dort eintragen.
 - Skills (`.claude/skills/`): `feature` (Punkt aus dem Fahrplan umsetzen), `ui-check` (Oberfläche ansehen), `release` (jede
   Änderung abschließen). Unabhängige Prüfung vor jedem Release mit Rechenlogik oder Schreibzugriff: Agent `reviewer`.

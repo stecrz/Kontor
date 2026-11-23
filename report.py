@@ -2544,7 +2544,8 @@ def apply_plan(dataset: dict, plan: dict, config: dict, fremd_nw: Optional[Dict[
         tilg, zins = parts.get("repayment"), parts.get("interest")
         pay_hist = [(tilg["amounts"][mk] if tilg else 0.0) + (zins["amounts"][mk] if zins else 0.0) for mk in full_months[-12:]]
         payment = float(lp.get("payment") or (round(-sum(pay_hist) / len(pay_hist), 2) if pay_hist else 0.0))
-        loan_state[uuid] = {"rate": rate, "payment": payment, "model": lp.get("model", "remaining_debt_monthly"),
+        kind = lp.get("kind") or ("liability" if acc.get("role") == "liabilities" else "forderung" if acc.get("role") == "receivables" else None)
+        loan_state[uuid] = {"rate": rate, "payment": payment, "model": lp.get("model", "remaining_debt_monthly"), "kind": kind,
                             "repay": tilg, "interest": zins, "name": name,
                             "ov_t": (rows_cfg.get("financing/" + tilg["row"], {}).get("amounts") or {}) if tilg else {},
                             "ov_z": (rows_cfg.get("financing/" + zins["row"], {}).get("amounts") or {}) if zins else {}}
@@ -2594,15 +2595,18 @@ def apply_plan(dataset: dict, plan: dict, config: dict, fremd_nw: Optional[Dict[
         # Darlehen mit Zinsmodell
         for uuid, st in loan_state.items():
             b = bal[uuid]
-            sign = -1.0 if b < 0 else 1.0
+            # which way it is owed: by the booking rule's kind (liability, else a receivable), else the account's role, else the
+            # balance; past zero (overpaid) no interest and no repayment (decided 2026-11-23)
+            sign = -1.0 if st.get("kind") == "liability" else 1.0 if st.get("kind") else -1.0 if b < 0 else 1.0
+            owed = max(0.0, b * sign)
             if st["model"] == "yearly_base":
                 if yr not in year_base[uuid]:
                     year_base[uuid][yr] = b
-                base = abs(year_base[uuid][yr])
+                base = max(0.0, year_base[uuid][yr] * sign)
             else:
-                base = abs(b)
-            interest = round(base * st["rate"] / 1200.0, 2) if abs(b) > 0.005 else 0.0
-            principal = min(max(st["payment"] - interest, 0.0), abs(b))
+                base = owed
+            interest = round(base * st["rate"] / 1200.0, 2) if owed > 0.005 else 0.0
+            principal = min(max(st["payment"] - interest, 0.0), owed)
             if st["interest"]:
                 st["interest"]["plan"]["proposal"][mk] = round(sign * interest, 2)
                 if mk in st["ov_z"]:
@@ -2613,7 +2617,7 @@ def apply_plan(dataset: dict, plan: dict, config: dict, fremd_nw: Optional[Dict[
             if st["repay"]:
                 st["repay"]["plan"]["proposal"][mk] = round(sign * principal, 2)
                 if mk in st["ov_t"]:
-                    principal = min(abs(float(st["ov_t"][mk])), abs(b))
+                    principal = min(abs(float(st["ov_t"][mk])), owed)
                 st["repay"]["plan"]["amounts"][mk] = round(sign * principal, 2)
                 st["repay"]["plan"]["method"] = "loans"
                 st["repay"]["plan"]["rule"] = {"method": "loans", "from": "fixed"}

@@ -211,6 +211,41 @@ class LoanTests(unittest.TestCase):
             self.assertTrue([w for w in res.warnings if "Jahresanfangsbasis" in w and "2025" in w], res.warnings)
             self.assertEqual([p for p in res.proposals if p.kind == "interest"], [])
 
+    def test_overpaid_loan_bears_no_interest(self):
+        """A loan paid down to zero or past it (its balance on the other side): no interest for a month that begins so, in both
+        models (the yearly base no longer applies once the loan is gone, and December then takes no rest) -- and while it is
+        overpaid a note names the month it became so (decided 2026-11-23); before, interest as ever."""
+        txs = [F.tx("ga.vd", date(2025, 12, 1), -1000.0, "Bank", "Auszahlung"), F.tx("ga.vd", date(2026, 2, 10), 1500.0, "Bank", "Sondertilgung")]
+        fresh = lambda: make_ledger({"ga.vd": 500.0}, txs)           # (each run its own: a run's proposals stand in its ledger)
+        rates = [{"from_date": "2025-12-01", "percent": 6.0}]
+        monthly = loan_cfg(from_date="2026-01-01", interest={"model": "remaining_debt_monthly", "rate_list": rates})
+        yearly = loan_cfg(from_date="2026-01-01", interest={"model": "yearly_base", "rate_list": rates, "booking_day": "ultimo"})
+        res = plan_loan(fresh(), monthly, date(2026, 4, 2))
+        self.assertEqual({p.booking_date.month: p.amount for p in res.proposals if p.kind == "interest"}, {1: -5.0, 2: -5.03})     # none after February
+        self.assertEqual([w for w in res.warnings if "überzahlt" in w and "02/2026" in w and "Verkäuferdarlehen" in w], [w for w in res.warnings if "überzahlt" in w])
+        self.assertEqual(len([w for w in res.warnings if "überzahlt" in w]), 1)
+        res = plan_loan(fresh(), yearly, date(2027, 3, 2))
+        zins = {(p.booking_date.year, p.booking_date.month): p.amount for p in res.proposals if p.kind == "interest"}
+        self.assertEqual(zins, {(2026, 1): -5.0, (2026, 2): -5.0})                                 # (no December rest: the year was not whole)
+        self.assertEqual(len([w for w in res.warnings if "überzahlt" in w and "02/2026" in w]), 1, res.warnings)
+        # overpaid before "Buchen ab": the note names the month it really became so
+        res = plan_loan(fresh(), dict(monthly, from_date="2026-04-01"), date(2026, 5, 2))
+        self.assertTrue([w for w in res.warnings if "überzahlt" in w and "02/2026" in w], res.warnings)
+        # a base you set for the year applies as set -- then no note that would say otherwise
+        own = loan_cfg(from_date="2026-01-01", interest={"model": "yearly_base", "rate_list": rates, "booking_day": "ultimo", "base_override": {"2026": 1000}})
+        res = plan_loan(fresh(), own, date(2026, 6, 2))
+        self.assertEqual(len([p for p in res.proposals if p.kind == "interest"]), 5); self.assertFalse([w for w in res.warnings if "überzahlt" in w])
+        # owed again later: no note any more -- and interest again
+        led2 = make_ledger({"ga.vd": -500.0}, txs + [F.tx("ga.vd", date(2026, 3, 2), -1000.0, "Bank", "Nachzahlung")])
+        res = plan_loan(led2, monthly, date(2026, 5, 2))
+        self.assertFalse([w for w in res.warnings if "überzahlt" in w], res.warnings)
+        self.assertEqual({p.booking_date.month: p.amount for p in res.proposals if p.kind == "interest"}, {1: -5.0, 2: -5.03, 4: -2.55})      # (510,03 owed: the interest before counts)
+        # a loan given (a receivable, as the page saves it) paid back past zero: the same
+        led = make_ledger({"ga.vd": -500.0}, [F.tx("ga.vd", date(2025, 12, 1), 1000.0, "X", "Darlehen"), F.tx("ga.vd", date(2026, 1, 20), -1500.0, "X", "Rückzahlung")])
+        res = plan_loan(led, dict(monthly, kind="forderung"), date(2026, 4, 2))
+        self.assertEqual({p.booking_date.month: p.amount for p in res.proposals if p.kind == "interest"}, {1: 5.0})
+        self.assertTrue([w for w in res.warnings if "überzahlt" in w and "01/2026" in w], res.warnings)
+
     def test_restschuld_monatlich_model(self):
         today = date(2026, 4, 2)
         txs = [F.tx("ga.vd", date(2025, 12, 1), -120000.0, "Bank", "Auszahlung")]

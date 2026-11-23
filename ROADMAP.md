@@ -166,15 +166,7 @@ anhängen – nie löschen.
   lädt keine personenbezogenen Daten hoch; ein Datenschutz-Ausbau ist kein Thema. Später bekommt der Mitgesellschafter einen
   eigenen Kontor (Privates und Gedächtnis getrennt, gemeinsame Bereiche teilbar) – ersetzt beim Punkt „gemeinsame KI“ unter Offen
   das gemeinsame Gedächtnis.
-
-## Offen (Entscheidung steht aus – mit Empfehlung vorlegen, wenn der Punkt dran ist)
-- Umsatzsteuer-Voranmeldung direkt an ELSTER senden (ELSTERs Programmbibliothek ERiC, Anmeldung als Hersteller, Zertifikat und
-  PIN bei jedem Senden, nie gespeichert; neue Verbindung) – oder Kontor rechnet nur und der Nutzer überträgt die Werte.
-- Unabhängig von MoneyMoney: woher dann die Bankdaten kommen.
-- Zukunft: eine gemeinsame KI für Nutzer und Geschäftspartner (später Mitarbeiter) auf einem eigenen Rechner mit starker
-  Grafikkarte, Zugang je Konto über einen sicheren Kanal, gemeinsames Gedächtnis; widerspricht heute „alles auf diesem Mac“ –
-  erst nach ausdrücklicher Entscheidung. (Ein Gedächtnis über Finanzen hinaus, nur auf diesem Mac: entschieden, siehe Gedächtnis.)
-- Zugang vom iPhone (siehe Entschieden, 2026-11-23) – Vorschlag, Entscheidung steht aus:
+- **Zugang vom iPhone – Umsetzung** (Nutzer, 2026-11-23: der Vorschlag gilt so):
   Weg zum Mac: bei Tailscale bleiben (WireGuard, Ende-zu-Ende verschlüsselt, kein offener Port zu Hause; Relais sehen nur
   Verschlüsseltes), dazu Tailnet Lock (Tailscale selbst kann dann keine Geräte hinzufügen). Geprüft und verworfen: Headscale (eigener
   Server nötig, gleiche App), WireGuard direkt (Portfreigabe am Router, scheitert oft an CGNAT), Cloudflare Tunnel (Cloudflare sähe
@@ -185,6 +177,18 @@ anhängen – nie löschen.
   verändernde Aktionen vom iPhone bestätigt Face ID. Rechte wie am Mac; nur am Mac bleiben Zugang, Updates, Einrichtung des
   Assistenten, Sicherung laden/Zurücksetzen, Passwort. Mac schläft: die Offline-Kopie am iPhone zum Lesen; Änderungen erst, wenn
   der Mac erreichbar ist (MoneyMoney läuft dort). Eine eigene iPhone-App mit iCloud-Abgleich wäre die Alternative – großer Aufwand.
+- **Darlehen überzahlt** (Nutzer, 2026-11-23): Steht ein Darlehen über null hinaus auf der anderen Seite, rechnet Kontor auf die
+  Überzahlung keine Zinsen (Buchungsregeln und Planung) und nennt es in einem Hinweis. (umgesetzt in 3.17.8)
+- **GitHub ist das einzige Gedächtnis** (Nutzer, 2026-11-23): Was künftige Chats wissen müssen – Entscheidungen, Regeln, Abläufe,
+  Verhalten –, steht immer im Repo, gepflegt mit jeder Version von selbst; nie etwas Persönliches (öffentlich). (umgesetzt in 3.17.8)
+
+## Offen (Entscheidung steht aus – mit Empfehlung vorlegen, wenn der Punkt dran ist)
+- Umsatzsteuer-Voranmeldung direkt an ELSTER senden (ELSTERs Programmbibliothek ERiC, Anmeldung als Hersteller, Zertifikat und
+  PIN bei jedem Senden, nie gespeichert; neue Verbindung) – oder Kontor rechnet nur und der Nutzer überträgt die Werte.
+- Unabhängig von MoneyMoney: woher dann die Bankdaten kommen.
+- Zukunft: eine gemeinsame KI für Nutzer und Geschäftspartner (später Mitarbeiter) auf einem eigenen Rechner mit starker
+  Grafikkarte, Zugang je Konto über einen sicheren Kanal, gemeinsames Gedächtnis; widerspricht heute „alles auf diesem Mac“ –
+  erst nach ausdrücklicher Entscheidung. (Ein Gedächtnis über Finanzen hinaus, nur auf diesem Mac: entschieden, siehe Gedächtnis.)
 
 ## 1. Daten erst nach Anmeldung (Sicherheit) – umgesetzt in 3.16.83 (3.17.0: Umstellung von früher entfernt, nur Neueinrichtung)
 Ziel: Wer den entsperrten Mac hat, aber nicht bei Kontor angemeldet ist, kommt an keine Kontor-Daten.
