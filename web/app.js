@@ -6621,7 +6621,7 @@ function vpBox(list) {
 async function vUpdates(form) {
   const r = await api('/api/update/status'), st = S.STATUS, info = r.info, finds = upFinds(info);
   let h = `<div data-ex="settings.updates"><div class="cards"><div class="card"><div class="l">${t('installiert')}</div><div class="v">${esc(r.version)}${r.date ? `<span class="vdate">${t('vom_0', FDT(r.date))}</span>` : ''}</div><div class="d">${t('programmordner_wird_beim_update_ersetz')}</div></div>
-    <div class="card"><div class="l">${t('verfuegbar_3')}</div><div class="v">${info ? (info.error ? '<span class="pill err">?</span>' : esc(info.available || '–') + (info.date ? `<span class="vdate">${t('vom_0', FDT(info.date))}</span>` : '')) : '–'}</div><div class="d">${info ? (info.error ? esc(info.error) : (info.newer ? `<span class="pill ${finds.length ? 'warn' : 'ok'}">${t(finds.length ? 'upd_wartet' : 'neuer_als_installiert')}</span>` : t('kontor_ist_aktuell')) + (info.newer && info.review && !finds.length ? t('upd_geprueft_ok') : '')) : t('noch_nicht_geprueft')}${r.verified ? t('geprueft') + new Date(r.verified * 1000).toLocaleString(LOCALE) : ''}</div></div></div>
+    <div class="card" id="up-avail"><div class="l">${t('verfuegbar_3')}</div><div class="v">${info ? (info.error ? '<span class="pill err">?</span>' : esc(info.available || '–') + (info.date ? `<span class="vdate">${t('vom_0', FDT(info.date))}</span>` : '')) : '–'}</div><div class="d">${info ? (info.error ? esc(info.error) : (info.newer ? `<span class="pill ${finds.length ? 'warn' : 'ok'}">${t(finds.length ? 'upd_wartet' : 'neuer_als_installiert')}</span>` : t('kontor_ist_aktuell')) + (info.newer && info.review && !finds.length ? t('upd_geprueft_ok') : '')) : t('noch_nicht_geprueft')}${r.verified ? t('geprueft') + new Date(r.verified * 1000).toLocaleString(LOCALE) : ''}</div></div></div>
     <div class="actions"><button id="up-check" class="secondary">${t('jetzt_pruefen')}</button><button id="up-install" ${finds.length ? 'class="danger" ' : ''}${info && info.newer && st.local ? '' : 'disabled'}>${t(finds.length ? 'upd_freigeben' : 'update_installieren_und_dienst_neu')}</button>${((S.CFG.updates || {}).repo || 'stecrz/Kontor') !== 'stecrz/Kontor' ? ` <span class="tag warn">${t('update_fremde_quelle', esc((S.CFG.updates || {}).repo))}</span>` : ''}</div>
     ${upReview(info)}
     ${pyBox(r.python)}
@@ -7336,7 +7336,14 @@ function bind(main) {
   const pd = $('#pk-drop', main); if (pd) { pd.addEventListener('dragover', e => { e.preventDefault(); pd.classList.add('over'); }); pd.addEventListener('dragleave', () => pd.classList.remove('over')); pd.addEventListener('drop', e => { e.preventDefault(); pd.classList.remove('over'); if (e.dataTransfer.files[0]) readPkgFile(e.dataTransfer.files[0]); }); if (PKG) pkgPreview(); }
 
   // Updates
-  const uc = $('#up-check', main); if (uc) uc.addEventListener('click', async () => { toast(t('pruefe')); await api('/api/update/check', {}); S.STATUS = await api('/api/status'); softRoute(); });
+  // while GitHub is asked and the new files are read (some seconds): the button turns and the card says so -- until it is done
+  const uc = $('#up-check', main); if (uc) uc.addEventListener('click', async () => {
+    const d = $('#up-avail .d', main), was = d ? d.innerHTML : '';
+    uc.classList.add('busy'); uc.setAttribute('aria-busy', 'true'); if (d) d.innerHTML = `<span class="working"><span class="spin xs"></span>${t('pruefe')}</span>`;
+    try { await api('/api/update/check', {}); S.STATUS = await api('/api/status'); }
+    catch (e) { uc.classList.remove('busy'); uc.removeAttribute('aria-busy'); if (d) d.innerHTML = was; throw e; }
+    softRoute();
+  });
   const ui = $('#up-install', main); if (ui) ui.addEventListener('click', () => upInstall(ui));
   pyBind();
   const lr = $('#log-refresh', main); if (lr) lr.addEventListener('click', route);

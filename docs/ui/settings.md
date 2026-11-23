@@ -118,7 +118,7 @@ Mac … · Arbeitsspeicher …".
   programs, cannot read Kontor's or MoneyMoney's data); memory and processor use, speed of the last answer (tokens per second);
   "Starten"/"Stoppen".
 - **Kontext**: how much the model keeps in view at once (Automatisch by the Mac's memory, or 16–128 K tokens).
-- **Beenden bei Leerlauf**: the model ends after 5, 10, 30 (default) or 60 minutes without a question, or never.
+- **Beenden bei Leerlauf**: the model ends after 5, 10, 30 (default) or 60 minutes without a question, or never ("nie – läuft immer": started by Kontor right after the sign-in and after every restart, running as long as Kontor's service runs, whether the Mac app is open or not; after "Stoppen" off until the next question).
 - **Verläufe speichern** (default on): conversations kept encrypted to open again under "Verläufe"; number and size; "Ältere als ein
   Jahr löschen", "Alle Verläufe löschen".
 - **Abschirmung von macOS**: Streng (recommended), Einfach (still no network) or Aus – only the user can weaken it.

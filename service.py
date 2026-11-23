@@ -1731,6 +1731,7 @@ class App:
                     threading.Thread(target=lambda: setattr(self, "update_info", updates.check(up.get("repo") or "stecrz/Kontor")),
                                      name="kontor-update", daemon=True).start()
                 self.assistant_look()
+                self.assistant.keep()                    # end when idle "never": the model runs all the time (after the sign-in, a restart)
                 if self.tls_ctx is not None and (self.tls_checked is None or time.time() - self.tls_checked > 86400):
                     self.tls_checked = time.time()
                     import tls_cert
@@ -4241,7 +4242,7 @@ def make_handler(app: App):
                 if body.get("action") == "start":
                     a.start_model()
                 else:
-                    a.stop_all()
+                    a.stop_all(hold=True)                       # set to run all the time: not again by itself until it runs once more
             else:
                 return self._json(404, {"error": "unbekannt"})
             return self._json(200, a.status(True))

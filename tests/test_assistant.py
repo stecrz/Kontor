@@ -1615,6 +1615,47 @@ class Tools(_Assist):
         with self.assertRaises(ValueError):
             self.a.start_model()
 
+    def test_always_on(self):
+        """End when idle "never" (runs all the time): Kontor starts the model by itself -- after the sign-in, after a restart --
+        and again when it ended by itself, at the earliest KEEP_RETRY_SECONDS after the last such start; not after "Stop" until
+        it runs once more, not after a start that failed, not while switched off, never from the demo."""
+        wait = lambda st: next((True for _ in range(100) if self.a.ai.state == st or time.sleep(0.1)), False)
+        later = lambda: time.time() + A.KEEP_RETRY_SECONDS + 1
+        self.assertFalse(self.a.keep()); self.assertIsNone(self.a.ai.proc)            # 30 minutes (factory): nothing by itself
+        self.a.set({"idle_minutes": 0})
+        self.assertTrue(self.a.keep()); self.assertTrue(wait("ready"))
+        self.assertFalse(self.a.keep())                                                # it runs: nothing to do
+        self.a.ai.last_used = 0; self.a._idle_tick(); self.assertIsNotNone(self.a.ai.proc)      # never ended for idling
+        # "Stop" (the button: /api/assistant/server) holds it -- until it runs again (a question)
+        code, _ = self.call("/api/assistant/server", {"action": "stop"})
+        self.assertEqual(code, 200); self.assertIsNone(self.a.ai.proc); self.assertTrue(self.a.held)
+        self.assertFalse(self.a.keep(now=later())); self.assertIsNone(self.a.ai.proc)
+        self.assertEqual(text_of(self.ask("Hallo")), "Antwort: Hallo")
+        self.assertFalse(self.a.keep()); self.assertFalse(self.a.held)
+        # it ended by itself: started again, but not at once after the last start by itself
+        self.a.ai.proc.kill(); self.a.ai.proc.wait(); self.a._idle_tick(); self.assertEqual(self.a.ai.state, "stopped")
+        self.assertFalse(self.a.keep()); self.assertIsNone(self.a.ai.proc)
+        self.assertTrue(self.a.keep(now=later())); self.assertTrue(wait("ready"))
+        # a start that failed: not again by itself (the error stays to be seen; the next question tries)
+        self.a.stop_all()
+        rt = os.path.dirname(self.a.ai.runtime()["path"])
+        open(os.path.join(rt, "refuse"), "w").close()
+        try:
+            self.assertTrue(self.a.keep(now=later() + A.KEEP_RETRY_SECONDS)); self.assertTrue(wait("error"))
+            self.assertFalse(self.a.keep(now=later() + 9 * A.KEEP_RETRY_SECONDS))
+        finally:
+            os.remove(os.path.join(rt, "refuse"))
+        # the setting chosen anew: at once, even after "Stop"
+        self.a.ai.state = "stopped"; self.a.stop_all(hold=True)
+        self.a.set({"idle_minutes": 30}); self.assertFalse(self.a.keep(now=later() * 2))
+        self.a.set({"idle_minutes": 0}); self.assertTrue(self.a.keep()); self.assertTrue(wait("ready"))
+        # switched off: it ends and stays off
+        self.a.set({"enabled": False}); self.assertFalse(self.a.keep(now=later() * 3)); self.assertIsNone(self.a.ai.proc)
+        # the demo never starts or holds the real one's model (its assistant has a peer)
+        self.a.set({"enabled": True})
+        demo = mock.Mock(peer=self.a)
+        self.assertFalse(A.Assistant.keep(demo))
+
     def test_earlier_results_leave_the_conversation(self):
         """What tools returned for an earlier question leaves the conversation (long results only); the latest question keeps its
         results for a follow-up, questions and answers stay -- a long conversation keeps more questions in view."""

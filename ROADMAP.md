@@ -204,6 +204,12 @@ anhängen – nie löschen.
   Überzahlung keine Zinsen (Buchungsregeln und Planung) und nennt es in einem Hinweis. (umgesetzt in 3.17.8)
 - **GitHub ist das einzige Gedächtnis** (Nutzer, 2026-11-23): Was künftige Chats wissen müssen – Entscheidungen, Regeln, Abläufe,
   Verhalten –, steht immer im Repo, gepflegt mit jeder Version von selbst; nie etwas Persönliches (öffentlich). (umgesetzt in 3.17.8)
+- **Assistent läuft immer** (Nutzer, 2026-11-23): Eine Einstellung, mit der das Modell immer läuft – Kopplung an Kontors Mac-App
+  nur, wenn sehr einfach. „Beenden bei Leerlauf: nie“ heißt jetzt „läuft immer“: Kontor startet das Modell nach der Anmeldung und
+  jedem Neustart selbst, wieder nach ein paar Minuten, wenn es von selbst endete; nach „Stoppen“ aus bis zur nächsten Frage. Die
+  Mac-App ist nur ein Fenster – der Dienst und damit das Modell laufen unabhängig davon weiter. Ein Ende mit der Mac-App ist nicht
+  einfach (der Dienst erkennt ihr Beenden nicht verlässlich: die Seite ruht in verdeckten Fenstern, eine Prozessabfrage wäre ein
+  neuer Aufruf nach außen) und deshalb nicht umgesetzt. (umgesetzt in 3.17.20)
 
 ## Offen (Entscheidung steht aus – mit Empfehlung vorlegen, wenn der Punkt dran ist)
 - Umsatzsteuer-Voranmeldung direkt an ELSTER senden (ELSTERs Programmbibliothek ERiC, Anmeldung als Hersteller, Zertifikat und

@@ -1,5 +1,10 @@
 # Änderungen
 
+## 3.17.20 (2026-11-23 17:50)
+- KI-Assistent: „Beenden bei Leerlauf: nie“ heißt „läuft immer“ – Modell startet nach der Anmeldung und jedem Neustart von selbst, unabhängig von der Mac-App
+- KI-Assistent: endet es von selbst, startet Kontor es nach ein paar Minuten neu; nach „Stoppen“ aus bis zur nächsten Frage
+- Updates: „Jetzt prüfen“ zeigt ein Ladesymbol, bis die Prüfung fertig ist
+
 ## 3.17.19 (2026-11-23 17:41)
 - KI-Assistent: „Import zurücknehmen“ unter Gedächtnis – nimmt den letzten Import in einem Schritt zurück, nur Notizen, die seitdem nicht geändert, angeheftet oder ersetzt wurden; der Rest bleibt und wird genannt (nur am Mac, im Änderungsprotokoll mit Anzahl)
 - KI-Assistent: Gedächtnis-Export – Adressen in Notizen (https://…, www.…, E-Mail) bleiben Text, kein Link
