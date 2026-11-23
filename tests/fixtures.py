@@ -20,7 +20,10 @@ U: Dict[str, str] = {}
 FOUND: List[int] = [377654401, 357881360,     # 3.16.58: two payments of one amount, one took the other's only counterpart
                      763175317,                   # 3.16.62: a moved mirrored booking, its original entered again -- mirrored twice
                      224088165,                   # 3.16.100: two PayPal transfers of one amount a week apart (the worlds no longer build that)
-                     754384078]                   # 3.17.16: many of one amount -- a payment to another area took a booking by hand a payment without IBAN could as well belong to
+                     754384078,                   # 3.17.16: many of one amount -- a payment to another area took a booking by hand a payment without IBAN could as well belong to
+                     725914894,                   # 3.17.25: an insurance of one amount let a top-up take a contribution's booking on the participation
+                     456949213, 895483918,        # 3.17.25: an extra loan payment dated before interest booked at the month's end (the worlds no longer build that)
+                     225758066]                   # 3.17.25: a mirrored booking moved beyond MIRROR_MOVED_DAYS, its original entered again: a note, by design
 
 
 def fuzz_seeds(name: str = "") -> Iterator[int]:

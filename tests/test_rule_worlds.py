@@ -414,6 +414,13 @@ class RuleWorlds(test_fuzz.FuzzTests):
         payment entered later, dated before interest Kontor booked already, would not change that interest -- by design)."""
         return max(self.w.start, self.today.replace(day=1) if this_month else self.w.start, self.today - timedelta(days=days))
 
+    def not_before_interest(self, cs, day):
+        """Nor before this month's interest Kontor booked already on the loan: on the last day of a month without a payment it
+        books at the month's end -- a payment entered after that, dated earlier, leaves it there (the same design as ago)."""
+        tag = "#kontor-zins-%04d-%02d" % (self.today.year, self.today.month)
+        return max([day] + [mm_bridge.local_date(t["bookingDate"]) for t in self.txs()
+                            if t["accountUuid"] == F.uid(cs["vd"]) and tag in marks_in(t.get("purpose"))])
+
     def clean(self, seed):
         rnd = self.setup_world(seed)
         w, where = self.w, "seed %d clean (%s)" % (seed, self.w.describe())
@@ -440,7 +447,7 @@ class RuleWorlds(test_fuzz.FuzzTests):
                 ls = [cs for cs in w.co.values() if cs["vd"]]
                 if ls:
                     cs = rnd.choice(ls)
-                    t = self.add(cs["kk"], self.ago(rnd.randint(0, 3), this_month=True), -rnd.choice([500.0, 2500.0]), "Sondertilgung")
+                    t = self.add(cs["kk"], self.not_before_interest(cs, self.ago(rnd.randint(0, 3), this_month=True)), -rnd.choice([500.0, 2500.0]), "Sondertilgung")
                     t["accountNumber"], t["name"] = cs["lender"], "Verkäufer"
                     self.frozen[t["id"]] = copy.deepcopy(t)
             self.check(at)

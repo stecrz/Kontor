@@ -27,7 +27,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 import fixtures as F  # noqa: E402
 import core  # noqa: E402
 import rules  # noqa: E402
-from model import TAG_RE, marks_in  # noqa: E402
+from model import TAG_RE, fmt_eur, marks_in  # noqa: E402
 from fixtures import new_store  # noqa: E402
 from test_e2e import TODAY, MockBridge, config_for_test, patch_today, reset_mock  # noqa: E402
 
@@ -120,6 +120,7 @@ class FuzzTests(unittest.TestCase):
         self.frozen = {t["id"]: copy.deepcopy(t) for t in self.txs()}
         steps = []
         touched_mirror = False
+        renumbered = {}                                     # an original's old number -> its booking entered again
         for i in range(18):
             auto = rnd.random() < 0.35
             cfg["dry_run"] = not auto
@@ -168,6 +169,7 @@ class FuzzTests(unittest.TestCase):
                 again = self.add(next(k for k, u in F.U.items() if u == t["accountUuid"]), date(2026, 1, 1), t["amount"], t["purpose"])
                 again.update({k: t[k] for k in ("bookingDate", "valueDate", "name", "accountNumber", "category", "categoryPath")})
                 self.frozen[again["id"]] = copy.deepcopy(again)
+                renumbered[t["id"]] = again
             elif act == "paydel":                                                   # a loan payment deleted in MoneyMoney
                 pays = [t for t in self.mine(["ga.kk"]) if t.get("accountNumber") == F.SELLER_IBAN]
                 if pays:
@@ -195,7 +197,22 @@ class FuzzTests(unittest.TestCase):
         # every booking of the mirrored accounts has its counterpart: the two balances moved by the same amounts
         mine = sorted(round(t["amount"], 2) for t in self.txs() if t["accountUuid"] == F.uid(MINE))
         theirs = sorted(round(-t["amount"], 2) for t in self.txs() if t["accountUuid"] == F.uid(THEIRS))
-        if cfg["account_mirrors"][0]["from_date"] == "all" and not touched_mirror:      # (an original you changed: a note, Kontor changes nothing)
+        # a mirrored booking you moved further than rules.MIRROR_MOVED_DAYS from its original, which then got a new number: by
+        # design another booking -- the original is mirrored anew, the moved one is a note ("no original any more", delete it)
+        moved = []
+        for t in self.kontor_txs():
+            oid = next((int(m[len("#kontor-gk-"):]) for m in marks_in(t.get("purpose")) if m.startswith("#kontor-gk-")), None)
+            if oid not in renumbered:
+                continue
+            o = renumbered[oid]
+            while o["id"] in renumbered:
+                o = renumbered[o["id"]]
+            if o in self.txs() and abs((t["bookingDate"] - o["bookingDate"]).days) > rules.MIRROR_MOVED_DAYS:
+                moved.append(t)
+        for t in moved:
+            self.assertTrue([w for w in end["warnings"] if "kein Original mehr" in w and fmt_eur(t["amount"]) in w],
+                            "seed %d: a moved mirrored booking without its original, no note" % seed)
+        if cfg["account_mirrors"][0]["from_date"] == "all" and not touched_mirror and not moved:      # (an original you changed: a note, Kontor changes nothing)
             self.assertEqual(mine, theirs, "seed %d: mirror incomplete" % seed)
         return steps
 

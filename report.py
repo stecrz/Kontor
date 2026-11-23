@@ -1283,7 +1283,9 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
         gap = lambda t: abs((t.booking_date - o.booking_date).days)
         rival = lambda t: not (says(t) and any(u.id != o.id and u.account_uuid != t.account_uuid and abs((u.booking_date - t.booking_date).days) <= PAIR_DAYS_CAT
                                                for u in marked_tr.get(-k, ())))
-        near = min((gap(t) for t in by_amount.get(k, ()) if rival(t)), default=COUNTER_DAYS)
+        # (only a payment that may pair with it by amount at all -- a transfer or pairable, never one paid for something: an
+        # insurance of that amount on the day must not let a top-up take the contribution's counter-booking)
+        near = min((gap(t) for t in by_amount.get(k, ()) if (says(t) or pairable(t)) and rival(t)), default=COUNTER_DAYS)
         wants.extend((gap(t), t.id, o.id) for t, name in to_area[k] if gap(t) <= min(near, COUNTER_DAYS) and tied_word(o, name))
     # one booking per payment to the area, the closest first: of two bookings by hand beside one such payment (lent by transfer
     # and the same amount in cash on that day) only one is kept -- the other still pairs by amount with the payment without

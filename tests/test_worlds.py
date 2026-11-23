@@ -736,6 +736,18 @@ class RandomWorlds(unittest.TestCase):
         w.add("Partnerin", "bank", d, -250.0, iban=w.iban("Privat"), purpose="Darlehen")
         data = w.datasets(); self.check(w, data, "PayPal and a loan from the partner")
         self.assertEqual(rows(data, "Privat"), {"Einlage/Entnahme Partnerin / Darlehen von Partnerin / Aufnahme": 250.0})
+        # a contribution to the company, booked on the participation the next day, beside a top-up to PayPal on the day (PayPal
+        # books it a week later) and an insurance of the same amount: the insurance pays for something and pairs with nothing --
+        # it must not let the top-up take the participation's booking (up to 3.17.24 it did: the top-up "without partner")
+        w = World(0, ["Privat"], ["Gamma KG", "Alpha GmbH"], {"Gamma KG": {"Privat": 0.3333}, "Alpha GmbH": {"Gamma KG": 0.749}})
+        w.account("Gamma KG", "paypal", "PayPal Gamma KG", "cash")
+        w.add("Gamma KG", "bank", d, -1500.0, iban=w.iban("Alpha GmbH"), purpose="Einlage Alpha GmbH")
+        w.add("Gamma KG", "stake:Alpha GmbH", d + timedelta(1), 1500.0, purpose="Einlage Alpha GmbH")
+        w.add("Alpha GmbH", "kap:Gamma KG", d, -1500.0, purpose="Einlage"); w.add("Alpha GmbH", "bank", d + timedelta(2), 1500.0, iban=w.iban("Gamma KG"), purpose="Einlage")
+        w.add("Gamma KG", "bank", d, -1500.0, cat="Umbuchung", name="PayPal"); w.add("Gamma KG", "paypal", d + timedelta(7), 1500.0, cat="Umbuchung", name="PayPal")
+        w.add("Gamma KG", "bank", d + timedelta(1), -1500.0, cat="Versicherungen", counts=True)
+        data = w.datasets(); self.check(w, data, "a contribution, a top-up and an insurance of one amount")
+        self.assertEqual(rows(data, "Gamma KG"), {"Versicherungen": -1500.0, "Einlage/Entnahme Alpha GmbH / Beteiligung Alpha GmbH": -1500.0})
         # of two payments into the company a few days apart, the nearer one takes the booking on the capital account -- day by
         # day, not in steps of three (seed 70)
         w = World(0, ["Privat"], ["Delta GmbH"], {"Delta GmbH": {"Privat": 1.0}})

@@ -1,5 +1,9 @@
 # Änderungen
 
+## 3.17.25 (2026-11-23 19:31)
+- Cashflow: eine Ausgabe gleichen Betrags (z. B. Versicherung) lässt keine PayPal-Aufladung mehr die Gegenbuchung einer Einlage im Beteiligungskonto nehmen
+- Entwicklung: übrige Zufallsfälle der Nacht behoben und fest aufgenommen (Testwelten: Sondertilgung vor schon gebuchtem Monatsend-Zins, verschobene Spiegelbuchung mit neu erfasstem Original)
+
 ## 3.17.24 (2026-11-23 19:40)
 - Anmeldung: kein „Zugang wird geprüft“ vor dem Festlegen des Passworts; ein während der Prüfung abgeschicktes Passwort geht danach von selbst ab
 - Konten: „nicht bilanzieren“ (z. B. Gruppe „Off-Balance“) steht in seinem Bereich statt unter „ohne Bereich“
