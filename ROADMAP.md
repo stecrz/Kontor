@@ -230,6 +230,10 @@ anhängen – nie löschen.
   einer Gruppe „Off-Balance“) steht unter Konten in seinem Bereich, nicht unter „ohne Bereich“. (umgesetzt in 3.17.24)
 - **Kontoauswahl ohne Bereichsnamen** und **optionale Felder erklärt** (Nutzer, 2026-11-23): siehe CLAUDE.md, Oberfläche. (umgesetzt in 3.17.24)
 
+- **Anmeldung wartet nicht auf Tailscale** (Nutzer, 2026-11-23): Kontor muss ohne Tailscale funktionieren. Zweck der Prüfung bleibt
+  (reicht „tailscale serve“/Funnel Kontors Port weiter, kämen fremde Anfragen als „am Mac“ an – dann keine Anmeldung am Mac, alle
+  Sitzungen dort enden), aber vor der ersten Prüfung nach einem Start wartet eine Anmeldung höchstens 2 s und geht dann. (umgesetzt in 3.17.31)
+- **„Freigeben (n)“ zählt das Angehakte** (Nutzer, 2026-11-23): die Zahl im Knopf ist immer genau die Zahl der angehakten Buchungen. (umgesetzt in 3.17.31)
 - **Auto-Buchungen auswählen** (Nutzer, 2026-11-23): Nach „alle abwählen“ und einzelnem Anhaken ist nur das Angehakte gewählt –
   auch Buchungen, die die Neuberechnung neu bringt, bleiben abgewählt; ein Klick in die Zelle des Hakens genügt. (umgesetzt in 3.17.28)
 - **Zahl im Dock einstellbar** (Nutzer, 2026-11-23): Einstellungen → Allgemein, in der Mac-App: wartende Auto-Buchungen oder aus. (umgesetzt in 3.17.28)

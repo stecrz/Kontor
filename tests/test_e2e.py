@@ -6406,9 +6406,9 @@ class KeysFindBrowserTest(unittest.TestCase):
                   const o = api, keep = route; route = async () => {};
                   BOOK.runs = {last_run: {dry_run: true, proposals: [{key: 'a', amount: 1}, {key: 'b', amount: 2}]}}; BOOK.off = new Set(['b']); BOOK.extra = {}; BOOK.pick = true;
                   api = async (p, b) => p === '/api/bookings/plan' ? {proposals: [{key: 'a', amount: 1}, {key: 'neu', amount: 3}].filter(x => !b.hold.includes(x.key)), waiting: []} : o(p, b);
-                  try { await bkRecalc(); return [...BOOK.off].sort(); } finally { api = o; route = keep; BOOK.runs = null; BOOK.off = new Set(); BOOK.extra = {}; BOOK.pick = false; BOOK.calc = null; }
+                  try { await bkRecalc(); return [...BOOK.off].sort().concat([bkChosen(BOOK.runs.last_run)]); } finally { api = o; route = keep; BOOK.runs = null; BOOK.off = new Set(); BOOK.extra = {}; BOOK.pick = false; BOOK.calc = null; }
                 }""")
-                self.assertEqual(off, ["b", "neu"])
+                self.assertEqual(off, ["b", "neu", 1])                                        # "Freigeben (1)": only what is ticked
                 # transactions: its search; a page without one: the browser's find (nothing of Kontor's)
                 pg.evaluate("location.hash = '#transactions'"); pg.wait_for_selector("#uf-q")
                 pg.click("h1"); pg.keyboard.press("Meta+f")

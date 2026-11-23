@@ -4947,6 +4947,8 @@ async function vSync() {
 // left out or changed moves every later balance, so the next value adjustment of that account takes up the difference)
 const BOOK = {time: null, edits: {}, off: new Set(), runs: null, calc: null, waits: new Set(), extra: {}, editing: new Set(), seq: 0, pick: false};      // pick: all left out, then chosen one by one -- what a recalculation brings anew stays left out
 // the rows shown: the waiting list, new ones from the recalculation, each with the amount it books now
+// what "Freigeben (n)" books: the rows shown ticked -- never the length of the list (some are left out or no longer due)
+const bkChosen = l => bkRows(l || {}).filter(r => r.k && !r.off && !r.gone).length;
 function bkRows(l) {
   const base = l.proposals || [], inBase = new Set(base.map(v => v.key)), calc = BOOK.calc ? new Map(BOOK.calc.map(r => [r.key, r])) : null;
   return base.concat(Object.values(BOOK.extra).filter(x => !inBase.has(x.key))).map(v => {
@@ -5030,7 +5032,7 @@ function vBuchungen(runs) {
   const pending = l && l.dry_run && (l.proposals || []).length ? l.proposals.length : 0;
   const artL = {repayment: t('art_tilgung'), interest: t('art_zins'), value: t('art_wert'), mirror: t('art_spiegel')};
   let h = `<div class="toolbar">
-    ${pending ? `<button id="run-live" class="ico" ${local ? '' : t('disabled_title_nur_am_mac')}>${ICON.check}<span>${t('jetzt_buchen')} (<span id="sel-n">${pending}</span>)</span></button>` : ''}
+    ${pending ? `<button id="run-live" class="ico" ${local ? '' : t('disabled_title_nur_am_mac')}>${ICON.check}<span>${t('jetzt_buchen')} (<span id="sel-n">${bkChosen(l)}</span>)</span></button>` : ''}
     ${ask ? `<button id="bk-refresh" class="secondary ico" title="${esc(t('freigabe_aktualisieren_tip'))}" ${OFFLINE.mode ? 'disabled' : ''}>${ICON.refresh}<span>${t('aktualisieren')}</span></button>` : ''}
     <span class="sp"></span><a class="small" href="#accounts/rules">${t('zu_den_regeln')}</a>
     <a class="mode-chip${ask ? '' : ' auto'}" href="#accounts/rules" title="${t(ask ? 'auto_buchen_aus' : 'auto_buchen_an')}">${ask ? ICON.hand : ICON.bolt}${t(ask ? 'modus_freigabe' : 'modus_automatisch')}</a>
@@ -7138,8 +7140,7 @@ function bind(main) {
   });
   const bt = $('.bk-table', main);
   if (bt) {
-    const rows = () => $$('tr[data-key]', bt).filter(r => r.dataset.key && !r.classList.contains('gone'));
-    const count = () => { const n = rows().filter(r => !BOOK.off.has(r.dataset.key)).length, b = $('#run-live', main); if (b) { $('#sel-n', b).textContent = n; b.disabled = !n || !(S.STATUS || {}).trusted; } };
+    const count = () => { const n = bkChosen((BOOK.runs || {}).last_run), b = $('#run-live', main); if (b) { $('#sel-n', b).textContent = n; b.disabled = !n || !(S.STATUS || {}).trusted; } };
     bt.addEventListener('change', e => {
       // what you leave out or change moves the bookings after it: the list is recalculated (what you see is what is booked)
       // all or none: every booking of the list, also those added by a recalculation (none: nothing left to work out)

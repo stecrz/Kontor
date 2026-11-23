@@ -1280,7 +1280,9 @@ class App:
 
     def exposure_block(self, wait: float = 0.0) -> Optional[str]:
         """Why sign-in and what stays at the Mac are refused from this Mac's address right now: "exposed" (serve/Funnel passes
-        Kontor's port on), "checking" (not looked yet since the start -- waits up to wait seconds for the first look), None."""
+        Kontor's port on), else None. Right after a start (not looked yet) it waits up to wait seconds for the first look, then
+        lets it go (user, 2026-11-23: Kontor must work without Tailscale; a sign-in needs the password or Touch ID anyway, and
+        a look that finds the port passed on ends every session at this Mac at once)."""
         self.exposure_tick()
         if wait > 0 and self.exposure().get("serve") == "pending":
             until = time.time() + wait
@@ -1288,7 +1290,7 @@ class App:
                 while self.exposure().get("serve") == "pending" and time.time() < until:
                     EXPOSURE_CV.wait(max(0.01, until - time.time()))
         serve = self.exposure().get("serve")
-        return "exposed" if serve in ("serve", "funnel") else "checking" if serve == "pending" else None
+        return "exposed" if serve in ("serve", "funnel") else None
 
     def exposed(self) -> bool:
         """"tailscale serve" or Funnel passes Kontor's port on (the red note under Zugang)."""
@@ -5412,7 +5414,7 @@ EXPOSURE_SECONDS = 60                   # how old the check of "tailscale serve"
 EXPOSURE_RETRY = 5                      # ... after a look without an answer: the next one after these seconds,
 EXPOSURE_YOUNG = 180                    # ... in the first minutes after the start (Tailscale may come up later): every EXPOSURE_RETRY
 EXPOSURE_TRIES = 3                      # ... never known since the start: locked until so many looks in a row went without an answer
-EXPOSURE_WAIT = 4.0                     # a sign-in at the Mac right after the start waits so long for the first look
+EXPOSURE_WAIT = 2.0                     # a sign-in at the Mac right after the start waits so long for the first look (then it goes)
 EXPOSURE_FIRST = 20                     # ... and no longer than this after the start in all: a Tailscale that does not answer
                                         # (each look waits for its timeouts, up to ~2 min for three) counts as "unknown" then
 EXPOSURE_LOCK = threading.Lock()

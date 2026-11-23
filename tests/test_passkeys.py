@@ -1031,7 +1031,7 @@ class OverHttp(unittest.TestCase):
             self._no_look()
             fresh = Client(self.srv.server_address[1])
             self.remote[0] = False
-            self.assertEqual(fresh.call("/api/login", {"password": "sehr-geheimes-passwort"})[0], 503)        # just started: waits
+            self.assertEqual(fresh.call("/api/login", {"password": "sehr-geheimes-passwort"})[0], 200)        # just started: goes after a moment
             self.app.__dict__["_exposure_start"] = _t.time() - self.MA.EXPOSURE_FIRST - 1
             self.remote[0] = False
             self.assertEqual(fresh.call("/api/login", {"password": "sehr-geheimes-passwort"})[0], 200)
@@ -1042,10 +1042,10 @@ class OverHttp(unittest.TestCase):
             self.MA.EXPOSURE_WAIT = wait
             self.app.__dict__["_exposure"] = {"serve": "unknown", "lock": None, "at": _t.time()}
 
-    def test_nothing_signs_in_at_the_mac_before_tailscale_was_looked_at(self):
-        """Right after a start Kontor does not know whether "tailscale serve" passes its port on: a sign-in from this Mac's
-        address waits a moment for the first look, then says so -- and goes once the look is there; Tailscale not running is
-        known to pass nothing on; a Tailscale that never answers locks nobody out for good."""
+    def test_a_sign_in_never_waits_long_for_tailscale(self):
+        """Right after a start Kontor does not know yet whether "tailscale serve" passes its port on: a sign-in from this Mac's
+        address waits a moment (EXPOSURE_WAIT) for the first look and then goes -- Kontor works without Tailscale (user,
+        2026-11-23); what stays at the Mac goes as well; a look that finds the port passed on refuses it and ends the sessions."""
         p, key = self.pair()
         self.MA.EXPOSURE_WAIT, wait = 0.05, self.MA.EXPOSURE_WAIT
         try:
@@ -1053,21 +1053,13 @@ class OverHttp(unittest.TestCase):
             fresh = Client(self.srv.server_address[1])
             self.remote[0] = False
             code, r = fresh.call("/api/login", {"password": "sehr-geheimes-passwort"})
-            self.assertEqual((code, r.get("checking")), (503, True))
-            self.assertEqual(fresh.call("/api/session")[1]["checking"], True)
-            self.assertEqual(fresh.call("/api/touchid", {})[1].get("checking"), True)
-            self.assertEqual(self.mac.call("/api/remote", {"action": "settings", "offline_copy": True})[0], 503)        # what stays at the Mac: not yet
-            self.assertEqual(self.mac.call("/api/devices")[0], 403)
+            self.assertEqual(code, 200, r)
+            self.assertFalse(fresh.call("/api/session")[1].get("checking"))
             self.assertEqual(self.on_phone(p, "/api/status")[0], 200)                  # the iPhone (its own address) as before
-            for _ in range(self.MA.EXPOSURE_TRIES - 1):                                # looks without an answer: still locked
-                self.app._exposure_set(None)
-                self.assertEqual(self.app.exposure()["serve"], "pending")
-                self.remote[0] = False
-                self.assertEqual(fresh.call("/api/login", {"password": "sehr-geheimes-passwort"})[0], 503)
-            self.app._exposure_set({"serve": "unknown", "lock": None})                 # ... never an answer: nobody locked out for good
-            self.assertEqual(self.app.exposure()["serve"], "unknown")
+            self.app._exposure_set({"serve": "serve", "lock": None})                   # found passed on: the session at the Mac ends
+            self.assertEqual(fresh.call("/api/status")[0], 401)
             self.remote[0] = False
-            self.assertEqual(fresh.call("/api/login", {"password": "sehr-geheimes-passwort"})[0], 200)
+            self.assertEqual(Client(self.srv.server_address[1]).call("/api/login", {"password": "sehr-geheimes-passwort"})[0], 403)
             for answer in ({"serve": "off", "lock": None}, {"serve": "none", "lock": True}):     # Tailscale does not run / passes nothing on
                 self._no_look()
                 self.app._exposure_set(answer)
@@ -1518,7 +1510,7 @@ class BrowserFaceId(unittest.TestCase):
 
     def test_setup_while_tailscale_is_looked_at(self):
         """Right after a start (the first look at Tailscale on its way): the page asks for the password as always -- no note
-        about Tailscale before anything waits for it; the password sent meanwhile waits and goes by itself once the look is there."""
+        about Tailscale -- and the password set goes through at once (Kontor works without Tailscale)."""
         try:
             from playwright.sync_api import sync_playwright
         except ImportError:
@@ -1547,10 +1539,7 @@ class BrowserFaceId(unittest.TestCase):
                 pg.wait_for_selector("#login-pw2")
                 self.assertEqual(pg.inner_text("#login-err").strip(), "")
                 pg.fill("#login-pw", "sehr-geheimes-passwort"); pg.fill("#login-pw2", "sehr-geheimes-passwort"); pg.click("#login-btn")
-                E.until(pg, "document.querySelector('#login-err').textContent.length > 0")      # it waits -- and says so
-                self.assertFalse(pg.evaluate("!document.querySelector('#shell').classList.contains('hidden')"))
-                app._exposure_set({"serve": "off", "lock": None}, running=False)              # the look is there: it goes by itself
-                pg.wait_for_selector("#shell:not(.hidden)", timeout=15000)
+                pg.wait_for_selector("#shell:not(.hidden)", timeout=15000)                     # it goes: Kontor works without Tailscale
                 b.close()
         finally:
             MA.EXPOSURE_WAIT = wait

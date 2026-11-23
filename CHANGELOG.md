@@ -1,5 +1,9 @@
 # Änderungen
 
+## 3.17.31 (2026-11-23 22:10)
+- Anmeldung: wartet nach einem Start höchstens 2 s auf Tailscale, dann geht sie – Kontor braucht Tailscale nicht
+- Auto-Buchungen: „Freigeben (n)“ zählt genau die angehakten Buchungen – auch nach dem Neuladen der Seite
+
 ## 3.17.30 (2026-11-23 22:05)
 - Cashflow-Positionen: „Was Kontor von deinen Kategorien braucht“ als empfohlener Kategorienbaum, gegliedert wie die Positionen, je Gruppe wie am besten aufgestellt.
 - Cashflow-Positionen: Investitionen und Finanzierung am besten über Konten in MoneyMoney; „Sparen & Anlegen“ und „Darlehen“ nur bei Bedarf, eine Kategorie reicht.
