@@ -1529,12 +1529,14 @@ class Tools(_Assist):
         with open(os.path.join(os.path.dirname(self.a.ai.runtime()["path"]), "request.json")) as f:
             msgs = json.load(f)["messages"]
         self.assertIn("root of the description", msgs[0]["content"])
+        self.assertIn("Never present a guess as a fact", msgs[0]["content"])           # rather no information than wrong information
         user = next(m["content"] for m in msgs if m["role"] == "user")
+        self.assertIn("If neither says what the figure is, say that you cannot tell", user)
         self.assertIn("Wohnen: 17.400", user)
         self.assertLess(user.index("## Cashflow (cashflow)"), user.index("## Vorjahresvergleich (cashflow.ring)"))
         self.assertIn("the change against the same months a year before", user)
         self.assertNotIn("not asked about", user); self.assertNotIn("root of the description", user)
-        self.assertIn("exactly as Kontor's description of the place says", user)              # the quick note: by the description
+        self.assertIn("go by that and by Kontor's description of the place", user)              # the quick note: by the description
         # search_help finds a place's description too (no anchor: it is no section of the help); the page tool names its places
         self.a._help, self.a._help_ix = {}, None
         with mock.patch.object(self.a, "_screen", lambda: notes):
@@ -5046,12 +5048,32 @@ class Browser(unittest.TestCase):
                     const b = el.getBoundingClientRect(); return refAt({target: el, clientX: b.left + 2, clientY: b.top + 2}); })()""")
                 self.assertRegex(r["text"], r"Wert: [\d.]+ \(Betrag\) \S+ % \(Veränderung\)")
                 self.assertIn("cashflow.ring", r["ex"]); self.assertEqual(r["ex"][-1], "cashflow")
+                # a slice kept open: each category's label carries its own figures (not its position's) -- the amount and change named
+                pg.locator('[data-ex="cashflow.ring"] svg g.cf-pie-sl').nth(1).click(force=True)
+                until(pg, "!!document.querySelector('[data-ex=\"cashflow.ring.pinned\"] .cf-pie-lab[data-kats] .cf-pie-m')")
+                r = pg.evaluate("""(() => { const el = document.querySelector('[data-ex="cashflow.ring.pinned"] .cf-pie-lab[data-kats] .cf-pie-m'), g = el.closest('.cf-pie-lab');
+                    const b = el.getBoundingClientRect(); return Object.assign(refAt({target: el, clientX: b.left + 2, clientY: b.top + 2}), {name: g.dataset.name}); })()""")
+                self.assertIn("› " + r["name"], r["text"]); self.assertRegex(r["text"], r"Wert: [\d.]+ \(Betrag\) \S+ % \(Veränderung\)")
+                self.assertIn("Anteil an ", r["text"]); self.assertEqual(r["ex"][:2], ["cashflow.ring.pinned", "cashflow.ring"])
+                pg.evaluate("CF.pieSel = null; cfDrawPie(); closeDrawer()")
+                pg.mouse.move(5, 5)
                 # a figure: its row and column (the names stand in a table of their own beside the figures), the rows above it
                 row, col, val, path = pg.evaluate("""(() => { const n = document.querySelector('#main .cf-pair table.cf-names'), v = document.querySelector('#main .cf-pair table.cf-tbl:not(.cf-names)');
                     const tr = [...n.tBodies[0].rows].find(r => r.getClientRects().length && +r.dataset.depth > 0 && refLabel(r.cells[0]) && refVal(v.rows[r.rowIndex].cells[1]));
                     const c = v.rows[tr.rowIndex].cells[1]; c.id = 'ref-cell'; const h = v.tHead.rows[v.tHead.rows.length - 1]; const hc = [...h.cells].find(x => refOver(c, x)); hc.id = 'ref-head';
                     return [refLabel(tr.cells[0]), refLabel(hc), refVal(c), refPath(tr, n)]; })()""")
                 self.assertTrue(row and col and val and path, (row, col, val, path))
+                # Safari and the Mac app select the word under the pointer with the right click itself: that word is no selection of the
+                # user's -- the reference stays the cell with its row and column (not just "„-505,24“" without its place). A text the user
+                # selected before (across cells) is taken as it is.
+                sel_ref = """(before) => { const c = document.querySelector('#ref-cell'), row2 = c.parentElement.nextElementSibling || c.parentElement.previousElementSibling;
+                    const pick = (a, b) => { const rg = document.createRange(); rg.setStartBefore(a); rg.setEndAfter(b); getSelection().removeAllRanges(); getSelection().addRange(rg); };
+                    getSelection().removeAllRanges(); if (before) pick(c, row2.cells[c.cellIndex]);
+                    c.dispatchEvent(new PointerEvent('pointerdown', {button: 2, bubbles: true}));
+                    if (!before) pick(c, row2.cells[c.cellIndex]);
+                    const b = c.getBoundingClientRect(); const r = refAt({target: c, clientX: b.left + 3, clientY: b.top + 3}); REFSEL.text = ''; getSelection().removeAllRanges(); return r.label; }"""
+                self.assertEqual(pg.evaluate(sel_ref, False), "%s · %s: %s" % (row, col, val))
+                self.assertTrue(pg.evaluate(sel_ref, True).startswith("„"))
                 self.assertEqual(menu(pg, "#ref-cell"), ki + ["Wert kopieren"])
                 self.assertEqual(pg.inner_text("#ctx .ctx-h"), "KI-Assistent")
                 pg.click("#ctx button:has-text('Wert kopieren')")
@@ -5094,7 +5116,7 @@ class Browser(unittest.TestCase):
                 self.assertEqual(pg.evaluate("AS.msgs.length"), 2); self.assertEqual(app.assistant.conv["id"], cid)
                 self.assertEqual(len(app.assistant.conv["turns"]), 2)
                 pg.click(".as-pop .as-pop-chat"); until(pg, "!document.querySelector('.as-pop') && AS.refs.length === 1")
-                self.assertIn("Kurz erklärt: Antwort:", pg.evaluate("AS.refs[0].text"))
+                self.assertIn("Kurzerklärung des Assistenten (nicht vom Nutzer, kann falsch sein): Antwort:", pg.evaluate("AS.refs[0].text"))
                 menu(pg, "#ref-cell"); pg.click("#ctx button:has-text('Kurz erklären')"); pg.wait_for_selector(".as-pop")
                 pg.keyboard.press("Escape"); until(pg, "!document.querySelector('.as-pop') && !QK.job")          # Escape closes it (and ends the answer)
                 pg.evaluate("AS.refs = []; asRefsDraw()"); until(pg, "!AS.busy")
@@ -5173,6 +5195,18 @@ class Browser(unittest.TestCase):
                 pg.evaluate("AS.msgs[1].state = 'run'; AS.msgs[1].parts.splice(4); asMsgs(true)")
                 self.assertEqual(pg.inner_text("#as-body .as-think summary").strip(), "Denkt nach … · Liest diese Seite")
                 self.assertEqual(pg.evaluate("[document.querySelectorAll('#as-body .as-think summary .spin').length, document.querySelectorAll('#as-body .as-msg > .as-run').length]"), [1, 0])
+                # unfolded with a click while it thinks -- and it stays open when the next words draw the entry anew
+                pg.evaluate("document.querySelector('#assist').classList.contains('open') || asShow(true)")
+                pg.click("#as-body .as-think summary"); pg.evaluate("AS.msgs[1].parts[3].label = 'Liest die Seite'; asMsgs(true)")
+                self.assertTrue(pg.evaluate("document.querySelector('#as-body .as-think').open"))
+                # long thoughts: scrolled up in the box, it stays there while new words come; read to the end, it follows them
+                pg.evaluate("AS.msgs[1].parts[0].text = Array.from({length: 80}, (_, k) => 'Zeile ' + k).join('\\n'); asMsgs(true); document.querySelector('#as-body .as-think > div').scrollTop = 120")
+                pg.evaluate("AS.msgs[1].parts[2].text += ' weiter'; asMsgs(true)")
+                self.assertEqual(pg.evaluate("document.querySelector('#as-body .as-think > div').scrollTop"), 120)
+                pg.evaluate("const d = document.querySelector('#as-body .as-think > div'); d.scrollTop = d.scrollHeight; AS.msgs[1].parts[2].text += '\\nnoch mehr\\nund mehr'; asMsgs(true)")
+                self.assertTrue(pg.evaluate("(d => d.scrollHeight - d.scrollTop - d.clientHeight < 12)(document.querySelector('#as-body .as-think > div'))"))
+                pg.click("#as-body .as-think summary"); pg.evaluate("asMsgs(true)")
+                self.assertFalse(pg.evaluate("document.querySelector('#as-body .as-think').open"))
                 pg.evaluate("AS.msgs[1].parts.push({k: 'text', text: 'Fer'}); asMsgs(true)")          # the answer is being written: thoughts done
                 self.assertEqual(pg.inner_text("#as-body .as-think summary").strip(), "Gedanken · 2 Schritte")
                 self.assertEqual(pg.evaluate("document.querySelectorAll('#as-body .as-run').length"), 0)
@@ -5181,6 +5215,11 @@ class Browser(unittest.TestCase):
                 pg.evaluate("AS.msgs[1] = {role: 'assistant', state: 'done', parts: [{k: 'tool', label: 'Liest die Bilanz'}, {k: 'tool', label: 'Liest diese Seite'}, {k: 'text', text: 'Fertig.'}]}; asMsgs(true)")
                 self.assertEqual(pg.evaluate("[...document.querySelectorAll('#as-body .as-msg > .as-tool')].map(x => x.textContent)"), ["Liest die Bilanz · Liest diese Seite"])
                 pg.evaluate("AS.msgs = []; asMsgs(true)")
+                # a picture pasted from the clipboard (a screenshot): given like a file through "+", named by when it was pasted
+                got = pg.evaluate("""(() => { const dt = new DataTransfer(); dt.items.add(new File([new Uint8Array([137, 80, 78, 71])], 'image.png', {type: 'image/png'}));
+                    const ev = new ClipboardEvent('paste', {clipboardData: dt, bubbles: true, cancelable: true}); document.querySelector('#as-in').dispatchEvent(ev);
+                    const out = [ev.defaultPrevented, (AS.files || []).map(f => f.name)]; AS.files = []; return out; })()""")
+                self.assertTrue(got[0]); self.assertRegex(got[1][0], r"^Bild \d{4}-\d\d-\d\d \d\d\.\d\d\.\d\d\.png$")
                 # switched off: a figure can still be copied and a chart printed, nothing to ask
                 pg.goto(url + "#overview"); pg.wait_for_selector("#main .ov-card .ov-plot"); pg.evaluate("asDrawnWait()")
                 pg.evaluate("AS.st.settings.enabled = false")

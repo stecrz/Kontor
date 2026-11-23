@@ -73,10 +73,11 @@ class UiDocsTests(unittest.TestCase):
         """A right click on a place: the place and the places around it, from the page down, each once -- the innermost first
         when room is short; unknown keys are left out."""
         a = A.Assistant.__new__(A.Assistant)
-        a._screen = lambda: {"kontor": {"name": "Kontor", "text": "root"}, "cashflow": {"name": "Cashflow", "text": "The page."},
+        a._screen = lambda: {"kontor": {"name": "Kontor", "text": "root"}, "cashflow": {"name": "Cashflow", "text": "The page of the cash flow, month by month. Second sentence, long and only for when it is clicked."},
                              "cashflow.ring": {"name": "Ring", "text": "Amount: this period. Percentage: change against a year before."}}
         got = a._screen_text(["cashflow.ring", "cashflow", "nonsense.place"])
-        self.assertEqual(got, "## Cashflow (cashflow)\nThe page.\n## Ring (cashflow.ring)\nAmount: this period. Percentage: change against a year before.")
+        # the place clicked in full, the places around it by their first sentence (what they are) -- few words for the model
+        self.assertEqual(got, "## Cashflow (cashflow)\nThe page of the cash flow, month by month.\n## Ring (cashflow.ring)\nAmount: this period. Percentage: change against a year before.")
         text = A._ref_text([{"label": "Wohnen: 17.400 ±0 %", "text": "Zeile: Wohnen", "ex": ["cashflow.ring", "cashflow"]}], a._screen_text)
         self.assertIn("what these places on the page show", text); self.assertIn("change against a year before", text)
         self.assertNotIn("root", text)                                    # Kontor as a whole: in the system text, not again here

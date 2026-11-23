@@ -1,5 +1,16 @@
 # Änderungen
 
+## 3.17.2 (2026-11-23 01:42)
+- KI-Assistent: Rechtsklick am Mac nimmt die angeklickte Zelle oder Zahl mit Zeile, Spalte und Beschreibung – nicht mehr nur das Wort, das Safari und die Mac-App beim Rechtsklick markieren (Hauptursache falscher Kurzerklärungen)
+- KI-Assistent: Beschreibung kompakter – die angeklickte Stelle ganz, die umliegenden nur in einem Satz
+- KI-Assistent: Rechtsklick auf eine Kategorie im geöffneten Ring nennt ihre eigenen Zahlen statt die der Position
+- KI-Assistent: Rechtsklick ordnet auch gekürzte Zahlen (420T €) und Veränderungen in Klammern ihrer Bedeutung zu
+- KI-Assistent: sagt klar, wenn er nicht weiß, was eine Zahl ist – keine Vermutung als Tatsache
+- KI-Assistent: übernommene Kurzerklärung als die des Assistenten gekennzeichnet, nie als Annahme des Nutzers
+- KI-Assistent: Gedanken lassen sich schon während des Nachdenkens aufklappen und darin scrollen
+- KI-Assistent: Bilder aus der Zwischenablage (⌘V) in den Chat einfügen
+- Oberfläche: Rechtsklick-Menü schließt nicht mehr durch ein nachlaufendes Scrollen
+
 ## 3.17.1 (2026-11-22 21:43)
 - KI-Assistent: kennt jede Stelle jeder Seite – Rechtsklick und Fragen zur Seite wissen, ob eine Zahl Wert des Zeitraums, Anteil oder Veränderung ist
 - KI-Assistent: Rechtsklick benennt jeden Teil einer Beschriftung (Betrag, Veränderung), nennt Zeitraum, Plan- und laufende Spalten, Kennzeichen; Achsen und Knöpfe zählen nicht

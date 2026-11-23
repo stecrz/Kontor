@@ -208,7 +208,8 @@ three largest categories (+ "Übrige") with amount and change – and an outer r
 A slice kept open by a click: the other slices faded; the middle shows that position – its name, its amount over the period and its
 change against the comparison period. Around the ring stand its categories instead of the positions: the three largest (colour dots
 like the outer ring) and "Übrige (n)" for the rest, each with its amount over the period and its change against the same months of
-the comparison period. Category names are the last two levels of the MoneyMoney path; "ohne Kategorie, geschätzt" = transactions
+the comparison period – its hover box: "<Position> › <Kategorie>", Betrag, "Anteil an <Position>" (share of the position, not of
+all expenses), Vorperiode, Veränderung. Category names are the last two levels of the MoneyMoney path; "ohne Kategorie, geschätzt" = transactions
 without a category whose position Kontor estimated; "laut Plan" = the planned part of plan months (the plan has no categories). For
 the slice "Übrige" its positions stand there instead.
 

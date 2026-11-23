@@ -102,6 +102,11 @@ anhängen – nie löschen.
   Grenze: Die Prüfung engt den Weg für eine untergeschobene Änderung ein, sie schließt ihn nicht (wer sie kennt, kann sie mit
   Aufwand umgehen); der nächste Schritt wäre, den Dienst selbst in macOS' Sandbox ohne ausgehendes Netz laufen zu lassen.
   (umgesetzt in 3.16.61)
+  Geändert (Nutzer, 2026-11-23): Freigeben muss er nur, was wirklich ein Risiko sein kann – ein neuer oder weiterer Weg nach
+  außen, eine gelockerte Abschirmung, Code, der ungelesen ankommt oder von selbst startet, eine Änderung der Prüfung selbst.
+  Jeder solche Fund mit einer Erklärung in klaren Worten (was er bewirken kann, worauf achten) und aufklappbar den betroffenen
+  Zeilen (entfernt/neu). Alles andere (strengere Regeln, gewöhnliche Änderungen) braucht keine Freigabe und steht höchstens
+  zusammengefasst darunter.
 - **Assistent aktuell halten:** Kontor fragt von selbst – täglich, einstellbar unter KI-Assistent (täglich, wöchentlich, nie),
   nur solange der Assistent eingeschaltet ist – GitHub nach einem neueren llama.cpp und Hugging Face nach neueren Dateien der
   geladenen Modelle (auch des Diktiermodells); gesendet wird dabei nichts vom Nutzer, geladen nichts. Gibt es etwas für das Modell
@@ -115,6 +120,17 @@ anhängen – nie löschen.
   Neustarts erhalten. (umgesetzt in 3.16.80)
 - **Hilfe laufend:** Texte der Hilfe (de/en) und des README werden mit jeder Änderung gepflegt, die sie betrifft – auch in
   kleinen Versionen. Nur die Hilfe-Bilder entstehen weiter erst beim großen Versionssprung. (umgesetzt in 3.16.80)
+- **Planung nachvollziehbar und frei wählbar** (2026-11-23): Jede Planzahl zeigt, wie sie entsteht (Regel, Grundlage, Steigerung,
+  eigener Wert); gerechnete Kennzahlen (Sparquote, Reichweite, Zinslast) werden gezeigt. Planregeln auf jeder Ebene: Standard des
+  Bereichs, Position (Überkategorie), Kategorie (Unterkategorie) – die tiefste Ebene mit eigener Regel gilt, sonst die darüber.
+  Methoden: Vorjahr Monat für Monat; Ø der letzten 12 oder 6 abgeschlossenen Monate; fester Betrag; Jahresbetrag; Budget aus
+  MoneyMoney; keine. Steigerung je Regel: Standard (Inflation bzw. Einnahmen-Steigerung des Bereichs), keine oder eigene % p.a.;
+  typische Planungsmodelle für den ganzen Bereich mit einem Klick wählbar. Jede Zelle einzeln überschreibbar – die Regel gilt für
+  die übrigen weiter. Ändert sich eine Regel, unter der eigene Werte oder Regeln weiter unten stehen, fragt Kontor nach und listet
+  sie (Zeile, Monat, eigener Wert, neuer Wert): behalten oder ersetzen.
+- **Zugang vom iPhone** (2026-11-23): Vom iPhone soll alles gehen wie am Mac; nur sehr Kritisches lässt sich in den
+  Einstellungen untersagen. Einzelne Geräte lassen sich am Mac entfernen – danach haben sie keinen Zugriff mehr. Verändernde
+  Aktionen müssen am iPhone besonders sicher sein. Der Weg zum Mac (Tailscale oder anders) wird beim Überarbeiten neu bewertet.
 - **Belege nur in Kontor** (2026-11-22): Der Pfad eines Belegs wird nie in einen Umsatz in MoneyMoney geschrieben (auch nicht in
   den Kommentar); Belege werden nur in Kontor verknüpft und gepflegt. Die Einstellung „Verweis in MoneyMoney“ entfällt.
   (umgesetzt in 3.16.89)

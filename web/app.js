@@ -496,17 +496,24 @@ function ctxMenu(x, y, items) {          // items: [label, action], '-' (a line 
   const m = document.createElement('div'); m.id = 'ctx'; m.className = 'ctx'; m.setAttribute('role', 'menu');
   m.innerHTML = items.map((it, i) => it === '-' ? '<hr>' : it.head ? `<div class="ctx-h" role="presentation">${esc(it.head)}</div>` : `<button role="menuitem" data-i="${i}">${esc(it[0])}</button>`).join(''); document.body.appendChild(m);
   const r = m.getBoundingClientRect(); m.style.left = Math.min(x, innerWidth - r.width - 8) + 'px'; m.style.top = Math.min(y, innerHeight - r.height - 8) + 'px';
-  const close = () => { m.remove(); document.removeEventListener('pointerdown', away, true); document.removeEventListener('keydown', esc_, true); window.removeEventListener('scroll', close); $('main').removeEventListener('scroll', close); };
+  const t0 = performance.now(), scrolled = () => { if (performance.now() - t0 > 250) close(); };          // a scroll still on its way from before the click: not one
+  const close = () => { m.remove(); document.removeEventListener('pointerdown', away, true); document.removeEventListener('keydown', esc_, true); window.removeEventListener('scroll', scrolled); $('main').removeEventListener('scroll', scrolled); };
   const away = e => { if (!m.contains(e.target)) close(); }, esc_ = e => { if (e.key === 'Escape') close(); };
-  document.addEventListener('pointerdown', away, true); document.addEventListener('keydown', esc_, true); window.addEventListener('scroll', close); $('main').addEventListener('scroll', close);          // the page scrolled (not a table inside it)
+  document.addEventListener('pointerdown', away, true); document.addEventListener('keydown', esc_, true); window.addEventListener('scroll', scrolled); $('main').addEventListener('scroll', scrolled);          // the page scrolled (not a table inside it)
   m.addEventListener('click', e => { const b = e.target.closest('button[data-i]'); if (!b) return; close(); items[+b.dataset.i][1](); });
   $('button', m).focus();
 }
 // a right click (or ctrl-click) on the page: the assistant explains what is under the pointer at once, or it goes into the chat
 // for a question; copy it (a figure, a row, a column, a selected text); print a chart alone -- with shift: the browser's own menu
+// what was selected just before a right click (or ctrl-click): Safari and the Mac app select the word under the pointer with the
+// click itself -- read before that (capture, before the browser acts), so a reference is never just that word without its place
+const REFSEL = {text: ''};
+document.addEventListener('pointerdown', e => { if (e.button === 2 || (e.button === 0 && e.ctrlKey)) { const s = getSelection(); REFSEL.text = s && !s.isCollapsed ? s.toString() : ''; } }, true);
 document.addEventListener('contextmenu', e => {
   if (e.defaultPrevented || e.shiftKey || !e.target.closest || e.target.closest('input, textarea, select, a, .ctx, .as-pop')) return;          // a long touch that opened a row: nothing more
   const card = e.target.closest(REF_CHARTS), ref = refAt(e), items = [];
+  const s = getSelection(); if (ref && s && !s.isCollapsed && s.toString() !== REFSEL.text) s.removeAllRanges();          // the word the click itself selected: not left marked
+  REFSEL.text = '';
   if (ref && asOn()) items.push({head: t('ki_assistent_lang')}, [t('ki_kurz'), () => asQuick(ref, e.clientX, e.clientY)], [t('ki_im_chat'), () => asAskAbout(ref)]);
   const more = [];
   if (ref && ref.copy) more.push([t(ref.copyKey || 'kopieren'), () => copyText(ref.copy)]);
@@ -4126,7 +4133,7 @@ function cfDrawPie() {
     return `M${pt(ro, a0, cx, cy)}A${ro},${ro} 0 ${big} 1 ${pt(ro, a1, cx, cy)}L${pt(ri, a1, cx, cy)}A${ri},${ri} 0 ${big} 0 ${pt(ri, a0, cx, cy)}Z`; };
   const kv = (k, v, cls) => `<span>${esc(k)}</span><b class="${cls || ''}">${v}</b>`;
   let g = '';
-  const labels = [];
+  const labels = [], geoTip = [];
   items.forEach((e, i) => {
     const {a0: s0, a1: s1, mid} = geo[i], a0 = s0 + gap / 2, a1 = Math.max(s1 - gap / 2, a0 + 0.002);
     const shade = e.rest ? '' : `style="--k:${Math.round(100 - i * (55 / Math.max(1, n - 1)))}%"`;
@@ -4144,13 +4151,17 @@ function cfDrawPie() {
     const pc = cfPct(e.v, total) + ' %', pw = pc.length * 5.6 + 4, ph = 10, rm = (R0 + R1) / 2, sn = Math.abs(Math.sin(mid)), cs = Math.abs(Math.cos(mid));
     const share = pw * sn + ph * cs <= R1 - R0 - 3 && pw * cs + ph * sn <= (a1 - a0) * rm - 4
       ? `<text class="cf-pie-p" x="${(cx + rm * Math.sin(mid)).toFixed(1)}" y="${(cy - rm * Math.cos(mid) + 3.5).toFixed(1)}" text-anchor="middle">${pc}</text>` : '';
+    geoTip[i] = tip;
     g += `<g class="cf-pie-sl${st}" data-cftip="${tip}" data-pie="${i}" tabindex="0" aria-pressed="${i === sel}" aria-label="${esc(e.label + ': ' + cfEur(e.v))}"><path class="cf-pie-a${e.rest ? ' rest' : ''}" ${shade} d="${arc(a0, a1, R0, R1)}"/>${share}${sub}</g>`;
     if (sel < 0) labels.push({e, i, mid, ch, tip, r: R1, main: true});          // the positions: close to the ring (its outer ring of categories only shows on hover)
     else if (i === sel) {
       const one = segs.length === 1 && e.parts.length ? [{...segs[0], mid}] : segs;
       if (!one.length) labels.push({e, i, mid, ch, tip, r: R2});
       const restKats = rest.flatMap(d => d.kat ? [d.kat] : d.kats || []);
-      for (const d of one) labels.push({e: d, i, mid: d.mid, ch: cfChange(d.v, d.p, up), tip, r: R2, key: segs.length > 1 ? d.key : '',
+      // each category (or "Übrige") its own hover box: its amount, its share of the position, the comparison period, the change
+      const ctip = d => { const c = cfChange(d.v, d.p, up); return cfTip(`<div class="cf-tip-h">${esc(d.label.startsWith(e.label + ' › ') ? d.label : e.label + ' › ' + d.label)}</div><div class="cf-tip-kv">${kv(t('betrag'), cfEur(d.v))}${kv(t('cf_anteil_an', e.label), cfPct(d.v, e.v) + ' %', 'pl')}`
+        + (P0.prev ? `${kv(t('cf_vorperiode'), d.p != null ? cfEur(d.p) : '–', 'pl')}${kv(t('cf_veraenderung'), c ? c.txt : '–', 'pl ' + (c ? c.cls : ''))}` : '') + `</div>`); };
+      for (const d of one) labels.push({e: d, i, mid: d.mid, ch: cfChange(d.v, d.p, up), tip: ctip(d), r: R2, key: segs.length > 1 ? d.key : '',
         kats: d.key === 'cat0' ? restKats : d.kat ? [d.kat] : d.kats || [], est: d.key === 'cat0' ? rest.some(x => !x.kat && !x.kats) : !d.kat && !d.kats});
     }
   });
@@ -4187,7 +4198,7 @@ function cfDrawPie() {
   if (sel >= 0) {
     const e = items[sel], ch = cfChange(e.v, e.p, up), room = Math.max(4, Math.floor(2 * (R0 - 8) / 6.4));
     const nm = e.label.length > room ? e.label.slice(0, room - 1) + '…' : e.label;
-    g += `<g class="cf-pie-c" data-pie="${items.length === 1 ? 0 : -1}" tabindex="0" aria-label="${esc(items.length === 1 ? e.label : t('cf_pie_zurueck'))}">${items.length === 1 ? '' : `<title>${esc(t('cf_pie_zurueck'))}</title>`}<circle cx="${cx}" cy="${cy}" r="${(R0 - 2).toFixed(1)}"/>`
+    g += `<g class="cf-pie-c" data-reftip="${geoTip[sel]}" data-pie="${items.length === 1 ? 0 : -1}" tabindex="0" aria-label="${esc(items.length === 1 ? e.label : t('cf_pie_zurueck'))}">${items.length === 1 ? '' : `<title>${esc(t('cf_pie_zurueck'))}</title>`}<circle cx="${cx}" cy="${cy}" r="${(R0 - 2).toFixed(1)}"/>`
       + `<text class="cf-pie-cn" x="${cx}" y="${cy - 16}" text-anchor="middle">${esc(nm)}</text><text class="cf-pie-v" x="${cx}" y="${cy + 4}" text-anchor="middle">${esc(F0(e.v))} €</text>`
       + (ch ? `<text class="cf-pie-d ${ch.cls}" x="${cx}" y="${cy + 22}" text-anchor="middle">${esc(ch.txt)}</text>` : '') + `</g>`;
     el.innerHTML = `<svg class="cf-svg pinned${up ? ' ein' : ''}" data-ex="cashflow.ring.pinned" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="${esc(e.label)}">${g}</svg>`;
@@ -7411,7 +7422,13 @@ function asDraw() {
   ta.addEventListener('scroll', () => { const g = $('#as-ghost'); if (g) g.scrollTop = ta.scrollTop; });
   $('#as-file').addEventListener('change', e => { const f = [...(e.target.files || [])]; e.target.value = ''; if (f.length) asFiles(f); });
   asFit(ta); ta.addEventListener('input', () => { asFit(ta); if (!ta.value) AS.pasted = false; });
-  ta.addEventListener('paste', e => { const c = e.clipboardData; if (c && (c.getData('text') || '').trim().length >= 40) AS.pasted = true; });          // pasted text in the question: notes from it say so
+  ta.addEventListener('paste', e => { const c = e.clipboardData; if (!c) return;
+    // a picture or a document from the clipboard (a screenshot, a copied PDF): given like a file through "+" -- a screenshot is
+    // named by when it was pasted (the clipboard calls every picture "image.png")
+    const got = [...(c.items || [])].filter(it => it.kind === 'file').map(it => it.getAsFile()).filter(Boolean), files = got.length ? got : [...(c.files || [])];
+    if (files.length) { e.preventDefault(); const d = new Date(), p2 = n => String(n).padStart(2, '0'), stamp = `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())} ${p2(d.getHours())}.${p2(d.getMinutes())}.${p2(d.getSeconds())}`;
+      asFiles(files.map(f => /^image\.\w+$/i.test(f.name || '') || !f.name ? new File([f], `${t('ki_bild_eingefuegt')} ${stamp}.${(f.type.split('/')[1] || 'png').replace('jpeg', 'jpg')}`, {type: f.type}) : f)); return; }
+    if ((c.getData('text') || '').trim().length >= 40) AS.pasted = true; });          // pasted text in the question: notes from it say so
   ta.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); $('#as-form').requestSubmit(); } else if (e.key === 'Escape' && AS.busy) { e.stopPropagation(); asStop(); } });
   $('#as-form').addEventListener('submit', e => { e.preventDefault(); if (REC.on || REC.starting) { asMicStop(true, true); return; } if (REC.busy) { REC.go = true; return; }          // dictating: ended, written down, then sent
     if (AS.busy) { asStop(); return; } const v = ta.value; ta.value = ''; asFit(ta); asSend(v); });
@@ -7742,7 +7759,13 @@ function asMsgs(bottom) {
       : `<div class="as-empty">${[1, 2, 3].filter(i => i < 3 || (((a.settings || {}).rights || {}).page && !AS_HIDDEN.includes(S.tab))).map(i => `<button class="as-sug" type="button">${t(`ki_bsp_${i}`)}</button>`).join('')}</div>`)
       + asOpenDraw(a);
     asOpenLoad();
-  } else { b.innerHTML = AS.msgs.map(asMsg).join(''); spinKeep(b); asChKeep(); }
+  } else {
+    // an unfolded box of thoughts keeps where it was scrolled while the answer streams in (drawn anew with every word) -- read to its
+    // end, it follows the new text
+    const kept = new Map($$('.as-think[open] > div', b).map(x => [x.parentElement.dataset.m + '/' + x.parentElement.dataset.p, {top: x.scrollTop, end: x.scrollHeight - x.scrollTop - x.clientHeight < 12}]));
+    b.innerHTML = AS.msgs.map(asMsg).join(''); spinKeep(b); asChKeep();
+    $$('.as-think[open] > div', b).forEach(x => { const k = kept.get(x.parentElement.dataset.m + '/' + x.parentElement.dataset.p); if (k) x.scrollTop = k.end ? x.scrollHeight : k.top; });
+  }
   if (near) b.scrollTop = b.scrollHeight;
   asGo();
 }
@@ -8010,7 +8033,8 @@ function refCell(cell) {
   // fixed names stays its own), else by where it stands; controls and fillers are no column
   const usable = h => h && refLabel(h) && !h.classList.contains('snap-pad') && !h.classList.contains('cf-ph') && !h.querySelector('button, select, input');
   const headOf = c => { if (!head) return null; const h = head.cells.length === c.parentElement.cells.length ? head.cells[c.cellIndex] : [...head.cells].find(x => refOver(c, x)); return usable(h) ? h : null; };
-  const colName = (h, v) => { const k = (v || h).classList, tag = k.contains('plan') ? t('plan') : h.title === t('ist_plan') ? t('ist_plan') : k.contains('part') ? t('ref_laufend') : '';
+  const colName = (h, v) => { const k = (v || h).classList, tag = k.contains('plan') ? t('plan') : h.title === t('ist_plan') ? t('ist_plan') : k.contains('part') ? t('ref_laufend')
+      : /^\d{4}-\d{2}$/.test(h.dataset.key || '') ? t('ref_abgeschlossen') : '';          // a month column: closed (actual), running or planned -- always said
     return refLabel(h) + (tag ? ` (${tag})` : ''); };          // a plan value, a sum with plan in it, the running month: said
   const nameOf = row => { const r = names.rows[row.rowIndex]; const c = r && [...r.cells].find(x => refLabel(x)); return c && c.cellIndex <= 1 ? c : null; };
   const pairsOf = (vrow, name) => head ? [...vrow.cells].map(v => { if (v === name || v.classList.contains('cf-ph') || v.classList.contains('snap-pad')) return null; const h = headOf(v); return h ? [colName(h, v), refVal(v), refLabel(h)] : null; }).filter(p => p && p[1]) : [];          // (the plain heading: for the clipboard)
@@ -8034,7 +8058,7 @@ function refCell(cell) {
       {copy: ['\t' + pairs.map(p => p[2]).join('\t'), row + '\t' + pairs.map(p => refNum(p[1])).join('\t')].join('\n'), copyKey: 'zeile_kopieren'});
   }
   const h = headOf(cell), col = h ? colName(h, cell) : '', val = refVal(cell);          // one figure: its row and column (a narrow table: the whole row too, as a transaction)
-  return Object.assign(refMake(row + (col ? ' · ' + col : '') + (val ? ': ' + val : ''), [`${t('ref_zeile')}: ${row}`].concat(pathLine, markOf(name), col ? [`${t('ref_spalte')}: ${col}`] : [], [`${t('ref_wert')}: ${val || '–'}`],
+  return Object.assign(refMake(row + (h ? ' · ' + refLabel(h) : '') + (val ? ': ' + val : ''), [`${t('ref_zeile')}: ${row}`].concat(pathLine, markOf(name), col ? [`${t('ref_spalte')}: ${col}`] : [], [`${t('ref_wert')}: ${val || '–'}`],
     pairs.length && pairs.length <= 10 ? [`${t('ref_ganze_zeile')}: ` + pairs.map(([hh, v]) => `${hh}: ${v}`).join(' · ')] : []), where, refGo(Object.assign({mark: {text: row, column: h ? refLabel(h) : ''}}, depth))),
     val ? {copy: refNum(val), copyKey: 'wert_kopieren'} : {});
 }
@@ -8056,7 +8080,7 @@ function refPoint(chart) {          // the point of a chart under the pointer: w
 // found again by the same name (or value) and marked itself, not only its card.
 const refIsNum = s => !!s && s.length <= 24 && /\d/.test(s) && !/\p{L}{3,}/u.test(s);          // +48.660 · 62.533 € · ±0,0 % · 420T €
 function refTip(el) {          // what the hover box of a row of a chart says: its name (first line) and its figures
-  const h = el && el.dataset.cftip != null ? CF.tips[+el.dataset.cftip] : null; if (!h) return null;
+  const k = el ? el.dataset.cftip ?? el.dataset.reftip : null, h = k != null ? CF.tips[+k] : null; if (!h) return null;          // reftip: a hover box only for a right click (the ring's middle says "back" when hovered)
   const d = document.createElement('div'); d.innerHTML = h;
   return {head: refLabel($('.cf-tip-h', d)), text: refTipLines(d, []).join(' · ').slice(0, 600)};
 }
@@ -8075,12 +8099,24 @@ function refTipLines(el, out) {
   }
   return out;
 }
+// a figure as written on the page -- 17.400 · −2,3 % · 420T € · 1,2 Mio. -- as a number (its sign apart: expenses are shown positive in
+// places) with how exactly it is shown, so a short figure is found again among the exact ones of its hover box
+function refQty(s) {
+  s = String(s || '').replace(/\u2212/g, '-').replace(/[\s\u00a0€]/g, '').replace(/^±/, '');
+  const pct = /%$/.test(s); s = s.replace(/%$/, '');
+  const m = s.match(/^[+-]?([\d.,']+)(T|Tsd\.?|k|M|Mio\.?|Mrd\.?|B)?$/i); if (!m) return null;
+  const f = !m[2] ? 1 : /^(t|tsd|k)/i.test(m[2]) ? 1e3 : /^(mrd|b)/i.test(m[2]) ? 1e9 : 1e6;
+  const n = m[1].split(GRP).join('').replace(DEC, '.'), v = parseFloat(n); if (!isFinite(v)) return null;
+  const dec = n.includes('.') ? n.length - n.indexOf('.') - 1 : 0;
+  return {v: Math.abs(v * f), pct, tol: Math.pow(10, -dec) * f / 2 + 0.005};
+}
+const refSameQty = (a, b) => a.pct === b.pct && Math.abs(a.v - b.v) <= Math.max(a.tol, b.tol);
 const refLeaves = box => [...box.querySelectorAll('*')].filter(el => el.children.length === 0 || [...el.children].every(c => /^(i|small|tspan)$/i.test(c.tagName)));
 // a label of an axis or a grid line: a scale, no figure of the chart
 const REF_AXIS = '[class*="tick"], [class*="axis"], [class*="grid-l"], .bch-y, .bch-x, .ov-cap';
 const refAxis = el => !!(el && el.matches && (el.matches(REF_AXIS) || (/^tspan$/i.test(el.tagName) && el.parentElement && el.parentElement.matches(REF_AXIS))));          // the label itself (not a box around the chart)
 function refFig(tg, card) {
-  let hit = tg.closest('[data-cftip]'), tip = hit && card.contains(hit) ? refTip(hit) : null;
+  let hit = tg.closest('[data-cftip], [data-reftip]'), tip = hit && card.contains(hit) ? refTip(hit) : null;
   let val = [tg, tg.parentElement].find(el => el && el !== card && card.contains(el) && !refAxis(el) && !el.closest('button, .seg, select, label.chk') && refIsNum(refOne(el.textContent))) || null;          // a control (6 M, 1 J): no figure
   if (!tip && val && val.classList.contains('cf-val-l')) {          // the label of a bar cut at the scale: its month is the hit area at the same place
     const b = val.getBoundingClientRect(), mx = (b.left + b.right) / 2, svg = val.closest('svg');
@@ -8088,9 +8124,9 @@ function refFig(tg, card) {
     tip = hit ? refTip(hit) : null;
   }
   const svg = hit && hit.closest('svg');
-  if (!val && hit && svg) {          // a row of a drawn chart (its hit area over the texts): the figure in the same band
+  if (!val && hit && svg) {          // a row of a drawn chart (its hit area over the texts): its own figure first, else the figure in the same band
     const r = hit.getBoundingClientRect();
-    val = [...svg.querySelectorAll('text')].find(x => { const b = x.getBoundingClientRect(), my = (b.top + b.bottom) / 2, mx = (b.left + b.right) / 2;
+    val = [...hit.querySelectorAll('text')].find(x => !refAxis(x) && refIsNum(refOne(x.textContent))) || [...svg.querySelectorAll('text')].find(x => { const b = x.getBoundingClientRect(), my = (b.top + b.bottom) / 2, mx = (b.left + b.right) / 2;
       return my >= r.top && my <= r.bottom && mx >= r.left && mx <= r.right && !refAxis(x) && refIsNum(refOne(x.textContent)); }) || null;          // inside its area (not an axis)
   }
   if (!tip && !val) return null;
@@ -8110,10 +8146,12 @@ function refFig(tg, card) {
     label = (row && row !== card && refLeaves(row).map(x => refLabel(x)).find(x => x && !refIsNum(x))) || title;
   }
   // which of the hover box's figures it is (Betrag, Anteil, Veränderung ...): named beside it, so a share or a change is not taken for an amount
-  // -- each part of a label on its own (17.400 ±0 %: the amount, then its change)
-  const bare = x => String(x || '').replace(/[€\s\u00a0]/g, ''), tipKv = tip ? tip.text.split(' · ').map(l => { const i = l.indexOf(': '); return i > 0 ? [l.slice(0, i), bare(l.slice(i + 2).split(' (')[0])] : null; }).filter(Boolean) : [];
+  // -- each part of a label on its own (17.400 ±0 %: the amount, then its change), also when it is short (420T €) or signed
+  // otherwise (expenses shown positive); a change in brackets behind a line names that line ("Okt 26: 420.000 € (+2,3 %)")
+  const tipKv = tip ? tip.text.split(' · ').flatMap(l => { const i = l.indexOf(': '); if (i < 1) return []; const k = l.slice(0, i), rest = l.slice(i + 2), br = rest.match(/\(([^()]*)\)\s*$/);
+    return [[k, refQty(rest.replace(/\s*\([^()]*\)\s*$/, ''))]].concat(br ? [[t('ref_veraenderung_zu', k), refQty(br[1])]] : []); }).filter(([, q]) => q) : [];
   const parts = val ? [...val.childNodes].map(c => refOne(c.textContent)).filter(Boolean) : [];
-  const named = (parts.length > 1 ? parts : [value]).map(v => { const k = tipKv.find(([, x]) => x === bare(v)); return k ? `${v} (${k[0]})` : v; }).join(' ');
+  const named = (parts.length > 1 ? parts : [value]).map(v => { const q = refQty(v), k = q && tipKv.find(([, x]) => refSameQty(q, x)); return k ? `${v} (${k[0]})` : v; }).join(' ');
   return Object.assign(refMake(label && value ? `${label}: ${value}` : title && label && label !== title ? `${title} · ${label}` : label || value, [`${t('ref_zeile')}: ${label || '–'}`].concat(value ? [`${t('ref_wert')}: ${named}`] : [], tip ? [`${t('ref_punkt')}: ${tip.text}`] : [], more),
     title, refGo({mark: title && !card.closest('#drawer') ? {text: title, column: ''} : null, fig: {tip: tip ? tip.head : '', label: label || '', value}})), value ? {copy: refNum(value), copyKey: 'wert_kopieren'} : {});
 }
@@ -8159,11 +8197,14 @@ function refFind(e) {
   if (chat) return refChat(chat);
   const main = $('#main'), dr = $('#drawer');
   if (AS_HIDDEN.includes(S.tab) || !(main.contains(tg) || dr.classList.contains('open') && dr.contains(tg))) return null;
-  const sel = getSelection(), st = sel && !sel.isCollapsed ? sel.toString().trim() : '';
-  if (st && sel.rangeCount) {          // a selected text the click is on: that text (several cells, a column dragged over)
+  // a text the user selected before the click, and the click is on it: that text (several cells, a column dragged over). Never the
+  // word Safari and the Mac app select under the pointer with the right click itself (REFSEL: what was selected before it), and never
+  // a selection inside one cell or one label -- that is the cell or the figure, with its row, column and what the place shows
+  const sel = getSelection(), st = sel && !sel.isCollapsed && REFSEL.text && sel.toString() === REFSEL.text ? sel.toString().trim() : '';
+  if (st && sel.rangeCount) {
     const r = sel.getRangeAt(0), on = [...r.getClientRects()].some(x => e.clientX >= x.left - 4 && e.clientX <= x.right + 4 && e.clientY >= x.top - 4 && e.clientY <= x.bottom + 4);
     const box = r.commonAncestorContainer.nodeType === 1 ? r.commonAncestorContainer : r.commonAncestorContainer.parentElement;
-    if ((on || r.intersectsNode(tg)) && (main.contains(box) || dr.contains(box))) {
+    if ((on || r.intersectsNode(tg)) && (main.contains(box) || dr.contains(box)) && !box.closest('td, th, text, .kpi, .lc-val, .ov-fig, li')) {
       const where = refTitle(box);
       return Object.assign(refMake(`„${refCut(refOne(st), 40)}“`, [`${t('ref_auswahl')}:`, st.slice(0, 1200)], where, refGo(where && !box.closest('#drawer') ? {mark: {text: where, column: ''}} : {})), {copy: st});
     }
@@ -8386,6 +8427,13 @@ $('#assist').addEventListener('click', e => {
     const s = AS.sel; if (!s || s.key !== h.key || s.i !== h.i || s.s !== h.s) { AS.sel = {key: h.key, i: h.i, s: h.s}; asChTip(h, true); return; }
   }
   asChGo(h.c, h.i, h.s);
+});
+// thoughts folded or unfolded at once on the click -- also while the answer still streams in: the entry is drawn anew with every
+// word, so the browser's own toggle (it comes a moment later) would land on an entry no longer there
+$('#assist').addEventListener('click', e => {
+  const sm = e.target.closest && e.target.closest('details.as-think > summary'); if (!sm) return;
+  const d = sm.parentElement, p = ((AS.msgs[+d.dataset.m] || {}).parts || [])[+d.dataset.p]; if (!p) return;
+  e.preventDefault(); p.open = !d.open; d.open = p.open;
 });
 $('#assist').addEventListener('toggle', e => {
   const d = e.target; if (!d.classList) return;
