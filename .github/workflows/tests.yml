@@ -29,25 +29,42 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # two halves per Python, each on a machine of its own (the tests are most of a run: one after the other 8 min, so 4):
-        # the pages' tests, and everything else -- a new test file lands in "everything else" by itself, nothing is left out
+        # four parts per Python, each on a machine of its own (one after the other ~25 min, side by side ~8): the pages; the
+        # assistant and the tour; the calculations with their random cases (few fixed ones here -- nightly.yml runs 1000 and
+        # new ones every night); everything else -- a new test file lands in "everything else" by itself, nothing is left out
         include:
           - name: "Python 3.9 (wie auf dem Mac) · Chrome · Seiten"
             python: "3.9"           # the Python of Apple's command line tools on the Mac (its Playwright needs an older image)
             os: ubuntu-24.04
             tests: tests/test_e2e.py
-          - name: "Python 3.9 (wie auf dem Mac) · Chrome · Assistent, Rundgang, Regeln"
+          - name: "Python 3.9 (wie auf dem Mac) · Chrome · Assistent, Rundgang"
             python: "3.9"
             os: ubuntu-24.04
-            tests: tests --ignore=tests/test_e2e.py
+            tests: tests/test_assistant.py tests/test_assistant_eval.py tests/test_memory.py tests/test_tour.py
+          - name: "Python 3.9 (wie auf dem Mac) · Chrome · Rechnen, Zufallsfälle"
+            python: "3.9"
+            os: ubuntu-24.04
+            tests: tests/test_fuzz.py tests/test_cashflow.py tests/test_scenarios.py tests/test_worlds.py tests/test_rule_worlds.py tests/test_rules.py tests/test_categories.py
+          - name: "Python 3.9 (wie auf dem Mac) · Chrome · Übrige"
+            python: "3.9"
+            os: ubuntu-24.04
+            tests: tests --ignore=tests/test_e2e.py --ignore=tests/test_assistant.py --ignore=tests/test_assistant_eval.py --ignore=tests/test_memory.py --ignore=tests/test_tour.py --ignore=tests/test_fuzz.py --ignore=tests/test_cashflow.py --ignore=tests/test_scenarios.py --ignore=tests/test_worlds.py --ignore=tests/test_rule_worlds.py --ignore=tests/test_rules.py --ignore=tests/test_categories.py
           - name: "Python 3.15 · Chrome + Safari-Engine · Seiten"
             python: "3.15"
             os: ubuntu-24.04          # not ubuntu-latest: on 26.04 the browser libraries come from a crawling mirror (17+ min)
             tests: tests/test_e2e.py
-          - name: "Python 3.15 · Chrome + Safari-Engine · Assistent, Rundgang, Regeln · Code-Checks"
+          - name: "Python 3.15 · Chrome + Safari-Engine · Assistent, Rundgang"
             python: "3.15"
             os: ubuntu-24.04
-            tests: tests --ignore=tests/test_e2e.py
+            tests: tests/test_assistant.py tests/test_assistant_eval.py tests/test_memory.py tests/test_tour.py
+          - name: "Python 3.15 · Chrome + Safari-Engine · Rechnen, Zufallsfälle"
+            python: "3.15"
+            os: ubuntu-24.04
+            tests: tests/test_fuzz.py tests/test_cashflow.py tests/test_scenarios.py tests/test_worlds.py tests/test_rule_worlds.py tests/test_rules.py tests/test_categories.py
+          - name: "Python 3.15 · Chrome + Safari-Engine · Übrige · Code-Checks"
+            python: "3.15"
+            os: ubuntu-24.04
+            tests: tests --ignore=tests/test_e2e.py --ignore=tests/test_assistant.py --ignore=tests/test_assistant_eval.py --ignore=tests/test_memory.py --ignore=tests/test_tour.py --ignore=tests/test_fuzz.py --ignore=tests/test_cashflow.py --ignore=tests/test_scenarios.py --ignore=tests/test_worlds.py --ignore=tests/test_rule_worlds.py --ignore=tests/test_rules.py --ignore=tests/test_categories.py
             checks: true
     steps:
       - uses: actions/checkout@v7
@@ -107,7 +124,9 @@ jobs:
         timeout-minutes: 30                 # today 4 min per half: room for many more tests
         env:
           TZ: Europe/Berlin
-        run: python -m pytest -q -rs ${{ matrix.tests }}       # -rs: what was skipped, and why, at the end
+        run: python -m pytest -q -rs --durations=10 ${{ matrix.tests }}       # -rs: what was skipped, and why; then the slowest tests
+        env:
+          KONTOR_FUZZ_SEEDS: "12"      # few fixed random cases per push (and all found before): the nightly run checks 1000 and new ones
 
   # Kontor runs only on the Mac: what only a Mac can check -- Apple's own Python and Kontor's own (the build it names, really
   # loaded: checked, tried, switched to, damaged, updated to from the version before), the Swift helpers (Touch ID,

@@ -7,7 +7,7 @@ there.
 ## help.search — Hilfe durchsuchen
 A search field above the article: shows only the chapters (from one main heading to the next, with all their sections) that
 contain the typed text exactly (upper/lower case ignored, no other word forms), marks each hit and hides the other chapters and
-their entries in the table of contents. Beside it "N Abschnitte": how many chapters contain the text. Empty field: everything.
+their entries in the table of contents. Beside it "i von N · M Abschnitte": the current hit (shown stronger and scrolled into view; the first at once, Enter/⌘G the next, Shift the previous) of all marked hits, and how many chapters contain the text; "Nicht gefunden" without any. Empty field: everything.
 
 ## help.toc — Inhaltsverzeichnis
 The chapters of the manual (its main headings) as links in the order of the article – from "Übersicht", "Was MoneyMoney macht

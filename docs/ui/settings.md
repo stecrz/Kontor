@@ -87,9 +87,9 @@ llama.cpp, the free program that runs the models on this Mac: installed version 
 newer version is shown), "Entfernen". Loaded from GitHub only on a click; a progress bar with size, speed and time left.
 
 ### settings.assistant.models — Modell für Antworten
-The models that answer, from Hugging Face, in groups by what each is for: "Gründlich – für Zahlen, Dokumente und Recherche"
-(reads long documents and figures most reliably, answers more slowly), "Schnell – für kurze Fragen" (about four times as fast,
-less reliable with long documents), "Klein – nur für einfache Fragen" (small models often guess instead of saying that they do
+The models that answer, from Hugging Face, one chosen for all answers (the thinking effort is picked per question in the chat), in groups by what each is for: "Für Zahlen, Dokumente und Recherche"
+(reads long documents and figures most reliably, answers more slowly), "Für kurze Fragen – flotter, weniger genau" (about four times as fast,
+less reliable with long documents), "Nur für einfache Fragen" (small models often guess instead of saying that they do
 not know), "Andere Modelle" (what the user loaded himself: any GGUF file by "provider/name", "Dateien zeigen"). Per model: its
 name (hover: repository and file), one line on what it is good at, then maker, licence (hover: what it allows), file size ("ca."
 before it is loaded), the memory from which it runs well ("ab … GB Arbeitsspeicher") and how it sits in this Mac's memory:

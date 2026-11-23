@@ -211,6 +211,12 @@ anhängen – nie löschen.
   einfach (der Dienst erkennt ihr Beenden nicht verlässlich: die Seite ruht in verdeckten Fenstern, eine Prozessabfrage wäre ein
   neuer Aufruf nach außen) und deshalb nicht umgesetzt. (umgesetzt in 3.17.20)
 
+- **Modellliste ohne Modus-Wörter** (Nutzer, 2026-11-23): Die Gruppen der Modellliste dürfen nicht wie eine Wahl je Denkaufwand
+  wirken (Schnell/Ausgewogen/Gründlich im Chat) – gewählt wird ein Modell für alles; Überschriften nur nach Zweck. (umgesetzt in 3.17.21)
+- **Hilfe-Suche springt** (Nutzer, 2026-11-23): Die Suche in der Hilfe springt zum ersten Fund und mit ↩/⌘G durch die Funde. (umgesetzt in 3.17.21)
+- **Tests je Push kürzer** (Nutzer, 2026-11-23): Der Lauf je Push soll schnell sein und den Nachtlauf nicht doppeln – Zufallsfälle
+  vor allem nachts (dessen Fehler behebt der nächste Chat); je Push wenige feste Fälle, die Tests auf mehr Rechner verteilt. (umgesetzt in 3.17.21)
+
 ## Offen (Entscheidung steht aus – mit Empfehlung vorlegen, wenn der Punkt dran ist)
 - Umsatzsteuer-Voranmeldung direkt an ELSTER senden (ELSTERs Programmbibliothek ERiC, Anmeldung als Hersteller, Zertifikat und
   PIN bei jedem Senden, nie gespeichert; neue Verbindung) – oder Kontor rechnet nur und der Nutzer überträgt die Werte.

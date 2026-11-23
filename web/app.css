@@ -810,7 +810,7 @@ details.adv { margin:14px 0 4px; } details.adv summary { cursor:pointer; color:v
 .help { max-width:880px; line-height:1.6; } .help h3 { margin:30px 0 8px; scroll-margin-top:calc(var(--topbar-h, 56px) + 66px); } .help h4 { margin:20px 0 6px; scroll-margin-top:calc(var(--topbar-h, 56px) + 66px); }
 .help figure { margin:12px 0 18px; } .help figure img { display:block; max-width:100%; height:auto; border:1px solid var(--line); border-radius:10px; box-shadow:var(--shadow); }
 .help ul, .help ol { padding-left:22px; } .help li { margin:4px 0; } .help table { margin:8px 0 14px; }
-.help mark.hm { background:#ffe58a; color:#1d1d1f; border-radius:2px; }
+.help mark.hm { background:#ffe58a; color:#1d1d1f; border-radius:2px; } .help mark.hm.on { background:#ff9f0a; box-shadow:0 0 0 2px #ff9f0a; }
 pre.code { background:var(--head); border:1px solid var(--line); border-radius:8px; padding:10px 12px; font:12px/1.5 ui-monospace, Menlo, monospace; overflow:auto; white-space:pre; }
 a.more { white-space:nowrap; }
 @media (max-width: 800px) { .help-layout { grid-template-columns:minmax(0, 1fr); } .help-layout > :last-child { overflow-wrap:anywhere; } .help-toc { position:static; max-height:none; flex-direction:row; flex-wrap:wrap; } .help-toc a.help-toc-x { margin:0; padding-top:5px; border-top:0; border-left:1px solid var(--line); } }

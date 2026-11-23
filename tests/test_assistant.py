@@ -5022,7 +5022,7 @@ class Browser(unittest.TestCase):
                     L.physical_ram = lambda: 64 * 2 ** 30
                     pg.evaluate("route()"); until(pg, "/Arbeitsspeicher: 64 GB/.test((document.querySelector('.as-folder') || {}).textContent || '')")
                     self.assertEqual(pg.evaluate("[...document.querySelectorAll('.as-group')].map(e => e.firstChild.textContent)"),
-                                     ["Gründlich – für Zahlen, Dokumente und Recherche", "Schnell – für kurze Fragen", "Klein – nur für einfache Fragen", "Andere Modelle"])
+                                     ["Für Zahlen, Dokumente und Recherche", "Für kurze Fragen – flotter, weniger genau", "Nur für einfache Fragen", "Andere Modelle"])
                     got = pg.evaluate(rows)
                     self.assertEqual(list(got), [c["name"] for c in L.CATALOG])
                     self.assertEqual(got["Qwen3.8 27B"], [True, "main", False, "Liest lange Dokumente und Zahlen am zuverlässigsten; antwortet langsamer.",

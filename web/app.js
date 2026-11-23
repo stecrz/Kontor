@@ -6734,9 +6734,23 @@ function bindHilfe(main) {
       if (hit && w) s.els.forEach(e => { const tw = document.createTreeWalker(e, NodeFilter.SHOW_TEXT); const nodes = []; while (tw.nextNode()) nodes.push(tw.currentNode);
         nodes.forEach(nd => { const i = nd.nodeValue.toLowerCase().indexOf(w); if (i < 0) return; const r = document.createRange(); r.setStart(nd, i); r.setEnd(nd, i + w.length); const m = document.createElement('mark'); m.className = 'hm'; r.surroundContents(m); }); });
     }
-    $('#help-n', main).textContent = w ? tn('n_abschnitte', n, n) : '';
+    HELP.n = n; HELP.i = -1; step(1, true);
+    if (!w) $('#help-n', main).textContent = '';
+  };
+  // through the marked hits: the first at once, ↩ / ⌘G the next, ⇧↩ / ⇧⌘G the one before -- the current one stronger, in view
+  const step = (d, first) => {
+    const ms = $$('mark.hm', body), w = HELP.q.trim();
+    $$('mark.hm.on', body).forEach(m => m.classList.remove('on'));
+    if (ms.length) {
+      HELP.i = HELP.i < 0 ? (d > 0 ? 0 : ms.length - 1) : (HELP.i + d + ms.length) % ms.length;
+      ms[HELP.i].classList.add('on'); ms[HELP.i].scrollIntoView({block: 'center', inline: 'nearest', behavior: first ? 'auto' : 'smooth'});
+    }
+    if (w) $('#help-n', main).textContent = ms.length ? t('find_n', HELP.i + 1, ms.length) + ' · ' + tn('n_abschnitte', HELP.n, HELP.n) : t('find_keine');
   };
   const qi = $('#help-q', main); qi.addEventListener('input', () => search(qi.value)); if (HELP.q) search(HELP.q);
+  qi.addEventListener('keydown', e => {
+    if (e.key === 'Enter' || ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'g')) { e.preventDefault(); step(e.shiftKey ? -1 : 1); }
+  });
   if (S.sub) { const h = $(`#hl-${CSS.escape(S.sub)}`, body); if (h) { if (h.classList.contains('hidden')) { qi.value = ''; search(''); } setTimeout(() => h.scrollIntoView({block: 'start'}), 30); } }
 }
 

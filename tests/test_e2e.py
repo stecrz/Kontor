@@ -6382,6 +6382,16 @@ class KeysFindBrowserTest(unittest.TestCase):
                 top, bar = pg.evaluate("[document.querySelector('#help-q').getBoundingClientRect().top, document.querySelector('.topbar').getBoundingClientRect().bottom]")
                 self.assertTrue(bar - 1 <= top < bar + 30, (top, bar))
                 self.assertIn("(⌘F)", pg.get_attribute("#help-q", "title"))
+                # typing goes to the first hit, ↩ / ⌘G to the next, ⇧↩ back -- the current one marked stronger and in view
+                pg.fill("#help-q", "MoneyMoney"); until(pg, "document.querySelectorAll('#help-body mark.hm').length > 3 && document.querySelector('#help-body mark.hm.on')")
+                cur = lambda: pg.evaluate("[...document.querySelectorAll('#help-body mark.hm')].findIndex(m => m.classList.contains('on'))")
+                inview = "(r => r.top >= 0 && r.bottom <= innerHeight)(document.querySelector('#help-body mark.hm.on').getBoundingClientRect())"
+                self.assertEqual(cur(), 0); until(pg, inview)
+                pg.keyboard.press("Enter"); self.assertEqual(cur(), 1); pg.keyboard.press("Enter"); self.assertEqual(cur(), 2); until(pg, inview)
+                pg.keyboard.press("Shift+Enter"); self.assertEqual(cur(), 1)
+                pg.keyboard.press("Meta+g"); self.assertEqual(cur(), 2)
+                self.assertTrue(pg.inner_text("#help-n").startswith("3 von "), pg.inner_text("#help-n"))
+                pg.fill("#help-q", "")
                 # transactions: its search; a page without one: the browser's find (nothing of Kontor's)
                 pg.evaluate("location.hash = '#transactions'"); pg.wait_for_selector("#uf-q")
                 pg.click("h1"); pg.keyboard.press("Meta+f")

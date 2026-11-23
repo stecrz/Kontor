@@ -1,5 +1,10 @@
 # Änderungen
 
+## 3.17.21 (2026-11-23 18:40)
+- KI-Assistent: Modellliste ohne „Gründlich/Schnell/Klein“ – Gruppen nach Zweck, damit sie nicht wie die Wahl des Denkaufwands im Chat wirken
+- Hilfe: Suche springt zum ersten Fund, ↩/⌘G zum nächsten, ⇧↩/⇧⌘G zum vorigen; „3 von 12“
+- Entwicklung: Tests je Push auf vier Rechner je Python verteilt, nur 12 feste Zufallsfälle (nachts 1000), langsamste Tests im Log
+
 ## 3.17.20 (2026-11-23 17:50)
 - KI-Assistent: „Beenden bei Leerlauf: nie“ heißt „läuft immer“ – Modell startet nach der Anmeldung und jedem Neustart von selbst, unabhängig von der Mac-App
 - KI-Assistent: endet es von selbst, startet Kontor es nach ein paar Minuten neu; nach „Stoppen“ aus bis zur nächsten Frage

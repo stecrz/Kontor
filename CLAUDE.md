@@ -32,8 +32,8 @@ Entschiedenes nie löschen, nach der Umsetzung „(umgesetzt in X.Y.Z)“ anhän
 - Leitplanken (`.claude/settings.json`): Sperren für Kontors Datenordner, MoneyMoneys Datenbank, Überweisungen und
   Force-Push; Sperren vor jedem Push (Versionskette, siehe Parallele Chats); Lagebild zu Beginn jeder Aufgabe (was die anderen
   Chats veröffentlicht haben); Erinnerung, wenn eine Änderung nicht abgeschlossen ist.
-- GitHub Actions testet jeden Push (rund 6 min) – Linux: Python 3.9 und neu, Chrome und Safari-Engine, Code-Checks, je
-  Python in zwei Hälften nebeneinander (Seiten = `tests/test_e2e.py`; alles andere); macOS: Apples Python, Swift-Helfer,
+- GitHub Actions testet jeden Push (rund 10 min) – Linux: Python 3.9 und neu, Chrome und Safari-Engine, Code-Checks, je
+  Python in vier Teilen nebeneinander (Seiten = `tests/test_e2e.py`; Assistent und Rundgang; Rechnen mit Zufallsfällen – je Push nur 12 feste, nachts 1000 und neue; alles andere – eine neue Testdatei landet dort von selbst); `--durations` nennt die langsamsten Tests; macOS: Apples Python, Swift-Helfer,
   Mac-App (bauen, Kontor darin laden, Mikrofon ohne Nachfrage; jede Seite in macOS' WebKit mit echtem Rechtsklick), MoneyMoney-Brücke, Installation, dazu Kontors eigenes Python (`tests/mac_python.py`: echt laden, falsche Prüfsumme, Quarantäne und Signatur, Selbsttest, Helfer in der Sandbox, Dienst als Kind des Starters, Neustart durch launchd, beschädigt → Apples Python, Deinstallieren, Update von der Version davor); Linux prüft denselben Ablauf mit dem echten Build für Linux. Nachts auf dem neuesten `main` die 1000 festen und so viele jede Nacht neue Zufallsfälle, wie in ~3 h passen, auf
   mehreren Rechnern nebeneinander (`nightly.yml`; rot: siehe Parallele Chats).
 
@@ -212,7 +212,7 @@ einer beschriebenen Stelle liegt.
 - Konten in der Reihenfolge von MoneyMoney.
 - Wo was liegt: Was die Zahlen bestimmt, unter „Konten & Regeln“ (Konten, Bereiche, Kontostände, Cashflow-Positionen, Buchungsregeln, Steuer); wie Kontor arbeitet (Verbindung, Abgleich, Zugang, Belege, Assistent, Updates, Sicherung), unter „Einstellungen“. Die Einrichtung ist nur ein geführter Weg durch diese Seiten, keine eigene Ablage.
 - Hinweise für den Nutzer im Chat, nicht als Dateien im Repo.
-- Modelle des Assistenten (`llm_local.CATALOG`, Einstellungen → KI-Assistent): nach Zweck gruppiert (gründlich, schnell, klein), je Modell ein ehrlicher Satz, wofür es taugt – ohne Kennzahlen –, dazu Hersteller, Lizenz, Dateigröße, Speicherbedarf und ob es auf diesem Mac gut, knapp oder nicht läuft. „Empfohlen“ nur, was dem Nutzer wirklich etwas bringt: das gründlichste Modell, das gut läuft – richtige Antworten vor Tempo, sonst keines. Was für Zahlen und Dokumente nicht taugt, steht so da; was nicht in den Arbeitsspeicher passt, nennt, was es braucht, und lässt sich nicht laden. Kontor wechselt das gewählte Modell nie von selbst.
+- Modelle des Assistenten (`llm_local.CATALOG`, Einstellungen → KI-Assistent): nach Zweck gruppiert (für Zahlen und Dokumente, für kurze Fragen, nur für einfache Fragen – Überschriften ohne die Wörter des Denkaufwands im Chat, damit es nicht wie eine Wahl je Modus wirkt; gewählt wird ein Modell für alles), je Modell ein ehrlicher Satz, wofür es taugt – ohne Kennzahlen –, dazu Hersteller, Lizenz, Dateigröße, Speicherbedarf und ob es auf diesem Mac gut, knapp oder nicht läuft. „Empfohlen“ nur, was dem Nutzer wirklich etwas bringt: das gründlichste Modell, das gut läuft – richtige Antworten vor Tempo, sonst keines. Was für Zahlen und Dokumente nicht taugt, steht so da; was nicht in den Arbeitsspeicher passt, nennt, was es braucht, und lässt sich nicht laden. Kontor wechselt das gewählte Modell nie von selbst.
 
 ## Aufbau
 | Teil | Aufgabe |
