@@ -206,6 +206,7 @@ einer beschriebenen Stelle liegt.
 - Konten in der Reihenfolge von MoneyMoney.
 - Wo was liegt: Was die Zahlen bestimmt, unter „Konten & Regeln“ (Konten, Bereiche, Kontostände, Cashflow-Positionen, Buchungsregeln, Steuer); wie Kontor arbeitet (Verbindung, Abgleich, Zugang, Belege, Assistent, Updates, Sicherung), unter „Einstellungen“. Die Einrichtung ist nur ein geführter Weg durch diese Seiten, keine eigene Ablage.
 - Hinweise für den Nutzer im Chat, nicht als Dateien im Repo.
+- Modelle des Assistenten (`llm_local.CATALOG`, Einstellungen → KI-Assistent): nach Zweck gruppiert (gründlich, schnell, klein), je Modell ein ehrlicher Satz, wofür es taugt – ohne Kennzahlen –, dazu Hersteller, Lizenz, Dateigröße, Speicherbedarf und ob es auf diesem Mac gut, knapp oder nicht läuft. „Empfohlen“ nur, was dem Nutzer wirklich etwas bringt: das gründlichste Modell, das gut läuft – richtige Antworten vor Tempo, sonst keines. Was für Zahlen und Dokumente nicht taugt, steht so da; was nicht in den Arbeitsspeicher passt, nennt, was es braucht, und lässt sich nicht laden. Kontor wechselt das gewählte Modell nie von selbst.
 
 ## Aufbau
 | Teil | Aufgabe |

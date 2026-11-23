@@ -625,12 +625,13 @@ class Models(_Open):
         self.net.tree[3] = {"type": "file", "path": QWEN, "size": len(new), "lfs": {"oid": hashlib.sha256(new).hexdigest(), "size": len(new)}}
         self.net.files["https://huggingface.co/unsloth/Qwen3.6-35B-A3B-GGUF/resolve/main/" + QWEN] = new
         self.assertTrue(self.ai.check()["models"]["qwen3.6-35b-a3b"]["newer"])
-        self.assertTrue(self.ai.status()["models"][0]["newer"])
+        row = lambda: next(m for m in self.ai.status()["models"] if m["id"] == "qwen3.6-35b-a3b")
+        self.assertTrue(row()["newer"])
         self.ai.download_model("qwen3.6-35b-a3b")
         self.assertEqual(wait_job(self.ai)["state"], "done", self.ai.job)
         with open(m["path"], "rb") as f:
             self.assertEqual(f.read(), new)
-        self.assertFalse(self.ai.status()["models"][0]["newer"])
+        self.assertFalse(row()["newer"])
         self.ai.delete_model("qwen3.6-35b-a3b")
         self.assertEqual(self.ai.models(), {})
         self.assertFalse(os.path.exists(m["path"]))
@@ -748,27 +749,40 @@ class Models(_Open):
         self.assertEqual(self.ai.models(), {})
 
     def test_the_model_for_this_mac(self):
-        """Kontor suggests the model that fits the Mac's memory; what does not fit says so; a model larger than the memory is
-        not started at all."""
+        """Kontor suggests the most thorough model that runs well in the Mac's memory -- right answers before speed -- and none
+        where only the small ones run; what does not fit says what it needs; a model larger than the memory is not started
+        at all."""
         GB = 2 ** 30
-        want = {8: "qwen3.5-4b", 16: "qwen3.5-9b", 18: "qwen3.5-9b", 24: "gemma-4-12b", 32: "qwen3.6-35b-a3b-compact", 36: "qwen3.6-35b-a3b-compact",
-                48: "qwen3.6-35b-a3b", 64: "qwen3.6-35b-a3b", 128: "qwen3.6-35b-a3b"}
+        want = {8: "", 16: "", 18: "", 24: "", 32: "qwen3.8-27b", 36: "qwen3.8-27b", 48: "qwen3.8-27b", 64: "qwen3.8-27b-q6", 128: "qwen3.8-27b-q6"}
         for ram, model in want.items():
             self.assertEqual(L.recommended(ram * GB), model, ram)
             self.assertEqual(L.recommended(int(ram * GB * 0.99)), model, ram)        # (a Mac names a little less than the round number)
-        self.assertEqual(L.recommended(4 * GB), "qwen3.5-4b")                       # less than any needs: the smallest
         self.assertEqual(L.recommended(0), "")                                       # unknown memory: no recommendation
         ids = [c["id"] for c in L.CATALOG]
         self.assertEqual(len(set(ids)), len(ids))
-        self.assertEqual([c["gb"] for c in L.CATALOG], sorted((c["gb"] for c in L.CATALOG), reverse=True))        # largest first
+        # in groups by what a model is for, the thorough ones first; within a group the larger file first
+        kinds = [c["kind"] for c in L.CATALOG]
+        self.assertEqual(kinds, sorted(kinds, key=L.KINDS.index)); self.assertEqual(set(kinds), set(L.KINDS))
+        for kind in L.KINDS:
+            sizes = [c["gb"] for c in L.CATALOG if c["kind"] == kind]
+            self.assertEqual(sizes, sorted(sizes, reverse=True), kind)
         for c in L.CATALOG:                                                           # what is suggested fits with room to spare
             self.assertLessEqual(c["gb"] + L.HEADROOM_GB, c["ram"] * 0.65, c["id"])
             self.assertTrue(L.REPO_RE.fullmatch(c["repo"]) and c["pick"] and isinstance(c["pick"], list), c["id"])
+            self.assertTrue(c["maker"] and c["licence"] and c["note"], c["id"])       # who made it, under which licence, what it is for
+            self.assertIn(c["ram"], L.MAC_RAM, c["id"])
+        self.assertEqual({c["id"] for c in L.CATALOG if c["kind"] == "thorough"}, {"qwen3.8-27b-q6", "qwen3.8-27b"})      # only these are ever suggested
         fits = lambda ram: {c["id"]: L.fit(c["gb"], c["ram"], ram * GB) for c in L.CATALOG}
-        self.assertEqual(fits(16), {"qwen3.6-35b-a3b": "big", "qwen3.6-35b-a3b-compact": "big", "gemma-4-26b-a4b": "big", "qwen3.8-27b": "big",
-                                    "gemma-4-12b": "tight", "qwen3.5-9b": "good", "qwen3.5-4b": "good"})
-        self.assertEqual(fits(32)["qwen3.6-35b-a3b"], "tight"); self.assertEqual(set(list(fits(32).values())[1:]), {"good"})
+        self.assertEqual(fits(16), {"qwen3.8-27b-q6": "big", "qwen3.8-27b": "big", "qwen3.6-35b-a3b": "big", "qwen3.6-35b-a3b-compact": "big",
+                                    "gemma-4-26b-a4b": "big", "gemma-4-12b": "tight", "qwen3.5-9b": "good", "qwen3.5-4b": "good"})
+        self.assertEqual({k for k, v in fits(32).items() if v != "good"}, {"qwen3.8-27b-q6", "qwen3.6-35b-a3b"})
+        self.assertEqual((fits(32)["qwen3.8-27b-q6"], fits(32)["qwen3.6-35b-a3b"]), ("tight", "tight"))
+        self.assertEqual(fits(48)["qwen3.8-27b-q6"], "tight")                         # (suggested only where it leaves room: from 64 GB)
         self.assertEqual(set(fits(64).values()), {"good"})
+        # what a model too big for a Mac needs: the smallest memory Macs are sold with on which it runs at all
+        self.assertEqual([L.least_ram(gb) for gb in (3, 8, 17, 22, 46, 94, 162, 400)], [8, 16, 32, 32, 64, 128, 256, 0])
+        for c in L.CATALOG:
+            self.assertNotEqual(L.fit(c["gb"], c["ram"], L.least_ram(c["gb"]) * GB), "big", c["id"])
         self.assertEqual((L.fit(5.0, None, 16 * GB), L.fit(9.0, None, 16 * GB), L.fit(12.0, None, 16 * GB)), ("good", "tight", "big"))      # another model: by its size
         # the variant wanted, else the next one the repository has; projectors and draft models are no chat models
         files = [{"file": "X-UD-Q4_K_M.gguf"}, {"file": "X-Q4_K_M.gguf"}, {"file": "X-UD-Q4_K_XL.gguf"}, {"file": "Y.Q4_K_M.gguf"}]
@@ -783,8 +797,15 @@ class Models(_Open):
         try:
             L.physical_ram = lambda: 16 * GB
             st = self.ai.status()
-            self.assertEqual((st["recommended"], st["platform"]["ram"]), ("qwen3.5-9b", 16 * GB))
-            self.assertEqual({m["id"]: (m["fit"], m["ram"]) for m in st["models"]}["gemma-4-12b"], ("tight", 24))
+            self.assertEqual((st["recommended"], st["platform"]["ram"]), ("", 16 * GB))       # only small ones run here: none is suggested
+            rows = {m["id"]: m for m in st["models"]}
+            self.assertEqual((rows["gemma-4-12b"]["fit"], rows["gemma-4-12b"]["ram"], rows["gemma-4-12b"]["needs"]), ("tight", 24, 0))
+            self.assertEqual((rows["qwen3.8-27b-q6"]["fit"], rows["qwen3.8-27b-q6"]["needs"]), ("big", 32))      # too big: named with what it needs
+            self.assertEqual([(m["kind"], m["maker"], m["licence"]) for m in st["models"][:1]], [("thorough", "Alibaba", "Apache 2.0")])
+            self.assertEqual([m["id"] for m in st["models"]], [c["id"] for c in L.CATALOG])            # in the list's order
+            L.physical_ram = lambda: 64 * GB
+            self.assertEqual(self.ai.status()["recommended"], "qwen3.8-27b-q6")
+            L.physical_ram = lambda: 16 * GB
             # a file larger than the memory itself: no start (it would only swap)
             self.ai.install_runtime(); self.assertEqual(wait_job(self.ai)["state"], "done")
             self.ai.download_model("qwen3.6-35b-a3b"); self.assertEqual(wait_job(self.ai)["state"], "done")
@@ -4595,6 +4616,41 @@ class Browser(unittest.TestCase):
                 for needle in ("llama.cpp", TAG, "Qwen3.6 35B-A3B", "Qwen3.8 27B", "Gemma 4 26B-A4B", "Kontext", "Was der KI-Assistent darf", "Nie: Einstellungen"):
                     self.assertIn(needle, txt)
                 self.assertNotIn("Denkaufwand", txt)                                         # chosen at the top of the panel only
+                # the models that answer: in groups by what each is for, each with a line on what it is good at and one with
+                # maker, licence, size and how it sits in this Mac's memory. Suggested is the most thorough one that runs well
+                # here (one, and its button stands out) -- none on a small Mac, where a model too big names what it needs and
+                # cannot be loaded. The model in use stays the one chosen, whatever is suggested
+                rows = ("Object.fromEntries([...document.querySelectorAll('.as-model')].map(e => [e.querySelector('b').textContent, [!!e.querySelector('.pill.info'), "
+                        "(e.querySelector('.as-dl') || {className: 'none'}).className.includes('secondary') ? 'quiet' : e.querySelector('.as-dl') ? 'main' : 'none', "
+                        "e.classList.contains('dim'), e.querySelector('.as-m-note') ? e.querySelector('.as-m-note').textContent : '', e.querySelector('.small').textContent]]))")
+                ram = L.physical_ram
+                try:
+                    L.physical_ram = lambda: 64 * 2 ** 30
+                    pg.evaluate("route()"); until(pg, "/Arbeitsspeicher: 64 GB/.test((document.querySelector('.as-folder') || {}).textContent || '')")
+                    self.assertEqual(pg.evaluate("[...document.querySelectorAll('.as-group')].map(e => e.firstChild.textContent)"),
+                                     ["Gründlich – für Zahlen, Dokumente und Recherche", "Schnell – für kurze Fragen", "Klein – nur für einfache Fragen", "Andere Modelle"])
+                    got = pg.evaluate(rows)
+                    self.assertEqual(list(got), [c["name"] for c in L.CATALOG])
+                    self.assertEqual(got["Qwen3.8 27B"], [True, "main", False, "Liest lange Dokumente und Zahlen am zuverlässigsten; antwortet langsamer.",
+                                                         "Alibaba · Lizenz Apache 2.0 · ca. 22 GB · ab 64 GB Arbeitsspeicher · läuft gut auf diesem Mac"])
+                    self.assertEqual([k for k, v in got.items() if v[0] or v[1] == "main"], ["Qwen3.8 27B"])
+                    self.assertEqual(got["Qwen3.6 35B-A3B"][1:3], ["none", False]); self.assertIn("viermal so schnell", got["Qwen3.6 35B-A3B"][3])
+                    self.assertIn("Rät oft", got["Gemma 4 26B-A4B"][3]); self.assertTrue(got["Gemma 4 26B-A4B"][4].startswith("Google · Lizenz Apache 2.0 · "))
+                    self.assertEqual(pg.evaluate("document.querySelector('input[name=as-model]:checked').value"), "qwen3.6-35b-a3b")
+                    self.assertIn("unsloth/Qwen3.8-27B-GGUF", pg.get_attribute(".as-model b", "title"))      # where it comes from: on demand
+                    L.physical_ram = lambda: 16 * 2 ** 30
+                    pg.evaluate("route()"); until(pg, "/Arbeitsspeicher: 16 GB/.test((document.querySelector('.as-folder') || {}).textContent || '')")
+                    got = pg.evaluate(rows)
+                    self.assertEqual([k for k, v in got.items() if v[0] or v[1] == "main"], [])              # only small ones run: none is suggested
+                    self.assertEqual(got["Qwen3.8 27B"][1:3], ["none", True])
+                    self.assertTrue(got["Qwen3.8 27B"][4].endswith("ca. 22 GB · braucht einen Mac mit mindestens 32 GB Arbeitsspeicher"), got["Qwen3.8 27B"])
+                    self.assertEqual((got["Gemma 4 12B"][1], got["Gemma 4 12B"][2]), ("quiet", False)); self.assertTrue(got["Gemma 4 12B"][4].endswith("läuft knapp auf diesem Mac"))
+                    self.assertEqual(got["Qwen3.6 35B-A3B"][2], False); self.assertTrue(got["Qwen3.6 35B-A3B"][4].endswith("zu groß für diesen Mac"))      # on this Mac already: stays usable
+                    self.assertEqual(pg.evaluate("[document.querySelector('input[name=as-model]:checked').value, document.querySelector('input[name=as-model]:checked').disabled]"), ["qwen3.6-35b-a3b", False])
+                    self.assertEqual(app.assistant.settings()["model"], "qwen3.6-35b-a3b")
+                finally:
+                    L.physical_ram = ram
+                pg.evaluate("route()"); pg.wait_for_selector("#as-enabled", state="attached")
                 self.assertTrue(pg.evaluate("document.querySelector('.as-right[data-r=enter_values]').checked && !document.querySelector('.as-right[data-r=remote]').checked"))
                 self.assertIn("Protokoll der Änderungen", txt)
                 pg.click("label:has(#as-enabled)"); until(pg, "asOn() && !document.querySelector('#assist-btn').classList.contains('hidden')")

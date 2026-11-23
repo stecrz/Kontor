@@ -144,6 +144,7 @@ anhängen – nie löschen.
   gefiltert gegen eigene Daten; die Antwort gilt als Text aus dem Internet.
 - **Modelle verständlich** (Nutzer, 2026-11-23): Die Modellauswahl erklärt jedes Modell in einfachen Worten (schnell oder
   gründlich, wofür gut, Speicherbedarf, ob es auf diesem Mac läuft) und führt auch größere Modelle für stärkere Rechner.
+  (teilweise umgesetzt in 3.17.9: die verständliche Auswahl; größere Modelle folgen)
 - **Abschirmung** (Nutzer, 2026-11-23): heißt wirklich kein Netz – auch nicht innerhalb des Macs – und möglichst keine
   Verbindung zu anderen Programmen; in der Oberfläche und Hilfe erklärt.
 - **Aktuelles Python** (Nutzer, 2026-11-23): Kontor läuft auf einer aktuellen, festen Python-Version in seinem eigenen Ordner statt
@@ -161,6 +162,7 @@ anhängen – nie löschen.
 - **Antworten vor Tempo** (Nutzer, 2026-11-23): Saubere, richtige Antworten sind wichtiger als Geschwindigkeit. Die Einbindung
   der Modelle (Startparameter, Denken, Systemtext, Werkzeuge, Gedächtnis, Verlauf, Recherche) wird geprüft und so eingestellt,
   dass sie ihr Potenzial ausschöpfen; empfohlen wird nur, was dem Nutzer wirklich etwas bringt.
+  (teilweise umgesetzt in 3.17.9: empfohlen wird nur das gründlichste Modell, das gut läuft)
 - **Vorrang** (Nutzer, 2026-11-23): Erst muss das Bestehende verlässlich funktionieren – vor allem PDFs (z. B. ein 30-seitiger
   Wertenachweis aus DATEV) und Excel sauber lesen, nie eine Zahl erfinden. „Hinweise von selbst“ später, abschaltbar. Der Nutzer
   lädt keine personenbezogenen Daten hoch; ein Datenschutz-Ausbau ist kein Thema. Später bekommt der Mitgesellschafter einen
@@ -293,6 +295,14 @@ Mächtiger und trotzdem sicher (Auftrag vom 21.11.2026; jede Änderung erst nach
   Eurostat (SBS); eine anonyme Kennung an alle Quellen, „Quelle lehnt ab“ auf der Karte. Stufe 3 auch ohne Schlüssel (Tavilys Zugang ohne
   Konto, Kontor stoppt bei 200 Abrufen in 31 Tagen; mit eigenem Schlüssel bei 950; nie beides in einer Anfrage). Nicht drin: Destatis-GENESIS
   (Konto, POST), IWF (neue Schnittstelle, Zugang unklar), Feeds von Branchenportalen, BFH und BaFin (Adressen nicht prüfbar). Am Mac einmal echt prüfen.
+
+Modelle und Rechner (Auftrag vom 23.11.2026: verständliche Auswahl, größere Modelle, Vorbereitung für einen stärkeren Rechner):
+- [x] 3.17.9 Modellauswahl verständlich: Gruppen nach Zweck (gründlich, schnell, klein), je Modell ein Satz, wofür es taugt,
+  Hersteller, Lizenz, Dateigröße, Speicherbedarf und wie es auf diesem Mac läuft. „Empfohlen“ ist nur das gründlichste Modell, das
+  gut läuft (ab 32 GB Qwen3.8 27B Compact, ab 64 GB Qwen3.8 27B in der genaueren Datei) – auf kleineren Macs keines; was nicht
+  passt, nennt, was es braucht, und lässt sich nicht laden. Gemma 4 und die kleinen Qwen stehen unter „nur für einfache Fragen“.
+  Das Modell in Gebrauch wechselt nie von selbst.
+  Am Mac prüfen: Tempo und Arbeitsspeicher von Qwen3.8 27B (genauere Datei, 22 GB) mit langem Kontext.
 
 ## 3. GbR-Entlastung: Immobilien, Steuer, Umsatzsteuer
 Ziel: Eine vermögensverwaltende GbR lässt sich mit Kontor führen – Objekte, Steuer, Voranmeldung, Nebenkosten, Ausschüttungen –

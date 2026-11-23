@@ -8629,6 +8629,8 @@ function vAssistent() {
   return asOn() ? '<div class="as-space"></div>'
     : `<div class="note">${t('ki_einrichten')} ${(AS.st || {}).local === false ? t('ki_nur_am_mac') : `<a href="#settings/assistant">${t('ki_zu_einstellungen')}</a>`}</div>`;
 }
+// licences that leave a model free to use, privately and in business (their tooltip says so; any other: the maker's own terms)
+const AS_LICENCES = {'Apache 2.0': 'ki_lizenz_frei_tip', 'MIT': 'ki_lizenz_frei_tip'};
 // Einstellungen -> Assistent (only at the Mac): load and update llama.cpp and models, choose, start, stop, what it may do
 async function vEinstellungenAssistent() {
   const a = await asLoad() || {}, st = a.settings || {}, r = st.rights || {};
@@ -8638,12 +8640,22 @@ async function vEinstellungenAssistent() {
   const ears = new Set((a.speech || []).map(m => m.id)), finds = new Set((a.embed || []).map(m => m.id)), part = l => l ? (l.kind === 'model' && ears.has(l.id) ? 'speech' : l.kind === 'model' && finds.has(l.id) ? 'embed' : l.kind) : '';
   const prog = k => part(load) === k ? `<div class="prog-wrap" id="as-prog"><div class="prog"><i style="width:${load.total ? Math.round(100 * load.done / load.total) : 0}%"></i></div><span class="prog-l">${esc(asLoadText(load))}</span><button class="secondary small" id="as-cancel">${t('ki_abbrechen')}</button></div>` : '';
   const err = k => !load && a.load && a.load.state === 'error' && part(a.load) === k ? `<div class="banner err small">${esc(a.load.text || '')}</div>` : '';
-  const fitTag = m => m.fit === 'big' ? `<span class="tag warn" title="${esc(t('ki_zu_gross_tip'))}">${t('ki_zu_gross')}</span>` : m.fit === 'tight' ? `<span class="tag warn" title="${esc(t('ki_knapp_tip'))}">${t('ki_knapp')}</span>` : '';
-  const mrow = m => `<div class="as-item${m.id === st.model ? ' on' : ''}${m.fit === 'big' && !m.installed ? ' dim' : ''}"><label class="chk"><input type="radio" name="as-model" value="${esc(m.id)}" ${m.id === st.model ? 'checked' : ''} ${m.installed ? '' : 'disabled'}>
-      <span><b>${esc(m.name)}</b>${m.note ? ` <span class="muted">${t(`ki_note_${m.note}`)}</span>` : ''}${m.id === a.recommended ? ` <span class="pill info">${t('ki_empfohlen')}</span>` : ''}${fitTag(m)}<br><span class="muted small">${esc(m.installed && !m.custom ? m.file : m.repo + (m.file ? ' · ' + m.file : ''))} · ${m.installed ? asGB(m.size) : t('ki_gb_ca', m.gb)}${m.ram ? ' · ' + t('ki_ab_ram', m.ram) : ''}</span></span></label>
+  // a model of the list: what it is for, who made it under which licence, how large its file is and how it sits in this Mac's
+  // memory -- one that does not fit is shown with what it needs, without "Laden" (what is on this Mac stays usable)
+  const fitText = m => m.fit === 'big' ? `<span class="as-m-warn" title="${esc(t('ki_zu_gross_tip'))}">${m.needs && !m.installed ? t('ki_braucht_mac', m.needs) : t('ki_zu_gross')}</span>`
+    : m.fit === 'tight' ? `<span class="as-m-warn" title="${esc(t('ki_knapp_tip'))}">${t('ki_knapp')}</span>` : pf.ram ? t('ki_laeuft_gut') : '';
+  const locked = m => m.fit === 'big' && !m.installed;
+  const mrow = m => `<div class="as-item as-model${m.id === st.model ? ' on' : ''}${locked(m) ? ' dim' : ''}"><label class="chk"><input type="radio" name="as-model" value="${esc(m.id)}" ${m.id === st.model ? 'checked' : ''} ${m.installed ? '' : 'disabled'}>
+      <span><b title="${esc(m.repo + (m.file ? ' · ' + m.file : ''))}">${esc(m.name)}</b>${m.id === a.recommended ? ` <span class="pill info" title="${esc(t('ki_empfohlen_tip'))}">${t('ki_empfohlen')}</span>` : ''}${m.note ? `<br><span class="as-m-note">${t(`ki_note_${m.note}`)}</span>` : ''}<br><span class="muted small">${[
+        m.custom ? esc(m.repo + ' · ' + m.file) : esc(m.maker), m.licence ? `<span title="${esc(t(AS_LICENCES[m.licence] || 'ki_lizenz_eigen_tip'))}">${t('ki_lizenz', esc(m.licence))}</span>` : '',
+        m.installed ? asGB(m.size) : t('ki_gb_ca', m.gb), m.ram && m.fit !== 'big' ? t('ki_ab_ram', m.ram) : '', fitText(m)].filter(Boolean).join(' · ')}</span></span></label>
     <span class="as-act">${m.newer ? `<span class="pill info">${t('ki_neuere_datei')}</span>` : m.installed ? `<span class="pill ok">${t('ki_geladen')}</span>` : ''}
-      ${!m.installed || m.newer ? `<button class="small${m.installed || m.id !== a.recommended ? ' secondary' : ''} as-dl" data-id="${esc(m.id)}" data-name="${esc(m.name)}" data-fit="${m.fit || ''}" ${busy}>${t(m.installed ? 'ki_aktualisieren' : 'ki_laden')}</button>` : ''}
+      ${m.newer || !m.installed && !locked(m) ? `<button class="small${m.installed || m.id !== a.recommended ? ' secondary' : ''} as-dl" data-id="${esc(m.id)}" data-name="${esc(m.name)}" data-fit="${m.fit || ''}" ${busy}>${t(m.installed ? 'ki_aktualisieren' : 'ki_laden')}</button>` : ''}
       ${m.installed ? `<button class="small secondary as-del" data-id="${esc(m.id)}" data-name="${esc(m.name)}" ${busy}>${t('ki_loeschen')}</button>` : ''}</span></div>`;
+  // ... in groups by what a model is for (the list's own order), models of your own last
+  const others = `<div class="as-item as-group">${t('ki_eigenes_modell')}${hq('ki_eigenes')}</div>`;
+  const mlist = models.map((m, i) => (i && (models[i - 1].kind || '') === (m.kind || '') ? '' : m.kind ? `<div class="as-item as-group">${t(`ki_gruppe_${m.kind}`)}</div>` : others) + mrow(m)).join('')
+    + (models.length && !models[models.length - 1].kind ? '' : others);
   const state = sv.state || 'stopped', opt = (v, l, cur) => `<option value="${v}" ${String(cur) === String(v) ? 'selected' : ''}>${l}</option>`;
   const use = sv.rss ? t('ki_verbrauch', asRAM(sv.rss), asN(sv.cpu || 0)) + (sv.tps ? ' · ' + t('ki_tempo', asN(sv.tps)) : '') : '';
   // under the internet's checkbox, while it is allowed: the Tavily key, what goes without asking (sources, websites)
@@ -8662,8 +8674,8 @@ async function vEinstellungenAssistent() {
       ${rt.installed ? `<button class="small secondary" id="as-rt-remove" ${busy}>${t('ki_entfernen')}</button>` : ''}</span></div></div>
   ${prog('runtime')}${err('runtime')}
   </div><div data-ex="settings.assistant.models"><h2>${t('ki_modelle')}${hq('ki_modelle')}</h2>
-  <div class="as-list">${models.map(mrow).join('')}
-    <div class="as-item"><span class="as-own"><b>${t('ki_eigenes_modell')}</b>${hq('ki_eigenes')}<input type="text" id="as-repo" placeholder="unsloth/Qwen3.6-35B-A3B-GGUF" autocomplete="off" spellcheck="false"></span>
+  <div class="as-list">${mlist}
+    <div class="as-item"><span class="as-own"><input type="text" id="as-repo" aria-label="${esc(t('ki_eigenes_modell'))}" placeholder="unsloth/Qwen3.8-27B-GGUF" autocomplete="off" spellcheck="false"></span>
       <span class="as-act"><button class="small secondary" id="as-files" title="${esc(t('ki_dateien_zeigen_tip'))}" disabled>${t('ki_dateien_zeigen')}</button></span></div><div id="as-filelist"></div></div>
   ${prog('model')}${err('model')}
   </div><div data-ex="settings.assistant.dictation"><h2>${t('ki_diktat')}${hq('ki_diktat')}</h2>

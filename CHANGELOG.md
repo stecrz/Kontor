@@ -1,5 +1,12 @@
 # Änderungen
 
+## 3.17.9 (2026-11-23 06:58)
+- KI-Assistent: Modellliste verständlich – Gruppen „Gründlich“, „Schnell“, „Klein“; je Modell wofür es taugt, Hersteller, Lizenz, Größe, Speicherbedarf
+- KI-Assistent: je Modell, ob es auf diesem Mac gut, knapp oder nicht läuft – was nicht passt, nennt den nötigen Arbeitsspeicher und lässt sich nicht laden
+- KI-Assistent: „empfohlen“ nur das gründlichste Modell, das gut läuft (Qwen3.8 27B) – richtige Antworten vor Tempo; auf kleinen Macs keines
+- KI-Assistent: Gemma 4 und kleine Modelle unter „nur für einfache Fragen“; das gewählte Modell wechselt nie von selbst
+- Entwicklung: macOS-Lauf prüft mit echtem llama.cpp die Abschirmung über eine Socket-Datei statt 127.0.0.1 (nur Bericht)
+
 ## 3.17.8 (2026-11-23 05:49)
 - Buchungsregeln: getilgtes oder überzahltes Darlehen – keine Zinsen mehr (auch bei Jahresbasis), Hinweis solange überzahlt; ebenso im Darlehensplan
 - Entwicklung: Regel „GitHub ist das einzige Gedächtnis“; Entscheidungen zum iPhone-Zugang und zu überzahlten Darlehen im Fahrplan

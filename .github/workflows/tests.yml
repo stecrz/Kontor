@@ -142,6 +142,12 @@ jobs:
           assert not os.path.exists(mine + "/no")
           print("ok")
           EOF
+      - name: Model's sandbox over a socket file instead of 127.0.0.1 (a probe with the real llama.cpp; read by hand)
+        continue-on-error: true           # new (it only reports): what macOS answers decides how Kontor shuts the model in next
+        timeout-minutes: 10
+        env:
+          GH_TOKEN: ${{ github.token }}   # GitHub answers a runner without a name only now and then (asked for the newest llama.cpp)
+        run: python3 tests/mac_sandbox_probe.py
       - name: Swift helpers
         run: |
           swiftc -O -o "$RUNNER_TEMP/touchid" touchid.swift

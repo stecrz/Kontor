@@ -69,9 +69,16 @@ llama.cpp, the free program that runs the models on this Mac: installed version 
 newer version is shown), "Entfernen". Loaded from GitHub only on a click; a progress bar with size, speed and time left.
 
 ### settings.assistant.models — Modell für Antworten
-The models that answer, from Hugging Face: name, file, size, the memory it needs. Marks: "empfohlen für diesen Mac" (fits its
-memory), "knapp" (runs, needs most of the memory), "zu groß für diesen Mac" (very slow or does not start), "geladen", "neuere
-Datei". The dot chooses the model in use; "Laden", "Aktualisieren", "Löschen". "Anderes Modell": any GGUF file by "provider/name".
+The models that answer, from Hugging Face, in groups by what each is for: "Gründlich – für Zahlen, Dokumente und Recherche"
+(reads long documents and figures most reliably, answers more slowly), "Schnell – für kurze Fragen" (about four times as fast,
+less reliable with long documents), "Klein – nur für einfache Fragen" (small models often guess instead of saying that they do
+not know), "Andere Modelle" (what the user loaded himself: any GGUF file by "provider/name", "Dateien zeigen"). Per model: its
+name (hover: repository and file), one line on what it is good at, then maker, licence (hover: what it allows), file size ("ca."
+before it is loaded), the memory from which it runs well ("ab … GB Arbeitsspeicher") and how it sits in this Mac's memory:
+"läuft gut auf diesem Mac", "läuft knapp auf diesem Mac" (runs, needs most of the memory), "zu groß für diesen Mac" – or, not
+loaded yet, "braucht einen Mac mit mindestens … GB Arbeitsspeicher": such a model cannot be loaded. "empfohlen": the most thorough
+model that runs well on this Mac (right answers before speed); none on a Mac where only the small ones run. Kontor never changes
+the model in use by itself. Marks "geladen", "neuere Datei"; the dot chooses the model in use; "Laden", "Aktualisieren", "Löschen".
 
 ### settings.assistant.dictation — Modell zum Diktieren
 A second, small model that only turns speech into text (accurate or smaller); the dot chooses it. "Diktiermodell starten": with the

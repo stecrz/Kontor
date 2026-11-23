@@ -66,19 +66,36 @@ SANDBOX = "/usr/bin/sandbox-exec"
 TMP_PREFIX = "llm-run-"             # a model process's own temporary folder, a new one for every start (never "kontor-...")
 
 # Models Kontor names (they change with Kontor's versions); any other GGUF from Hugging Face can be added by its repository.
-# pick: the variant in that repository (its file is looked up there when you load it); gb: about, for the list before loading.
-# The models offered, largest first (all GGUF, one file, free licences). "pick": the variant wanted, then what to take if the
-# repository names it differently; "gb": about the size of that file; "ram": from how many GB of memory of the Mac it runs well
-# beside macOS, MoneyMoney and a browser. Kontor suggests the first one that fits this Mac.
+# In the order the settings show them, by what a model is for ("kind"), within a kind the most thorough first:
+#   thorough -- for figures, documents and research: answers that are right count more than speed. Kontor suggests the first
+#               of them that runs well on this Mac (recommended) -- and nothing where none does;
+#   fast     -- answers several times as fast (only a part of the model computes each word), less reliable with long documents;
+#   simple   -- small ones, for simple questions: they rather guess than say that they do not know.
+# "pick": the variant wanted, then what to take if the repository names it differently (its file is looked up there when you
+# load it); "gb": about the size of that file; "ram": from how many GB of memory of the Mac it runs well beside macOS,
+# MoneyMoney and a browser; "maker", "licence": who made the model and under which licence it may be used (as its model card
+# says); "note": its line in the settings (web/i18n.js: ki_note_...). What each is said to be good at goes back to
+# independent tests of the models as published (long documents: about 82 % right with Qwen3.8 27B, 72 % with Qwen3.6
+# 35B-A3B; Gemma 4 26B-A4B guessed in most cases where it could not know) -- no figure of them is shown, they age fast.
 CATALOG: List[Dict[str, Any]] = [
-    {"id": "qwen3.6-35b-a3b", "name": "Qwen3.6 35B-A3B", "repo": "unsloth/Qwen3.6-35B-A3B-GGUF", "pick": ["UD-Q4_K_M", "UD-Q4_K_XL"], "gb": 22, "ram": 48, "note": "large"},
-    {"id": "qwen3.6-35b-a3b-compact", "name": "Qwen3.6 35B-A3B Compact", "repo": "unsloth/Qwen3.6-35B-A3B-GGUF", "pick": ["UD-IQ4_XS", "UD-Q3_K_XL"], "gb": 18, "ram": 32, "note": "compact"},
-    {"id": "gemma-4-26b-a4b", "name": "Gemma 4 26B-A4B", "repo": "unsloth/gemma-4-26B-A4B-it-GGUF", "pick": ["UD-Q4_K_M", "UD-Q4_K_XL"], "gb": 17, "ram": 32, "note": "alternative"},
-    {"id": "qwen3.8-27b", "name": "Qwen3.8 27B", "repo": "unsloth/Qwen3.8-27B-GGUF", "pick": ["Q4_K_M", "UD-Q4_K_XL"], "gb": 15, "ram": 32, "note": "thorough"},
-    {"id": "gemma-4-12b", "name": "Gemma 4 12B", "repo": "unsloth/gemma-4-12b-it-GGUF", "pick": ["UD-Q4_K_XL", "Q4_K_M"], "gb": 8, "ram": 24, "note": "medium"},
-    {"id": "qwen3.5-9b", "name": "Qwen3.5 9B", "repo": "unsloth/Qwen3.5-9B-GGUF", "pick": ["Q4_K_M", "UD-Q4_K_XL"], "gb": 6, "ram": 16, "note": "small"},
-    {"id": "qwen3.5-4b", "name": "Qwen3.5 4B", "repo": "bartowski/Qwen_Qwen3.5-4B-GGUF", "pick": ["Q4_K_M"], "gb": 3, "ram": 8, "note": "tiny"},
+    {"id": "qwen3.8-27b-q6", "name": "Qwen3.8 27B", "kind": "thorough", "maker": "Alibaba", "licence": "Apache 2.0",
+     "repo": "unsloth/Qwen3.8-27B-GGUF", "pick": ["Q6_K", "Q6_K_M"], "gb": 22, "ram": 64, "note": "thorough"},
+    {"id": "qwen3.8-27b", "name": "Qwen3.8 27B Compact", "kind": "thorough", "maker": "Alibaba", "licence": "Apache 2.0",
+     "repo": "unsloth/Qwen3.8-27B-GGUF", "pick": ["Q4_K_M", "UD-Q4_K_XL"], "gb": 17, "ram": 32, "note": "thorough_compact"},
+    {"id": "qwen3.6-35b-a3b", "name": "Qwen3.6 35B-A3B", "kind": "fast", "maker": "Alibaba", "licence": "Apache 2.0",
+     "repo": "unsloth/Qwen3.6-35B-A3B-GGUF", "pick": ["UD-Q4_K_M", "UD-Q4_K_XL"], "gb": 22, "ram": 48, "note": "fast"},
+    {"id": "qwen3.6-35b-a3b-compact", "name": "Qwen3.6 35B-A3B Compact", "kind": "fast", "maker": "Alibaba", "licence": "Apache 2.0",
+     "repo": "unsloth/Qwen3.6-35B-A3B-GGUF", "pick": ["UD-IQ4_XS", "UD-Q3_K_XL"], "gb": 18, "ram": 32, "note": "fast_compact"},
+    {"id": "gemma-4-26b-a4b", "name": "Gemma 4 26B-A4B", "kind": "simple", "maker": "Google", "licence": "Apache 2.0",
+     "repo": "unsloth/gemma-4-26B-A4B-it-GGUF", "pick": ["UD-Q4_K_M", "UD-Q4_K_XL"], "gb": 17, "ram": 32, "note": "guesses"},
+    {"id": "gemma-4-12b", "name": "Gemma 4 12B", "kind": "simple", "maker": "Google", "licence": "Apache 2.0",
+     "repo": "unsloth/gemma-4-12b-it-GGUF", "pick": ["UD-Q4_K_XL", "Q4_K_M"], "gb": 8, "ram": 24, "note": "guesses"},
+    {"id": "qwen3.5-9b", "name": "Qwen3.5 9B", "kind": "simple", "maker": "Alibaba", "licence": "Apache 2.0",
+     "repo": "unsloth/Qwen3.5-9B-GGUF", "pick": ["Q4_K_M", "UD-Q4_K_XL"], "gb": 6, "ram": 16, "note": "small"},
+    {"id": "qwen3.5-4b", "name": "Qwen3.5 4B", "kind": "simple", "maker": "Alibaba", "licence": "Apache 2.0",
+     "repo": "bartowski/Qwen_Qwen3.5-4B-GGUF", "pick": ["Q4_K_M"], "gb": 3, "ram": 8, "note": "small"},
 ]
+KINDS = ("thorough", "fast", "simple")       # the groups of the list, in this order
 # For dictating: models that only write down what is said (speech recognition). llama.cpp runs them like any other model,
 # with their audio part (a second file, "mmproj-...") beside them -- on this Mac, without a network, in the same sandbox.
 SPEECH: List[Dict[str, Any]] = [
@@ -100,6 +117,7 @@ EMBED_DIMS = 512         # numbers kept of each embedding: its first ones (Qwen3
 SPEECH_CONTEXT = 8192    # a few minutes of speech and their text
 MAX_AUDIO = 20 * 1024 * 1024         # bytes of one recording (WAV, 16 kHz, mono: ten minutes and a little more)
 HEADROOM_GB = 2          # beside the file: the conversation in memory and the program itself
+MAC_RAM = (8, 16, 18, 24, 32, 36, 48, 64, 96, 128, 192, 256, 512)       # GB of memory Macs are sold with
 
 
 def physical_ram() -> int:
@@ -117,17 +135,24 @@ def fit(gb: float, ram_from: Optional[int], ram: int) -> str:
     if not ram:
         return "good"
     have = ram / 2 ** 30
-    if (have + 0.5 >= ram_from) if ram_from else (gb + HEADROOM_GB <= have * 0.6):
+    if (have + max(0.5, have * 0.02) >= ram_from) if ram_from else (gb + HEADROOM_GB <= have * 0.6):       # (a Mac may name a little less than the round number)
         return "good"
     return "tight" if gb + HEADROOM_GB <= have * 0.75 else "big"
 
 
+def least_ram(gb: float) -> int:
+    """The smallest memory a Mac is sold with on which a model file of this size runs at all ("tight", see fit) -- what the
+    settings name for a model that is too big for this Mac. 0: none."""
+    return next((s for s in MAC_RAM if gb + HEADROOM_GB <= s * 0.75), 0)
+
+
 def recommended(ram: int) -> str:
-    """The model of the list for this Mac: the first (largest) that runs well; with less memory than any needs, the smallest.
-    Unknown memory: none."""
+    """The model Kontor suggests for this Mac: the most thorough one that runs well on it -- answers that are right count
+    more than speed. None where only the small models run (they are for simple questions: suggesting one would promise
+    too much), and none with unknown memory. Only a suggestion: the model in use is never changed by Kontor."""
     if not ram:
         return ""
-    return next((c["id"] for c in CATALOG if fit(c["gb"], c["ram"], ram) == "good"), CATALOG[-1]["id"])
+    return next((c["id"] for c in CATALOG if c["kind"] == "thorough" and fit(c["gb"], c["ram"], ram) == "good"), "")
 
 
 class Cancelled(Exception):
@@ -1049,8 +1074,9 @@ class LocalAI:
         ram = physical_ram()
         models = []
         for c in CATALOG:
-            m = have.get(c["id"])
-            models.append({"id": c["id"], "name": c["name"], "repo": c["repo"], "note": c["note"], "gb": c["gb"], "ram": c["ram"], "fit": fit(c["gb"], c["ram"], ram),
+            m, fits = have.get(c["id"]), fit(c["gb"], c["ram"], ram)
+            models.append({"id": c["id"], "name": c["name"], "repo": c["repo"], "note": c["note"], "gb": c["gb"], "ram": c["ram"], "fit": fits,
+                           "kind": c["kind"], "maker": c["maker"], "licence": c["licence"], "needs": least_ram(c["gb"]) if fits == "big" else 0,
                            "installed": bool(m), "size": m["size"] if m else 0, "file": m["file"] if m else "", "custom": False,
                            "newer": bool(((news.get("models") or {}).get(c["id"]) or {}).get("newer"))})
         speech = [{"id": c["id"], "name": c["name"], "repo": c["repo"], "note": c["note"], "gb": c["gb"], "installed": c["id"] in have,
@@ -1064,7 +1090,7 @@ class LocalAI:
                 continue
             if not any(c["id"] == mid for c in CATALOG):
                 models.append({"id": mid, "name": m.get("name") or m["file"], "repo": m["repo"], "note": "", "gb": 0, "ram": 0, "fit": fit(m["size"] / 1e9, None, ram),
-                               "installed": True, "size": m["size"], "file": m["file"], "custom": True,
+                               "kind": "", "maker": "", "licence": "", "needs": 0, "installed": True, "size": m["size"], "file": m["file"], "custom": True,
                                "newer": bool(((news.get("models") or {}).get(mid) or {}).get("newer"))})
         try:
             free = shutil.disk_usage(self.base if os.path.isdir(self.base) else self.data_dir).free
