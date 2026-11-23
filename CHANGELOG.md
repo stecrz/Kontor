@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.17.14 (2026-11-23 14:29)
+- Entwicklung: macOS-Test des eigenen Pythons – eine Annahme über unsignierte Programme entfernt (geladen, geprüft und probegestartet lief es dort)
+
 ## 3.17.13 (2026-11-23 13:50)
 - Updates: „Verwendete Programme“ – alles Fremde, das Kontor nutzt, mit Version, Lizenz, Herkunft und ob es abgeschirmt läuft: Python, llama.cpp, jedes Modell, Bordmittel von macOS
 - Hilfe: Abschnitt „Verwendete Programme“
