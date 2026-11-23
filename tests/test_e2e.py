@@ -3945,6 +3945,15 @@ class BrowserTest(unittest.TestCase):
                 self.assertEqual(pg.get_attribute("#page-title .page-hq", "data-help"), "balance-sheet"); self.assertEqual(pg.get_attribute("#bch .hq", "data-help"), "balance-sheet-chart")
                 pg.click("#bch .hq"); pg.wait_for_selector("#hl-balance-sheet-chart")
                 self.assertEqual(pg.evaluate("location.hash"), "#help/balance-sheet-chart")
+                # a page of Kontor named in the help ("Einstellungen → Zugang", "unter Kategorisieren") opens it -- marked as a jump into
+                # Kontor; a jump within the help stays one (#help/…); nothing inside a heading or code becomes a link
+                jumps = pg.evaluate("[...document.querySelectorAll('#help-body a.app-jump')].map(a => [a.textContent, a.getAttribute('href')])")
+                self.assertIn(["Einstellungen → Zugang", "#settings/access"], jumps); self.assertIn(["Konten & Regeln → Kontostände", "#accounts/history"], jumps)
+                self.assertTrue(any(h == "#categories" and x == "Kategorisieren" for x, h in jumps), jumps)
+                self.assertFalse(pg.evaluate("!!document.querySelector('#help-body h3 a.app-jump, #help-body code a.app-jump, #help-body a a')"))
+                self.assertTrue(pg.evaluate("[...document.querySelectorAll('#help-body a[href^=\"#help/\"]')].every(a => !a.classList.contains('app-jump'))"))
+                pg.click("#help-body a.app-jump[href='#settings/access']"); pg.wait_for_selector("#nav a.on[href='#settings']")
+                self.assertEqual(pg.evaluate("location.hash"), "#settings/access")
                 # printing one chart: its own menu (right click), everything beside it left out while printing, then back
                 pg.click("#nav a[href='#balance']"); pg.wait_for_selector("#bch svg"); pg.evaluate("window.print = () => { PRINT.printed = document.body.classList.contains('print-one') && !!document.querySelector('.print-off'); }")
                 pg.wait_for_timeout(800)          # the page settled (a scroll of the page closes the menu)
@@ -6232,8 +6241,7 @@ class KeysFindBrowserTest(unittest.TestCase):
                 pg2 = b.new_page(viewport={"width": 1440, "height": 900}); pg2.add_init_script(standalone); pg2.on("pageerror", lambda e: errors.append(str(e)))
                 pg2.goto("http://127.0.0.1:%d/" % port)
                 pg2.fill("#login-pw", "sehr-geheimes-passwort"); pg2.click("#login-btn"); wait_shell(pg2)
-                until(pg2, "APP_MODE && !SHELL && !SYNC.busy")
-                self.assertIn("(⇧⌘R)", pg2.get_attribute("#sync-btn", "title"))
+                until(pg2, "APP_MODE && !SHELL && !SYNC.busy && (document.querySelector('#sync-btn').title || '').includes('(⇧⌘R)')")     # (set with the first status)
                 keys = pg2.evaluate("""(() => { let n = 0; const keep = syncNow; syncNow = () => { n++; };
                     const press = shift => { const e = new KeyboardEvent('keydown', {key: shift ? 'R' : 'r', metaKey: true, shiftKey: shift, bubbles: true, cancelable: true});
                         document.dispatchEvent(e); return [e.defaultPrevented, n]; };

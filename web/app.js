@@ -6286,8 +6286,31 @@ async function vHilfe() {
     <div class="help-layout"><nav class="help-toc" data-ex="help.toc">${toc.map(([id, title]) => `<a href="#help/${id}" data-a="${id}">${mdInline(title)}</a>`).join('')}<a href="#log" class="help-toc-x">${t('protokoll')}</a></nav>
     <div class="help" id="help-body" data-ex="help.article">${mdHtml(HELP.md)}</div></div>`;
 }
+// A page of Kontor named in the help as the pages call it -- "Einstellungen → Zugang", "Konten & Regeln → Kontostände", "unter
+// Kategorisieren" -- opens it: a jump into Kontor, marked ↗ (unlike a jump within the help). The help text stays plain Markdown.
+function helpAppLinks(body) {
+  const open = Object.keys(TITLES).filter(k => !['help', 'log', 'setup', 'assistant'].includes(k)), pairs = [];
+  for (const tab of open) { for (const [sub, key] of Object.entries(SUB_LABEL[tab] || {})) pairs.push([`${TITLES[tab]} → ${t(key)}`, '#' + tab + (sub ? '/' + sub : '')]); }
+  const pages = open.map(tab => [TITLES[tab], '#' + tab]);
+  const rx = l => l.slice().sort((x, y) => y[0].length - x[0].length).map(([x]) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
+  const re = new RegExp(`(${rx(pairs)})|(\\b${t('hilfe_unter')}\\s+)(${rx(pages)})(?![\\wäöüÄÖÜß])`, 'g'), to = new Map(pairs.concat(pages));
+  const tw = document.createTreeWalker(body, NodeFilter.SHOW_TEXT, {acceptNode: n => n.parentElement.closest('a, code, pre, h2, h3, h4') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT});
+  const nodes = []; while (tw.nextNode()) nodes.push(tw.currentNode);
+  for (const nd of nodes) {
+    const txt = nd.nodeValue; re.lastIndex = 0; if (!re.test(txt)) continue; re.lastIndex = 0;
+    const frag = document.createDocumentFragment(); let at = 0, m;
+    while ((m = re.exec(txt))) {
+      const name = m[1] || m[3], start = m.index + (m[1] ? 0 : m[2].length);
+      frag.append(txt.slice(at, start));
+      const a = document.createElement('a'); a.className = 'app-jump'; a.href = to.get(name); a.title = t('hilfe_in_kontor_oeffnen'); a.textContent = name; frag.append(a);
+      at = start + name.length;
+    }
+    frag.append(txt.slice(at)); nd.replaceWith(frag);
+  }
+}
 function bindHilfe(main) {
   const body = $('#help-body', main); if (!body) return;
+  helpAppLinks(body);
   // Abschnitte = Ueberschrift h3 (## im Text) bis zur naechsten; Suche blendet Abschnitte ohne Treffer aus und markiert Treffer
   const secs = []; let cur = null;
   for (const el of [...body.children]) { if (el.tagName === 'H3' || el.tagName === 'H2') { cur = {head: el, els: [el], a: el.dataset.a || ''}; secs.push(cur); } else { if (!cur) { cur = {head: null, els: [], a: ''}; secs.push(cur); } cur.els.push(el); } }

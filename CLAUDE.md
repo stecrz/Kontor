@@ -27,7 +27,7 @@ Entschiedenes nie löschen, nach der Umsetzung „(umgesetzt in X.Y.Z)“ anhän
   Chats veröffentlicht haben); Erinnerung, wenn eine Änderung nicht abgeschlossen ist.
 - GitHub Actions testet jeden Push (rund 6 min) – Linux: Python 3.9 und neu, Chrome und Safari-Engine, Code-Checks, je
   Python in zwei Hälften nebeneinander (Seiten = `tests/test_e2e.py`; alles andere); macOS: Apples Python, Swift-Helfer,
-  Mac-App (bauen, Kontor darin laden, Mikrofon ohne Nachfrage), MoneyMoney-Brücke, Installation. Nachts auf dem neuesten `main` die 1000 festen und so viele jede Nacht neue Zufallsfälle, wie in ~3 h passen, auf
+  Mac-App (bauen, Kontor darin laden, Mikrofon ohne Nachfrage; jede Seite in macOS' WebKit mit echtem Rechtsklick), MoneyMoney-Brücke, Installation. Nachts auf dem neuesten `main` die 1000 festen und so viele jede Nacht neue Zufallsfälle, wie in ~3 h passen, auf
   mehreren Rechnern nebeneinander (`nightly.yml`; rot: siehe Parallele Chats).
 
 ## Prüfen

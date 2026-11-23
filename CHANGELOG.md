@@ -1,5 +1,9 @@
 # Änderungen
 
+## 3.17.3 (2026-11-23 02:14)
+- Hilfe: genannte Seiten von Kontor öffnen per Klick direkt die Seite (fett mit ↗) – Sprünge innerhalb der Hilfe bleiben unterstrichen
+- Entwicklung: Rundgang in macOS' WebKit (Engine der Mac-App) auf GitHub – jede Seite ohne Skriptfehler, echter Rechtsklick auf eine Zelle
+
 ## 3.17.2 (2026-11-23 01:42)
 - KI-Assistent: Rechtsklick am Mac nimmt die angeklickte Zelle oder Zahl mit Zeile, Spalte und Beschreibung – nicht mehr nur das Wort, das Safari und die Mac-App beim Rechtsklick markieren (Hauptursache falscher Kurzerklärungen)
 - KI-Assistent: Beschreibung kompakter – die angeklickte Stelle ganz, die umliegenden nur in einem Satz

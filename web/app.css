@@ -1063,3 +1063,9 @@ input.invalid { border-color:var(--neg) !important; }
 .find #find-n { min-width:64px; text-align:right; font-variant-numeric:tabular-nums; }
 ::highlight(kontor-find) { background-color:rgba(255, 204, 0, .38); }
 ::highlight(kontor-find-now) { background-color:#ffcc00; color:#000; }
+
+/* in the help: a jump within the help underlined; a jump into Kontor (a page, a tab) with an arrow out instead -- never mistaken */
+#help-body a[href^="#help/"] { text-decoration:underline; text-decoration-color:var(--faint); text-underline-offset:2px; }
+#help-body a.app-jump { font-weight:600; white-space:nowrap; }
+#help-body a.app-jump::after { content:"\2009\2197"; font-weight:400; opacity:.7; }
+#help-body a.app-jump:hover, #help-body a[href^="#help/"]:hover { text-decoration:underline; text-decoration-color:currentColor; }

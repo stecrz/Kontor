@@ -142,6 +142,17 @@ anhängen – nie löschen.
 - Zukunft: eine gemeinsame KI für Nutzer und Geschäftspartner (später Mitarbeiter) auf einem eigenen Rechner mit starker
   Grafikkarte, Zugang je Konto über einen sicheren Kanal, gemeinsames Gedächtnis; widerspricht heute „alles auf diesem Mac“ –
   erst nach ausdrücklicher Entscheidung. (Ein Gedächtnis über Finanzen hinaus, nur auf diesem Mac: entschieden, siehe Gedächtnis.)
+- Zugang vom iPhone (siehe Entschieden, 2026-11-23) – Vorschlag, Entscheidung steht aus:
+  Weg zum Mac: bei Tailscale bleiben (WireGuard, Ende-zu-Ende verschlüsselt, kein offener Port zu Hause; Relais sehen nur
+  Verschlüsseltes), dazu Tailnet Lock (Tailscale selbst kann dann keine Geräte hinzufügen). Geprüft und verworfen: Headscale (eigener
+  Server nötig, gleiche App), WireGuard direkt (Portfreigabe am Router, scheitert oft an CGNAT), Cloudflare Tunnel (Cloudflare sähe
+  die Daten im Klartext – widerspricht „nichts nach außen“), eigenes Relais (viel Aufwand, kein Gewinn gegenüber WireGuard).
+  Hinweis: Tailscales kostenloser Personal-Plan gilt nur für nicht-kommerzielle Nutzung.
+  Sicherheit in Kontor selbst: HTTPS über das ts.net-Zertifikat (kann Kontor schon), je Gerät ein Passkey mit Face ID statt des
+  Passworts – einmal am Mac per QR-Code hinzugefügt; Liste der Geräte unter Einstellungen → Zugang, „Entfernen“ sperrt sofort;
+  verändernde Aktionen vom iPhone bestätigt Face ID. Rechte wie am Mac; nur am Mac bleiben Zugang, Updates, Einrichtung des
+  Assistenten, Sicherung laden/Zurücksetzen, Passwort. Mac schläft: die Offline-Kopie am iPhone zum Lesen; Änderungen erst, wenn
+  der Mac erreichbar ist (MoneyMoney läuft dort). Eine eigene iPhone-App mit iCloud-Abgleich wäre die Alternative – großer Aufwand.
 
 ## 1. Daten erst nach Anmeldung (Sicherheit) – umgesetzt in 3.16.83 (3.17.0: Umstellung von früher entfernt, nur Neueinrichtung)
 Ziel: Wer den entsperrten Mac hat, aber nicht bei Kontor angemeldet ist, kommt an keine Kontor-Daten.
@@ -338,6 +349,13 @@ Vier Grafiken aus Bilanz und Cashflow auf einer Bildschirmseite, jede verlinkt a
 - Neue Lebensfälle (Einlage, Kauf, Darlehen, Auslage …) als Szenario in `tests/test_scenarios.py` ergänzen – je Tag, Monats- und Jahreswechsel –
   und als Ereignis in den Zufallswelten (`tests/test_worlds.py`), damit sie nachts in allen Kombinationen laufen.
 - Oberfläche nach Apples Human Interface Guidelines, hell und dunkel, Mac und iPhone.
+- Mac-App am besten geprüft (Wunsch des Nutzers, 2026-11-23: die Mac-App ist das Wichtigste, dann Safari am Mac und iPhone): ein
+  Rundgang in der echten Mac-App auf GitHub (macOS-Job) – eigener Prüf-Build (nicht die ausgelieferte App) lädt Kontor mit
+  erfundenen Daten in WKWebView, öffnet jede Seite, meldet Skriptfehler und prüft, was nur dort auffällt: Rechtsklick (WebKit
+  markiert dabei das Wort unter der Maus – 3.17.2), Menü und Tastenkürzel, Scrollen, Einfügen aus der Zwischenablage, Diktieren
+  ohne Nachfrage. Playwright mit der Safari-Engine unter Linux bildet das nicht nach.
+  Erster Schritt in 3.17.3: jede Hauptseite ohne Skriptfehler, echter Rechtsklick auf eine Zelle des Cashflows (`tests/test_mac_webview.py`,
+  `tests/mac_webview.swift`; einige Versionen beobachtet, dann zählt der Schritt wie jeder). Weiter: Menü, Tastenkürzel, Scrollen, Einfügen.
 
 ## ~~Beim nächsten großen Versionssprung~~ (erledigt in 3.17.0)
 Hilfe und README als Ganzes auf den Stand gebracht (Ziel „dein digitaler CFO“, Mac-App, Rechtsklick, Sammelkarte des Assistenten,

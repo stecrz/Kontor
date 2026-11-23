@@ -2681,6 +2681,8 @@ const I18N = {
 "cf_anteil_an":["Anteil an {0}", "share of {0}"],
 "ki_bild_eingefuegt":["Bild", "Picture"],
 "ref_abgeschlossen":["abgeschlossener Monat", "closed month"],
+"hilfe_unter":["unter", "under"],
+"hilfe_in_kontor_oeffnen":["In Kontor öffnen", "Open in Kontor"],
 "neu_laden":["Neu laden", "Reload"],
 "s_einst_inzwischen_geaendert":["Diese Einstellung wurde inzwischen in einem anderen Fenster oder auf einem anderen Gerät geändert. Neu laden, dann noch einmal ändern.", "This setting was changed meanwhile in another window or on another device. Reload, then change it again."],
 "s_einrichtung_laeuft":["Das Passwort wird gerade festgelegt – einen Moment.", "The password is being set – one moment."],

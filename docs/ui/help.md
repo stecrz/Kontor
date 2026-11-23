@@ -16,8 +16,9 @@ a click scrolls to the chapter. The last entry "Protokoll" opens the log page.
 
 ## help.article — Artikel
 The manual itself: chapters and sections with headings, paragraphs, lists, tables, code (file names, commands) and pictures. The
-pictures are screenshots of Kontor with made-up data, not the user's. Links inside lead to other sections; links to websites
-open in the browser.
+pictures are screenshots of Kontor with made-up data, not the user's. Underlined links lead to other sections of the help; a
+page of Kontor named in the text ("Einstellungen → Zugang", "unter Kategorisieren") is a link marked "↗" that opens that page in
+Kontor; links to websites open in the browser.
 
 ## help.table — Tabelle in der Hilfe
 A reference table of the manual (e.g. which accounts belong to which balance-sheet position, recommended categories and the
