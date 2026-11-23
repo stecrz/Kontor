@@ -134,6 +134,38 @@ anhängen – nie löschen.
 - **Belege nur in Kontor** (2026-11-22): Der Pfad eines Belegs wird nie in einen Umsatz in MoneyMoney geschrieben (auch nicht in
   den Kommentar); Belege werden nur in Kontor verknüpft und gepflegt. Die Einstellung „Verweis in MoneyMoney“ entfällt.
   (umgesetzt in 3.16.89)
+- **KI-Plattform** (Nutzer, 2026-11-23): Kontor bleibt der Kern (Daten, Regeln, Freigaben); Modell und Rechner sind
+  austauschbar. Der Assistent läuft weiter auf dem MacBook; vorbereitet wird, dass ein stärkerer eigener Rechner später nur eine
+  andere Auswahl ist. Sicher geht vor lokal: lokal ist der Weg, nicht das Ziel. Ein Kauf (Mac Studio o. Ä.) erst, wenn er einen
+  entscheidenden Vorteil bringt.
+- **Claude als Recherche-Stufe** (Nutzer, 2026-11-23): Der Assistent darf Claude über Anthropics Schnittstelle fragen – mit dem
+  eigenen API-Schlüssel des Nutzers (API-Guthaben seines Claude-Abos), nie über ein Abo-Login –, als stärkere Internetsuche neben
+  Tavily: Kontor sendet, vorher steht der volle Wortlaut auf der Karte (immer mit Klick, auch in einer erlaubten Unterhaltung),
+  gefiltert gegen eigene Daten; die Antwort gilt als Text aus dem Internet.
+- **Modelle verständlich** (Nutzer, 2026-11-23): Die Modellauswahl erklärt jedes Modell in einfachen Worten (schnell oder
+  gründlich, wofür gut, Speicherbedarf, ob es auf diesem Mac läuft) und führt auch größere Modelle für stärkere Rechner.
+- **Abschirmung** (Nutzer, 2026-11-23): heißt wirklich kein Netz – auch nicht innerhalb des Macs – und möglichst keine
+  Verbindung zu anderen Programmen; in der Oberfläche und Hilfe erklärt.
+- **Aktuelles Python** (Nutzer, 2026-11-23): Kontor läuft auf einer aktuellen, festen Python-Version in seinem eigenen Ordner statt
+  auf Apples Python 3.9 (seit 31.10.2025 ohne Sicherheitsupdates); geladen nur nach Klick, geprüft, mit Rückweg; Installation und
+  Umstellung ohne Handgriffe des Nutzers, wo es irgend geht.
+- **Fertige Bibliotheken statt Eigenbau** (Nutzer, 2026-11-23): Wo bewährte offene Bibliotheken oder Modelle eine Aufgabe besser
+  lösen – vor allem PDF- und Excel-Lesen, auch KI-Dokumentmodelle für schwierige PDFs –, nutzt Kontor sie: nur in abgeschirmten
+  Hilfsprozessen, mit fester Version und Prüfsumme, geladen nach Klick, für den Nutzer mit Name, Version, Lizenz und Herkunft
+  benannt. Zahlen kommen dabei nie aus einem Modell, sondern aus der Datei (Textebene oder Texterkennung): ein Modell darf nur
+  die Form einer Tabelle liefern. Der Kern (Dienst, Zugang, Schlüssel, Freigaben, Update-Prüfung) bleibt Standardbibliothek.
+- **Gedächtnis übertragbar** (Nutzer, 2026-11-23): Notizen lassen sich am Mac in einem offenen Format exportieren und wieder
+  einlesen, damit ein anderes System sie übernehmen kann.
+- **Tailscale prüfen** (Nutzer, 2026-11-23): Kontor prüft (nur lesend), ob Tailnet Lock aktiv ist und Kontor nicht über Funnel/serve
+  aus dem Internet erreichbar ist, und erklärt sonst, wie man es behebt.
+- **Antworten vor Tempo** (Nutzer, 2026-11-23): Saubere, richtige Antworten sind wichtiger als Geschwindigkeit. Die Einbindung
+  der Modelle (Startparameter, Denken, Systemtext, Werkzeuge, Gedächtnis, Verlauf, Recherche) wird geprüft und so eingestellt,
+  dass sie ihr Potenzial ausschöpfen; empfohlen wird nur, was dem Nutzer wirklich etwas bringt.
+- **Vorrang** (Nutzer, 2026-11-23): Erst muss das Bestehende verlässlich funktionieren – vor allem PDFs (z. B. ein 30-seitiger
+  Wertenachweis aus DATEV) und Excel sauber lesen, nie eine Zahl erfinden. „Hinweise von selbst“ später, abschaltbar. Der Nutzer
+  lädt keine personenbezogenen Daten hoch; ein Datenschutz-Ausbau ist kein Thema. Später bekommt der Mitgesellschafter einen
+  eigenen Kontor (Privates und Gedächtnis getrennt, gemeinsame Bereiche teilbar) – ersetzt beim Punkt „gemeinsame KI“ unter Offen
+  das gemeinsame Gedächtnis.
 
 ## Offen (Entscheidung steht aus – mit Empfehlung vorlegen, wenn der Punkt dran ist)
 - Umsatzsteuer-Voranmeldung direkt an ELSTER senden (ELSTERs Programmbibliothek ERiC, Anmeldung als Hersteller, Zertifikat und

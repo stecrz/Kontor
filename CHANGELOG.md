@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.17.7 (2026-11-23 04:42)
+- Entwicklung: Entscheidungen vom 23.11. im Fahrplan – KI-Plattform, Claude als Recherche-Stufe, Abschirmung, aktuelles Python, fertige Bibliotheken, Gedächtnis-Export, Tailscale-Prüfung, Antworten vor Tempo
+
 ## 3.17.6 (2026-11-23 04:24)
 - Planung: Regeln je Bereich, Position und Kategorie – die tiefste gewinnt; Methode und Steigerung (Standard, keine, eigene %) je für sich
 - Planung: Kategorien werden geplant – Position = Summe ihrer Kategorien; eigene Werte je Zelle, auch je Kategorie
