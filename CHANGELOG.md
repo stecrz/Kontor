@@ -1,5 +1,13 @@
 # Änderungen
 
+## 3.17.27 (2026-11-23 20:04)
+- KI-Assistent: Tabellen aus PDFs genauer – ein Strich für „nichts“ wird kein Minus, zwei Zahlen nebeneinander nie eine, Spalten verrutschen nicht mehr; Unklares bleibt Text
+- KI-Assistent: lange Auswertungen (Wertenachweis über 30 Seiten) vollständig – jede Zeile einmal, jede Zahl steht so im Dokument
+- KI-Assistent: Kontor rechnet nach, ob Summenzeilen, Überträge sowie Soll und Haben aufgehen – eine verlesene Zahl oder fehlende Zeile fällt auf
+- KI-Assistent: sucht in langen Dateien Zeilen nach Wörtern (Konto, Name) statt Seite für Seite; nennt nichts, was er nicht gelesen hat
+- KI-Assistent: CSV-Dateien werden wie Excel als Tabelle gelesen
+- KI-Assistent: Summen nennen enthaltene Summenzeilen und Überträge, ausgeblendete Zeilen und Zahlen, die als Text dastehen
+
 ## 3.17.26 (2026-11-23 20:10)
 - KI-Assistent: Notizen kurz und sinngemäß statt im Wortlaut – Zahlen, Namen, Daten genau
 - KI-Assistent: merkt sich auch, was er in der Antwort herausfindet (Tatsache, Grund, Person) – „aus der Antwort“, mit „Zurücknehmen“

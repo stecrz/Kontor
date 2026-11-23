@@ -187,7 +187,7 @@ anhängen – nie löschen.
   Wertenachweis aus DATEV) und Excel sauber lesen, nie eine Zahl erfinden. „Hinweise von selbst“ später, abschaltbar. Der Nutzer
   lädt keine personenbezogenen Daten hoch; ein Datenschutz-Ausbau ist kein Thema. Später bekommt der Mitgesellschafter einen
   eigenen Kontor (Privates und Gedächtnis getrennt, gemeinsame Bereiche teilbar) – ersetzt beim Punkt „gemeinsame KI“ unter Offen
-  das gemeinsame Gedächtnis.
+  das gemeinsame Gedächtnis. (PDF-Tabellen: gemessen und stille Fehler behoben in 3.17.27 – siehe 2., „Mächtiger und trotzdem sicher“)
 - **Zugang vom iPhone – Umsetzung** (Nutzer, 2026-11-23: der Vorschlag gilt so):
   Weg zum Mac: bei Tailscale bleiben (WireGuard, Ende-zu-Ende verschlüsselt, kein offener Port zu Hause; Relais sehen nur
   Verschlüsseltes), dazu Tailnet Lock (Tailscale selbst kann dann keine Geräte hinzufügen). Geprüft und verworfen: Headscale (eigener
@@ -386,7 +386,19 @@ Mächtiger und trotzdem sicher (Auftrag vom 21.11.2026; jede Änderung erst nach
 - [x] 3.16.26 Offene Aufgaben beim Öffnen, jede mit „Erledigen“ (die Liste kommt von Kontor, auch ohne Modell; ohne passendes Recht „Öffnen“).
 - [x] 3.16.46 Belege: Datei in den Chat, Texterkennung von macOS (offline), passenden Umsatz vorschlagen, Abweichungen nennen, ablegen und verknüpfen (Verweis in MoneyMoney nicht durch den Assistenten).
 - [x] 3.16.66 Excel-Tabellen im Chat: abgesichert gelesen zu einem Raster mit Excels Adressen, Summen exakt von Kontor; Datei ohne Frage wird für sich bewertet. Grundlage für BWA/SuSa aus Excel (4.).
-- [x] 3.16.88 PDFs und Bilder mit Tabellen im Chat: alle Seiten, Tabellen über Seitenumbrüche zusammengesetzt (Köpfe, Seitenzahlen weg), Spalten aus der Lage der Wörter, Zahlen wie geschrieben, Summen von Kontor. Offen: am Mac mit echten Auswertungen (BWA, SuSa, Wertenachweis) prüfen; CSV über denselben Weg.
+- [x] 3.16.88 PDFs und Bilder mit Tabellen im Chat: alle Seiten, Tabellen über Seitenumbrüche zusammengesetzt (Köpfe, Seitenzahlen weg), Spalten aus der Lage der Wörter, Zahlen wie geschrieben, Summen von Kontor. Offen: am Mac mit echten Auswertungen (BWA, SuSa, Wertenachweis) prüfen. CSV über denselben Weg (umgesetzt in 3.17.27).
+- [x] 3.17.27 PDF-Tabellen Zelle für Zelle gemessen – erfundene DATEV-ähnliche BWA, Summen- und Saldenliste, Wertenachweis und Lohnjournal, 1.000 Zufallstabellen, ein
+  Wertenachweis über 30 Seiten – und die gefundenen stillen Fehler behoben: ein Strich für „nichts“ wurde zum Minus der Zahl daneben, zwei Zahlen mit Leerzeichen
+  zu einer (18 und 231.417), die Zahl am Ende einer Beschriftung (Darlehen 3,2 %) zum Wert einer Spalte, beim Buchhaltungsformat von Excel rutschten Spalten; eine
+  Spalte, die nur Gruppenzeilen füllen (Zeilennummer), bekam keine eigene Spalte. Jede Zahl im Raster steht so im Dokument (Test). Offen: am Mac mit
+  echten Auswertungen prüfen (der macOS-Lauf liest den 30-Seiten-Test mit dem echten Helfer).
+- [x] 3.17.27 Prüfproben, Suchen und CSV: Kontor rechnet in jeder Tabelle (PDF, Excel, CSV) exakt nach, ob Summenzeilen, Überträge, Soll = Haben und Excels
+  SUMME-Formeln aufgehen, und nennt dem Assistenten, was stimmt und was nicht (Zelle, Differenz) – so fällt eine verlesene Zahl oder eine verlorene Zeile auf.
+  Eine Summe über einen Bereich nennt Summenzeilen und Überträge darin (und die Summe ohne sie), ausgeblendete Zeilen und Texte, die wie Zahlen aussehen. In langen
+  Dateien (30 Seiten passen nicht in die Runden einer Antwort) sucht der Assistent Zeilen nach Wörtern, mit Spaltenköpfen, Seite und exakten Summen; was er nicht
+  gelesen hat, nennt er nicht. CSV-Dateien werden wie Excel als Raster gelesen (Trennzeichen, Kodierung, deutsche und englische Zahlen; Tausenderpunkte nur, wo die
+  Spalte ihr Dezimalzeichen zeigt). Offen: KI-Dokumentmodell für schwierige PDFs und Scans (nur Struktur vom Modell, jede Zahl aus dem Text der Datei), bewährte
+  Bibliotheken als abgeschirmter Leser – Messwerte dazu in der Antwort zu diesem Auftrag.
 - [x] 3.16.48 Internet nur zum Lesen, in drei Stufen (siehe Entschieden): Kontor sucht (nicht das Modell), Freigabe je Zugriff mit Quelle,
   Suchbegriffen und Adressen, Filter gegen eigene Daten, Seiten in einem abgeschotteten Prozess, danach keine Änderungen im selben Chat.
   Am Mac mit echtem Netz prüfen (Abschirmung des Abrufs, Antworten der Quellen).

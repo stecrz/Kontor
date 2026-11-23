@@ -2542,7 +2542,7 @@ const I18N = {
 "s_ki_beleg_schon":["Dieser Beleg ist schon abgelegt (%s).", "This receipt is filed already (%s)."],
 "ki_beleg_zu_gross":["„{0}“ ist zu groß (max. {1} MB).", "“{0}” is too large (max. {1} MB)."],
 "ki_beleg_max":["Höchstens {0} Dateien auf einmal.", "At most {0} files at once."],
-"s_ki_beleg_typ":["Nur PDF, Bilder und Excel-Tabellen lassen sich lesen (%s).", "Only PDFs, pictures and Excel tables can be read (%s)."],
+"s_ki_beleg_typ":["Nur PDF, Bilder, Excel- und CSV-Tabellen lassen sich lesen (%s).", "Only PDFs, pictures, Excel and CSV tables can be read (%s)."],
 "s_ki_kategorie_nicht_eingetragen":["Nicht eingetragen – die Umsätze haben inzwischen eine Kategorie oder wurden in MoneyMoney geändert.", "Not entered – the transactions have a category by now or were changed in MoneyMoney."],
 "ki_e_wartet_mac_1":["1 Umsatz wartet auf den nächsten Abgleich am Mac", "1 transaction waits for the next sync on the Mac"],
 "ki_e_wartet_mac":["%s Umsätze warten auf den nächsten Abgleich am Mac", "%s transactions wait for the next sync on the Mac"],

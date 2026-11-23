@@ -6,10 +6,12 @@ and on a Mac (class OnMac, run by GitHub's macOS job) the real helper reads the 
 recognition, in its sandbox."""
 import os
 import random
+import re
 import subprocess
 import sys
 import tempfile
 import unittest
+from time import perf_counter
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 import pdf_tables as P          # noqa: E402
@@ -214,6 +216,205 @@ def accounting_doc(rows, size=11, euro=False) -> Doc:
             if v < 0:
                 d.put(left, y, "-", size=size)
     return d
+
+
+GROUPS = [("1020", "Umsatzerlöse", 8000, 14), ("1040", "Bestandsveränderungen", 8900, 3), ("1060", "Mat./Wareneinkauf", 3000, 60), ("1100", "Personalkosten", 4100, 150),
+          ("1120", "Raumkosten", 4200, 130), ("1140", "Betriebliche Steuern", 4300, 12), ("1150", "Versicherungen/Beiträge", 4360, 40), ("1160", "Besondere Kosten", 4400, 25),
+          ("1180", "Fahrzeugkosten (ohne Steuer)", 4500, 70), ("1200", "Werbe-/Reisekosten", 4600, 90), ("1220", "Kosten der Warenabgabe", 4700, 110),
+          ("1240", "Abschreibungen", 4820, 45), ("1250", "Reparatur/Instandhaltung", 4800, 85), ("1260", "Sonstige Kosten", 4900, 260), ("1300", "Zinsaufwand", 2100, 9),
+          ("1310", "Sonstiger neutraler Aufwand", 2000, 30), ("1320", "Zinserträge", 2650, 6), ("1330", "Sonstiger neutraler Ertrag", 2700, 28),
+          ("1355", "Steuern vom Einkommen und Ertrag", 2200, 7)]
+WORDS = ["Miete", "Pacht", "Leasing", "Strom", "Gas", "Wasser", "Reinigung", "Wartung", "Instandhaltung", "Versicherung", "Beiträge", "Gebühren", "Werbung", "Porto",
+         "Telefon", "Bürobedarf", "Zeitschriften", "Fortbildung", "Reisekosten", "Bewirtung", "Verpackung", "Fracht", "Löhne", "Gehälter", "Aushilfen", "Sozialabgaben",
+         "Abschreibung", "Zinsen", "Erlöse", "Wareneingang", "Skonti", "Kasse", "Bank", "Forderungen", "Verbindlichkeiten", "Vorsteuer", "Umsatzsteuer", "Rückstellungen"]
+PLACES = ["Lindenplatz", "Mühlbach", "Ahornweg", "Seetor", "Nordring", "Brunnenhof", "Weidenweg", "Altmarkt", "Zentrale", "Lager Nord", "Lager Süd"]
+
+
+def cents(c: int, style: str = "trail") -> str:
+    """Whole cents as printed: 123456 -> '1.234,56'; negative with the minus behind (as accounting software prints), in front or in brackets."""
+    a = abs(c)
+    s = "{:,}".format(a // 100).replace(",", ".") + ",%02d" % (a % 100)
+    return s if c >= 0 else {"trail": s + "-", "lead": "-" + s, "paren": "(" + s + ")"}[style]
+
+
+def plain(c: int) -> str:
+    return X.plain(X.number(str(c)) / 100)
+
+
+def values_statement(per_page: int = 46):
+    """A statement of values as accounting software prints it, about thirty pages: the lines of a short-term income statement
+    (each with its own number, in a column of its own), under each its accounts with the month's and the year's value, a sum
+    per line, a carry-over at the foot and at the top of every page, page breaks in the middle of the groups, negative figures
+    with the minus behind, labels that end in a figure (19 %, 3,2 %). With it what the grid must show, row by row:
+    (kind, line, account, label, month, year) -- kind g(roup), a(ccount), s(um), c(arry-over), t(otal); amounts in cents."""
+    rnd = random.Random(7)
+    rows = []
+    for zeile, name, base, n in GROUPS:
+        rows.append(("g", zeile, "", name, None, None))
+        konto, sm, sy = base, 0, 0
+        for _ in range(n):
+            konto += rnd.randint(1, 3)
+            label = "%s %s" % (rnd.choice(WORDS), rnd.choice(PLACES))
+            if rnd.random() < 0.08:
+                label += rnd.choice([" (Umlage, anteilig %d %%)" % rnd.choice([7, 19, 50]), " 19 %", " 3,2 %", " 2025", " Nr. 4"])
+            m = 0 if rnd.random() < 0.3 else int(rnd.uniform(5, 400000) * rnd.choice([1, 1, 1, 10, 100]))
+            m = -m if rnd.random() < 0.12 else m          # a correction, a credit note
+            m = None if rnd.random() < 0.10 else m        # nothing in the month, only in the year
+            y = 0 if rnd.random() < 0.05 else (m or 0) * 10 + int(rnd.uniform(-90000, 900000))
+            rows.append(("a", "", str(konto), label, m, y))
+            sm, sy = sm + (m or 0), sy + y
+        rows.append(("s", "", "", "Summe " + name, sm, sy))
+    rows.append(("t", "", "", "Summe aller Konten", sum(r[4] or 0 for r in rows if r[0] == "a"), sum(r[5] for r in rows if r[0] == "a")))
+    d, truth, k, page, cm, cy = Doc(), [], 0, 0, 0, 0
+    while k < len(rows):
+        if page:
+            d.page()
+        page += 1
+        d.put(40, 36, "Beispiel Handels GmbH", size=10); d.put(552, 36, "Blatt %d" % page, "r", 8); d.put(40, 48, "Musterstadt", size=8)
+        d.put(552, 48, "Datum 18.11.2026", "r", 8); d.put(40, 62, "Wertenachweis zur BWA Oktober 2026", size=10); d.put(552, 62, "Berater 48213 Mandant 1207", "r", 8)
+        d.put(40, 88, "Zeile", size=8); d.put(78, 88, "Konto", size=8); d.put(118, 88, "Bezeichnung", size=8)
+        d.put(440, 88, "Okt/2026", "r", 8); d.put(552, 78, "Jan/2026 -", "r", 8); d.put(552, 88, "Okt/2026", "r", 8)
+        y, left = 102, per_page
+
+        def line(row, y):
+            _, zeile, konto, name, m, yv = row
+            d.put(40, y, zeile, size=8); d.put(78, y, konto, size=8); d.put(118, y, name, size=8)
+            d.put(440, y, cents(m) if m is not None else "", "r", 8); d.put(552, y, cents(yv) if yv is not None else "", "r", 8)
+            truth.append(row)
+        if page > 1:
+            line(("c", "", "", "Übertrag", cm, cy), y)
+            y, left = y + 12, left - 1
+        while k < len(rows) and left > 1 and not (rows[k][0] == "g" and left < 4):       # (a heading never alone at the foot)
+            line(rows[k], y)
+            if rows[k][0] == "a":
+                cm, cy = cm + (rows[k][4] or 0), cy + rows[k][5]
+            k, y, left = k + 1, y + 12, left - 1
+        if k < len(rows):
+            line(("c", "", "", "Übertrag", cm, cy), 102 + 12 * (per_page - 1) + 6)
+        d.put(40, 812, "Erstellt mit Beispielsoftware", size=7); d.put(552, 812, "Seite %d" % page, "r", 7)
+    return d, truth, page
+
+
+def printed(d: Doc) -> set:
+    """Every figure a document names, read here once more by itself (not by Kontor's rules): each word that is a figure, with
+    the sign or mark printed with it (a minus printed apart counts for its line) -- what a grid may hold as a number; anything
+    else is a figure nobody wrote."""
+    out = set()
+    for items in d.pages:
+        apart = {round(y, 1) for _, y, text, _ in items if text == "-"}
+        for _, y, text, _ in items:
+            for w in text.split(" "):
+                m = re.fullmatch(r"([-(]?)(\d{1,3}(?:\.\d{3})+|\d+)(?:,(\d+))?([-)]?)", w)
+                if not m or (len(m.group(2)) > 1 and m.group(2)[0] == "0" and not m.group(3)):
+                    continue
+                v = X.number(m.group(2).replace(".", "") + ("." + m.group(3) if m.group(3) else ""))
+                for neg in {bool(m.group(1) or m.group(4)), bool(m.group(1) or m.group(4)) or round(y, 1) in apart}:
+                    out.update([X.plain(-v if neg else v), X.plain(-v if neg else v) + "%", X.plain(-v if neg else v) + " S", X.plain(-v if neg else v) + " H"])
+    return out
+
+
+def figures(book: dict) -> list:
+    """All the grid shows as a number (n, with a mark m, per cent p)."""
+    return [v[1] for sh in book["sheets"] for v in sh["cells"].values() if v[0] in "nmp"]
+
+
+def random_statement(seed: int):
+    """A made-up statement with whatever such lists do, by chance: accounts with or without leading noughts, a second key few
+    lines have, the number of a group in a column of its own, labels ending in a figure (19 %, 3,2 %, 2025), a second
+    column of texts, amounts with the minus in front, behind, in brackets or at the left edge of the cell (Excel's accounting
+    format), marks S/H with the amount or set apart, counts, small numbers, per cent, dates, empty cells or dashes for
+    "nothing", groups, sums, carry-overs, a heading in two lines, several pages. Returns the Doc and per page its rows of
+    cells -- (printed, what the grid must hold, marker of the row)."""
+    rnd = random.Random(seed)
+    size = rnd.choice([6.5, 7, 7.5, 8, 8, 8.5, 9, 10])
+    neg = rnd.choice(["lead", "lead", "trail", "trail", "paren", "acct"])
+    money = rnd.choice(["", "", "", " €", " EUR"])
+    apart, dash, dots = rnd.random() < 0.4, rnd.random() < 0.15, rnd.random() < 0.5
+    cols = [("line", "l", "Zeile")] if rnd.random() < 0.25 else []
+    cols += [("key", "l", rnd.choice(["Konto", "Nr.", "Pos."]))] if rnd.random() < 0.8 else []
+    cols += [("key2", "l", rnd.choice(["KST", "Gr."]))] if rnd.random() < 0.25 else []
+    cols.append(("label", "l", rnd.choice(["Bezeichnung", "Beschriftung", "Text"])))
+    cols += [("text", "l", rnd.choice(["Filiale", "Gegenkonto"]))] if rnd.random() < 0.2 else []
+    for _ in range(rnd.randint(1, 7)):
+        k = rnd.choice(["amount"] * 6 + ["mark"] * 2 + ["count", "small", "pct", "date"])
+        cols.append((k, "r", {"amount": rnd.choice(["Soll", "Haben", "Saldo", "Okt/2026", "EUR", "Vorjahr"]), "mark": rnd.choice(["EB-Wert", "Endsaldo"]), "count": "Menge",
+                              "small": rnd.choice(["StKl", "Mon."]), "pct": rnd.choice(["%", "Anteil"]), "date": rnd.choice(["Datum", "Beleg"])}[k]))
+    empty = [rnd.choice([0, 0, 0.1, 0.3, 0.7, 0.95]) for _ in cols]
+    often = rnd.choice([0, 0.05, 0.2, 0.5])               # how many amounts are negative
+    pages, key, n = [], rnd.randint(1, 9000), 0
+    for p in range(rnd.choice([1, 1, 2, 3])):
+        rows = []
+        for i in range(rnd.randint(8, 40)):
+            kind = "carry" if i == 0 and p and rnd.random() < 0.5 else rnd.choices(["data", "group", "sum", "carry"], [0.86, 0.06, 0.06, 0.02])[0]
+            key, n, row = key + rnd.randint(1, 30), n + 1, []
+            for j, (k, _, _) in enumerate(cols):
+                cell = None
+                if k == "line" and kind == "group":
+                    cell = (str(1000 + 20 * n), str(1000 + 20 * n))
+                elif k == "key" and kind == "data":
+                    cell = (("%04d" % (key % 10000),) * 2) if size < 8 else (str(key), str(key))
+                elif k == "key2" and kind == "data" and rnd.random() > empty[j]:
+                    cell = (str(rnd.randint(1, 999)),) * 2
+                elif k == "label":
+                    t = "R%dx %s" % (n, {"group": "A. " + rnd.choice(WORDS), "sum": "Summe " + rnd.choice(WORDS), "carry": "Übertrag"}.get(kind) or " ".join(
+                        rnd.choice(WORDS) for _ in range(rnd.randint(1, 4))) + rnd.choice(["", "", "", " 19 %", " 3,2 %", " 2025", " (o. St.)", " Nr. 4", " 1"]))
+                    cell = (t, t)
+                elif k == "text" and kind == "data" and rnd.random() > empty[j]:
+                    cell = (rnd.choice(PLACES),) * 2
+                elif k in ("line", "key", "key2", "label", "text") or kind == "group":
+                    pass
+                elif kind == "data" and rnd.random() < empty[j]:
+                    cell = ("-", "-") if dash and rnd.random() < 0.5 else None
+                elif k == "amount":
+                    c = rnd.choice([0, 100, 99, 100000, 123456789]) if rnd.random() < 0.1 else int(rnd.uniform(1, 9999999))
+                    c = -c if rnd.random() < often else c
+                    cell = (cents(abs(c)) + (money if j % 2 else ""), plain(c), "-" if c < 0 else "") if neg == "acct" else (cents(c, neg) + (money if j % 2 and neg != "paren" else ""), plain(c))
+                elif k == "mark":
+                    c, m = int(rnd.uniform(1, 9999999)), rnd.choice("SH")
+                    cell = (cents(c) + " " + m, "%s %s" % (plain(c), m), m if apart else "")
+                elif k == "count":
+                    v = rnd.randint(0, 250000)
+                    cell = ("{:,}".format(v).replace(",", ".") if dots else str(v), str(v))
+                elif k == "small":
+                    cell = (str(rnd.randint(0, 45)),) * 2
+                elif k == "pct":
+                    c = int(rnd.uniform(-9999, 30000))
+                    cell = (cents(c, "lead") + " %", plain(c) + "%")
+                elif k == "date" and kind == "data":
+                    day, mon = rnd.randint(1, 28), rnd.randint(1, 12)
+                    cell = ("%02d.%02d.2026" % (day, mon), "2026-%02d-%02d" % (mon, day))
+                row.append(cell)
+            rows.append((row, "R%dx" % n))
+        pages.append(rows)
+    widths = [max([width(t, size)] + [width(row[j][0], size) + (size if k == "amount" and neg == "acct" else 0) + (0.6 * size if len(row[j]) > 2 and row[j][2] in ("S", "H") else 0)
+                                      for rows in pages for row, _ in rows if row[j]]) for j, (k, _, t) in enumerate(cols)]
+    pad = rnd.choice([0.9, 1.0, 1.2, 1.5, 2.0, 3.0]) * size
+    wide = sum(widths) + pad * (len(cols) - 1) > 515
+    if sum(widths) + pad * (len(cols) - 1) > 782:
+        return None                                        # (wider than a page across)
+    d, x, xs = Doc(842, 595) if wide else Doc(), 30.0, []
+    for w in widths:
+        xs.append((x, x + w))
+        x += w + pad
+    two = rnd.random() < 0.3
+    for p, rows in enumerate(pages):
+        if p:
+            d.page()
+        d.put(30, 30, "Beispiel Handels GmbH", size=size + 2); d.put(d.w - 30, 30, "Blatt %d" % (p + 1), "r", size)
+        y = 30 + 2.5 * size
+        for j, (k, a, t) in enumerate(cols):
+            d.put(xs[j][1], y - size, "Wert" if two and a == "r" and j % 2 else "", "r", size)
+            d.put(xs[j][1] if a == "r" else xs[j][0], y, t, a, size)
+        for row, _ in rows:
+            y += 1.35 * size
+            for j, cell in enumerate(row):
+                if cell and len(cell) > 2 and cell[2] in ("S", "H"):                    # the mark in a place of its own
+                    d.put(xs[j][1] - 0.6 * size, y, cell[0][:-2], "r", size); d.put(xs[j][1], y, cell[2], "r", size)
+                elif cell:
+                    d.put(xs[j][1] if cols[j][1] == "r" else xs[j][0], y, cell[0], cols[j][1], size)
+                    d.put(xs[j][0] + 0.33 * size, y, cell[2] if len(cell) > 2 else "", "l", size)       # the minus at the left edge of the cell
+        d.put(30, d.h - 22, "Erstellt mit Beispielsoftware", size=6.5); d.put(d.w - 30, d.h - 22, "Seite %d von %d" % (p + 1, len(pages)), "r", 6.5)
+    return d, pages, cols
 
 
 class Tables(unittest.TestCase):
@@ -715,6 +916,171 @@ class Tables(unittest.TestCase):
         b = P.book(d.layout())
         self.assertEqual((b["decimal"], [r[-1] for r in grid(b["sheets"][0])], X.sum_range(b, None, "A1:F3")["sum"]), (",", ["1234.56", "12345", "2500"], "16079.56"))
 
+    def test_statement_of_values_over_thirty_pages(self):
+        """The touchstone: a statement of values of thirty pages -- every row once and in its order, every cell in its
+        column, every sign right, no figure the document does not name, and read in a time one can wait for."""
+        d, truth, pages = values_statement(43)
+        t0 = perf_counter()
+        b = P.book(d.layout())
+        took = perf_counter() - t0
+        sh = b["sheets"][0]
+        g = grid(sh)
+        want = [[z, k, name, plain(m) if m is not None else "", plain(y) if y is not None else ""] for _, z, k, name, m, y in truth]
+        self.assertEqual((pages, X.overview(b), b["pages_read"], b["decimal"], b["signs_apart"]), (30, '"pages 1-30" A1:E%d' % (5 + len(want)), 30, ",", 0))
+        self.assertEqual(g[3:5], [["", "", "", "", "Jan/2026 -"], ["Zeile", "Konto", "Bezeichnung", "Okt/2026", "Okt/2026"]])      # the line's number and the account's: two columns
+        self.assertEqual(g[5:], want)                                                 # nothing lost, nothing twice, nothing between
+        self.assertEqual({sh["cells"][(r, c)][0] for r in range(5, sh["rows"]) for c in (3, 4) if (r, c) in sh["cells"]}, {"n"})
+        self.assertEqual((sum(1 for r in truth if r[0] == "a"), sum(1 for r in truth if r[0] == "c"), sum(1 for r in truth if (r[4] or 0) < 0) > 80, sum(1 for r in truth if (r[5] or 0) < 0) > 80), (1174, 58, True, True))
+        self.assertEqual([v for v in figures(b) if v not in printed(d)], [])           # no figure in the grid that the document does not name
+        for col, i in (("D", 4), ("E", 5)):                                            # Kontor's sums: exact over all thirty pages
+            self.assertEqual(X.sum_range(b, None, "%s6:%s%d" % (col, col, sh["rows"]))["sum"], plain(sum(r[i] or 0 for r in truth)))
+        # what Kontor proves about the whole statement, to the cent: every sum and every carry-over -- and a sum over all rows says what it repeats
+        t0 = perf_counter()
+        self.assertEqual(X.checks(sh), {"sums": {"checked": 40, "equal": 40, "e.g.": "E%d = sum of E7:E%d" % (sh["rows"], sh["rows"] - 1)}, "carry_overs": {"checked": 116, "equal": 116}})
+        self.assertLess(perf_counter() - t0, 5.0)
+        accounts = sum((r[4] or 0) + (r[5] or 0) for r in truth if r[0] == "a")
+        self.assertEqual(X.sum_range(b, None, "D6:E%d" % sh["rows"])["of_which_repeat_other_lines"], {
+            "sums": 40, "carry_overs": 116, "sum": plain(sum((r[4] or 0) + (r[5] or 0) for r in truth) - accounts), "without_them": plain(accounts)})
+        self.assertEqual(sh["row_pages"][:3], [(0, 1), (48, 2), (91, 3)])
+        r = X.render(b, rng="A46:E52")
+        self.assertEqual(r["pages"], "rows 46-48: page 1; rows 49-52: page 2")
+        self.assertIn("| 48 |  |  | Übertrag |", r["table"]); self.assertIn("| 49 |  |  | Übertrag |", r["table"])
+        self.assertLess(took, 20.0)                                                    # (a fraction of a second on a Mac; never minutes)
+
+    def test_what_measuring_cell_by_cell_found(self):
+        """Statements of a made-up firm and thousands of random ones, read and compared cell by cell with what was printed: where
+        a figure came out wrong without anyone noticing -- each kind here as a small document."""
+        # a dash for "nothing" in a column of dates is no minus for the amount after it
+        staff = [("Achter, Anna", "", 3100.0), ("Bogner, Ben", "31.10.2026", 2850.5), ("Christ, Cem", "", 1200.0), ("Dorn, Dana", "30.09.2026", 4100.0), ("Eder, Eva", "", 999.99), ("Falk, Finn", "", 2500.0)]
+
+        def payroll(rows, head=True):
+            d = Doc()
+            for x, t, a in ((40, "Nr.", "l"), (80, "Name", "l"), (330, "Austritt" if head else "", "r"), (430, "Brutto", "r"), (540, "Netto", "r")):
+                d.put(x, 60, t, a)
+            for i, (name, left, brutto) in enumerate(rows):
+                y = 76 + 13 * i
+                d.put(40, y, str(101 + i)); d.put(80, y, name); d.put(330, y, left, "r"); d.put(430, y, de(brutto), "r"); d.put(540, y, de(brutto * 2), "r")
+            return P.book(d.layout())
+        b = payroll([(n, left or "-", v) for n, left, v in staff])
+        g = grid(b["sheets"][0])
+        self.assertEqual((g[1], g[2]), (["101", "Achter, Anna", "-", "3100", "6200"], ["102", "Bogner, Ben", "2026-10-31", "2850.5", "5701"]))
+        self.assertEqual((X.sum_range(b, None, "D2:D7")["sum"], X.sum_range(b, None, "E2:E7")["sum"], b["signs_apart"]), ("14750.49", "29500.98", 0))
+        b = payroll([(n, "-" if i in (0, 3) else "", v) for i, (n, _, v) in enumerate(staff)])           # ... nor under a heading of its own, in two lines only
+        self.assertEqual((grid(b["sheets"][0])[1], X.sum_range(b, None, "D2:D7")["sum"]), (["101", "Achter, Anna", "-", "3100", "6200"], "14750.49"))
+        b = payroll([(n, "31.10.2026" if i == 1 else "-" if i in (0, 3) else "", v) for i, (n, _, v) in enumerate(staff)], head=False)
+        self.assertEqual((grid(b["sheets"][0])[1][2:4], X.sum_range(b, None, "D2:D7")["sum"]), (["-", "3100"], "14750.49"))          # ... nor with one date and no heading
+        d = accounting_doc(ACCOUNTING + [("Korrektur", -300.0, 100.0)])                                  # the accounting format keeps its minus beside a column few lines fill
+        d.put(120, 76, "Nord"); d.put(120, 76 + 14 * 3, "Süd")
+        b = P.book(d.layout())
+        self.assertEqual((grid(b["sheets"][0])[2][-2:], grid(b["sheets"][0])[6][-2:], X.sum_range(b, None, "A2:Z7")["sum"]), (["1002", "-502"], ["-300", "100"], "59153.5"))
+        d = accounting_doc(ACCOUNTING)                                                                   # a text where the minus signs stand, in a line without an amount there:
+        d.put(40, 76 + 14 * 5, "Abgrenzung", size=11); d.put(300, 76 + 14 * 5, de(500.0), "r", 11); d.put(308, 76 + 14 * 5, "offen", size=11)      # a sign or "nothing"? no number
+        b = P.book(d.layout())
+        self.assertEqual(grid(b["sheets"][0])[1:4], [["Erlöse", "28028", "", "24028"], ["Erstattung", "1002", "", "(-) 502,00"], ["Rücklage", "21006", "", "(-) 20.506,00"]])
+        self.assertEqual((X.sum_range(b, None, "D2:D7")["sum"], X.sum_range(b, None, "D2:D7")["left_out"], X.sum_range(b, None, "B2:B7")["sum"]), ("26928", {"text": 3}, "53946"))
+        # two figures a space apart are two figures -- months and a count, a count and a price: never 18231417, never 3250
+        for rows, one, two in (((("18", "231.417"), ("3", "250"), ("12", "5.000"), ("7", "999")), "18 · 231.417", ["18", "231417"]),
+                               ((("3", "250,00"), ("12", "345,00"), ("2", "500,00")), "3 · 250,00", ["3", "250"])):
+            d = Doc()
+            for i, (a, c) in enumerate(rows):
+                d.put(40, 60 + 12 * i, "Posten %d" % i); d.put(300, 60 + 12 * i, a, "r"); d.put(303, 60 + 12 * i, c); d.put(480, 60 + 12 * i, de(10.5 * (i + 1)), "r")
+            b = P.book(d.layout())
+            self.assertEqual([v for v in figures(b) if v not in printed(d)], [], rows)
+            self.assertIn(grid(b["sheets"][0])[0][1:-1], ([one], two), rows)            # two figures side by side, as text or in two columns -- never one
+        self.assertEqual([P.figure(t)[0] for t in ("18 231.417", "1.234 567", "1 234,56", "1'234,56")], ["t", "t", "n", "n"])        # one sign parts all groups of a figure
+        for texts, want in ((("1 234 567,89", "12 345,00", "999,00", "2 500,00"), ["1234567.89", "12345", "999", "2500"]),          # thousands with a space, as the document shows
+                            (("12 345,00", "999,00", "2 500,00"), ["12 · 345,00", "999", "2 · 500,00"]),                                # ... nothing shows it: no number
+                            (("1 234 567,89", "12.345,00", "2 500,00"), ["1 · 234 · 567,89", "12345", "2 · 500,00"])):                  # ... the document parts them with points
+            d = Doc()
+            for i, t in enumerate(texts):
+                d.put(40, 60 + 12 * i, "Posten %d" % i); d.put(400, 60 + 12 * i, t, "r")
+            self.assertEqual([r[1] for r in grid(P.book(d.layout())["sheets"][0])], want, texts)
+        # a figure at the end of a label belongs to the label (a loan's interest, a rate) -- no value under the next heading
+        d = Doc()
+        for x, t, a in ((40, "Konto", "l"), (80, "Bezeichnung", "l"), (330, "EB-Wert", "r"), (420, "Soll", "r"), (520, "Saldo", "r")):
+            d.put(x, 60, t, a)
+        loans = [("0630", "Darlehen der Musterbank in Musterstadt 3,2 %", None, 8500.0), ("0640", "Festgeld bei der Beispielbank, Zinssatz 4,25", None, 4150.0), ("0650", "Büro", 14250.0, 400.0),
+                 ("0800", "Kapital", 50000.0, 0.0), ("1000", "Kasse", 2438.06, 291.9), ("1200", "Bank", 5442.65, 1119.54), ("1400", "1,5 Zimmer Lager", 1864.05, 6995.44)]
+        for i, (konto, name, eb, soll) in enumerate(loans):
+            y = 76 + 13 * i
+            d.put(40, y, konto); d.put(80, y, name); d.put(330, y, de(eb) if eb is not None else "", "r"); d.put(420, y, de(soll), "r"); d.put(520, y, de(soll + 1), "r")
+        b = P.book(d.layout())
+        self.assertEqual(grid(b["sheets"][0])[1:], [[k, name, X.plain(X.number("%.2f" % eb)) if eb is not None else "", X.plain(X.number("%.2f" % s)), X.plain(X.number("%.2f" % (s + 1)))]
+                                                    for k, name, eb, s in loans])
+        self.assertEqual((X.overview(b), X.sum_range(b, None, "C2:C8")["sum"]), ('"page 1" A1:E8', "73994.76"))
+        # Excel's accounting format in five columns, the widest figure of each close behind where its minus stands: every amount under
+        # its own heading, with its own sign (a river between two columns once ran on across a whole column of figures)
+        big, d = 1234567.89, Doc(842, 595)
+        acct = [("Erlöse", [28028.0, big, 24028.0, None, 512.25]), ("Erstattung", [-1002.0, -502.0, big, 77.0, None]), ("Rücklage", [big, -20506.0, -99.5, -3.5, big]),
+                ("Miete", [-3000.0, None, 100.0, big, -45.0]), ("Zinsen", [410.0, -12.5, -8812.5, None, 60.0]), ("Korrektur", [None, 100.0, -77.0, -1.0, None]), ("Wartung", [12.0, 55.0, None, 7.0, -9.99])]
+        d.put(40, 60, "Position", size=8)
+        for k, t in enumerate(("Plan", "Ist", "Vorjahr", "Abweichung", "Budget")):
+            d.put(200 + 70 * k, 60, t, "r", 8)
+        for i, (name, vals) in enumerate(acct):
+            d.put(40, 76 + 11 * i, name, size=8)
+            for k, v in enumerate(vals):
+                d.put(200 + 70 * k, 76 + 11 * i, de(abs(v)) if v is not None else "", "r", 8); d.put(148.6 + 70 * k, 76 + 11 * i, "-" if v is not None and v < 0 else "", size=8)
+        b = P.book(d.layout())
+        self.assertEqual(grid(b["sheets"][0]), [["Position", "Plan", "Ist", "Vorjahr", "Abweichung", "Budget"]] + [
+            [name] + [X.plain(X.number("%.2f" % v)) if v is not None else "" for v in vals] for name, vals in acct])
+        # an account without a figure in its line, its long label: still the account's number in its column, no sentence
+        d = Doc()
+        long = "Aufwendungen für bezogene Leistungen und Fremdarbeiten im Inland"
+        for i, (konto, name, v) in enumerate((("4700", "Kosten der Warenabgabe", 120.5), ("4711", long, None), ("4720", "Verpackung", 88.0), ("4730", "Fracht", 12.25))):
+            d.put(40, 60 + 12 * i, konto); d.put(68, 60 + 12 * i, name); d.put(500, 60 + 12 * i, de(v) if v is not None else "", "r")
+        self.assertEqual(grid(P.book(d.layout())["sheets"][0])[1], ["4711", long, ""])
+        # a remark set apart before the amount of one line: with the label -- the amount stays a number. Not so a money's letters
+        # or "./." before it: they say what the figure is, so it stays text with them (never added to the others)
+        for word, row, total, kept in (("geprüft", ["Posten 3 geprüft", "103", "10"], "828", 0), ("AUD", ["Posten 3", "AUD 103,00", "10"], "725", 1),
+                                       ("./.", ["Posten 3", "./. 103,00", "10"], "725", 1)):
+            d = Doc()
+            for i in range(8):
+                d.put(40, 60 + 12 * i, "Posten %d" % i); d.put(400, 60 + 12 * i, de(100.0 + i), "r"); d.put(500, 60 + 12 * i, de(7.0 + i), "r")
+            d.put(300, 60 + 12 * 3, word)
+            b = P.book(d.layout())
+            self.assertEqual((grid(b["sheets"][0])[3], X.sum_range(b, None, "B1:B8")["sum"], b["as_text"]), (row, total, kept), word)
+
+    def test_random_statements_never_a_wrong_figure(self):
+        """Random statements, each cell against what was printed: no row lost or twice, never a figure its line does not have,
+        never a figure under another column's heading -- and nearly every figure a number (what is not, is text as printed)."""
+        cells = right = 0
+        for seed in range(36):
+            made = random_statement(seed)
+            if made is None:
+                continue
+            d, pages, cols = made
+            b = P.book(d.layout())
+            self.assertEqual([v for v in figures(b) if v not in printed(d)], [], seed)
+            rows = [(si, [(c, sh["cells"][(r, c)]) for c in range(sh["cols"]) if (r, c) in sh["cells"]]) for si, sh in enumerate(b["sheets"]) for r in range(sh["rows"])]
+            at: dict = {}
+            for i, (_, row) in enumerate(rows):
+                for _, v in row:
+                    for m in re.findall(r"\bR\d+x\b", v[1]):
+                        at.setdefault(m, []).append(i)
+            column: dict = {}                                 # (sheet, column of the document) -> the grid's columns its figures stand in
+            for rows_ in pages:
+                for row, mark in rows_:
+                    self.assertEqual(len(at.get(mark, [])), 1, (seed, mark, "a row lost or twice"))
+                    si, got = rows[at[mark][0]]
+                    numbers = [(c, v[1]) for c, v in got if v[0] in "nmp"]
+                    for j, cell in enumerate(row):
+                        if not cell or not re.fullmatch(r"-?(?:0|[1-9]\d*)(?:\.\d+)?(?: [SH]|%)?", cell[1]):
+                            continue                          # (a text, a date, an account with noughts in front)
+                        cells += 1
+                        hit = next((n for n in numbers if n[1] == cell[1]), None)
+                        if hit is not None:
+                            numbers.remove(hit)
+                            column.setdefault((si, j), set()).add(hit[0])
+                            right += 1
+                        else:                                 # not a number: then as printed, in a text of its line
+                            shown = cell[0].split(" ")[0].strip("()-")
+                            self.assertTrue(any(shown in v[1] for _, v in got if v[0] == "t"), (seed, mark, cell, got))
+                    self.assertEqual([n for n in numbers if not re.search(r"(?:^| )%s(?: |$)" % re.escape(n[1].rstrip("%")), row[[c[0] for c in cols].index("label")][1])],
+                                     [], (seed, mark, "a figure the line does not have", got))
+            self.assertEqual({k: v for k, v in column.items() if len(v) > 1}, {}, (seed, "figures of one column under two headings"))
+        self.assertGreater(cells, 4000)
+        self.assertGreater(right / float(cells), 0.995)
+
     def test_figures_as_written(self):
         F = P.figure
         self.assertEqual([F(t) for t in ("1.234,56", "1.234,56-", "(1.234,56)", "-12,5 %", "1 234,56 EUR", "0,00", "1.234", "4400", "+5")],
@@ -789,6 +1155,21 @@ class OnMac(unittest.TestCase):
             d.put(40, 76 + 13 * i, "Posten %d" % i); d.put(294, 76 + 13 * i, "-", "r"); d.put(420, 76 + 13 * i, de(1000.0 + i), "r")
         b = P.book(R.layout_of(d.pdf(), tempfile.mkdtemp()))
         self.assertEqual((grid(b["sheets"][0])[1], X.sum_range(b, None, "C2:C7")["sum"]), (["Posten 0", "-", "1000"], "6015"), grid(b["sheets"][0]))
+
+    def test_statement_of_values_over_thirty_pages(self):
+        """The touchstone through the real helper: PDFKit's words of thirty pages -- every row once, every cell in its column,
+        no figure the document does not name."""
+        d, truth, pages = values_statement(43)
+        t0 = perf_counter()
+        lay = R.layout_of(d.pdf(), tempfile.mkdtemp())
+        t1 = perf_counter()
+        b = P.book(lay)
+        print("thirty pages: helper %.1f s, grid %.2f s, %s, letters of page 2: %s" % (t1 - t0, perf_counter() - t1, X.overview(b), lay["pages"][1].get("letters")))
+        g = [r for sh in b["sheets"] for r in grid(sh)]
+        want = [[z, k, name, plain(m) if m is not None else "", plain(y) if y is not None else ""] for _, z, k, name, m, y in truth]
+        self.assertEqual((lay["count"], lay["cut"], len(b["sheets"])), (30, False, 1), X.overview(b))
+        self.assertEqual([v for v in figures(b) if v not in printed(d)], [])
+        self.assertEqual(g[-len(want):], want, g[:8])
 
     def test_picture_by_text_recognition(self):
         d = Doc(1500, 620)                                # large writing: the page as a picture, read by Apple's text recognition

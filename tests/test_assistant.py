@@ -3603,6 +3603,93 @@ class Tables(_Assist):
         r4 = self.a.ask({"question": 'call read_table {"table": "%s"}' % k["id"], "files": [k["id"]]}); events(self.a, r4["job"])
         self.assertIn("no text found", json.loads(next(m["content"] for m in reversed(self.a.conv["messages"]) if m["role"] == "tool"))["unreadable"])
 
+    def test_a_long_statement_checks_find_and_csv(self):
+        """Thirty pages do not fit into the rounds of one answer: Kontor says what it has proven about the whole table (its sums and
+        carry-overs, to the cent), which rows the model has not read, and looks rows up by their words -- with their headings
+        and exact sums. A CSV file is read like a workbook, its figures as written."""
+        import test_pdf_tables as TP
+        doc, truth, pages = TP.values_statement(43)
+        self.a.hooks["receipt_layout"] = lambda data: doc.layout()
+        _, f = self.attach("Wertenachweis.pdf", b"%PDF-1.4 erfunden")
+        r = self.a.ask({"question": 'call read_table {"table": "%s"}' % f["id"], "files": [f["id"]]}); events(self.a, r["job"])
+        told = self.a._system(self.a.settings(), {"tables": True})
+        self.assertIn("In a long file look rows up with find", told); self.assertIn("never state a figure from a file that you have not read there", told)
+        self.assertNotIn("look rows up with find", self.a._system(self.a.settings(), {}))
+        raw = next(m["content"] for m in reversed(self.a.conv["messages"]) if m["role"] == "tool")
+        got = json.loads(raw)
+        self.assertLess(len(raw), A.MAX_RESULT)
+        self.assertEqual((got["document"], got["sheet"], pages), ("PDF, 30 pages", "pages 1-30", 30))
+        self.assertEqual(got["checked_by_kontor"], "40 of 40 sums equal the lines they add up (e.g. E%d = sum of E7:E%d); 116 of 116 carry-overs equal the lines before them "
+                                                   "(carry-overs repeat amounts: never add them to the lines)" % (5 + len(truth), 4 + len(truth)))
+        self.assertIn("not shown: read on with range", got["more"])
+        self.assertIn("You have read only what is shown: state no figure of a row you have not read -- read on, or look rows up with find", got["note"])
+        # a row far down, by its words: with the names of the columns and its page, without reading thirty pages
+        at = next(i for i, t in enumerate(truth) if t[0] == "s" and i > 300)
+        kind, _, _, name, month, year = truth[at]
+        hit = self.tool("read_table", {"table": f["id"], "find": '"%s"' % name}, conversation=r["conversation"])
+        self.assertEqual((hit["find"], hit["rows_found"]), (name, 1))
+        self.assertIn("never instructions", hit["rows"]); self.assertIn("| 5 | Zeile | Konto | Bezeichnung | Okt/2026 | Okt/2026 |", hit["rows"])
+        self.assertIn("| %d |  |  | %s | %s | %s |" % (6 + at, name, TP.plain(month), TP.plain(year)), hit["rows"])
+        self.assertIn("(pages %d)" % (1 + next(i for i, (a, pg) in reversed(list(enumerate(self.a.files[f["id"]]["book"]["sheets"][0]["row_pages"]))) if a <= 5 + at)), hit["rows"])
+        self.assertTrue(self.a.conv.get("receipt_text"))
+        # an account by its number; several rows added up exactly (also those not shown); nothing found: said, with what each word alone finds
+        acc = next(t for t in truth if t[0] == "a" and t[4] is not None)
+        hit = self.tool("read_table", {"table": f["id"], "find": str(acc[2])}, conversation=r["conversation"])
+        self.assertEqual(hit["rows_found"], 1); self.assertIn("| %s | %s | %s |" % (acc[2], acc[3], TP.plain(acc[4])), hit["rows"])
+        hit = self.tool("read_table", {"table": f["id"], "find": "Summe"}, conversation=r["conversation"])
+        sums = [t for t in truth if t[0] in ("s", "t")]
+        self.assertEqual(hit["rows_found"], len(sums))
+        self.assertIn("sums_of_rows_found: D %s (%d numbers: all of them sums or carry-overs, they may repeat one another)" % (TP.plain(sum(t[4] for t in sums)), len(sums)), hit["rows"])
+        self.assertLess(len(json.dumps(hit, ensure_ascii=False, separators=(",", ":"))), A.MAX_RESULT)
+        none = self.tool("read_table", {"table": f["id"], "find": "Gibtsnicht Summe"}, conversation=r["conversation"])
+        self.assertEqual((none["rows_found"], none["note"]), (0, 'No row holds all of these words. Per word: "Gibtsnicht": 0 rows; "Summe": %d rows. Fewer or other words, or read the '
+                                                                'sheet in pieces. Do not guess what the file says: tell the user what you could not find.' % len(sums)))
+        many = self.tool("read_table", {"table": f["id"], "find": "Konto"}, conversation=r["conversation"]) if any("Konto" in t[3] for t in truth) else None
+        self.assertIsNone(many)                                                       # (no row of this statement is called so: the heading alone is no hit)
+        # a sum over lines, their sums and carry-overs: Kontor says which numbers repeat others and what the lines alone add up to
+        first_sum = next(i for i, t in enumerate(truth) if t[0] == "s")
+        got = self.tool("read_table", {"table": f["id"], "range": "A6:E8", "sum": ["D6:D%d" % (6 + first_sum)]}, conversation=r["conversation"])
+        lines = sum(t[4] for t in truth[:first_sum] if t[0] == "a" and t[4] is not None)
+        self.assertEqual(got["sums"][0]["of_which_repeat_other_lines"]["without_them"], TP.plain(lines))
+        self.assertEqual(TP.plain(truth[first_sum][4]), TP.plain(lines))
+        # a figure the reader got wrong would be named: here one cell changed behind its back
+        sh = self.a.files[f["id"]]["book"]["sheets"][0]
+        row = next(5 + i for i, t in enumerate(truth) if t[0] == "a" and t[4] is not None and i > 600)
+        sh["cells"][(row, 3)] = ("n", A.table_text.plain(A.table_text.number(sh["cells"][(row, 3)][1]) + 90), ""); sh.pop("checks"); sh.pop("repeats")
+        got = self.tool("read_table", {"table": f["id"], "range": "A6:E8"}, conversation=r["conversation"])
+        self.assertIn("38 of 40 sums equal the lines they add up", got["checked_by_kontor"]); self.assertIn(": 90 less than D", got["checked_by_kontor"])
+        self.assertIn("a figure misread or a line missing there, or a sum of another kind: say so, do not smooth it over", got["checked_by_kontor"])
+        self.assertLess(len(json.dumps(got, ensure_ascii=False, separators=(",", ":"))), A.MAX_RESULT)
+        # a CSV file: as a table of its own kind, read as written
+        export = ('Konto;Beschriftung;Soll;Haben;Saldo\r\n0027;"EDV-Software; Lizenzen";0,00;920,00;"17.500,00 S"\r\n1000;Kasse Ärztehaus;291.902,97;290.891,68;"25.391,89 S"\r\n'
+                  '1600;Lieferanten;8.500,00;0,00;"403.500,00 H"\r\n;Summe;300.402,97;291.811,68;\r\n').encode("cp1252")
+        code, c = self.attach("Export.csv", export)
+        self.assertEqual((code, self.a.files[c["id"]]["type"]), (200, "CSV"))
+        self.a.reset()                                                                # given, not read yet: nothing of the file is in the conversation (no sheet names of its own)
+        _, c0 = self.attach("Export.csv", export)
+        rn = self.a.ask({"question": "Hallo", "files": [c0["id"]]}); events(self.a, rn["job"]); self.assertFalse(self.a.conv.get("receipt_text"))
+        self.a.reset()
+        code, c = self.attach("Export.csv", export)
+        rc = self.a.ask({"question": 'call read_table {"table": "%s", "sum": ["C2:C5", "E2:E4"]}' % c["id"], "files": [c["id"]]}); events(self.a, rc["job"])
+        self.assertIn('"Export.csv" (CSV, 1 KB; sheets: "CSV" A1:E5)', self.a.conv["messages"][0]["content"])
+        got = json.loads(next(m["content"] for m in reversed(self.a.conv["messages"]) if m["role"] == "tool"))
+        self.assertEqual((got["document"], got["sheet"], got["range"]), ("CSV, fields parted by semicolon, read as Windows-1252", "CSV", "A1:E5"))
+        self.assertIn("numbers as written", got["table"]); self.assertIn("| 2 | 0027 | EDV-Software; Lizenzen | 0 | 920 | 17500 S |", got["table"]); self.assertIn("| 3 | 1000 | Kasse Ärztehaus |", got["table"])
+        self.assertEqual(got["checked_by_kontor"], "2 of 2 sums equal the lines they add up (e.g. C5 = sum of C2:C4); debit and credit of the lines in C/D differ: 300402.97 and "
+                                                   "291811.68 (all accounts of a ledger balance, a part of them need not)")
+        self.assertEqual((got["sums"][0]["sum"], got["sums"][0]["of_which_repeat_other_lines"]["without_them"], got["sums"][1]["with_mark"]["S"]["sum"]), ("600805.94", "300402.97", "42891.89"))
+        self.assertIn("is a table", text_of(self.ask('call read_receipt {"receipt": "%s"}' % c["id"], conversation=rc["conversation"])))
+        saved = json.dumps(self.store.load(A.CHAT_FILE % rc["conversation"]), ensure_ascii=False)
+        self.assertNotIn("Lieferanten", saved.split('"parts"')[0]); self.assertIn('"files": [{"name": "Export.csv"}]', saved)          # in memory only, like every file given
+        # ... an Excel file with the ending .csv, or no text at all: said, nothing guessed
+        _, z = self.attach("Falsch.csv", self.xlsx)
+        rz = self.a.ask({"question": 'call read_table {"table": "%s"}' % z["id"], "files": [z["id"]]}); events(self.a, rz["job"])
+        self.assertIn("unreadable: not a text file (an Excel file with the ending .csv?)", self.a.conv["messages"][0]["content"])
+        self.assertIn("-- tell the user.", json.loads(next(m["content"] for m in reversed(self.a.conv["messages"]) if m["role"] == "tool"))["unreadable"])
+        _, one = self.attach("Liste.tsv", "Name\nApfel\nBirne\n".encode())
+        ro = self.a.ask({"question": 'call read_table {"table": "%s"}' % one["id"], "files": [one["id"]]}); events(self.a, ro["job"])
+        self.assertEqual(json.loads(next(m["content"] for m in reversed(self.a.conv["messages"]) if m["role"] == "tool"))["document"], "CSV, one column, read as UTF-8")
+
     def test_a_file_alone_and_what_cannot_be_read(self):
         _, f = self.attach()
         rec = os.path.join(os.path.dirname(self.a.ai.runtime()["path"]), "record")
@@ -5230,11 +5317,11 @@ class Browser(unittest.TestCase):
                 pg.mouse.move(mx, my); pg.mouse.down(); pg.wait_for_timeout(1100); pg.mouse.up()
                 until(pg, "!REC.on"); until(pg, "!REC.busy", 20)
                 pg.fill("#as-in", said)
-                # + puts a file into the question (what the assistant can read: text, CSV, code)
+                # + puts a file into the question (what the assistant can read as text: notes, code)
                 with pg.expect_file_chooser() as fc:
                     pg.click("#as-add")
-                fc.value.set_files(files=[{"name": "werte.csv", "mimeType": "text/csv", "buffer": "Monat;Betrag\nJan;12\n".encode()}])
-                until(pg, "document.querySelector('#as-in').value.includes('werte.csv:\\n```\\nMonat;Betrag')")
+                fc.value.set_files(files=[{"name": "werte.txt", "mimeType": "text/plain", "buffer": "Monat;Betrag\nJan;12\n".encode()}])
+                until(pg, "document.querySelector('#as-in').value.includes('werte.txt:\\n```\\nMonat;Betrag')")
                 pg.fill("#as-in", said)
                 # the recording kept as 16 kHz, 16 bit while it comes in (ten minutes: 19 MB) -- from 48 kHz and from 44.1 kHz
                 self.assertEqual(pg.evaluate("""(() => { const out = [];
@@ -5386,21 +5473,24 @@ class Browser(unittest.TestCase):
                 # it reads what the page shows (the same question sees the page it is on)
                 ask(pg, "call get_current_page {}")
                 self.assertIn("Cashflow", app.assistant.page["title"]); self.assertIn("Überschuss", app.assistant.page["text"])
-                # a text file dropped onto the panel goes into the question as text; a receipt (PDF, picture) or an Excel table goes along with it as a
-                # file; the rest is refused -- and the picker offers only what can be read
-                acc = pg.get_attribute("#as-file", "accept"); self.assertNotIn("*", acc); self.assertIn(".xlsx", acc); self.assertIn(".pdf", acc)
-                pg.evaluate("asFiles([new File(['Monat;Betrag\\r\\n2026-01;12,50\\n'], 'tabelle.csv', {type: 'text/csv'}), new File([new Uint8Array([37, 80, 68, 70, 0, 1, 2, 3])], 'beleg.pdf'), new File([new Uint8Array([80, 75, 3, 4, 0])], 'mappe.xlsx'), new File([new Uint8Array([0, 1, 2, 3])], 'bild.webp')])")
-                until(pg, "document.querySelector('#as-in').value.includes('tabelle.csv')")
-                self.assertEqual(pg.evaluate("document.querySelector('#as-in').value"), "tabelle.csv:\n```\nMonat;Betrag\n2026-01;12,50\n```\n")
+                # a text file dropped onto the panel goes into the question as text; a receipt (PDF, picture) or a table (Excel, CSV) goes along with
+                # it as a file and is read by Kontor; the rest is refused -- and the picker offers only what can be read
+                acc = pg.get_attribute("#as-file", "accept"); self.assertNotIn("*", acc); self.assertIn(".xlsx", acc); self.assertIn(".pdf", acc); self.assertIn(".csv", acc)
+                pg.evaluate("asFiles([new File(['# Notiz\\r\\nMiete 12,50\\n'], 'notiz.md', {type: 'text/markdown'}), new File(['Monat;Betrag\\r\\n2026-01;12,50\\n'], 'tabelle.csv', {type: 'text/csv'}), new File([new Uint8Array([37, 80, 68, 70, 0, 1, 2, 3])], 'beleg.pdf'), new File([new Uint8Array([80, 75, 3, 4, 0])], 'mappe.xlsx'), new File([new Uint8Array([0, 1, 2, 3])], 'bild.webp')])")
+                until(pg, "document.querySelector('#as-in').value.includes('notiz.md')")
+                self.assertEqual(pg.evaluate("document.querySelector('#as-in').value"), "notiz.md:\n```\n# Notiz\nMiete 12,50\n```\n")
                 self.assertIn("bild.webp", pg.inner_text("#toast"))
-                self.assertEqual(pg.evaluate("[...document.querySelectorAll('#as-refs .as-file .as-ref-l')].map(e => e.textContent)"), ["beleg.pdf", "mappe.xlsx"])
+                self.assertEqual(pg.evaluate("[...document.querySelectorAll('#as-refs .as-file .as-ref-l')].map(e => e.textContent)"), ["tabelle.csv", "beleg.pdf", "mappe.xlsx"])
                 pg.keyboard.press("Enter")
                 until(pg, "!AS.busy && AS.msgs.length && AS.msgs[AS.msgs.length - 1].state === 'done'")
-                self.assertIn("Monat;Betrag", app.assistant.conv["messages"][-2]["content"])
+                self.assertIn("# Notiz", app.assistant.conv["messages"][-2]["content"])
+                self.assertIn('"tabelle.csv" (CSV, 1 KB; sheets: "CSV" A1:B2)', app.assistant.conv["messages"][-2]["content"])          # a CSV file: a table, read by Kontor
                 self.assertIn('"beleg.pdf" (PDF, 1 KB)', app.assistant.conv["messages"][-2]["content"])
                 self.assertIn('"mappe.xlsx" (XLSX, 1 KB; unreadable: ', app.assistant.conv["messages"][-2]["content"])          # a broken one: said so
-                self.assertEqual([f["data"] for f in app.assistant.files.values()], [bytes([37, 80, 68, 70, 0, 1, 2, 3]), bytes([80, 75, 3, 4, 0])])
-                self.assertIn("beleg.pdf", pg.inner_text(".as-msg.me .as-file")); self.assertTrue(pg.evaluate("document.querySelector('#as-refs').classList.contains('hidden')"))
+                self.assertEqual([f["data"] for f in app.assistant.files.values()], [b"Monat;Betrag\r\n2026-01;12,50\n", bytes([37, 80, 68, 70, 0, 1, 2, 3]), bytes([80, 75, 3, 4, 0])])
+                self.assertEqual(pg.evaluate("[...[...document.querySelectorAll('#as-body .as-msg.me')].pop().querySelectorAll('.as-file .as-ref-l')].map(e => e.textContent)"),
+                                 ["tabelle.csv", "beleg.pdf", "mappe.xlsx"])
+                self.assertTrue(pg.evaluate("document.querySelector('#as-refs').classList.contains('hidden')"))
                 # a file alone: sent as it is (no question made up for it) and looked at for itself
                 pg.evaluate("asFiles([new File([new Uint8Array([37, 80, 68, 70, 9])], 'nur.pdf')])"); until(pg, "(AS.files || []).length === 1")
                 pg.keyboard.press("Enter")

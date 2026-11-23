@@ -7986,7 +7986,7 @@ const MIC_SVG = '<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="tr
 const AS_PLUS = '<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>';
 const AS_CROSS = '<svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
 const AS_ACCEPT = '.txt,.csv,.tsv,.md,.json,.xml,.html,.htm,.yaml,.yml,.toml,.log,.ini,.cfg,.conf,.sql,.py,.js,.ts,.sh,.swift,.pdf,.png,.jpg,.jpeg,.heic,.gif,.xlsx,.xlsm';          // only what can be read: the rest greyed out in the picker
-const AS_RECEIPT = /\.(pdf|png|jpe?g|heic|gif)$/i, AS_TABLE = /\.(xlsx|xlsm)$/i, AS_FILES_MAX = 6, AS_FILE_BYTES = 20 * 1024 * 1024;          // receipts for the assistant (assistant.RECEIPT_TYPES, ATTACH_BYTES)
+const AS_RECEIPT = /\.(pdf|png|jpe?g|heic|gif)$/i, AS_TABLE = /\.(xlsx|xlsm|csv|tsv)$/i, AS_FILES_MAX = 6, AS_FILE_BYTES = 20 * 1024 * 1024;          // receipts for the assistant (assistant.RECEIPT_TYPES, ATTACH_BYTES)
 // the microphone button follows the speech model: there as soon as it is loaded, gone when it is deleted -- in the panel as it
 // stands (what is typed and the conversation stay), not only after reloading the page
 function asMicSync() {
@@ -8197,7 +8197,7 @@ async function asFiles(files) {
   const room = (AS.st || {}).question_limit || 9000;
   let given = false;
   for (const f of files.slice(0, AS_FILES_MAX)) {
-    // an Excel table, a PDF or a picture: goes to Kontor with the question and is read there (a table or the pages of a document as a
+    // an Excel or CSV table, a PDF or a picture: goes to Kontor with the question and is read there (a table or the pages of a document as a
     // grid; a receipt by macOS's text recognition, filed only with the click on its card) -- nothing is stored, no right needed to give it
     if (AS_TABLE.test(f.name || '') || AS_RECEIPT.test(f.name || '') || ['application/pdf', 'image/png', 'image/jpeg', 'image/heic', 'image/gif'].includes(f.type || '')) {
       if (f.size > AS_FILE_BYTES) toast(t('ki_beleg_zu_gross', f.name, AS_FILE_BYTES / 1048576), 5000);

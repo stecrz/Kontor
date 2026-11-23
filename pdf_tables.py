@@ -16,6 +16,7 @@ Pages without a table are their lines, one below the other (column A). Nothing i
 (counts, sizes, kinds) like any other untrusted data."""
 from __future__ import annotations
 
+import bisect
 import math
 import re
 from datetime import date
@@ -54,14 +55,26 @@ class Word:
 
 class Cell:
     """Words a space apart, as one: a text or a figure."""
-    __slots__ = ("x0", "x1", "words")
+    __slots__ = ("x0", "x1", "words", "spaced", "_n", "_text", "_number")
 
     def __init__(self, w: Word):
         self.x0, self.x1, self.words = w.x0, w.x1, [w]
+        self.spaced = 0                                  # how often two of its words were taken as one figure's groups (1 234)
+        self._n = -1                                     # (the words its text and kind were last made from: they only ever grow)
 
     @property
     def text(self) -> str:
-        return " ".join(w.text for w in self.words)
+        if self._n != len(self.words):
+            self._n, self._text, self._number = len(self.words), " ".join(w.text for w in self.words), None
+        return self._text
+
+    @property
+    def number(self) -> bool:
+        """A figure: any number as documents write it, in a few words (with its unit, mark or sign)."""
+        text = self.text
+        if self._number is None:
+            self._number = len(self.words) <= 4 and numeric(text)
+        return self._number
 
 
 class Line:
@@ -70,8 +83,11 @@ class Line:
     def __init__(self, yc: float, h: float, cells: List[Cell], page: int):
         self.yc, self.h, self.cells, self.page = yc, h, cells, page
         self.plain = False                               # (True: what it says is text, whatever it looks like)
-        self.figures = sum(1 for c in cells if len(c.words) <= 4 and amountlike(c.text))        # amounts (with decimals)
-        self.numbers = sum(1 for c in cells if len(c.words) <= 4 and numeric(c.text))           # ... and whole numbers
+        self.count()
+
+    def count(self) -> None:
+        self.figures = sum(1 for c in self.cells if len(c.words) <= 4 and amountlike(c.text))   # amounts (with decimals)
+        self.numbers = sum(1 for c in self.cells if c.number)      # ... and whole numbers
 
     @property
     def text(self) -> str:
@@ -116,16 +132,22 @@ def _words(page: Any) -> List[Word]:
     return out
 
 
-def _joins(a: Word, b: Word, unit: float) -> bool:
+def _groups(a: Word, b: Word) -> bool:
+    """Two words that would read as one figure if a space parted its thousands: 1 234,56 -- or 3 and 250,00, 18 and 231."""
+    return bool(_DIGITS.match(a.text) and _GROUP.match(b.text))
+
+
+def _joins(a: Word, b: Word, unit: float, spaced: bool = True) -> bool:
     """Whether two words next to each other are one cell: a normal space apart -- but never a label and its amount, nor two
-    amounts (a thousands group written with a space is one: 1 234,56)."""
+    amounts. A thousands group written with a space is one (1 234,56) only in a document that writes its figures so (spaced,
+    see _spaced): elsewhere 18 and 231 a space apart are two figures of two columns, never 18231."""
     if b.x0 - a.x1 > SPACE * unit:
         return False
     fa, fb = bool(_AMOUNT.match(a.text)), bool(_AMOUNT.match(b.text))
     if _SIGN.match(a.text) or _SIGN.match(b.text):       # a sign alone: with the word a space beside it -- never with a unit, a
         return not _UNIT.match(b.text if _SIGN.match(a.text) else a.text)       # mark or a sign (those are settled with the columns)
-    if _DIGITS.match(a.text) and _GROUP.match(b.text):
-        return b.x0 - a.x1 > -0.15 * unit                # (boxes lying on top of each other are two figures, not 1 234)
+    if _groups(a, b):
+        return spaced and b.x0 - a.x1 > -0.15 * unit     # (boxes lying on top of each other are two figures, not 1 234)
     if _UNIT.match(a.text) or _UNIT.match(b.text):
         return True
     return not (fa or fb)
@@ -137,7 +159,7 @@ def _lone(c: Cell) -> bool:
 
 
 def _is_figure(c: Cell) -> bool:
-    return len(c.words) <= 4 and numeric(c.text)
+    return c.number
 
 
 def _unit(row: List[Word]) -> float:
@@ -153,6 +175,8 @@ def _prose(row: List[Word], unit: float) -> bool:
     as it reads, whatever figures it names."""
     if len(row) < 7:
         return False
+    if re.fullmatch(r"\d{2,}", row[0].text) and row[1].x0 - row[0].x1 > SPACE * unit:
+        return False                                     # a number set apart in front (an account): a line of a table that has no figures
     end = [w for w in row if not _UNIT.match(w.text)]
     if end and (_AMOUNT.match(end[-1].text) or (len(end) > 1 and numeric(end[-1].text) and end[-1].x0 - end[-2].x1 > SPACE * unit)):
         return False                                     # it ends in an amount, or a number set apart: a line of a table with a long label
@@ -217,7 +241,7 @@ def _deskew(words: List[Word]) -> List[Word]:
     return words
 
 
-def _lines(words: List[Word], page: int) -> List[Line]:
+def _lines(words: List[Word], page: int, spaced: bool = True) -> List[Line]:
     words = sorted(words, key=lambda w: (w.yc, w.x0))
     # a PDF's own text gives every word the box of its letters: a minus is a thin stroke, a word of small letters lower than
     # one with capitals -- no word counts as flatter than most of what the page's words are high
@@ -241,13 +265,33 @@ def _lines(words: List[Word], page: int) -> List[Line]:
         whole = _prose(row, unit)
         for prev, w in zip(row, row[1:]):
             c = cells[-1]
-            if whole or _joins(prev, w, unit):           # (a sign a space from a figure on both sides: all one cell -- text)
+            if whole or _joins(prev, w, unit, spaced):   # (a sign a space from a figure on both sides: all one cell -- text)
                 c.words.append(w)
                 c.x1 = max(c.x1, w.x1)
+                c.spaced += not whole and _groups(prev, w)
             else:
                 cells.append(Cell(w))
         out.append(Line(sum(w.yc for w in row) / len(row), unit, _fuse(_paged(cells, unit), unit), page))
     return out
+
+
+_GROUPED = re.compile(r"\d{1,3}(?:[.,']\d{3})+(?:[.,]\d+)?|\d{5,}[.,]\d{1,2}")
+
+
+def _spaced(pages: List[List[Line]]) -> bool:
+    """Whether the document writes thousands with a space (1 234,56): only where it shows so itself -- a figure of three
+    groups (1 234 567: two neighbours do not look like that by chance), and none that parts its thousands another way
+    (1.234,56) or not at all (12345,67). Otherwise two numbers a space apart stay two: a count and a price, two narrow
+    columns -- read as one they would be a figure the document never names."""
+    proof = False
+    for lines in pages:
+        for ln in lines:
+            for c in ln.cells:
+                proof = proof or c.spaced >= 2
+                for w in c.words:
+                    if _GROUPED.fullmatch(w.text.strip("()-–−+%")):
+                        return False
+    return proof
 
 
 _PAGE_OPEN = re.compile(r"(?i)\b(seite|blatt|page)\W{0,3}(?:\d{1,4}(?:\s*(?:von|/|of))?)?\W{0,2}$")
@@ -265,6 +309,51 @@ def _paged(cells: List[Cell], unit: float) -> List[Cell]:
         else:
             out.append(c)
     return out
+
+
+def _tails(lines: List[Line]) -> None:
+    """A figure right behind or before a text, a space apart, is part of that text -- "Darlehen 3,2 %", "Zinssatz 4,25",
+    "1,5 Zimmer" -- unless it stands in a column of figures: other lines have a figure of their own (no text a space beside
+    it) ending on the same right edge. Such a figure is no value of the table: left as a cell of its own it got a column
+    to itself or, worse, stood under the heading of the next column of figures in a line that leaves that column empty."""
+    near: List[Tuple[Line, int, int]] = []               # (line, the figure's cell, the text's cell)
+    edges: List[float] = []                              # where the figures standing free end
+    for ln in lines:
+        gap = SPACE * ln.h
+        for i, c in enumerate(ln.cells):
+            if not (len(c.words) <= 4 and amountlike(c.text)) or _lone(c):
+                continue
+            before = ln.cells[i - 1] if i else None
+            after = ln.cells[i + 1] if i + 1 < len(ln.cells) else None
+            text = [j for j, o in ((i - 1, before), (i + 1, after)) if o is not None and not _lone(o) and not _is_figure(o)
+                    and (c.x0 - o.x1 if j < i else o.x0 - c.x1) <= gap]
+            if text:
+                near.append((ln, i, text[0]))
+            else:
+                edges.append(c.x1)
+    if not near:
+        return
+    edges.sort()
+    merged = set()
+    into: Dict[int, Cell] = {}                           # a cell that went into another: where it is now
+    for ln, i, j in near:
+        c, o = into.get(id(ln.cells[i]), ln.cells[i]), into.get(id(ln.cells[j]), ln.cells[j])
+        at = bisect.bisect_left(edges, ln.cells[i].x1 - 0.3 * ln.h)
+        if c is o or (at < len(edges) and edges[at] <= ln.cells[i].x1 + 0.3 * ln.h):
+            continue                                     # in a column of figures: a label ending a hair before its amount
+        merged.add(id(ln))
+        a, b = (o, c) if o.x0 <= c.x0 else (c, o)
+        a.words = a.words + b.words
+        a.x0, a.x1 = min(a.x0, b.x0), max(a.x1, b.x1)
+        b.words = []                                     # (taken out below: the places of the line's other cells stay as counted)
+        into[id(b)] = a
+        for k, v in list(into.items()):
+            if v is b:
+                into[k] = a
+    for ln in lines:
+        if id(ln) in merged:
+            ln.cells = [c for c in ln.cells if c.words]
+            ln.count()
 
 
 # -- what repeats on every page ----------------------------------------------------------------------------------------------
@@ -362,11 +451,35 @@ def _river_lines(lines: List[Line]) -> List[Line]:
     """The table's lines, and with them the lines that are a label alone standing left of all figures (a heading within
     the table, a label running over two lines): they say where the labels' column ends."""
     table = _table_lines(lines)
-    edges = [c.x0 for ln in table for c in ln.cells if len(c.words) <= 4 and numeric(c.text)]
+    edges = [c.x0 for ln in table for c in ln.cells if c.number]
     if not edges:
         return table
     edge, own = min(edges), {id(ln) for ln in table}
     return table + [ln for ln in lines if id(ln) not in own and len(ln.cells) == 1 and ln.cells[0].x1 < edge and not ln.numbers]
+
+
+def _columns(lines: List[Line]) -> List[Tuple[float, float]]:
+    """The rivers of a table: from its lines with figures -- and then once more with the lines between them that have none
+    but keep to these columns (no cell lies across a river's edge): the heading of a group with its own number in front, in a
+    column no line with figures fills (the line of the statement beside the accounts' numbers). Without them that column
+    ran into its neighbour. They can only add a river, never take one."""
+    table = _river_lines(lines)
+    rivers = _rivers(table)
+    if not rivers:
+        return rivers
+    own = {id(ln) for ln in table}
+    at = [i for i, ln in enumerate(lines) if id(ln) in own]
+    more = []
+    for ln in lines[at[0] + 1:at[-1]]:
+        if id(ln) in own or ln.plain or len(ln.cells) < 2:
+            continue
+        if not any(min(c.x1, b) - max(c.x0, a) > 0.5 and not (c.x0 >= a - 0.5 and c.x1 <= b + 0.5) for c in ln.cells for a, b in rivers):
+            more.append(ln)
+    if not more:
+        return rivers
+    again = _rivers(table + more)
+    kept = all(any(min(b, d) - max(a, c) > 0 for c, d in again) for a, b in rivers)
+    return again if kept and len(again) > len(rivers) else rivers
 
 
 def _rivers(lines: List[Line]) -> List[Tuple[float, float]]:
@@ -379,7 +492,7 @@ def _rivers(lines: List[Line]) -> List[Tuple[float, float]]:
     events: List[Tuple[float, int, int]] = []
     for ln in lines:
         for c in ln.cells:
-            strict = 1 if _lone(c) or (len(c.words) <= 4 and numeric(c.text)) else 0
+            strict = 1 if _lone(c) or c.number else 0
             events.append((c.x0, 1, strict))
             events.append((max(c.x1, c.x0 + 0.01), -1, strict))
     events.sort()
@@ -422,7 +535,7 @@ def _between_figures(lines: List[Line], rivers: List[Tuple[float, float]], h: fl
     """Rivers that long texts cross too often to count above, found from the figures: between two columns of figures (the
     labels of the totals under an invoice run over "quantity" and "price"), and at the left edge of a column of figures whose
     labels end right before it -- where no figure stands and texts cross in fewer than four of ten lines."""
-    spans = sorted((c.x0, c.x1) for ln in lines for c in ln.cells if len(c.words) <= 4 and numeric(c.text))
+    spans = sorted((c.x0, c.x1) for ln in lines for c in ln.cells if c.number)
     blocks: List[List[float]] = []                       # the columns of figures, from left to right: [left, right, how many figures]
     for x0, x1 in spans:
         if blocks and x0 - blocks[-1][1] < RIVER * h:
@@ -439,7 +552,7 @@ def _between_figures(lines: List[Line], rivers: List[Tuple[float, float]], h: fl
         for ln in lines:
             left = right = False
             for c in ln.cells:
-                fig = len(c.words) <= 4 and numeric(c.text)
+                fig = c.number
                 if fig and c.x1 <= a + 0.01:
                     left = True
                 elif fig and c.x0 >= b - 0.01:
@@ -456,7 +569,7 @@ def _between_figures(lines: List[Line], rivers: List[Tuple[float, float]], h: fl
         reach = None
         for ln in lines:
             for c in ln.cells:
-                if _lone(c) or (len(c.words) <= 4 and numeric(c.text)):
+                if _lone(c) or c.number:
                     continue
                 if c.x1 <= edge + 0.5:
                     before += 1
@@ -467,7 +580,7 @@ def _between_figures(lines: List[Line], rivers: List[Tuple[float, float]], h: fl
             a = min(reach, edge - 0.01)
             near = [r for r in rivers + out if min(edge, r[1]) - max(a, r[0]) > 0]          # a river there already, ending too early: it runs on to the figures
             if near:
-                r = near[-1]
+                r = max(near, key=lambda r: r[1])        # (the one right before these figures -- never one further left: it would run across a column)
                 (rivers if r in rivers else out).remove(r)
                 a = r[0]
             out.append((a, edge))
@@ -609,11 +722,11 @@ def figure(text: str, de: bool = True, unsure: bool = False) -> Tuple[str, str]:
         neg, core = neg != (core[0] != "+"), core[1:].strip()
     elif core[-1:] in SIGNS and len(core) > 1:
         neg, core = neg != (core[-1] != "+"), core[:-1].strip()
-    if de:
-        ok = re.fullmatch(r"\d{1,3}(?:[. ']\d{3})+(?:,\d+)?|\d+(?:,\d+)?", core)
+    if de:                                               # (one sign between all groups of a figure: 18 231.417 is no figure)
+        ok = re.fullmatch(r"\d{1,3}(?:\.\d{3})+(?:,\d+)?|\d{1,3}(?: \d{3})+(?:,\d+)?|\d{1,3}(?:'\d{3})+(?:,\d+)?|\d+(?:,\d+)?", core)
         plain = re.sub(r"[. ']", "", core).replace(",", ".")
     else:
-        ok = re.fullmatch(r"\d{1,3}(?:[, ']\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?", core)
+        ok = re.fullmatch(r"\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d{1,3}(?: \d{3})+(?:\.\d+)?|\d{1,3}(?:'\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?", core)
         plain = re.sub(r"[, ']", "", core)
     whole = re.sub(r"\D", "", plain.split(".")[0])
     if not ok or len(whole) > 15 or (len(whole) > 1 and whole[0] == "0" and "." not in plain) \
@@ -678,7 +791,12 @@ def _signs(lines: List[Line], bounds: List[float], spans: Dict[int, Tuple[float,
     column of figures, its line without one: a dash for "nothing". In a column of signs only, the table says whose they are:
     lines with a figure on one side only (accounting formats print the minus at the left edge of the cell: label, minus,
     figure; a column of signs behind the amounts: amount, minus, nothing) -- or signs written onto figures elsewhere
-    (1.234,56-), or standing right behind the figure before them, or balances that run on by the amounts with these signs. A column of dashes with a heading of its own, beside the next column's: a column without values. Nothing
+    (1.234,56-), or standing right behind the figure before them, or balances that run on by the amounts with these signs. A
+    column of dashes with a heading of its own, beside the next column's: a column without values (every line has one, or they
+    are set like their heading: on its edge). Where dates or texts stand in the signs' column in other lines, set like the
+    signs (on the same right or left edge), they are dashes for "nothing" there, never the sign of the figure beside them (a
+    date of leaving, a remark: "-" where there is none) -- with one such line only, nobody can tell: shown as (-) on the
+    figure after them, which makes that no number. Nothing
     says it: before the figure after it (the usual way such a sign gets there), counted -- with a plus among them, or the
     table saying both: shown as (-) on both figures, which makes neither a number."""
     out: Dict[Tuple[int, int], List[Tuple[int, str]]] = {}
@@ -710,18 +828,31 @@ def _signs(lines: List[Line], bounds: List[float], spans: Dict[int, Tuple[float,
                     close.setdefault(own, []).append(gl <= 0.6 * ln.h and gr >= 3.0 * gl)
     way: Dict[int, str] = {}
     full: Dict[int, bool] = {}
+    held: Dict[int, List[Tuple[float, float]]] = {}      # per column: where the texts and dates in it stand, in lines with figures
+    for r, ln in enumerate(lines):
+        if ln.numbers:
+            for k, c in zip(where[r], ln.cells):
+                if not _lone(c) and not _is_figure(c):
+                    held.setdefault(k, []).append((c.x0, c.x1))
     for own, items in waiting.items():
         rows = {r for r, _, _, _ in items}
         only_l = sum(1 for _, _, kl, kr in items if kl is not None and kr is None)
         only_r = sum(1 for _, _, kl, kr in items if kr is not None and kl is None)
         both = sum(1 for _, _, kl, kr in items if kl is not None and kr is not None)
-        side = own + 1 if only_r or both else own - 1    # the column these dashes could stand for "nothing" beside
+        figs = [k for _, _, kl, kr in items for k in ((kr,) if only_r or both else (kl,)) if k is not None]
+        side = max(sorted(set(figs)), key=figs.count) if figs else own + 1 if only_r or both else own - 1    # the column of figures these dashes could stand for "nothing" beside
         beside = [r for r, ln in enumerate(lines) if any(k == side and _is_figure(c) for k, c in zip(where[r], ln.cells))]
         full[own] = len(beside) >= 3 and all(r in rows for r in beside)
-        headed = any(r not in rows and own in ks and side in ks for r, ks in enumerate(where))
+        heads = [ln.cells[j] for r, ln in enumerate(lines) if r not in rows and side in where[r] for j, k in enumerate(where[r]) if k == own]
         plus = any(lines[r].cells[i].text == "+" for r, i, _, _ in items)
-        if headed and not plus and len(rows) >= 0.9 * max(1, len(beside)):
-            way[own] = "own"
+        signs = [(lines[r].cells[i], 0.35 * lines[r].h) for r, i, _, _ in items]
+        like = lambda x0, x1: any(abs(c.x1 - x1) <= tol or abs(c.x0 - x0) <= tol for c, tol in signs)      # set like a sign here: on its right or left edge
+        under = bool(heads) and all(any(abs(c.x1 - hc.x1) <= tol or abs(c.x0 - hc.x0) <= tol for hc in heads) for c, tol in signs)
+        among = sum(1 for x0, x1 in held.get(own, ()) if like(x0, x1))
+        if not plus and (among >= 2 or (heads and (under or len(rows) >= 0.9 * max(1, len(beside))))):
+            way[own] = "own"                             # dates or texts stand in this column, set like these dashes; or a heading of its own: they say "nothing"
+        elif among and not plus:
+            way[own] = "none"                            # (one such, no heading: nobody can tell -- the figure after such a sign is no number)
         elif only_l and not only_r:
             way[own] = "left"
         elif only_r and not only_l:
@@ -759,6 +890,8 @@ def _signs(lines: List[Line], bounds: List[float], spans: Dict[int, Tuple[float,
                 out[(r, i)] = [(kl if kl is not None else kr, t)]
             elif w == "line" and kl is not None:
                 out[(r, i)] = [(kl, "(%s)" % t), (kr, "(%s)" % t)]
+            elif w == "none" and (kl is not None or kr is not None):
+                out[(r, i)] = [(kr if kr is not None else kl, "(%s)" % t)]       # (on the figure such a sign would be the sign of)
             else:                                        # a dash for "nothing": in the column of figures beside it that this
                 k = own                                  # line leaves empty (set in the middle of the cell), else in its own
                 for j in (own + 1, own - 1):
@@ -770,6 +903,8 @@ def _signs(lines: List[Line], bounds: List[float], spans: Dict[int, Tuple[float,
 
 
 _MARK = re.compile(r"^(?:S|H|(?i:%s))$" % _MONEY)
+_WORDS = re.compile(r"[^\W\d_]{3}")                      # a word: three letters in a row
+_CODE = re.compile(r"^[A-ZÄÖÜ]{2,4}\.?$")                # capitals only, short: a money, a unit, a mark
 
 
 def _sheet(lines: List[Line], rivers: List[Tuple[float, float]], de: bool, unsure: bool, first: int, last: int) -> dict:
@@ -780,17 +915,25 @@ def _sheet(lines: List[Line], rivers: List[Tuple[float, float]], de: bool, unsur
     edges: Dict[Tuple[int, int], Tuple[float, float, float]] = {}       # left and right end of what a cell holds, and its line's height
     for ln in lines:
         for c in ln.cells:
-            if bounds and len(c.words) <= 4 and numeric(c.text):
+            if bounds and c.number:
                 k = _column(c, bounds)
                 spans[k] = (min(spans[k][0], c.x0), max(spans[k][1], c.x1)) if k in spans else (c.x0, c.x1)
     signs, apart = _signs(lines, bounds, spans, de, unsure) if bounds else ({}, 0)
     amounts = set()                                      # cells that hold one amount (with decimals) as written
+    kept = 0                                             # cells where an amount stands with something else and is no number (said to the model)
     for r, ln in enumerate(lines):
         if not row_pages or row_pages[-1][1] != ln.page:
             row_pages.append((r, ln.page))
         placed: Dict[int, List[str]] = {}
+        at = [_column(c, bounds) if bounds else 0 for c in ln.cells]
+        held = {k for k, c in zip(at, ln.cells) if _is_figure(c)}          # the columns this line has a figure in
         for i, c in enumerate(ln.cells):
-            for k, text in signs.get((r, i)) or [((_column(c, bounds) if bounds else 0), c.text)]:
+            k = at[i]
+            if k in held and k - 1 not in held and k and not _is_figure(c) and _WORDS.search(c.text) and not _CODE.match(c.text) and not _UNIT.match(c.text) \
+                    and all(c.x1 <= o.x0 for j, o in zip(at, ln.cells) if j == k and _is_figure(o)):
+                at[i] = k - 1                            # a text before the figure of its column (a remark set apart, in a column few lines
+        for i, c in enumerate(ln.cells):                 # fill): with the text before it -- the figure stays a number. Only words: a sign,
+            for k, text in signs.get((r, i)) or [(at[i], c.text)]:      # "./." or a money's letters (AUD) stay with their figure, which is then text
                 placed.setdefault(k, []).append(text)
                 x0, x1, _ = edges.get((r, k), (c.x0, c.x1, ln.h))
                 edges[(r, k)] = (min(x0, c.x0), max(x1, c.x1), ln.h)
@@ -801,6 +944,7 @@ def _sheet(lines: List[Line], rivers: List[Tuple[float, float]], de: bool, unsur
                 cells[(r, k)] = _value(texts, de, unsure) + ("",)
                 if sum(1 for t in texts if amountlike(t)) == 1:
                     amounts.add((r, k))
+                kept += cells[(r, k)][0] == "t" and len(texts) > 1 and any(amountlike(t) for t in texts)        # a figure, shown as text
     cols = max((c for _, c in cells), default=-1) + 1
     for k in range(1, cols):                             # a column of marks (S and H, another money) close behind amounts: their
         col = [(r, v) for (r, c), v in cells.items() if c == k]                 # marks -- not before the figures after it (USD 172,50),
@@ -833,7 +977,7 @@ def _sheet(lines: List[Line], rivers: List[Tuple[float, float]], de: bool, unsur
         cells = {(r, at[c]): v for (r, c), v in cells.items()}
     name = "page %d" % first if first == last else "pages %d-%d" % (first, last)
     return {"name": name, "hidden": False, "cells": cells, "rows": len(lines), "cols": max((c for _, c in cells), default=-1) + 1,
-            "merged": [], "hidden_rows": set(), "hidden_cols": [], "no_value": 0, "row_pages": row_pages, "signs_apart": apart}
+            "merged": [], "hidden_rows": set(), "hidden_cols": [], "no_value": 0, "row_pages": row_pages, "signs_apart": apart, "as_text": kept}
 
 
 def book(layout: Any) -> dict:
@@ -844,6 +988,7 @@ def book(layout: Any) -> dict:
         raise ValueError("no pages")
     pages: List[List[Line]] = []
     numbers: List[int] = []
+    found: List[List[Word]] = []
     how: Dict[str, int] = {}
     total = 0
     short = len(raw) > MAX_PAGES
@@ -858,8 +1003,11 @@ def book(layout: Any) -> dict:
         if kind != "none" and not words:
             kind = "none"                                # (nothing found on it: not read)
         how[kind] = how.get(kind, 0) + 1
-        pages.append(_lines(_deskew(words) if kind == "ocr" else words, n))
+        found.append(_deskew(words) if kind == "ocr" else words)
+        pages.append(_lines(found[-1], n))
         numbers.append(n)
+    if any(c.spaced for lines in pages for ln in lines for c in ln.cells) and not _spaced(pages):
+        pages = [_lines(words, n, spaced=False) for words, n in zip(found, numbers)]      # two numbers a space apart: two figures
     dropped = _drop_repeats(pages)
     for lines in pages:                                  # a small number alone at the very top or bottom of a page is its number,
         for ln in ((lines[0], lines[-1]) if len(lines) >= 2 else ()):       # also where nothing proves it (one page): never a figure
@@ -874,7 +1022,8 @@ def book(layout: Any) -> dict:
 
     def close() -> None:
         if group:
-            sheets.append(_sheet(group, _rivers(_river_lines(group)), de, unsure, span[0], span[-1]))
+            _tails(group)
+            sheets.append(_sheet(group, _columns(group), de, unsure, span[0], span[-1]))
     for lines, n in zip(pages, numbers):
         if not lines:
             continue
@@ -901,6 +1050,6 @@ def book(layout: Any) -> dict:
     for t in dropped:
         kinds[t] = kinds.get(t, 0) + 1
     return {"sheets": sheets, "date1904": False, "source": "pages", "pages": count, "pages_read": len(pages) - how.get("none", 0), "decimal": sign,
-            "signs_apart": sum(sh.pop("signs_apart", 0) for sh in sheets),
+            "signs_apart": sum(sh.pop("signs_apart", 0) for sh in sheets), "as_text": sum(sh.pop("as_text", 0) for sh in sheets),
             "left_out": {"lines": len(dropped), "examples": [t[:60] for t, _ in sorted(kinds.items(), key=lambda kv: -kv[1])[:3]]},
             "cut": bool(layout.get("cut")) or short or count > len(pages), "how": how}
