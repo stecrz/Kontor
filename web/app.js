@@ -5824,13 +5824,13 @@ async function vPositionen() {
 // positions' menu, each group with how it is best set up; rows for the kinds of areas you have (yours, a company's); per row
 // whether one of yours counts there (and which) -- updated as you change a position below
 // [key (texts kb_<key>, kb_<key>_sub, kb_<key>_tip; a company's: kb_<key>_g …), group, positions, only if needed, for ('p' yours,
-// 'f' a company's, '' both), hidden once a property is linked (its own rows take it)]
+// 'f' a company's, '' both)]; a rented property: always by its own category (Je Immobilie) -- only if needed until one is linked
 const KB_TREE = [['work_income', 'einnahmen', ['work_income'], 0, 'p'], ['revenue', 'einnahmen', ['revenue'], 0, 'f'],
-  ['rental', 'einnahmen', ['rental'], 1, '', 1], ['capital_income', 'einnahmen', ['capital_income'], 0, ''], ['refunds', 'einnahmen', ['refunds'], 1, ''],
+  ['capital_income', 'einnahmen', ['capital_income'], 0, ''], ['refunds', 'einnahmen', ['refunds'], 1, ''],
   ['goods', 'ausgaben', ['goods'], 0, 'f'], ['staff', 'ausgaben', ['staff'], 0, 'f'], ['housing', 'ausgaben', ['housing'], 0, ''],
   ['operations', 'ausgaben', ['operations'], 0, 'f'], ['living', 'ausgaben', ['living'], 0, 'p'], ['mobility', 'ausgaben', ['mobility'], 0, ''],
   ['insurance', 'ausgaben', ['insurance'], 0, ''], ['health', 'ausgaben', ['health'], 0, 'p'], ['leisure', 'ausgaben', ['leisure'], 0, 'p'],
-  ['property_costs', 'ausgaben', ['property_costs'], 1, '', 1], ['administration', 'ausgaben', ['administration'], 0, ''],
+  ['administration', 'ausgaben', ['administration'], 0, ''],
   ['taxes', 'ausgaben', ['taxes'], 0, ''], ['vat', 'ausgaben', ['vat'], 0, 'f'], ['donations', 'ausgaben', ['donations'], 1, 'p'],
   ['saving', 'sek_investitionen', ['saving'], 1, ''], ['loans', 'finanzierung', ['repayment', 'loan_interest'], 1, ''],
   ['partners', 'finanzierung', ['partners'], 1, 'f'], ['transfer', 'sonstiges', ['transfer'], 0, ''],
@@ -5855,8 +5855,9 @@ function kbRefresh(eff) {
   const kt = key => { const p = I18N[key] ? t(key) : '', f = I18N[key + '_g'] ? t(key + '_g') : p;
     return hasP && hasF && p !== f ? (key.endsWith('_tip') ? `${p} ${t('kb_firma')}: ${f}` : [p, f].filter(Boolean).join(' / ')) : hasF ? f : p; };
   let ok = 0, all = 0, grp = '', rows = '';
-  for (const [k, g, ps, opt, only, noProp] of KB_TREE) {
-    if ((g === 'kb_g_property' && !props) || (noProp && props) || (only === 'p' && !hasP) || (only === 'f' && !hasF)) continue;
+  for (const [k, g, ps, o, only] of KB_TREE) {
+    const opt = o || (g === 'kb_g_property' && !props);
+    if ((only === 'p' && !hasP) || (only === 'f' && !hasF)) continue;
     const mine = ps.flatMap(p => at.get(p) || []), have = mine.length > 0, miss = ps.filter(p => !(at.get(p) || []).length);
     if (have) ok++;
     if (have || !opt) all++;

@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.17.38 (2026-11-23 23:45)
+- Cashflow-Positionen: Kategorien-Karte zeigt „Je Immobilie“ immer (privat und Firma), allgemeine Zeilen Mieteinnahmen/Objektkosten entfallen.
+
 ## 3.17.37 (2026-11-23 23:23)
 - Entwicklung: Python 3.9 nur noch für den Starter – der übrige Code läuft und wird getestet im eigenen, aktuellen Python
 - Entwicklung: Fahrplan – ganzes Bild an den Assistenten (Upload und Zwischenablage gleich) entschieden
