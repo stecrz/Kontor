@@ -1,5 +1,5 @@
 """Before Claude ends a turn (Stop hook): changes to Kontor that are not committed or not on main yet get one reminder --
-every change is finished with the skill "release" (tests, one commit per version, straight to main, GitHub Actions green).
+every change is finished with the skill "release" (.claude/tools/release.py: checks, one commit per version, straight to main).
 Several chats work in parallel, each in its own clone: only this clone's state counts. Never blocks twice in a row."""
 import json
 import os
@@ -37,8 +37,8 @@ def main() -> int:
     if unpushed:
         what.append("%d Commit(s) nicht auf main" % unpushed)
     print(json.dumps({"decision": "block", "reason":
-                      "Kontor hat nicht abgeschlossene Änderungen (%s). Schließe sie mit dem Skill „release“ ab (Tests, ein "
-                      "Commit je Version direkt auf main, GitHub Actions grün). Wartest du auf eine Antwort des "
+                      "Kontor hat nicht abgeschlossene Änderungen (%s). Schließe sie mit dem Skill „release“ ab "
+                      "(`.claude/tools/release.py`: prüfen, ein Commit je Version direkt auf main). Wartest du auf eine Antwort des "
                       "Nutzers oder will er das ausdrücklich nicht, sag das in einem Satz und beende." % ", ".join(what)}, ensure_ascii=False))
     return 0
 

@@ -96,7 +96,7 @@ jobs:
         if: matrix.checks                     # once is enough: syntax, unused and undefined names in Python and in the interface
         run: |
           uv pip install -q pyflakes
-          python -m pyflakes *.py tests/*.py .claude/hooks/*.py
+          python -m pyflakes *.py tests/*.py .claude/hooks/*.py .claude/tools/*.py
           npm install -s --no-save --no-package-lock eslint@9 globals
           npx --no-install eslint -c .github/eslint.config.mjs web
       - name: A real build of Python (tests of Kontor's own Python start the service in it; python-build-standalone, checked)

@@ -1,5 +1,6 @@
 """Guard rails for Claude working on Kontor (PreToolUse hook): on the user's Mac never touch Kontor's data folder or
-MoneyMoney's own data, never use MoneyMoney's transfer commands; nowhere force-push or delete main; and before every push the
+MoneyMoney's own data, never use MoneyMoney's transfer commands; nowhere force-push or delete main; never read a big text file
+whole (read_check: find the place, then a range -- what is read is paid again at every later step); and before every push the
 version chain (push_check): what goes to main sits on the newest main and is one version after another -- each commit raises
 VERSION, keeps every version section of the changelog and heads it with its own version. Exit code 2 blocks the call and
 tells Claude why; anything else lets the normal flow go on. A guard rail, not a sandbox.
@@ -146,6 +147,28 @@ def push_check(command: str, cwd: str) -> str:
     return ""
 
 
+BIG_FILE = 100_000          # bytes: above this a text file is read in parts (web/app.js, assistant.py, service.py, the big tests ...)
+MOST_LINES = 400            # ... of at most this many lines -- whatever is read stays in the chat and is paid again at every step
+PICTURES = (".png", ".jpg", ".jpeg", ".gif", ".webp", ".pdf", ".ipynb")
+
+
+def read_check(tool_input: dict) -> str:
+    """A big text file is never read whole (one read of web/app.js would be ~50,000 tokens, carried along every later step):
+    find the place first, then read a range around it. Returns why not, or ""."""
+    path = str(tool_input.get("file_path") or "")
+    if not path or path.lower().endswith(PICTURES):
+        return ""
+    try:
+        size = os.path.getsize(path)
+    except OSError:
+        return ""
+    limit = tool_input.get("limit")
+    if size <= BIG_FILE or (isinstance(limit, int) and 0 < limit <= MOST_LINES):
+        return ""
+    return ("%s hat %d KB – nie ganz lesen. Erst die Stelle suchen (`grep -n '<Funktion oder Text>' %s`), dann Read mit "
+            "offset und limit (höchstens %d Zeilen) um die gefundene Zeile." % (os.path.basename(path), size // 1024, path, MOST_LINES))
+
+
 def main() -> int:
     if sys.argv[1:2] == ["chain"]:                     # GitHub: the commits of a push (before..after)
         before, after = (sys.argv[2:4] + ["", ""])[:2]
@@ -177,6 +200,12 @@ def main() -> int:
         if re.search(pattern, text) and not (can_allow and ALLOWED in text):
             print("Gesperrt: " + reason, file=sys.stderr)
             return 2
+    if tool == "Read":
+        why = read_check(data.get("tool_input") or {})
+        if why:
+            print("Gesperrt: " + why, file=sys.stderr)
+            return 2
+        return 0
     command = str((data.get("tool_input") or {}).get("command") or "")
     if tool == "Bash" and re.search(PUSH, command) and "KONTOR_PUSH_OK=1" not in command:      # a deliberate exception (like .githooks/pre-push)
         try:

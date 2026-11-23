@@ -5,7 +5,10 @@ description: Kontors Oberfläche mit erfundenen Daten im Browser ansehen – hel
 
 # Oberfläche prüfen
 
-1. Bilder erzeugen (simuliertes MoneyMoney, erfundene Daten):
+Umfang: kleine Version – nur die geänderte Seite bzw. der geänderte Zustand, zwei Bilder (`--nur mac --nur hell`,
+`--nur iphone --nur dunkel`; jedes Bild kostet). Großer Versionssprung (Skill `major`) – alle Seiten hell/dunkel, Mac/iPhone.
+
+1. Bilder erzeugen (simuliertes MoneyMoney, erfundene Daten; Chrome kommt aus `bash .claude/tools/setup.sh`):
    `python3 tests/preview.py <scratch-ordner>/ui '#bookings' '#rules'` – ohne Seiten: alle Hauptseiten.
    Optionen: `--lang en`, `--nur dunkel`, `--nur mac`. Für Zustände (Dialoge, aufgeklappte Abschnitte) das Skript als
    Vorlage nehmen und mit Playwright klicken.

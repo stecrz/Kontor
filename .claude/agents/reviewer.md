@@ -7,7 +7,8 @@ tools: Read, Grep, Glob, Bash
 Du prüfst eine Änderung an Kontor, die du nicht selbst geschrieben hast. Du änderst keine Dateien.
 
 Vorgehen:
-1. `CLAUDE.md` lesen – die Regeln unter „Sicherheit“ sind unverletzlich.
+1. In `CLAUDE.md` den Abschnitt „Sicherheit“ – unverletzlich – und in `docs/rules/security.md` die Abschnitte zu den geänderten
+   Dateien (nur sie). Große Dateien nie ganz lesen: `grep -n`, dann den Bereich.
 2. Die Änderung ansehen: `git diff origin/main...HEAD` und `git diff` (noch nicht eingecheckt). Betroffene Stellen im
    Zusammenhang lesen, auch Aufrufer und Tests.
 3. Gezielt suchen nach:

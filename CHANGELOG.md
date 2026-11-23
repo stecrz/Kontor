@@ -1,5 +1,11 @@
 # Änderungen
 
+## 3.17.42 (2026-11-24 00:48)
+- Entwicklung: Abschluss jeder Version mit einem Skript (release.py) – prüfen, daraufsetzen, nummerieren, veröffentlichen in einem Schritt
+- Entwicklung: Prüfen in zwei Stufen – englische Hilfe, README, Bilder, Highlights nur beim großen Versionssprung (Skill major)
+- Entwicklung: große Dateien nur in Bereichen lesen, Werkzeuge beim Start der Sitzung von selbst, rot auf GitHub behebt der nächste Chat
+- Entwicklung: Regeln gestrafft, Fahrplan ohne Erledigtes, Ablehnung „Updates erst bei grünen Tests“ festgehalten
+
 ## 3.17.41 (2026-11-24 00:45)
 - Cashflow-Positionen: Kategorien-Karte als ein Baum für alle Bereiche, Grundregel als erste Zeile, keine Marken „privat“/„Firma“ mehr; Unpassendes „bei Bedarf“.
 

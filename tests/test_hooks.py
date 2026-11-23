@@ -166,9 +166,18 @@ class TestsOnGitHub(unittest.TestCase):
         self.assertEqual((line, key), ("Tests auf GitHub: läuft für 3.1.3; 3.1.2 grün", "ok"))
         line, key = self.summary(push, [self.night(7, True)])
         self.assertIn("Nachtlauf (Zufallsfälle) für 3.1.2 grün", line); self.assertEqual(key, "ok")
-        # a red version: its chat fixes it
-        line, key = self.summary([self.run_("ccc", "3.1.4: c", ok=False), self.run_("bbb", "3.1.3: b", ok=False), self.run_("aaa", "3.1.2: a")], [])
-        self.assertIn("ROT seit 3.1.3 (Chat …ABCD)", line); self.assertEqual(key, "red bbb")
+        # a red version: the chat that pushed does not wait -- the next chat that sees it fixes it, marked "fix ci"
+        red = [dict(self.run_("ccc", "3.1.4: c", ok=False), id=12), dict(self.run_("bbb", "3.1.3: b", ok=False), id=11, created_at="2026-11-24T01:00:00Z"),
+               self.run_("aaa", "3.1.2: a")]
+        line, key = self.summary(red, [])
+        self.assertIn("ROT seit 3.1.3 (Chat …ABCD)", line); self.assertIn("fix ci", line); self.assertIn("gh run view 11 --log-failed", line)
+        self.assertIn("gh run rerun 11 --failed", line); self.assertEqual(key, "red bbb"); self.assertEqual(self.since, ["2026-11-24T01:00:00Z"])
+        # a fix on main whose own run is not done yet: the others leave it (the key changes, so every chat hears it once)
+        line, key = self.summary(red, [], "3.1.5: fix ci: date in WebKit\x1fClaude X: https://claude.ai/code/session_01Qwxyz\n\x1e")
+        self.assertIn("rot seit 3.1.3, behoben in 3.1.5 (Chat …wxyz)", line); self.assertNotIn("ROT", line); self.assertEqual(key, "red-fixed bbb")
+        # ... its run done and still red: not fixed
+        line, key = self.summary([self.run_("ddd", "3.1.5: fix ci: date", ok=False)] + red, [], "3.1.5: fix ci: date in WebKit\x1f\x1e")
+        self.assertIn("ROT seit 3.1.3", line); self.assertEqual(key, "red bbb")
 
     def test_red_night_is_fixed_by_the_next_chat_once(self):
         push = [self.run_("aaa", "3.1.2: a")]
@@ -195,6 +204,30 @@ class TestsOnGitHub(unittest.TestCase):
 
 
 GUARD = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".claude", "hooks", "guard.py")
+
+
+class ReadGuard(unittest.TestCase):
+    """A big text file is never read whole -- what is read stays in the chat and is paid again at every later step: find the
+    place, then a range of it (.claude/hooks/guard.py, read_check). Pictures and small files as they are."""
+
+    def guard(self, **tool_input):
+        r = subprocess.run([sys.executable, GUARD], env=ENV, capture_output=True, text=True, timeout=60,
+                           input=json.dumps({"tool_name": "Read", "tool_input": tool_input}))
+        return r.returncode, r.stderr
+
+    def test_big_files_in_parts(self):
+        d = tempfile.mkdtemp(prefix="kontor-read-"); self.addCleanup(shutil.rmtree, d, True)
+        big, small, pic = os.path.join(d, "app.js"), os.path.join(d, "VERSION"), os.path.join(d, "shot.png")
+        for path, size in ((big, 300_000), (small, 10), (pic, 300_000)):
+            with open(path, "w") as f:
+                f.write(("x" * 99 + "\n") * (size // 100))
+        code, why = self.guard(file_path=big)
+        self.assertEqual(code, 2); self.assertIn("grep -n", why); self.assertIn("offset und limit", why)
+        self.assertEqual(self.guard(file_path=big, offset=1200, limit=2000)[0], 2)          # a range too large is no range
+        self.assertEqual(self.guard(file_path=big, offset=1200, limit=200)[0], 0)
+        self.assertEqual(self.guard(file_path=small)[0], 0)
+        self.assertEqual(self.guard(file_path=pic)[0], 0)
+        self.assertEqual(self.guard(file_path=os.path.join(d, "missing.py"))[0], 0)
 
 
 @unittest.skipUnless(shutil.which("git"), "git fehlt")
@@ -310,6 +343,115 @@ class PushGuard(unittest.TestCase):
         self.assertEqual(code, 2); self.assertIn("nicht höher als 1.0.2", out); self.assertIn("fehlen Abschnitte", out)
         code, out = chain(good, good0)                                             # main overwritten
         self.assertEqual(code, 2); self.assertIn("Force-Push", out)
+
+
+RELEASE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".claude", "tools", "release.py")
+AFFECTED = os.path.join(os.path.dirname(os.path.abspath(__file__)), "affected.py")
+
+
+@unittest.skipUnless(shutil.which("git"), "git fehlt")
+class ReleaseScript(unittest.TestCase):
+    """.claude/tools/release.py on throwaway repositories (bare origin, chats as clones, the script, guard and affected.py
+    copied in): one commit per version on the newest main, VERSION + 1 and the changelog section by the script, another
+    chat's newer version taken in (rebased, next number) -- also when it lands between the check and the push --, a conflict
+    stops with the files named, failing checks push nothing, VERSION/CHANGELOG by hand are refused."""
+
+    def setUp(self):
+        import importlib.util
+        py = os.path.expanduser("~/kontor-venv/bin/python")
+        py = py if os.path.exists(py) else sys.executable
+        if subprocess.run([py, "-c", "import pyflakes, pytest"], capture_output=True).returncode != 0:
+            self.skipTest("pyflakes/pytest fehlen")
+        self.assertIsNotNone(importlib.util.find_spec("unittest"))
+        self.dir = tempfile.mkdtemp(prefix="kontor-release-")
+        self.addCleanup(shutil.rmtree, self.dir, True)
+        self.git(self.dir, "init", "-q", "--bare", "origin.git")
+        self.git(os.path.join(self.dir, "origin.git"), "symbolic-ref", "HEAD", "refs/heads/main")
+        seed = os.path.join(self.dir, "seed")
+        self.git(self.dir, "clone", "-q", "origin.git", "seed"); self.git(seed, "checkout", "-q", "-B", "main")
+        for rel, src in ((".claude/tools/release.py", RELEASE), (".claude/hooks/guard.py", GUARD), ("tests/affected.py", AFFECTED)):
+            os.makedirs(os.path.dirname(os.path.join(seed, rel)), exist_ok=True)
+            shutil.copy(src, os.path.join(seed, rel))
+        self.write(seed, {".gitignore": "__pycache__/\n", "VERSION": "1.0.0\n", "CHANGELOG.md": "# Änderungen\n\n## 1.0.0 (2026-01-01 10:00)\n- Start: da\n",
+                          "app.py": "A = 1\nB = 1\n", "tests/test_rules.py": "import app\n\ndef test_ok():\n    assert app.A == 1\n"})
+        self.git(seed, "add", "-A"); self.git(seed, "commit", "-q", "-m", "1.0.0: start"); self.git(seed, "push", "-q", "origin", "HEAD:main")
+        self.a, self.b = self.clone("a"), self.clone("b")
+
+    def git(self, cwd, *args):
+        r = subprocess.run(["git"] + list(args), cwd=cwd, env=ENV, capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        return r.stdout.strip()
+
+    def clone(self, name):
+        self.git(self.dir, "clone", "-q", "origin.git", name)
+        return os.path.join(self.dir, name)
+
+    def write(self, d, files):
+        for name, text in files.items():
+            os.makedirs(os.path.dirname(os.path.join(d, name)) or d, exist_ok=True)
+            with open(os.path.join(d, name), "w", encoding="utf-8") as f:
+                f.write(text)
+
+    def release(self, d, *args):
+        r = subprocess.run([sys.executable, os.path.join(d, ".claude", "tools", "release.py")] + list(args), cwd=d, env=ENV,
+                           capture_output=True, text=True, timeout=300)
+        return r.returncode, r.stdout + r.stderr
+
+    def main_file(self, name):
+        return self.git(os.path.join(self.dir, "origin.git"), "show", "main:" + name)
+
+    def test_one_commit_per_version_and_the_faster_chat(self):
+        self.write(self.a, {"app.py": "A = 1\nB = 2\n"})
+        self.git(self.a, "commit", "-qam", "local step")                     # local steps are squashed into the one version
+        self.write(self.a, {"new.txt": "x\n"})
+        code, out = self.release(self.a, "B is two", "Bilanz: B zählt doppelt", "--by", "Claude X: https://claude.ai/code/session_01A")
+        self.assertEqual(code, 0, out); self.assertIn("1.0.1 veröffentlicht", out)
+        origin = os.path.join(self.dir, "origin.git")
+        self.assertEqual(self.git(origin, "log", "--format=%s", "main").splitlines(), ["1.0.1: B is two", "1.0.0: start"])
+        self.assertEqual(self.git(origin, "log", "-1", "--format=%b", "main"), "Claude X: https://claude.ai/code/session_01A")
+        self.assertEqual(self.main_file("VERSION"), "1.0.1"); self.assertEqual(self.main_file("new.txt"), "x")
+        self.assertRegex(self.main_file("CHANGELOG.md"), r"^# Änderungen\n\n## 1\.0\.1 \(\d{4}-\d\d-\d\d \d\d:\d\d\)\n- Bilanz: B zählt doppelt\n\n## 1\.0\.0")
+        # chat b built on 1.0.0: taken onto 1.0.1, next number, both changes kept; --by kept from before is per clone
+        self.write(self.b, {"other.txt": "y\n"})
+        code, out = self.release(self.b, "other", "Entwicklung: y")
+        self.assertEqual(code, 2, out); self.assertIn("--by", out)
+        code, out = self.release(self.b, "other", "Entwicklung: y", "--by", "Claude Y: link")
+        self.assertEqual(code, 0, out); self.assertIn("1.0.2 veröffentlicht", out)
+        self.assertEqual(self.main_file("app.py"), "A = 1\nB = 2"); self.assertEqual(self.main_file("other.txt"), "y")
+        self.assertIn("## 1.0.2", self.main_file("CHANGELOG.md").split("## 1.0.1")[0])
+        # a version that lands between the check and the push (here: while the push hook runs): refused, taken in, next number
+        c = self.clone("c")
+        self.write(self.a, {".githooks/pre-push": "#!/bin/sh\n[ -e %s ] && exit 0\ntouch %s\ncd %s && %s %s faster 'Entwicklung: z' "
+                            "--by 'Claude Z: l' >/dev/null 2>&1\nexit 0\n" % ((os.path.join(self.dir, "mark"),) * 2 + (c, sys.executable, os.path.join(c, ".claude", "tools", "release.py")))})
+        os.chmod(os.path.join(self.a, ".githooks", "pre-push"), 0o755)
+        self.write(c, {"z.txt": "z\n"})
+        self.git(self.a, "pull", "-q", "--rebase", "origin", "main")
+        self.write(self.a, {"w.txt": "w\n"})
+        code, out = self.release(self.a, "w", "Entwicklung: w")
+        self.assertEqual(code, 0, out); self.assertIn("schneller", out); self.assertIn("1.0.4 veröffentlicht", out)
+        self.assertEqual(self.main_file("z.txt"), "z"); self.assertEqual(self.main_file("w.txt"), "w")
+        self.assertEqual(self.git(os.path.join(self.dir, "origin.git"), "log", "--format=%s", "-3", "main").splitlines(),
+                         ["1.0.4: w", "1.0.3: faster", "1.0.2: other"])
+
+    def test_conflict_failing_checks_and_own_files_refused(self):
+        self.write(self.a, {"app.py": "A = 1\nB = 3\n"})
+        self.assertEqual(self.release(self.a, "three", "Bilanz: drei", "--by", "Claude X: l")[0], 0)
+        self.write(self.b, {"app.py": "A = 1\nB = 4\n"})
+        code, out = self.release(self.b, "four", "Bilanz: vier", "--by", "Claude Y: l")
+        self.assertEqual(code, 3, out); self.assertIn("Konflikt", out); self.assertIn("app.py", out)
+        self.git(self.b, "rebase", "--abort"); self.git(self.b, "reset", "-q", "--hard", "origin/main")
+        self.write(self.b, {"app.py": "A = 2\nB = 3\n"})                      # breaks the test: nothing goes out
+        code, out = self.release(self.b, "two", "Bilanz: zwei")
+        self.assertEqual(code, 1, out); self.assertIn("Prüfung fehlgeschlagen", out); self.assertIn("test_ok", out)
+        self.assertEqual(self.main_file("VERSION"), "1.0.1")
+        self.assertEqual(self.release(self.b, "--check")[0], 1)
+        self.write(self.b, {"app.py": "A = 1\nB = 3\nC = 1\n", "VERSION": "1.0.9\n"})
+        code, out = self.release(self.b, "c", "Bilanz: c")
+        self.assertEqual(code, 4, out); self.assertIn("schreibt nur dieses Skript", out)
+        self.git(self.b, "checkout", "origin/main", "--", "VERSION")
+        self.assertEqual(self.release(self.b, "--check")[0], 0)
+        code, out = self.release(self.b, "c", "ohne Bezug")
+        self.assertEqual(code, 2, out); self.assertIn("Bezug", out)
 
 
 if __name__ == "__main__":

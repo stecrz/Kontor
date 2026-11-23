@@ -87,11 +87,16 @@ def tests_on_github():
     return ci_summary(push, night, since, who)
 
 
+def _ver(text):
+    m = re.match(r"\s*(\d+)\.(\d+)\.(\d+)", text or "")
+    return tuple(int(x) for x in m.groups()) if m else (0, 0, 0)
+
+
 def ci_summary(push, night, since, who):
     """The line and its key from GitHub's runs: push = the runs of the newest versions on main (newest first), night = those of
     nightly.yml (newest first); since(iso) = subjects and bodies of the commits on main since then, who(sha) = the chat of a
-    commit. The night's run belongs to no version: red, the next chat that sees it fixes it ("fix nightly" in its commit subject
-    marks the fix, so the others leave it)."""
+    commit. A red run -- of a version or of the night -- is fixed by the next chat that sees it (the chat that pushed does not
+    wait for GitHub): "fix ci" / "fix nightly" in the fix's commit subject marks it, so the others leave it."""
     name = lambda r: str(r.get("display_title") or "").split(":")[0][:20] or str(r.get("head_sha"))[:7]
     done = [r for r in push if r.get("status") == "completed" and r.get("conclusion") in ("success", "failure")]
     parts, keys = [], []
@@ -105,11 +110,21 @@ def ci_summary(push, night, since, who):
             if r["conclusion"] != "failure":
                 break
             first = r
-        w = who(str(first.get("head_sha")))
-        keys.append("red " + str(first.get("head_sha"))[:7])
-        parts.append("ROT seit %s%s – das behebt der Chat, der diese Version veröffentlicht hat; ist es nicht deine: nicht "
-                     "reparieren, weiterarbeiten (dein eigener Lauf erbt dieselben Fehler, bis die Korrektur da ist)"
-                     % (name(first), " (%s)" % w if w else ""))
+        w, sha = who(str(first.get("head_sha"))), str(first.get("head_sha"))[:7]
+        fix = [c.split("\x1f") for c in since(str(first.get("created_at") or "")).split("\x1e") if "fix ci" in c.split("\x1f")[0].lower()]
+        fixed = fix[-1][0].strip().split(":")[0] if fix else ""
+        if fixed and _ver(name(done[0])) < _ver(fixed):           # the fix's own run not done yet
+            keys.append("red-fixed " + sha)
+            parts.append("rot seit %s, behoben in %s%s – dessen Lauf läuft" % (name(first), fixed,
+                         " (%s)" % chat(fix[-1][1]) if len(fix[-1]) > 1 and chat(fix[-1][1]) else ""))
+        else:
+            run_id = str(first.get("id") or "<id>")
+            keys.append("red " + sha)
+            parts.append("ROT seit %s%s – behebe es jetzt als eigene Version, vor der eigenen Aufgabe, Commit-Betreff mit „fix ci“ "
+                         "(`release.py \"fix ci: …\" …`), damit die anderen Chats es liegen lassen (ein anderer war schneller: eigene "
+                         "Korrektur verwerfen). Fehler: `gh run view %s --log-failed | grep -E 'FAILED|Error' | head -30`; nur die "
+                         "Umgebung ausgefallen (Download, Spiegel, Einrichten): `gh run rerun %s --failed`"
+                         % (name(first), " (%s)" % w if w else "", run_id, run_id))
     nd = [r for r in night if r.get("status") == "completed" and r.get("conclusion") not in (None, "skipped", "neutral")]
     if nd:
         r = nd[0]

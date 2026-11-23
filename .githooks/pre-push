@@ -47,8 +47,8 @@ def main() -> int:
     if not found:
         return 0
     sys.stderr.write("Push nach main abgelehnt – dieser Stand würde fremde Versionen löschen:\n- " + "\n- ".join(found) +
-                     "\nDie Arbeit steht auf einem veralteten main. Skill release, Schritt 5.1: holen und daraufsetzen "
-                     "(`git pull --rebase origin main`), VERSION/CHANGELOG neu, testen, dann erneut pushen.\n")
+                     "\nDie Arbeit steht auf einem veralteten main: `python3 .claude/tools/release.py …` erneut – es holt, setzt "
+                     "darauf, prüft und nummeriert neu (von Hand: docs/rules/parallel.md).\n")
     return 1
 
 

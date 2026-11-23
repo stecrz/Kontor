@@ -125,6 +125,10 @@ anhängen – nie löschen.
   nie von selbst. (umgesetzt in 3.17.35)
 - **Hilfe laufend:** Texte der Hilfe (de/en) und des README werden mit jeder Änderung gepflegt, die sie betrifft – auch in
   kleinen Versionen. Nur die Hilfe-Bilder entstehen weiter erst beim großen Versionssprung. (umgesetzt in 3.16.80)
+  Geändert 2026-11-24 (Credits sparen, ohne Fehler zu riskieren): in kleinen Versionen nur die deutsche Hilfe, nur der betroffene
+  Abschnitt und nur, wenn sich Bedienung oder Verhalten wesentlich ändert (der Assistent sucht darin); englische Hilfe, README,
+  alle Bilder und `HIGHLIGHTS.md` beim großen Versionssprung – dort jeder seit dem letzten Sprung geänderte Abschnitt (Skill `major`).
+  Die englische Hilfe ganz zu streichen, nur wenn sie nachweislich viel kostet (heute: wenig). (umgesetzt in 3.17.42)
 - **Planung nachvollziehbar und frei wählbar** (2026-11-23): Jede Planzahl zeigt, wie sie entsteht (Regel, Grundlage, Steigerung,
   eigener Wert); gerechnete Kennzahlen (Sparquote, Reichweite, Zinslast) werden gezeigt. Planregeln auf jeder Ebene: Standard des
   Bereichs, Position (Überkategorie), Kategorie (Unterkategorie) – die tiefste Ebene mit eigener Regel gilt, sonst die darüber.
@@ -207,7 +211,7 @@ anhängen – nie löschen.
   Wertenachweis aus DATEV) und Excel sauber lesen, nie eine Zahl erfinden. „Hinweise von selbst“ später, abschaltbar. Der Nutzer
   lädt keine personenbezogenen Daten hoch; ein Datenschutz-Ausbau ist kein Thema. Später bekommt der Mitgesellschafter einen
   eigenen Kontor (Privates und Gedächtnis getrennt, gemeinsame Bereiche teilbar) – ersetzt beim Punkt „gemeinsame KI“ unter Offen
-  das gemeinsame Gedächtnis. (PDF-Tabellen: gemessen und stille Fehler behoben in 3.17.27 – siehe 2., „Mächtiger und trotzdem sicher“)
+  das gemeinsame Gedächtnis. (PDF-Tabellen: gemessen und stille Fehler behoben in 3.17.27, siehe CHANGELOG)
 - **Zugang vom iPhone – Umsetzung** (Nutzer, 2026-11-23: der Vorschlag gilt so):
   Weg zum Mac: bei Tailscale bleiben (WireGuard, Ende-zu-Ende verschlüsselt, kein offener Port zu Hause; Relais sehen nur
   Verschlüsseltes), dazu Tailnet Lock (Tailscale selbst kann dann keine Geräte hinzufügen). Geprüft und verworfen: Headscale (eigener
@@ -264,6 +268,16 @@ anhängen – nie löschen.
   deine Anmeldung“ auf der Anmeldeseite; Untertitel „Dein digitaler CFO.“ mit Punkt. (umgesetzt in 3.17.28)
   Noch zu klären: Beim Nutzer antwortet Tailscale Kontor nach jedem Start nicht (Protokoll: „gave no answer to 3 looks“) – die
   Prüfung auf serve/Funnel steht dort also auf „unbekannt“; Ursache (App-Store-Variante, Aufruf aus dem Dienst) noch offen.
+- **Updates erst bei grünen Tests: abgelehnt** (Nutzer, bestätigt 2026-11-24 – nicht wieder vorschlagen): Kontor bietet jede Version auf
+  `main` zur Installation an, ohne auf GitHubs Tests zu warten. Grund: er installiert selbst, wann er will, und sieht nach jeder Änderung
+  auf GitHub nach, ob sie grün ist.
+- **Arbeitsweise mit Claude** (Nutzer, 2026-11-24): Standard Opus 5.5 „hoch“ statt „extra hoch“ – Fehler sollen ausgebaute Tests finden,
+  nicht die Denkstufe; Claude Code statt Chat (mit Diktat); ein Chat je Aufgabe, mehrere nebeneinander; mehrere Aufgaben in einer Nachricht
+  gehen weiter nacheinander. Prüfen in zwei Stufen (`CLAUDE.md`): GitHub prüft jede Version gleich; Claude prüft und pflegt in kleinen
+  Versionen nur, was Fehler verhindert, alles Nachrangige (englische Hilfe, README, Bilder, Highlights, Gesamtprüfung) beim großen Sprung.
+  Abschluss mit `.claude/tools/release.py` in einem Aufruf; kein Warten auf GitHub – rot behebt der nächste Chat („fix ci“). Große Dateien
+  nur in Bereichen lesen. Ein Grund für diese Regeln: das Wochenkontingent war mit „extra hoch“ in wenigen Stunden verbraucht.
+  (umgesetzt in 3.17.42)
 
 ## Offen (Entscheidung steht aus – mit Empfehlung vorlegen, wenn der Punkt dran ist)
 - Umsatzsteuer-Voranmeldung direkt an ELSTER senden (ELSTERs Programmbibliothek ERiC, Anmeldung als Hersteller, Zertifikat und
@@ -334,82 +348,28 @@ anhängen – nie löschen.
   dort keine Protokolle über Eingaben und Antworten, nichts davon auf der Festplatte; Programm und Modelle dort nur über Kontor
   (per SHA-256 geprüft, nie von selbst aktualisiert). Empfehlung: erst angehen, wenn ein Kauf ansteht; bis dahin nur dieser Mac.
 
-## 1. Daten erst nach Anmeldung (Sicherheit) – umgesetzt in 3.16.83 (3.17.0: Umstellung von früher entfernt, nur Neueinrichtung)
-Ziel: Wer den entsperrten Mac hat, aber nicht bei Kontor angemeldet ist, kommt an keine Kontor-Daten.
-
-Fertig, wenn
-- ~~der Hauptschlüssel nur mit der Anmeldung freikommt (aus dem Passwort abgeleitet bzw. per Touch ID) und nur im Arbeitsspeicher
-  des Dienstes liegt; nichts davon frei lesbar im Schlüsselbund oder auf der Festplatte;~~ (3.16.83: `key.json`, Secure Enclave; openssl
-  bekommt das Geheimnis über eine Pipe statt der Umgebung)
-- ~~nach Neustart oder Update nur die Anmeldung erscheint (am Mac und vom iPhone); Zeitplan und Auto-Buchungen warten sichtbar
-  bis dahin und laufen danach weiter, auch gesperrt;~~ (3.16.83)
-- ~~die Umstellung ohne Datenverlust geht: der alte Schlüssel verschwindet erst, wenn feststeht, dass der neue alle Daten öffnet;
-  Passwort ändern oder vergessen (Touch ID bzw. Mac-Passwort), Touch ID an/aus, Sicherung, Zurücksetzen und Deinstallieren
-  funktionieren;~~ (3.16.83)
-- ~~Tests: ohne Anmeldung liest nichts im Dienst die Daten; Abbruch mitten in der Umstellung; Agent `reviewer`.~~ (3.16.83)
-- offen: am Mac mit echter Secure Enclave prüfen (Touch ID nach Neustart, „Passwort vergessen“, Datenordner von einem anderen Mac)
+## Am echten Gerät prüfen
+Gebaut und auf GitHub getestet, aber nur mit echter Hardware, echten Modellen oder echtem Konto abschließend prüfbar:
+- Secure Enclave: Touch ID nach Neustart, „Passwort vergessen“, Datenordner von einem anderen Mac (Daten erst nach Anmeldung, 3.16.83).
+- Gedächtnis mit echtem Modell: was es merkt (zu viel, zu wenig), Wartezeit bis zum ersten Wort mit Gedächtnis an und aus; ob es die
+  passenden Notizen nutzt und „Aus deinen Notizen“ die richtigen nennt; Einbettungsmodell: Start mit `--embedding` in der Sandbox,
+  Endzeichen `<|endoftext|>`, Schwellen `memory.SEM_FLOOR`/`SEM_MIN` mit echten Notizen und Gegenparteien, Dauer für Tausende Notizen.
+- Mac-App: Export des Gedächtnisses landet unter „Downloads“, „Importieren …“ öffnet das Dateifenster.
+- PDF-Tabellen mit echten Auswertungen (BWA, SuSa, Wertenachweis).
+- Internet: Abschirmung des Abrufs und Antworten der Quellen mit echtem Netz; einmal echt jede amtliche Quelle; Claude als Stufe 4 mit
+  echtem Schlüssel aus der mit dem Abo verknüpften Console-Organisation – Grenzen (Antwort höchstens 8.192 Token, 5 Websuchen,
+  5 Minuten), Antwortzeit, Kosten je Frage.
+- Modelle: Tempo und Arbeitsspeicher von Qwen3.8 27B (genauere Datei, 22 GB) mit langem Kontext; auf einem Rechner mit 128 GB Laden,
+  Start und Tempo von Flash Next.
+- Dazu die Punkte unter „Offen nach der Gesamtprüfung 3.17.0“ (iPhone, Diktieren, Sandbox-Profile).
 
 ## 2. KI-Assistent: digitaler CFO
 Ziel: Ein lernender, verlässlicher Mitarbeiter, der die Finanzen kennt, sich erinnert, von selbst auf Wichtiges hinweist und
-Routine abnimmt – ohne je selbst etwas zu ändern.
-
-Stand (seit 3.16.0, ohne „Alpha“ seit 3.16.3): llama.cpp und Modelle unter Einstellungen → KI-Assistent laden, aktualisieren, wählen, starten, stoppen –
-Kontor schlägt das Modell passend zum Arbeitsspeicher vor; Seitenfenster auf jeder Seite und als eigene Seite; liest alle Zahlen
-(Übersicht, Bilanz, Cashflow, Vergleiche, Planung, Steuer, Immobilien, Kategorien, Auto-Buchungen, Offenes), Umsätze mit Belegen,
-Hilfe und die offene Seite; öffnet Ansichten und hebt Zeilen hervor; trägt Kontostände, Planwerte, Annahmen und Ereignisse nur
-nach Klick ein (zurücknehmbar); Diktieren mit eigenem Sprachmodell; Rechte einzeln schaltbar; Modelle ohne Netz, abgeschirmt
-(macOS-Sandbox); Hilfe-Abschnitt und Bilder; Diagramme im Chat aus Kontors eigenen Zahlen (3.16.11, Klick zeigt die Zahl auf
-ihrer Seite); gespeicherte Unterhaltungen unter „Verläufe“ (3.16.11, verschlüsselt, nicht in Sicherungen, abschaltbar); Diktat
-bis zehn Minuten, live in Stücken und am Ende als Ganzes, nur mit Sprache (Stille und Rauschen erreichen das Modell nicht);
-Dateien über „+“ (3.16.12; Bilder und PDFs erst mit einem Modell, das Bilder sieht); Rechtsklick auf Zahl, Zeile, Spaltenkopf, Grafik oder markierten Text: „KI-Assistent fragen …“ – der Bezug steht
-knapp vor der Frage, ein Klick darauf öffnet die Stelle wieder (3.16.23); im selben Menü „Kurz erklären“ (sofort, in einem kleinen
-Kasten am Mauszeiger, nicht im Chat), Wert/Zeile/Spalte kopieren, im Bezug die Stelle in der Grafik und der Pfad der Zeile (3.16.27); Zahlen in Grafiken und Karten mit Zeile und Wert, beim Klick
-auf den Bezug genau diese Zahl markiert; Gedanken und Schritte einer Antwort als ein Eintrag (3.16.35); gespeicherte Verläufe im eigenen Ordner `chats`, Anzahl/Größe in den Einstellungen,
-ältere als ein Jahr löschbar, Hinweis bei sehr vielen (3.16.51); Stil ab Werk kurz, direkt, inhaltsdicht (3.16.23); Denkaufwand mit klarer Bedeutung (Schnell: ohne Nachdenken,
-Ausgewogen: bis 2.000 Token je Antwort, Gründlich: ohne Grenze; nur oben im Assistenten, je Gerät gemerkt – 3.16.72) und unter jeder Antwort „nachgedacht · Abfragen · Token/s“ (3.16.23). Kontors eigene Mac-App statt Safaris Dock-App: macOS fragt nur einmal nach dem Mikrofon, danach nie wieder; Menüleiste, Downloads, Dock-Abzeichen (3.16.42); ohne eigene Titelleiste: Fensterknöpfe in der Seitenleiste, Seiten wie im Browser (3.16.60, 3.16.63); ⌘F sucht (Seitensuche oder Suchleiste in der App), Tastaturkürzel im Menü und in den Tooltips, die Suche der Hilfe bleibt sichtbar (3.16.64). Beschreibung jeder Stelle jeder Seite für den Assistenten (`docs/ui`, `data-ex`, 3.17.1): Rechtsklick, Fragen zur Seite und `search_help` wissen, was jede Zahl ist – Wert des Zeitraums, Anteil oder Veränderung –, der Rechtsklick benennt jeden Teil einer Beschriftung nach der Hoverbox; Werkzeuge mit den Begriffen der Seiten. Das Modell wird gefragt, wie sein Hersteller es empfiehlt (3.17.17: Werte je Modellfamilie, Gedanken bleiben zwischen den Abfragen einer Antwort, „Ausgewogen“ denkt vor jedem Schritt, Ergebnisse so lang, wie der Kontext trägt). Ursachen statt Aufzählung (3.17.17, Wunsch des Nutzers vom 23.11.2026): Arbeitsweise für Warum-Fragen im Systemtext (Treiber, eine Ebene tiefer, Verknüpfungen, belegt/vermutet – ohne feste Fälle) und das Lese-Werkzeug `get_net_worth_drivers`, das eine Veränderung über Konten, größte Umsätze und Beteiligungen bis in die Gesellschaft dahinter verfolgt; in der Demo als Fall (Kaufnebenkosten der Parkweg GbR). Messbar (3.17.18): Prüfsatz mit 73 Aufgaben auf Deutsch, gestellt durch den Assistenten auf der Demo-Welt (`tests/assistant_eval`, Entwickler-Werkzeug: Dokumente lesen, rechnen, Gedächtnis, Ehrlichkeit, Kontors Zahlen, Ursachen) – bei jedem Push mit Ersatzmodell (prüft den Ablauf), am Mac mit dem echten Modell (README dort); dort prüfen, ob ein echtes Modell die Ursache schließt (Gruppe u).
+Routine abnimmt – ohne je selbst etwas zu ändern. Was er heute kann: Hilfe („KI-Assistent“) und `CHANGELOG.md`. Gedächtnis,
+Sammelfreigabe, Kategorien, Auto-Buchungen, Buchungsregeln, Belege, Excel/CSV/PDF-Tabellen mit Prüfproben, Internet in vier Stufen,
+verständliche Modellauswahl, große Modelle, Abschirmung ohne Netz: umgesetzt (3.16.13–3.17.29).
 
 Fertig, wenn
-- **Gedächtnis** wie unter Entschieden („März teurer: Urlaub“, „Ziel: mit 45 finanziell frei“): von selbst und auf „Merk dir“,
-  sofort mit „Rückgängig“, Steckbrief plus Suche, Liste in den Einstellungen, in der Sicherung; Tests: eingeschleuste Sätze in
-  Buchungstexten, Belegen, Dateien und Webseiten werden nie gemerkt; der Steckbrief bleibt unter seiner Grenze, auch bei
-  Tausenden Notizen; in Arbeit bei einem Chat, in Schritten:
-  - [x] 3.16.71 Ablage (`memory-notes-*.json`, höchstens 1.000 Notizen je Datei), Liste unter Einstellungen → KI-Assistent (hinzufügen,
-    ändern, anheften, vergessen, alles vergessen, Schalter), Steckbrief in jeder Anfrage, Sicherung, Änderungsprotokoll (Vergessenes
-    verschwindet auch dort), nie Zugangsdaten, erkannte Namen aus Notizen nie in der Internetsuche (alle Namen erst, wenn das
-    Modell sie beim Merken benennt – nächster Schritt).
-  - [x] 3.16.81 Merken aus dem Chat: ein zweiter, getrennter Blick des Modells, der nur die Worte des Nutzers bekommt (nie, was
-    Werkzeuge, Seiten, Bezüge, Belege, Dateien oder das Internet lieferten); seine Antwort wird geprüft (beruht auf dem Gesagten,
-    jede Zahl wurde gesagt, nie Zugangsdaten). „Gemerkt: …“ mit „Zurücknehmen“ unter der Antwort, „ersetzt: …“, „Vergiss …“ (nur
-    auf ausdrücklichen Wunsch, zurückholbar, solange Kontor läuft); „Merk dir das“ nimmt die Antwort davor – nach Internet- oder
-    Belegtext in der Unterhaltung erst nach Klick; von einem Gerät, das nur ansehen darf, wird nichts gemerkt.
-    Am Mac prüfen: was ein echtes Modell merkt (zu viel, zu wenig), und die Wartezeit bis zum ersten Wort der nächsten Frage
-    mit Gedächtnis an und aus (der zweite Blick teilt sich den Zwischenspeicher des Modells mit der Unterhaltung).
-  - [x] Suche in Notizen nach Wörtern und Bedeutung; das Passende kommt von selbst zur Frage; er sagt, worauf eine Antwort beruht.
-    - [x] 3.16.93 nach Wörtern, ohne Modell: Wortformen, Teile zusammengesetzter Wörter, Tippfehler; das Passende kommt in die Nachricht
-      (nicht in den Systemtext, festes Budget, je Unterhaltung nicht doppelt), Lese-Werkzeug `recall`, „Aus deinen Notizen: …“ unter
-      der Antwort; benutzte Notizen zählen für den Steckbrief; der zweite Blick bekommt verwandte Notizen über dieselbe Suche.
-      Am Mac prüfen: ob ein echtes Modell die passenden Notizen nutzt und ob „Aus deinen Notizen“ die richtigen nennt.
-    - [x] 3.16.97 nach Bedeutung: drittes Modell Qwen3-Embedding 0.6B (Apache 2.0, Q8_0 etwa 0,6 GB), abgeschirmt wie das Diktiermodell,
-      `--embedding --pooling last`; Einbettungen der Notizen (512 Zahlen, je eine Zahl ein Byte) verschlüsselt neben den Notizen, im
-      Hintergrund gemacht; Wörter und Bedeutung zusammen gewertet; ohne das Modell bleibt die Wortsuche.
-      Am Mac prüfen: Start mit `--embedding` in der Sandbox, ob das Endzeichen `<|endoftext|>` als Zeichen ankommt, Schwellen der
-      Ähnlichkeit (`memory.SEM_FLOOR`/`SEM_MIN`) mit echten Notizen, Dauer für Tausende Notizen.
-  - [x] Suche in gespeicherten Verläufen (aus Unterhaltungen mit Internet-Text nur die Fragen des Nutzers; Vergessenes taucht nicht wieder auf).
-    3.16.98: eigenes verschlüsseltes Suchverzeichnis (`memory-chats-*.json`), mit jeder Antwort nachgeführt, ältere Verläufe im
-    Hintergrund; über `recall` (Wörter und Bedeutung); auch Unterhaltungen mit Belegtext nur mit den Fragen; gelöschte Verläufe
-    und vergessene Notizen räumen mit auf.
-  - [x] Bedeutungssuche auch für Hilfe und Umsätze. 3.16.99: im Assistenten (`search_help`, `search_transactions` – Funde nach
-    Bedeutung gekennzeichnet), Einbettungen im Hintergrund; dazu benennt das Modell Namen in von Hand angelegten Notizen (Filter
-    der Internetsuche). Offen: die Suchfelder der Hilfe- und der Umsatzseite suchen weiter nach Wörtern (nach Wunsch mit demselben
-    Baustein). Am Mac prüfen: Schwelle für Umsätze (`memory.SEM_MIN`) mit echten Gegenparteien.
-  - [x] Gedächtnis mitnehmen (siehe Entschieden, „Gedächtnis übertragbar“). Unter der Liste **Exportieren** –
-    eine Datei, oben zum Lesen (Markdown: je Notiz Tag, Herkunft, angeheftet, was sie ersetzt hat), darunter dasselbe als JSON für
-    Programme (Format `kontor-memory`: Formatversion, Exportzeit, Kontor-Version), nie Zugangsdaten – und **Importieren …**: so eine
-    Datei oder eine Liste mit einer Notiz je Zeile aus einem anderen System; vorab ganz geprüft, ganz oder gar nicht, jede Notiz
-    geprüft wie eine von Hand, gekennzeichnet, nie angeheftet, ersetzt nichts, Doppelte bleiben draußen. Nur am Mac, nie in der
-    Demo; im Änderungsprotokoll nur die Anzahl. (umgesetzt in 3.17.11)
-    „Import zurücknehmen“ in einem Schritt (Entscheidung vom 23.11.2026, siehe Entschieden): 3.17.19. Am Mac prüfen:
-    in der Mac-App landet der Export unter „Downloads“, „Importieren …“ öffnet das Dateifenster.
 - **Hinweise von selbst:** nach jedem Abgleich prüft Kontor (fester Code) auf Auffälliges – gestiegene Ausgaben, ungewöhnliche
   Umsätze, Fristen (Voranmeldung, Zinsbindung), Liquidität, offene Kategorien, Sicherheitslage (Zugang, Freigaben, Updates) –
   und zeigt es unter Offenes; der Assistent erklärt und ordnet ein, Gemerktes zählt (bekannter Grund, kein Alarm);
@@ -417,85 +377,45 @@ Fertig, wenn
   Ausführungen, Abschalten; jedes Ergebnis rückgängig zu machen;
 - **Protokoll:** jede Aktion – Vorschlag angenommen, Regel ausgeführt, Gemerktes, Eintrag, Rücknahme – mit Zeit und Auslöser;
 - **Vergleiche:** Zeiträume, Bereiche, Objekte, Gesellschaften; Vergleichszahlen von außen als Datei oder über die freigegebene
-  Internetsuche (unten);
+  Internetsuche;
 - **eingeschleuste Befehle wirkungslos:** Tests mit präparierten Buchungstexten, Dateien, Belegen – nichts gemerkt, keine Regel,
   kein Eintrag ohne Klick;
-- am Mac mit echten Modellen geprüft: Abschirmung (kein Netz, kein Zugriff auf Kontors Daten), Start, Antworten, Stoppen, Diktieren;
-- bekannt und nicht in Kontors Hand: Qwen3.6 35B-A3B kann in llama.cpp nach mehreren Fragen hängen bleiben (dort gemeldet als
-  #22450, keine Abhilfe bekannt); Kontor gibt eine Anfrage ohne Antwort erst nach 15 Minuten auf, das Modell läuft dann weiter.
-  Offen: früher erkennen (llama.cpp meldet den Fortschritt einer Anfrage) und das Modell von selbst neu starten;
-- ~~Kategorien zuordnen als Vorschlag mit Klick möglich ist, wie unter Kategorisieren~~ (3.16.19).
-- am iPhone ein Bezug ohne Rechtsklick geht (langes Drücken öffnet dort schon Zeilen);
-
-Mächtiger und trotzdem sicher (Auftrag vom 21.11.2026; jede Änderung erst nach Klick, je Schritt eine kleine Version):
-- [x] 3.16.13 Sammelfreigabe: alle Änderungen einer Antwort auf einer Karte, ein Klick (einzeln abwählbar); Änderungsprotokoll; Änderungsrechte ab Werk an.
-- [x] 3.16.19 Kategorien zuordnen (Vorschlag je Gegenpartei, Klick, rückgängig wie unter Kategorisieren; vom iPhone erst am Mac).
-- [x] 3.16.33 Auto-Buchungen prüfen, freigeben, zurückhalten (Freigeben nur am Mac, die Karte sagt: in MoneyMoney nicht rückgängig; Zurückhalten zurücknehmbar).
-- [x] 3.16.45 Buchungsregeln (Darlehen, Beteiligungen, Kontenspiegel) anlegen und ändern; Buchungen daraus erst zur Freigabe, bis du die Regel unter Konten & Regeln bestätigst.
-- [x] 3.16.26 Offene Aufgaben beim Öffnen, jede mit „Erledigen“ (die Liste kommt von Kontor, auch ohne Modell; ohne passendes Recht „Öffnen“).
-- [x] 3.16.46 Belege: Datei in den Chat, Texterkennung von macOS (offline), passenden Umsatz vorschlagen, Abweichungen nennen, ablegen und verknüpfen (Verweis in MoneyMoney nicht durch den Assistenten).
-- [x] 3.16.66 Excel-Tabellen im Chat: abgesichert gelesen zu einem Raster mit Excels Adressen, Summen exakt von Kontor; Datei ohne Frage wird für sich bewertet. Grundlage für BWA/SuSa aus Excel (4.).
-- [x] 3.16.88 PDFs und Bilder mit Tabellen im Chat: alle Seiten, Tabellen über Seitenumbrüche zusammengesetzt (Köpfe, Seitenzahlen weg), Spalten aus der Lage der Wörter, Zahlen wie geschrieben, Summen von Kontor. Offen: am Mac mit echten Auswertungen (BWA, SuSa, Wertenachweis) prüfen. CSV über denselben Weg (umgesetzt in 3.17.27).
-- [x] 3.17.27 PDF-Tabellen Zelle für Zelle gemessen – erfundene DATEV-ähnliche BWA, Summen- und Saldenliste, Wertenachweis und Lohnjournal, 1.000 Zufallstabellen, ein
-  Wertenachweis über 30 Seiten – und die gefundenen stillen Fehler behoben: ein Strich für „nichts“ wurde zum Minus der Zahl daneben, zwei Zahlen mit Leerzeichen
-  zu einer (18 und 231.417), die Zahl am Ende einer Beschriftung (Darlehen 3,2 %) zum Wert einer Spalte, beim Buchhaltungsformat von Excel rutschten Spalten; eine
-  Spalte, die nur Gruppenzeilen füllen (Zeilennummer), bekam keine eigene Spalte. Jede Zahl im Raster steht so im Dokument (Test). Offen: am Mac mit
-  echten Auswertungen prüfen (der macOS-Lauf liest den 30-Seiten-Test mit dem echten Helfer).
-- [x] 3.17.27 Prüfproben, Suchen und CSV: Kontor rechnet in jeder Tabelle (PDF, Excel, CSV) exakt nach, ob Summenzeilen, Überträge, Soll = Haben und Excels
-  SUMME-Formeln aufgehen, und nennt dem Assistenten, was stimmt und was nicht (Zelle, Differenz) – so fällt eine verlesene Zahl oder eine verlorene Zeile auf.
-  Eine Summe über einen Bereich nennt Summenzeilen und Überträge darin (und die Summe ohne sie), ausgeblendete Zeilen und Texte, die wie Zahlen aussehen. In langen
-  Dateien (30 Seiten passen nicht in die Runden einer Antwort) sucht der Assistent Zeilen nach Wörtern, mit Spaltenköpfen, Seite und exakten Summen; was er nicht
-  gelesen hat, nennt er nicht. CSV-Dateien werden wie Excel als Raster gelesen (Trennzeichen, Kodierung, deutsche und englische Zahlen; Tausenderpunkte nur, wo die
-  Spalte ihr Dezimalzeichen zeigt). Offen: KI-Dokumentmodell für schwierige PDFs und Scans (nur Struktur vom Modell, jede Zahl aus dem Text der Datei), bewährte
-  Bibliotheken als abgeschirmter Leser – Messwerte dazu in der Antwort zu diesem Auftrag.
-- [x] 3.16.48 Internet nur zum Lesen, in drei Stufen (siehe Entschieden): Kontor sucht (nicht das Modell), Freigabe je Zugriff mit Quelle,
-  Suchbegriffen und Adressen, Filter gegen eigene Daten, Seiten in einem abgeschotteten Prozess, danach keine Änderungen im selben Chat.
-  Am Mac mit echtem Netz prüfen (Abschirmung des Abrufs, Antworten der Quellen).
-- [x] 3.16.92 Internet: je Chat einmal erlauben, danach vertrauenswürdige Quellen und Websites ohne Rückfrage (einstellbar), andere
-  Websites immer einzeln; Treffer vorab freigeben entfällt.
-- [x] 3.16.76 Internet: erst die Recherche planen, dann eine Karte für alle Abrufe (jeder abwählbar, ein Klick), höhere Stufe als
-  Reserve „nur falls nötig“, Treffer lesen mit derselben Freigabe; Adresse und Gesendetes je Abruf aufklappbar.
-- [x] 3.16.95 Weitere amtliche Quellen (Stufe 1): Rechtsinformationsportal des Bundes (Gesetze, Urteile auch des BFH), Meldungen von BMF
-  (Steuern, Presse), Bundesbank und EZB, OECD, Weltbank, BIZ; Datengruppen der Bundesbank (z. B. Unternehmensabschlüsse), Branchenzahlen von
-  Eurostat (SBS); eine anonyme Kennung an alle Quellen, „Quelle lehnt ab“ auf der Karte. Stufe 3 auch ohne Schlüssel (Tavilys Zugang ohne
-  Konto, Kontor stoppt bei 200 Abrufen in 31 Tagen; mit eigenem Schlüssel bei 950; nie beides in einer Anfrage). Nicht drin: Destatis-GENESIS
-  (Konto, POST), IWF (neue Schnittstelle, Zugang unklar), Feeds von Branchenportalen, BFH und BaFin (Adressen nicht prüfbar). Am Mac einmal echt prüfen.
-- [x] 3.17.15 Internet, Stufe 4: eine Frage an Claude (Anthropic) über dessen Schnittstelle – eigener API-Schlüssel (kein Abo-Login), Modell wählbar
-  (Opus 5.5 ab Werk, Sonnet 5.5, Fable 5.2), jede Frage vorher im ganzen Wortlaut auf einer Karte und nie ohne Klick (auch im erlaubten Chat), Filter
-  gegen eigene Daten auf den ganzen Text, ein Abruf an einen festen Host im abgeschirmten Prozess, Antwort als fremder Text, genannte Quellen als
-  Treffer, Tagesgrenze (ab Werk 20), im Protokoll die Frage wie bei jeder Suche und von der Antwort nur Zahlen (Token, Websuchen); auch in der Demo
-  (Schlüssel des echten Kontors). Nicht drin: eine von Anthropic unterbrochene Antwort fortsetzen (wäre ein zweiter, nicht gezeigter Abruf – das
-  Modell erfährt, dass sie unvollständig sein kann), Preise in Euro (nur Token). Ohne echten Schlüssel gebaut (Tests mit Attrappe) – am Mac einmal
-  echt prüfen: Schlüssel aus der mit dem Abo verknüpften Console-Organisation, ob die Grenzen passen (Antwort höchstens 8.192 Token, 5 Websuchen,
-  5 Minuten), Antwortzeit und Kosten je Frage.
-
-Modelle und Rechner (Auftrag vom 23.11.2026: verständliche Auswahl, größere Modelle, Vorbereitung für einen stärkeren Rechner):
-- [x] 3.17.9 Modellauswahl verständlich: Gruppen nach Zweck (gründlich, schnell, klein), je Modell ein Satz, wofür es taugt,
-  Hersteller, Lizenz, Dateigröße, Speicherbedarf und wie es auf diesem Mac läuft. „Empfohlen“ ist nur das gründlichste Modell, das
-  gut läuft (ab 32 GB Qwen3.8 27B Compact, ab 64 GB Qwen3.8 27B in der genaueren Datei) – auf kleineren Macs keines; was nicht
-  passt, nennt, was es braucht, und lässt sich nicht laden. Gemma 4 und die kleinen Qwen stehen unter „nur für einfache Fragen“.
-  Das Modell in Gebrauch wechselt nie von selbst.
-  Am Mac prüfen: Tempo und Arbeitsspeicher von Qwen3.8 27B (genauere Datei, 22 GB) mit langem Kontext.
-- [x] 3.17.29 Größere Modelle: Modelle in mehreren Dateien (große kommen so, je Variante ein Ordner) – jede Datei per SHA-256 geprüft,
-  ein Fortschritt, Platz vorab für alle, abgebrochen weiterladen oder verwerfen („angefangen“), nur Geändertes neu, eingesetzt erst,
-  wenn alle da sind (nie alte und neue Dateien gemischt); Start mit der ersten Datei. In der Liste „Für einen stärkeren Rechner“: Qwen3.8 Flash Next (ca. 94 GB, eigene
-  Lizenz von Alibaba) – sichtbar mit „braucht einen Mac mit mindestens 128 GB“, ladbar erst dort; nie von selbst empfohlen.
-  Nicht aufgenommen: GLM-5.3 Flash (antwortet nie ohne Nachdenken – das brauchen die kurzen Schritte hier; llama.cpp kann es erst
-  seit Kurzem), DeepSeek V4.1 Flash (nur mit eigener Laufzeit), MiMo-V2.6 Flash und DeepSeek V4 Flash (lesen lange Dokumente bei
-  160–170 GB nicht zuverlässiger als Qwen3.8 27B). Auf einem Rechner mit 128 GB prüfen: Laden, Start und Tempo von Flash Next.
-- [x] 3.17.V4 Abschirmung ohne jedes Netz: das Modell (auch Diktieren und Suche nach Bedeutung) lauscht auf einer Socket-Datei in
-  seinem eigenen Zwischenordner statt auf 127.0.0.1; die Sandbox verbietet das Netz ganz, erlaubt ist allein das Lauschen auf
-  dieser einen Datei (beide Stufen; auch ohne Abschirmung keine Adresse). Kontor spricht das Modell an einer Stelle an
-  (`LocalAI._connect`). Ein llama.cpp, das nur auf einer Adresse lauschen kann, wird nicht installiert und nicht gestartet – kein
-  Rückweg auf 127.0.0.1. Tooltip und Hilfe („Abschirmung“) sagen, was sie verhindert und was nicht. Im macOS-Lauf:
-  `tests/test_mac_model.py` – die Regeln mit einem kleinen Programm (zählt), das echte llama.cpp mit einem winzigen Modell
-  (berichtet nur, weil es GitHub, Hugging Face und das llama.cpp des Tages braucht; soll nach einigen Versionen zählen).
-  Offen – Dienste von macOS nur nach Liste statt alle: Auf GitHubs Mac (macOS 15) fragt llama.cpp nach elf Diensten
+- **KI-Dokumentmodell für schwierige PDFs und Scans:** nur die Struktur vom Modell, jede Zahl aus dem Text des Dokuments; bewährte
+  Bibliotheken als abgeschirmter Leser (siehe Entschieden zu Bibliotheken);
+- **Dienste von macOS für die Modelle nur nach Liste** statt alle: auf GitHubs Mac (macOS 15) fragt llama.cpp nach elf Diensten
   (coreservicesd, diskarbitrationd, MTLCompilerService, analyticsd, bsd.dirhelper, logd, system.notification_center,
-  opendirectoryd.libinfo und .membership, tccd.system, windowserver.active); ganz ohne lädt kein Modell, mit genau diesen läuft
-  es, jeder einzelne ist dort entbehrlich. Der Grafikchip dort ist ein Ersatz – ein echter Mac kann andere brauchen, und eine
-  falsche Liste ließe das Modell nicht starten oder nur langsam rechnen. Deshalb erst nach einem Lauf am echten Mac festlegen
-  (die Probe dazu: `tests/mac_sandbox_probe.py` in 3.17.29).
+  opendirectoryd.libinfo und .membership, tccd.system, windowserver.active); ganz ohne lädt kein Modell, mit genau diesen läuft es,
+  jeder einzelne ist dort entbehrlich. Der Grafikchip dort ist ein Ersatz – ein echter Mac kann andere brauchen, eine falsche Liste
+  ließe das Modell nicht starten oder nur langsam rechnen. Deshalb erst nach einem Lauf am echten Mac festlegen (Probe:
+  `tests/mac_sandbox_probe.py`);
+- **hängendes Modell früher erkennen:** Qwen3.6 35B-A3B kann in llama.cpp nach mehreren Fragen hängen bleiben (dort #22450, keine
+  Abhilfe bekannt); Kontor gibt eine Anfrage ohne Antwort erst nach 15 Minuten auf. Offen: über den Fortschritt, den llama.cpp
+  meldet, früher erkennen und das Modell von selbst neu starten;
+- am iPhone ein Bezug ohne Rechtsklick geht (langes Drücken öffnet dort schon Zeilen);
+- die Suchfelder der Hilfe- und der Umsatzseite auch nach Bedeutung suchen (heute nur im Assistenten);
+- am Mac mit echten Modellen geprüft (siehe „Am echten Gerät prüfen“).
+
+Bewusst nicht (mit Grund):
+- Destatis-GENESIS (Konto, POST), IWF (neue Schnittstelle, Zugang unklar), Feeds von Branchenportalen, BFH und BaFin (Adressen nicht
+  prüfbar) als Quellen; eine von Anthropic unterbrochene Antwort fortsetzen (wäre ein zweiter, nicht gezeigter Abruf – das Modell
+  erfährt, dass sie unvollständig sein kann); Preise in Euro (nur Token).
+- Modelle: GLM-5.3 Flash (antwortet nie ohne Nachdenken – das brauchen die kurzen Schritte hier), DeepSeek V4.1 Flash (nur mit eigener
+  Laufzeit), MiMo-V2.6 Flash und DeepSeek V4 Flash (lesen lange Dokumente bei 160–170 GB nicht zuverlässiger als Qwen3.8 27B).
+
+## Testwelt ausbauen (Nutzer, 2026-11-24)
+Ziel: Alles, was der Nutzer heute von Hand prüft, prüfen Tests – damit Opus auf „hoch“ reicht und Fehler vor ihm auffallen.
+
+Fertig, wenn
+- Zufällige Klickpfade jede Nacht (`nightly.yml`): Seiten, Dialoge, Seitenfenster und Bezüge in wechselnder Reihenfolge, hell und
+  dunkel, Mac und iPhone, mit wechselnden Datenwelten – kein Skriptfehler, nichts überlappt oder ist abgeschnitten, keine waagrechte
+  Scrollleiste, Esc/Enter/⌘S wirken, Zustände bleiben beim erneuten Öffnen; ein Fehler nennt seinen Fall zum Wiederholen.
+- Erklärt: jedes Bedienelement hat einen Tooltip oder einen Sprung in die Hilfe, jede Hilfe-Stelle ist erreichbar, jede sichtbare Zahl
+  ist in `docs/ui` beschrieben (die Karten und Tabellen prüft `test_tour` schon).
+- Auffindbar: je Funktion typische Suchwörter des Nutzers – die Suche der Hilfe und `search_help` des Assistenten finden die richtige
+  Stelle.
+- Daten: mehr Testwelten mit Sonderfällen (lange Namen, große Beträge, leere und sehr volle Bereiche, Fremdwährung, Monats- und
+  Jahreswechsel) für Seiten und Assistent, nicht nur für die Rechenlogik.
+- Verständlichkeit (lässt sich nicht fest prüfen): bei jedem großen Versionssprung sieht sich ein Modell alle Seiten an (Skill `major`).
 
 ## 3. GbR-Entlastung: Immobilien, Steuer, Umsatzsteuer
 Ziel: Eine vermögensverwaltende GbR lässt sich mit Kontor führen – Objekte, Steuer, Voranmeldung, Nebenkosten, Ausschüttungen –
@@ -539,47 +459,11 @@ Fertig, wenn
 - jede Zahl ihre Herkunft zeigt (Ist, Plan, Annahme); nichts wird geschätzt, ohne es so zu kennzeichnen;
 - Tests prüfen Fortschreibung, Zinseszins und Grenzen; Hilfe und Bilder aktuell; ohne „Alpha“.
 
-## ~~Übersicht~~ (erledigt in 3.15.0)
-Vier Grafiken aus Bilanz und Cashflow auf einer Bildschirmseite, jede verlinkt an ihre Stelle; am iPhone untereinander; ohne „Alpha“.
-
 ## Als Nächstes (Cashflow und Kategorien)
-- [x] 3.13.15 Anlageziel je Empfänger (IBAN) statt je Kategorie; Anlagen ohne Ziel nicht als Kursgewinn, sondern offen ausweisen.
-- [x] 3.13.19 Kategorienpfade mit „›“ (ein „/“ im Namen bleibt Teil des Namens); Cashflow-Diagramme bis zum letzten abgeschlossenen Monat, Ring für Ausgaben/Einnahmen mit Heatmap, Liquiditätsbrücke, Zu- und Abflüsse je Monat.
-- [x] 3.13.20 Menü neu: „Konten & Regeln“ (alles, was die Zahlen bestimmt) und „Einstellungen“ (wie Kontor arbeitet); Einrichtung als geführter Weg; Geldfluss-Diagramm.
-- [x] 3.13.21 Sicherheit: automatische Sperre trotz offener Seite, kein Ersatzschlüssel wenn der Schlüsselbund nicht antwortet, Verknüpfungen im Belegordner bleiben im Ordner; Lizenz Apache 2.0.
-- [x] 3.13.22 „MoneyMoney-Sync“; Online/Offline je Konto unter Konten, Depot-Verlauf und Datei-Import unter Kontostände; Liquiditätsbrücke grün/rot; vollständig lesen alle 30 Tage.
-- [x] 3.13.23 Nettovermögen je Monat, Klick auf Monat (zwölf Monate) und auf Heatmap/Ring (Umsätze), Vorjahresvergleich; Sync-Seite ohne Kontenliste.
-- [x] 3.13.24 Liquiditätsbrücke aufklappbar, Cashflow-Gruppen in ihren Farben.
-- [x] 3.13.25 Cashflow-Tabelle kompakter (✓ am Wert, FCF), Heatmap robust mit Gesamtzeile, Filter in Umsätze & Belege, Zeitraum per ‹ ›.
-- [x] 3.13.26 Liquiditätsbrücke mit Achse und Zoom, Sankey „Mittelherkunft & -verwendung“ neu.
-- [x] 3.13.27 Vermögensbrücke, Zeile „Umschichtungen“, Tabelle öffnet auf dem letzten abgeschlossenen Monat.
-- [x] 3.13.28 Zeitraum mit Monatskalender und Plan, neue Anordnung der Diagramme, Sprung in die Bilanz.
-- [x] 3.13.29 Protokoll schlank (eine Datei, Filter), Diagramme verschiebbar, Klicks in Tabelle und Geldtransit.
-- [x] 3.13.30 Vorzeichen, Nettovermögen aufklappbar, Unklar anklickbar, Diagramm-Paare, Schraffur in Brücken.
-- [x] 3.13.31 Zugang lädt sofort, Gesamtcashflow-Höhe stabil.
-- [x] 3.13.32 Monatlicher Cashflow wie die Tabelle, ruhigere Farben, Gesamtcashflow mit Taille und „alles aufklappen“, Sprung zur Bilanz.
-- [x] 3.13.33 Vermögensbrücke mit Überschuss/Zinsen, Seitenfenster für Umsätze, Sankey-Farben, PayPal-Umbuchungen gepaart.
-- [x] 3.13.34 Seitenfenster überall, senkrechter Zoom, Farben nach Tabelle, Bilanz-Sprung, umgezogene Karte.
-- [x] 3.14.0 Gesamtprüfung; jede Cashflow-Zahl zeigt ihre Umsätze; Sicherheit (Update-Quelle, Protokoll); iPhone-Feinschliff.
-- [x] 3.15.1 Eingetragene Kategorien sichtbar und rückgängig zu machen.
-- [x] 3.15.3 Einlagen mit Gegenbuchung im eigenen Kapitalkonto: ohne Scheinänderung des Nettovermögens.
-- [x] 3.15.2 Empfohlene Kategorien als Checkliste unter Cashflow-Positionen (MoneyMoneys Schnittstelle kann keine Kategorien anlegen); Zielkonto einheitlich benannt und erklärt.
-- [x] 3.15.8 Übersicht mit Kennzahlen, Vermögen statt Bilanzsumme; offene Buchungen und Positionen anklickbar; Kategorien-Bedarf live.
-- [x] 3.15.10 Übersicht mit Hover-Infos in allen Grafiken; Updates ersetzen direkt und räumen alte Dateien weg.
-- [x] 3.15.11 Übersicht: Vermögensaufbau je Baustein statt Kennzahlen; Vorjahresvergleich nur mit bekanntem Stand.
-- [x] 3.15.12 Bilanz in Jahren ohne graue Jahresspalten; Cashflow-Tabelle: Zeilenlinien neben den Namen ohne Versatz (Safari); Auto-Buchungen: „alle abwählen“ wählt alles ab.
-- [x] 3.15.13 Kontenspiegel erkennt Gegenbuchungen von Hand mit einigen Tagen Abstand; Auto-Buchungen mit Bereich; Ausgaben je Monat: stärkste Farbe für den höchsten Wert, ✦ für neu, Skala bis 100 %; Einrichtung: Weg zum nächsten Schritt unter der Verbindung.
-- [x] 3.15.14 Kontenspiegel: Paare von Hand nur am selben Tag; mit Tagen Abstand „prüfen“, abgewählt, beide Hälften auf einmal verwerfen.
-- Danach: Hinweis bei gemischten Kategorien (etwa eine Immobilien-Kategorie mit Kaufpreis, Auszahlung und Miete), Kategorisieren je Empfänger in einem Schritt, Fortschritt „sicher zugeordnet / geschätzt“.
+- Hinweis bei gemischten Kategorien (etwa eine Immobilien-Kategorie mit Kaufpreis, Auszahlung und Miete), Kategorisieren je Empfänger
+  in einem Schritt, Fortschritt „sicher zugeordnet / geschätzt“.
 
-## Demo (Wunsch des Nutzers, 2026-11-22)
-- [x] 3.16.87 Demo-Modus zum Vorzeigen: klein und hellgrau unten auf der Anmeldeseite, ohne Passwort; erfundene Beispieldaten
-  (`demo.py`, zwei Jahre bis heute), alles bedienbar außer Einstellungen und Einrichtung; eigener verschlüsselter Ordner,
-  eigene Sitzung, eigener Assistent mit demselben Modell (ohne deine Verläufe, ohne Internet); „Beenden“ oder Sperre löscht alles.
-- [x] 3.16.96 Demo als eigene Umgebung (Wunsch des Nutzers): nur mit deiner Anmeldung (Passwort oder Touch ID), gesperrt bleibt sie
-  und öffnet wieder wie zuvor (weg nach zwei Stunden ohne Anmeldung oder mit dem Ende des Dienstes); Assistent mit deinen Rechten,
-  auch Internet; Beispieldaten: Privatperson vier Jahre, Muster UG zwei Jahre (gegründet mit Stammeinlage, Geschäftsführergehalt),
-  Parkweg GbR mit Immobilie und Kaufpreisdarlehen.
+## Demo (Wunsch des Nutzers, 2026-11-22; umgesetzt in 3.16.87 und 3.16.96)
 - Später: Assistent mit vorbereiteten Beispielfragen in der Demo; Firmenwert der UG aus EBITDA, sobald es die gibt.
 
 ## Laufend
@@ -589,16 +473,9 @@ Vier Grafiken aus Bilanz und Cashflow auf einer Bildschirmseite, jede verlinkt a
   und als Ereignis in den Zufallswelten (`tests/test_worlds.py`), damit sie nachts in allen Kombinationen laufen.
 - Oberfläche nach Apples Human Interface Guidelines, hell und dunkel, Mac und iPhone.
 - Mac-App am besten geprüft (Wunsch des Nutzers, 2026-11-23: die Mac-App ist das Wichtigste, dann Safari am Mac und iPhone): ein
-  Rundgang in der echten Mac-App auf GitHub (macOS-Job) – eigener Prüf-Build (nicht die ausgelieferte App) lädt Kontor mit
-  erfundenen Daten in WKWebView, öffnet jede Seite, meldet Skriptfehler und prüft, was nur dort auffällt: Rechtsklick (WebKit
-  markiert dabei das Wort unter der Maus – 3.17.2), Menü und Tastenkürzel, Scrollen, Einfügen aus der Zwischenablage, Diktieren
-  ohne Nachfrage. Playwright mit der Safari-Engine unter Linux bildet das nicht nach.
-  Erster Schritt in 3.17.3: jede Hauptseite ohne Skriptfehler, echter Rechtsklick auf eine Zelle des Cashflows (`tests/test_mac_webview.py`,
-  `tests/mac_webview.swift`; seit 3.17.10 zählt der Schritt wie jeder). Weiter: Menü, Tastenkürzel, Scrollen, Einfügen.
-
-## ~~Beim nächsten großen Versionssprung~~ (erledigt in 3.17.0)
-Hilfe und README als Ganzes auf den Stand gebracht (Ziel „dein digitaler CFO“, Mac-App, Rechtsklick, Sammelkarte des Assistenten,
-Gedächtnis, Internet, Daten erst nach Anmeldung, Netzverbindungen), Hilfe-Bilder neu.
+  Rundgang in der echten Mac-App auf GitHub (macOS-Job, eigener Prüf-Build, `tests/test_mac_webview.py`, `tests/mac_webview.swift`) –
+  heute jede Hauptseite ohne Skriptfehler und ein echter Rechtsklick. Weiter: Menü, Tastenkürzel, Scrollen, Einfügen aus der
+  Zwischenablage, Diktieren ohne Nachfrage (Playwright mit der Safari-Engine unter Linux bildet das nicht nach).
 
 ## Offen nach der Gesamtprüfung 3.17.0
 - Zugang vom iPhone (Passkey je iPhone, Face ID für jede Änderung, Tailscale-Prüfung; Stand der Umsetzung): am echten iPhone prüfen –
@@ -610,14 +487,10 @@ Gedächtnis, Internet, Daten erst nach Anmeldung, Netzverbindungen), Hilfe-Bilde
   macOS' Sandbox ohne ausgehendes Netz.
 - Filter der Internetsuche: Ziffern statt Buchstaben, rückwärts Geschriebenes und Umlaut-Schreibweisen erkennt er erst ab sechs
   Buchstaben (kürzere Namen gingen so durch); „Q3 2025“ lehnt er als lange Ziffernfolge ab – jede Suche steht vorher auf einer Karte im Chat.
-- ~~Abschirmung: harte Links im eigenen Zwischenordner könnten pfadbasierte Regeln umgehen – am Mac prüfen, dann `(deny file-link*)`.~~
-  (geprüft auf GitHubs Mac, macOS 15, 3.17.29: in beiden Stufen lehnt die Sandbox schon das Anlegen eines Links auf eine Datei ab, die das
-  Modell nicht lesen darf – „link: Operation not permitted“; eine Regel `file-link*` kennt macOS nicht)
 - Beschädigte Dateien: Planung, Kategorien und Belegindex nennen die Seiten mit Dateinamen (nicht beiseitegelegt); sind Einstellungen,
   Stand und Anmeldedaten zugleich beschädigt, sperrt die Anmeldung („Schlüssel passt nicht“) – ein falscher Schlüssel sieht gleich aus.
 - Planung: Zinsen und Anteile in der Vorschau noch mit gerundeten Kommazahlen (gebucht wird exakt).
-- Suchfelder der Hilfe- und der Umsatzseite suchen nach Wörtern (nach Bedeutung nur im Assistenten).
 - Nach der Prüfung 3.17.1 offen: Depot mit Lücke zwischen zwei bekannten Ständen – die Änderung landet im Monat des nächsten Stands
   (gekennzeichnet ist nur die Zeit vor dem ersten); Heatmap höchstens zehn Streifen ohne „Übrige“, Ring-Scheiben ohne Gegenposten
-  (Hilfe sagt es nicht); ~~Kennzahlen der Planung (Sparquote, Reichweite, Zinslast) gerechnet, aber nirgends gezeigt~~ (gezeigt seit 3.17.6); von unterwegs „nur ansehen“ gekennzeichnet, Felder aber nicht gesperrt (der Dienst lehnt ab); Jahrestabelle der
+  (Hilfe sagt es nicht); von unterwegs „nur ansehen“ gekennzeichnet, Felder aber nicht gesperrt (der Dienst lehnt ab); Jahrestabelle der
   Immobilie färbt nur nach Vorzeichen.
