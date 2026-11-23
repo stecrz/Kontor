@@ -1202,8 +1202,15 @@ class App:
             return
         with EXPOSURE_CV:
             cur = self.exposure()
+            since = time.time() - self.__dict__.setdefault("_exposure_start", time.time())
+            if cur.get("serve") == "pending" and since >= EXPOSURE_FIRST:
+                # no answer in time since the start: "unknown" (locks nothing; the looks go on, an answer replaces it -- found
+                # passed on, every session at this Mac ends). Signing in never waits for Tailscale's timeouts.
+                log.error("Tailscale gave no answer within %d s of the start -- whether it passes Kontor's port on is not known", EXPOSURE_FIRST)
+                cur = self.__dict__["_exposure"] = dict(cur, serve="unknown", at=cur.get("at", 0.0))
+                EXPOSURE_CV.notify_all()
             failed = int(cur.get("failed") or 0)
-            young = time.time() - self.__dict__.setdefault("_exposure_start", time.time()) < EXPOSURE_YOUNG     # (Tailscale may start after Kontor)
+            young = since < EXPOSURE_YOUNG     # (Tailscale may start after Kontor)
             wait = EXPOSURE_RETRY if 0 < failed < EXPOSURE_TRIES or cur.get("serve") == "pending" or young else EXPOSURE_SECONDS
             if self.__dict__.get("_exposure_running") or (not fresh and time.time() - cur.get("at", 0.0) < wait):
                 return
@@ -5406,6 +5413,8 @@ EXPOSURE_RETRY = 5                      # ... after a look without an answer: th
 EXPOSURE_YOUNG = 180                    # ... in the first minutes after the start (Tailscale may come up later): every EXPOSURE_RETRY
 EXPOSURE_TRIES = 3                      # ... never known since the start: locked until so many looks in a row went without an answer
 EXPOSURE_WAIT = 4.0                     # a sign-in at the Mac right after the start waits so long for the first look
+EXPOSURE_FIRST = 20                     # ... and no longer than this after the start in all: a Tailscale that does not answer
+                                        # (each look waits for its timeouts, up to ~2 min for three) counts as "unknown" then
 EXPOSURE_LOCK = threading.Lock()
 EXPOSURE_CV = threading.Condition(EXPOSURE_LOCK)
 ACL_LOCK = threading.Lock()             # one look at Tailscale's rules at a time (App.remote_acl)

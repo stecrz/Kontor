@@ -1,5 +1,13 @@
 # Änderungen
 
+## 3.17.28 (2026-11-23 21:05)
+- Anmeldung: antwortet Tailscale nach einem Start nicht, wartet Touch ID bzw. Passwort am Mac höchstens 20 s (vorher bis ~2 min)
+- Anmeldung: Satz „Abgleich und Auto-Buchungen warten auf deine Anmeldung“ entfernt; Untertitel „Dein digitaler CFO.“
+- Auto-Buchungen: nach „Keine“ einzeln gewählt – neu errechnete Buchungen sind nicht mehr von selbst mit ausgewählt
+- Auto-Buchungen: Klick irgendwo in die Zelle des Hakens setzt oder entfernt ihn
+- Einstellungen → Allgemein: „Zahl im Dock“ (wartende Auto-Buchungen oder aus), in der Mac-App
+- Entwicklung: mehrere Aufgaben nacheinander statt mit Unteragenten
+
 ## 3.17.27 (2026-11-23 20:04)
 - KI-Assistent: Tabellen aus PDFs genauer – ein Strich für „nichts“ wird kein Minus, zwei Zahlen nebeneinander nie eine, Spalten verrutschen nicht mehr; Unklares bleibt Text
 - KI-Assistent: lange Auswertungen (Wertenachweis über 30 Seiten) vollständig – jede Zeile einmal, jede Zahl steht so im Dokument

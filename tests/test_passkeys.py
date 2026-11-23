@@ -12,6 +12,7 @@ import sys
 import tempfile
 import threading
 import unittest
+import time as _t
 import urllib.error
 import urllib.request
 from http.cookiejar import CookieJar
@@ -1020,6 +1021,26 @@ class OverHttp(unittest.TestCase):
         """A service just started: Tailscale not looked at yet, its first look on its way (the test gives its answers)."""
         self.app.__dict__.pop("_exposure", None)
         self.app.__dict__["_exposure_running"] = True
+        self.app.__dict__["_exposure_start"] = _t.time()
+
+    def test_a_silent_tailscale_never_holds_the_sign_in_long(self):
+        """Tailscale answers nothing (each look runs into its timeouts): EXPOSURE_FIRST seconds after the start it counts as
+        "unknown" -- the sign-in at the Mac goes, whatever the looks still running; an answer later replaces it."""
+        self.MA.EXPOSURE_WAIT, wait = 0.05, self.MA.EXPOSURE_WAIT
+        try:
+            self._no_look()
+            fresh = Client(self.srv.server_address[1])
+            self.remote[0] = False
+            self.assertEqual(fresh.call("/api/login", {"password": "sehr-geheimes-passwort"})[0], 503)        # just started: waits
+            self.app.__dict__["_exposure_start"] = _t.time() - self.MA.EXPOSURE_FIRST - 1
+            self.remote[0] = False
+            self.assertEqual(fresh.call("/api/login", {"password": "sehr-geheimes-passwort"})[0], 200)
+            self.assertEqual(self.app.exposure()["serve"], "unknown")
+            self.app._exposure_set({"serve": "funnel", "lock": None}, running=False)       # an answer at last: it counts
+            self.assertEqual(self.app.exposure()["serve"], "funnel")
+        finally:
+            self.MA.EXPOSURE_WAIT = wait
+            self.app.__dict__["_exposure"] = {"serve": "unknown", "lock": None, "at": _t.time()}
 
     def test_nothing_signs_in_at_the_mac_before_tailscale_was_looked_at(self):
         """Right after a start Kontor does not know whether "tailscale serve" passes its port on: a sign-in from this Mac's

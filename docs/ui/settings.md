@@ -9,6 +9,7 @@ Mac (elsewhere they are greyed out with "nur am Mac"). The assistant never reads
 - **Erscheinungsbild**: Dunkel, Hell or Wie das System – for this device only.
 - **Als App**: Kontor in its own window with an icon in the Dock: at the Mac Kontor's own app ("Mac-App öffnen"; it is built on
   the Mac), in Chrome/Edge an install button, in Safari and on the iPhone the way to add it ("Zum Home-Bildschirm").
+- **Zahl im Dock** (only inside the Mac app): the red number on Kontor's Dock icon – how many auto bookings wait for approval ("Wartende Auto-Buchungen", default) or none ("Aus"); for this Mac only.
 
 ## settings.moneymoney — MoneyMoney-Sync
 The connection to MoneyMoney, how current the data is and when Kontor reads. Kontor reads through MoneyMoney's script

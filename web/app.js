@@ -69,6 +69,7 @@ if (SHELL) {
 const ALPHA_TABS = new Set(['planning', 'properties', 'tax', 'transactions']);
 const alphaTag = (cls = 'alpha-tag') => `<em class="${cls}" title="${t('alpha_tip')}">${t('alpha')}</em>`;
 // appearance, per device: dark (the default), light, or like the system
+const dockGet = () => { try { return LS.get('kontor.dock') === 'off' ? 'off' : 'count'; } catch (e) { return 'count'; } };      // the number on the app's icon in the Dock
 const themeGet = () => { try { return ['light', 'auto'].includes(LS.get('kontor.theme')) ? LS.get('kontor.theme') : 'dark'; } catch (e) { return 'dark'; } };
 function applyTheme(v) {
   const sys = window.matchMedia ? matchMedia('(prefers-color-scheme: dark)') : null;
@@ -157,6 +158,7 @@ const ROLE_OPTS = [['cash', t('pos_bankguthaben')], ['securities', t('pos_wertpa
 // Hilfetexte (Tooltips). Schluessel werden mit hq('schluessel') eingeblendet.
 const H = {
   als_app: t('h_als_app'),
+  dock: t('h_dock'),
   area: t('ein_bereich_ist_eine_menge'),
   main_area: t('es_gibt_genau_einen_hauptbereich'),
   share: t('dein_anteil_an_dieser_gesellschaft'),
@@ -733,8 +735,7 @@ function showLogin() {
     : pair ? t('pk_hinzufuegen_titel')
     : LOGIN.demo ? t('demo_anmelden')
     : SESSION && SESSION.setup_local_only ? t('noch_kein_passwort_festgelegt_die')
-    : SESSION && SESSION.waiting && !IS_LOCAL && hasKey ? t('pk_nach_neustart')
-    : SESSION && SESSION.waiting ? t('anmeldung_wartet') : '';
+    : SESSION && SESSION.waiting && !IS_LOCAL && hasKey ? t('pk_nach_neustart') : '';
   $('#login-text').hidden = !$('#login-text').textContent;
   // Touch ID eingeschaltet (am Mac): nur Touch ID, Passwort erst auf Wunsch – nie beides gleichzeitig
   const tid = !setup && !OFFLINE.mode && SESSION && SESSION.touchid;
@@ -1176,7 +1177,7 @@ function statusMini() {
   navBadge('#bookings', l && l.error ? '!' : waiting ? (waiting > 99 ? '99+' : String(waiting)) : notes ? '•' : '', l && l.error ? t('letzter_abgleich_mit_fehler') : waiting ? tn('0_buchungsvorschlaege', waiting) : tn('n_hinweise_auto', notes));
   navBadge('#settings', st.update && st.update.newer ? (upFinds(st.update).length ? '!' : '•') : asNewer() ? '•' : '', st.update && st.update.newer ? (upFinds(st.update).length ? t('upd_braucht_freigabe', st.update.available) : t('update') + st.update.available + t('verfuegbar')) : asNewer() ? t('ki_neues_da') : '');
   const mb = $('#menu-btn'); if (mb) mb.classList.toggle('has-badge', !!(waiting || notes || (l && l.error) || (st.update && st.update.newer) || asNewer()));     // narrow window: the sidebar is closed
-  try { if (navigator.setAppBadge) { if (waiting) navigator.setAppBadge(waiting); else navigator.clearAppBadge(); } } catch (e) { /* not supported */ }
+  try { if (navigator.setAppBadge) { if (waiting && dockGet() !== 'off') navigator.setAppBadge(waiting); else navigator.clearAppBadge(); } } catch (e) { /* not supported */ }
   if (!st.storage.encrypted) banner(t('daten_liegen_unverschluesselt_verschlu'), 'err');
   else if ((st.storage.damaged || []).length) {          // a file that did not read at the sign-in was set aside: said until a backup is restored or the note is closed
     const d = st.storage.damaged, b = $('#banner');
@@ -4944,7 +4945,7 @@ async function vSync() {
 // ---------------------------------------------------------------- Buchungen (Laeufe)
 // approval: your changes and the bookings left out, until the next check; calc = the list recalculated for them (a booking
 // left out or changed moves every later balance, so the next value adjustment of that account takes up the difference)
-const BOOK = {time: null, edits: {}, off: new Set(), runs: null, calc: null, waits: new Set(), extra: {}, editing: new Set(), seq: 0};
+const BOOK = {time: null, edits: {}, off: new Set(), runs: null, calc: null, waits: new Set(), extra: {}, editing: new Set(), seq: 0, pick: false};      // pick: all left out, then chosen one by one -- what a recalculation brings anew stays left out
 // the rows shown: the waiting list, new ones from the recalculation, each with the amount it books now
 function bkRows(l) {
   const base = l.proposals || [], inBase = new Set(base.map(v => v.key)), calc = BOOK.calc ? new Map(BOOK.calc.map(r => [r.key, r])) : null;
@@ -4998,7 +4999,7 @@ async function rulesFollowUp(after) {
     if (r.status === 'ok' && r.wartend) toast(r.wartend === 1 ? t('aktualisiert_1') : t('aktualisiert_n', r.wartend), 4500);
   } catch (e) { /* the next sync plans it */ }
 }
-async function bkRecalc() {
+async function bkRecalc(depth = 0) {
   const l = (BOOK.runs || {}).last_run || {}, my = ++BOOK.seq;
   if (!l.dry_run) return;
   const edits = {}; Object.entries(BOOK.edits).forEach(([k, e]) => { if (e.amount != null || e.date) edits[k] = {amount: e.amount, date: e.date}; });
@@ -5012,7 +5013,10 @@ async function bkRecalc() {
     const inBase = new Set((l.proposals || []).map(v => v.key));
     BOOK.calc = r.proposals || null; BOOK.waits = new Set(r.waiting || []);
     BOOK.extra = Object.fromEntries(Object.entries(BOOK.extra).filter(([k]) => BOOK.off.has(k)));
-    (BOOK.calc || []).forEach(x => { if (!inBase.has(x.key)) BOOK.extra[x.key] = x; });
+    const fresh = (BOOK.calc || []).filter(x => !inBase.has(x.key) && !BOOK.extra[x.key]);
+    fresh.forEach(x => { BOOK.extra[x.key] = x; });
+    // chosen one by one after "none": a booking the recalculation brings anew is not chosen by itself -- left out, worked out again
+    if (BOOK.pick && fresh.length && depth < 5) { fresh.forEach(x => BOOK.off.add(x.key)); return bkRecalc(depth + 1); }
     route();
   } catch (e) { toast(e.message, 5000); }
 }
@@ -6107,6 +6111,7 @@ function vEinstellungenAllgemein() {
     <label>${t('sprache_label')}</label><label class="chk"><select id="e-lang">${langOpts()}</select> <span class="small muted">${t('sprache_hinweis')}</span></label>
     <label>${t('design_label')}</label><label class="chk"><select id="e-theme">${[['dark', t('design_dunkel')], ['light', t('design_hell')], ['auto', t('design_system')]].map(([k, l]) => `<option value="${k}" ${themeGet() === k ? 'selected' : ''}>${l}</option>`).join('')}</select> <span class="small muted">${t('design_hinweis')}</span></label>
     <label>${t('als_app')}${hq('als_app')}</label><div class="chk" id="webapp-row">${webappRow()}</div>
+    ${SHELL ? `<label>${t('dock_label')}${hq('dock')}</label><label class="chk"><select id="e-dock">${[['count', t('dock_anzahl')], ['off', t('dock_aus')]].map(([k, l]) => `<option value="${k}" ${dockGet() === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>` : ''}
   </div></div>`;          // both take effect at once (no save button)
 }
 // Kontor as an app: running as one; at the Mac Kontor's own app (built there, mac_app.py) -- else a button (Chrome, Edge) or
@@ -7013,6 +7018,7 @@ function bind(main) {
     if (!r.available) { wc.classList.remove('busy'); wc.disabled = false; if (busy) busy.classList.add('hidden'); showFindings($('#w-findings'), [], r.text, 'error'); return; }
     S.KONTEN = r.accounts; S.KATS = r.categories || S.KATS; VB.checked = location.hash; await softRoute(); showFindings($('#w-findings'), r.findings, t('verbindung_steht') + r.accounts.length + t('konten_gelesen'), 'ok'); });
   const wr = $('#w-report', main); if (wr) wr.addEventListener('click', () => rebuildReport(true));
+  const ed = $('#e-dock', main); if (ed) ed.addEventListener('change', () => { try { LS.set('kontor.dock', ed.value); } catch (e) {} statusMini(); });
   const et = $('#e-theme', main); if (et) et.addEventListener('change', () => { try { LS.set('kontor.theme', et.value); } catch (e) {} applyTheme(et.value); route(); });
   for (const wl of [$('#w-lang', main), $('#e-lang', main)]) if (wl) wl.addEventListener('change', async () => { if (wl.value === LANG) return; try { await api('/api/language', {language: wl.value}); setLang(wl.value); } catch (e) { wl.value = LANG; toast(e.message, 5000); } });
   const abr = $('#add-bereich', main); if (abr) { bindBereichKonten(main); abr.addEventListener('click', () => { $('#bereiche').insertAdjacentHTML('beforeend', bereichForm({name: t('neuer_bereich'), id: '', accounts: [], main_area: false}, $$('#bereiche .item').length)); bindDel(main); bindBereichKonten($('#bereiche .item:last-child')); bereichMvState(); }); }
@@ -7130,7 +7136,7 @@ function bind(main) {
       // what you leave out or change moves the bookings after it: the list is recalculated (what you see is what is booked)
       // all or none: every booking of the list, also those added by a recalculation (none: nothing left to work out)
       if (e.target.id === 'bk-all') { const all = bkRows((BOOK.runs || {}).last_run || {}).map(x => x.k).filter(Boolean);
-        BOOK.off = e.target.checked ? new Set() : new Set(all);
+        BOOK.off = e.target.checked ? new Set() : new Set(all); BOOK.pick = !e.target.checked;
         $$('tr[data-key]', bt).forEach(x => { if (!x.dataset.key) return; x.classList.toggle('off', !e.target.checked); const c = $('.bk-on', x); if (c) c.checked = e.target.checked; });
         count(); return bkRecalc(); }
       const r = e.target.closest('tr[data-key]'); if (!r || !r.dataset.key) return;
@@ -7145,6 +7151,8 @@ function bind(main) {
       if (e.target.classList.contains('bk-b') || e.target.classList.contains('bk-d')) bkRecalc();
     });
     bt.addEventListener('click', async e => {
+      // the cell of a box: a click anywhere in it ticks the box (not only on the box itself)
+      const cell = e.target.closest('td.c, th.c'); if (cell && e.target.tagName !== 'INPUT') { const c = $('input[type=checkbox]', cell); if (c && !c.disabled) c.click(); return; }
       const r = e.target.closest('tr[data-key]'); if (!r || !r.dataset.key) return;
       if (e.target.closest('.bk-edit')) { const k = r.dataset.key, on = !BOOK.editing.has(k); if (on) { BOOK.editing.add(k); r.classList.add('editing'); ($('.bk-b', r) || $('.bk-z', r)).focus(); } else { BOOK.editing.delete(k); route(); } return; }
       if (e.target.closest('.bk-rej')) {

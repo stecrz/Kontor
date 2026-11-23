@@ -54,7 +54,7 @@ anhängen – nie löschen.
   Schlüsselbund), nur im Arbeitsspeicher entschlüsselt; nie im Protokoll, in Sicherungen, Paketen oder für die KI erreichbar.
   Verbindung nur zu Googles Adressen für BigQuery und Anmeldung, nur feste Abfragen aus Kontors Code (kein freies SQL), nichts
   nach außen außer der Abfrage. Abschaltbar; bei Google jederzeit widerrufbar. Ausnahme von „keine Zugangsdaten speichern“.
-- **Name:** Untertitel „Dein digitaler CFO“; in der Oberfläche heißt er weiter „KI-Assistent“.
+- **Name:** Untertitel „Dein digitaler CFO“ (seit 23.11.2026 mit Punkt: „Dein digitaler CFO.“); in der Oberfläche heißt er weiter „KI-Assistent“.
 - **Internetsuche (nur lesen):** kostenlos, ohne Kreditkarte, nur über offizielle Schnittstellen, in drei Stufen – der Assistent
   nimmt die erste, die passt: (1) Wissen, Recht, Zahlen ohne Konto: Wikipedia/Wikidata, Gesetze im Internet, Rechtsinformationsportal
   des Bundes, BMF/BFH, GLEIF, Destatis, Bundesbank, EZB, Eurostat, OECD; (2) Nachrichten und Branche ohne Konto: tagesschau-Suche,
@@ -229,6 +229,16 @@ anhängen – nie löschen.
 - **Nicht bilanzierte Konten im Bereich** (Nutzer, 2026-11-23): Ein Konto mit „nicht bilanzieren“ (z. B. Genossenschaftsanteile in
   einer Gruppe „Off-Balance“) steht unter Konten in seinem Bereich, nicht unter „ohne Bereich“. (umgesetzt in 3.17.24)
 - **Kontoauswahl ohne Bereichsnamen** und **optionale Felder erklärt** (Nutzer, 2026-11-23): siehe CLAUDE.md, Oberfläche. (umgesetzt in 3.17.24)
+
+- **Auto-Buchungen auswählen** (Nutzer, 2026-11-23): Nach „alle abwählen“ und einzelnem Anhaken ist nur das Angehakte gewählt –
+  auch Buchungen, die die Neuberechnung neu bringt, bleiben abgewählt; ein Klick in die Zelle des Hakens genügt. (umgesetzt in 3.17.28)
+- **Zahl im Dock einstellbar** (Nutzer, 2026-11-23): Einstellungen → Allgemein, in der Mac-App: wartende Auto-Buchungen oder aus. (umgesetzt in 3.17.28)
+- **Unteragenten** (Nutzer, 2026-11-23): Mehrere Aufgaben nacheinander erledigen; Paralleles macht er mit eigenen Chats. (umgesetzt in 3.17.28)
+- **Anmeldung nach Update ohne Warten** (Nutzer, 2026-11-23): Antwortet Tailscale nach einem Start nicht, wartet die Anmeldung am Mac
+  höchstens 20 Sekunden (vorher bis ~2 min, bis drei Blicke ins Leere gingen); kein Satz „Abgleich und Auto-Buchungen warten auf
+  deine Anmeldung“ auf der Anmeldeseite; Untertitel „Dein digitaler CFO.“ mit Punkt. (umgesetzt in 3.17.28)
+  Noch zu klären: Beim Nutzer antwortet Tailscale Kontor nach jedem Start nicht (Protokoll: „gave no answer to 3 looks“) – die
+  Prüfung auf serve/Funnel steht dort also auf „unbekannt“; Ursache (App-Store-Variante, Aufruf aus dem Dienst) noch offen.
 
 ## Offen (Entscheidung steht aus – mit Empfehlung vorlegen, wenn der Punkt dran ist)
 - Umsatzsteuer-Voranmeldung direkt an ELSTER senden (ELSTERs Programmbibliothek ERiC, Anmeldung als Hersteller, Zertifikat und
