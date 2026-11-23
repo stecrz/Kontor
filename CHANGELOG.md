@@ -1,5 +1,11 @@
 # Änderungen
 
+## 3.17.26 (2026-11-23 20:10)
+- KI-Assistent: Notizen kurz und sinngemäß statt im Wortlaut – Zahlen, Namen, Daten genau
+- KI-Assistent: merkt sich auch, was er in der Antwort herausfindet (Tatsache, Grund, Person) – „aus der Antwort“, mit „Zurücknehmen“
+- KI-Assistent: Wünsche, Regeln, Pläne nur aus deinen Worten; aus einer Antwort mit Internet-, Beleg- oder Dateitext erst nach Klick
+- Einstellungen: Gedächtnis-Liste und Export nennen Notizen aus Antworten
+
 ## 3.17.25 (2026-11-23 19:31)
 - Cashflow: eine Ausgabe gleichen Betrags (z. B. Versicherung) lässt keine PayPal-Aufladung mehr die Gegenbuchung einer Einlage im Beteiligungskonto nehmen
 - Entwicklung: übrige Zufallsfälle der Nacht behoben und fest aufgenommen (Testwelten: Sondertilgung vor schon gebuchtem Monatsend-Zins, verschobene Spiegelbuchung mit neu erfasstem Original)

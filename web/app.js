@@ -8289,13 +8289,14 @@ async function asSend(text) {
   } catch (e) { m.parts.push({k: 'err', text: e.message}); m.state = 'error'; AS.busy = false; asMsgs(); }
 }
 function asMemPart(p) {
-  // a note Kontor kept from what you said (or forgot, or offers to keep): one quiet line under the answer, with a way back
+  // a note Kontor kept from what you said or from the answer (or forgot, or offers to keep): one quiet line under the answer, with a way back
   const old = (p.replaces || []).map(x => `<div class="as-m-old">${esc(t('ki_g_ersetzt', x))}</div>`).join('');
   const undo = `<button type="button" class="ghost small as-m-undo" data-id="${esc(p.id)}">${t('ki_e_zurueck')}</button>`;
-  if (p.state === 'ask') return `<div class="as-mem-p ask" data-ex="assistant.notes"><span class="as-m-k">${t('ki_g_merken_frage')}</span><span class="as-m-t">${esc(p.text)}</span><span class="as-m-b"><button type="button" class="small as-m-yes" data-id="${esc(p.id)}">${t('ki_g_merken')}</button><button type="button" class="small secondary as-m-no" data-id="${esc(p.id)}">${t('ki_g_nicht_merken')}</button></span>${old}</div>`;
+  const from = p.answer ? `<span class="tag">${t('ki_g_aus_antwort')}</span>` : p.pasted ? `<span class="tag">${t('ki_g_eingefuegt')}</span>` : '';
+  if (p.state === 'ask') return `<div class="as-mem-p ask" data-ex="assistant.notes"><span class="as-m-k">${t('ki_g_merken_frage')}</span><span class="as-m-t">${esc(p.text)}</span>${from}<span class="as-m-b"><button type="button" class="small as-m-yes" data-id="${esc(p.id)}">${t('ki_g_merken')}</button><button type="button" class="small secondary as-m-no" data-id="${esc(p.id)}">${t('ki_g_nicht_merken')}</button></span>${old}</div>`;
   if (p.state === 'forgotten') return `<div class="as-mem-p" data-ex="assistant.notes"><span class="as-m-k">${t('ki_g_vergessen_p')}</span>${p.text ? `<span class="as-m-t">${esc(p.text)}</span>${undo}` : ''}</div>`;
   if (p.state === 'undone' || p.state === 'declined' || !p.text) return `<div class="as-mem-p off" data-ex="assistant.notes"><span class="as-m-k">${t('ki_g_nicht_gemerkt')}</span></div>`;
-  return `<div class="as-mem-p" data-ex="assistant.notes"><span class="as-m-k">${t(p.state === 'restored' ? 'ki_g_wieder' : 'ki_g_gemerkt')}</span><span class="as-m-t">${esc(p.text)}</span>${p.pasted ? `<span class="tag">${t('ki_g_eingefuegt')}</span>` : ''}${p.state === 'remembered' ? undo : ''}${old}</div>`;
+  return `<div class="as-mem-p" data-ex="assistant.notes"><span class="as-m-k">${t(p.state === 'restored' ? 'ki_g_wieder' : 'ki_g_gemerkt')}</span><span class="as-m-t">${esc(p.text)}</span>${from}${p.state === 'remembered' ? undo : ''}${old}</div>`;
 }
 function asBasisPart(p) {
   // the notes the answer rests on (Kontor finds them in its words): one quiet line, the day of each in its tooltip
@@ -9063,7 +9064,7 @@ function asMemDraw() {
   const some = r.profile < r.notes;          // not everything goes with every question: the notes that do say so
   const row = x => AS.memEdit === x.id
     ? `<div class="as-item as-mem-it edit" data-id="${esc(x.id)}"><textarea class="as-mem-ta" maxlength="${r.text_max}" rows="${Math.min(6, Math.max(2, Math.ceil(x.text.length / 80)))}" aria-label="${esc(t('ki_g_aendern'))}">${esc(AS.memDraft != null ? AS.memDraft : x.text)}</textarea><span class="as-act"><button class="small as-mem-ok">${t('ki_g_sichern')}</button><button class="small secondary as-mem-no">${t('ki_abbrechen')}</button></span></div>`
-    : `<div class="as-item as-mem-it" data-id="${esc(x.id)}"><span class="as-mem-t">${esc(x.text)}<br><span class="muted small">${esc(FD(x.created))} · ${t(`ki_g_h_${x.how}`)}${some && x.profile ? ` · <span title="${esc(t('ki_g_steckbrief_tip'))}">${t('ki_g_steckbrief')}</span>` : ''}</span></span>
+    : `<div class="as-item as-mem-it" data-id="${esc(x.id)}"><span class="as-mem-t">${esc(x.text)}<br><span class="muted small">${esc(FD(x.created))} · ${t(x.answer ? 'ki_g_h_answer' : `ki_g_h_${x.how}`)}${some && x.profile ? ` · <span title="${esc(t('ki_g_steckbrief_tip'))}">${t('ki_g_steckbrief')}</span>` : ''}</span></span>
       <span class="as-act"><button type="button" class="icon as-mem-pin${x.pinned ? ' on' : ''}" aria-pressed="${x.pinned ? 'true' : 'false'}" title="${esc(t(x.pinned ? 'ki_g_loesen' : 'ki_g_anheften'))}" aria-label="${esc(t(x.pinned ? 'ki_g_loesen' : 'ki_g_anheften'))}">${ICON.pin}</button><button type="button" class="icon as-mem-edit" title="${esc(t('ki_g_aendern'))}" aria-label="${esc(t('ki_g_aendern'))}">${ICON.pencil}</button><button type="button" class="icon as-mem-del" title="${esc(t('ki_g_vergessen'))}" aria-label="${esc(t('ki_g_vergessen'))}">${ICON.trash}</button></span></div>`;
   box.innerHTML = r.items.length ? r.items.map(row).join('') + (r.total > r.items.length ? `<div class="as-item"><button type="button" class="ghost small" id="as-mem-more">${esc(t('ki_g_mehr', asN(r.total - r.items.length)))}</button></div>` : '')
     : `<div class="as-item muted small"><span>${t(AS.memQ ? 'ki_g_kein_treffer' : 'ki_g_leer')}</span></div>`;

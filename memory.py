@@ -1,8 +1,8 @@
-"""The assistant's memory: what the user told it to remember -- about themselves, their plans, decisions, people, preferences
+"""The assistant's memory: what is worth remembering about the user -- themselves, their plans, decisions, people, preferences
 and how it should answer. A second brain on this Mac, kept beside the model (the model itself never changes or grows):
 
-  notes    short texts in the user's own words, each with its date and where it came from (a conversation, the settings, a
-           backup). Encrypted in Kontor's data folder (memory-notes-0001.json, ...: at most SEGMENT notes per file, so that
+  notes    short texts, condensed from what the user said or from what the assistant worked out with them (marked so),
+           each with its date and where it came from (a conversation, the settings, a backup). Encrypted in Kontor's data folder (memory-notes-0001.json, ...: at most SEGMENT notes per file, so that
            a change writes one small file however much is remembered, and a damaged file loses one file's notes, never
            all). In the backup; never in the log or a package; a reset and removing Kontor delete them.
   profile  the few notes every question is given (pinned ones first, then the latest made or used), within a fixed budget --
@@ -521,6 +521,8 @@ def _valid(n: Any) -> Optional[dict]:
     if out["source"]["how"] == "import" and re.fullmatch(r"[0-9a-f]{12}", str(src.get("batch") or "")):
         # which import brought it, when, and a key of its text as it came (to take that import back: only what is unchanged)
         out["source"].update(batch=src["batch"], at=_stamp(src.get("at"), created), **({"as": src["as"]} if re.fullmatch(r"[0-9a-f]{16}", str(src.get("as") or "")) else {}))
+    if src.get("answer") is True and out["source"]["how"] == "chat":      # from the assistant's answer in a conversation (not the user's words)
+        out["source"]["answer"] = True
     if n.get("pinned") is True:
         out["pinned"] = True
     if n.get("kind") in KINDS and n.get("kind"):
@@ -972,7 +974,7 @@ class Memory:
     def view(self, n: dict) -> dict:
         """A note as the page shows it."""
         out = {k: n[k] for k in ("id", "text", "created", "changed", "kind") if k in n}
-        out.update(pinned=bool(n.get("pinned")), how=n["source"]["how"], chat=n["source"].get("chat", ""), pasted=bool(n["source"].get("pasted")))
+        out.update(pinned=bool(n.get("pinned")), how=n["source"]["how"], chat=n["source"].get("chat", ""), pasted=bool(n["source"].get("pasted")), answer=bool(n["source"].get("answer")))
         if n["id"] in self._replaced:
             out["replaced_by"] = self._replaced[n["id"]]
         olds = [self._notes[o]["text"] for o in n.get("replaces") or [] if self._notes and o in self._notes]
@@ -1162,11 +1164,12 @@ class Memory:
         return t
 
     def add(self, text: Any, how: str = "manual", chat: str = "", pinned: bool = False, kind: str = "", replaces: Iterable[str] = (),
-            pasted: bool = False, names: Optional[Iterable[str]] = None, quiet: bool = False, by: str = "") -> dict:
+            pasted: bool = False, names: Optional[Iterable[str]] = None, quiet: bool = False, by: str = "", answer: bool = False) -> dict:
         """Remembers a note. replaces: notes it takes the place of (they stay, marked as replaced). The same text as a note
         that counts: that one is returned (known), nothing is added. names: the names in it as the look that made it named
         them (a list, empty too: named; None: not yet -- unnamed). quiet: not told to the log; by: who asked for it
-        ("settings": the user in the settings, "chat": said in a conversation) -- for the log."""
+        ("settings": the user in the settings, "chat": said in a conversation) -- for the log. answer: it comes from the
+        assistant's answer in that conversation, not from the user's words (shown so)."""
         t = self.check(text)
         with self.lock:
             notes = self._load()
@@ -1176,7 +1179,7 @@ class Memory:
                 return dict(same, known=True)
             now = _now()
             n = _valid({"id": "n" + secrets.token_hex(5), "text": t, "created": now, "changed": now, "pinned": bool(pinned), "kind": kind, "replaces": rep,
-                        "names": list(names or []), "named": names is not None, "source": {"how": how if how in HOWS else "manual", "chat": chat, "pasted": bool(pasted)}})
+                        "names": list(names or []), "named": names is not None, "source": {"how": how if how in HOWS else "manual", "chat": chat, "pasted": bool(pasted), "answer": bool(answer)}})
             assert n is not None
             while n["id"] in notes:  # pragma: no cover - 40 random bits
                 n["id"] = "n" + secrets.token_hex(5)
@@ -1417,7 +1420,7 @@ class Memory:
         -> Gedächtnis -> Exportieren): Markdown -- a list a person reads, each note with its day, where it came from, whether
         it is pinned and what it replaced -- and under it the same as JSON for programs (format "kontor-memory": the
         format's version, when it was exported, Kontor's version; per note "text", "created" and "changed" as ISO 8601,
-        "origin" chat / pasted / manual / backup / import, "pinned", "replaces" -- the earlier wordings it took the place
+        "origin" chat / answer / pasted / manual / backup / import, "pinned", "replaces" -- the earlier wordings it took the place
         of, the latest first, each with "text", "created" and its own "replaces" where it had replaced one itself --, "kind"
         and "names" where known). The notes that count, pinned ones first, then the latest. Never a credential: a
         note the check of today takes for one stays out, and the file says how many (left_out -- notes hold none anyway,
@@ -1450,7 +1453,7 @@ class Memory:
             return out
         count = len(rows)
         rows = [dict(n, olds=safe(n["olds"])) for n in rows if not secret_problem(n["text"])]
-        origin = lambda n: "pasted" if n["source"].get("pasted") else n["source"]["how"]
+        origin = lambda n: "answer" if n["source"].get("answer") else "pasted" if n["source"].get("pasted") else n["source"]["how"]
         told = lambda olds: [dict({"text": o["text"], "created": _iso(o["created"])}, **({"replaces": told(o["olds"])} if o["olds"] else {})) for o in olds]
         flat = lambda olds: [x for o in olds for x in [o] + flat(o["olds"])]
         entries = []
@@ -1468,7 +1471,7 @@ class Memory:
         head = (("format", EXPORT_FORMAT), ("version", EXPORT_VERSION), ("exported", _iso(now.strftime("%Y-%m-%d %H:%M:%S"))), ("kontor", str(version)))
         data = ["{"] + [" %s: %s," % (json.dumps(k), json.dumps(v, ensure_ascii=False)) for k, v in head] + [' "notes": [']
         data += ["  " + json.dumps(e, ensure_ascii=False) + ("," if i + 1 < len(entries) else "") for i, e in enumerate(entries)] + [" ]", "}"]
-        said = {"pasted": "ki_g_eingefuegt", "chat": "ki_g_h_chat", "manual": "ki_g_h_manual", "backup": "ki_g_h_backup", "import": "ki_g_h_import"}
+        said = {"answer": "ki_g_h_answer", "pasted": "ki_g_eingefuegt", "chat": "ki_g_h_chat", "manual": "ki_g_h_manual", "backup": "ki_g_h_backup", "import": "ki_g_h_import"}
         out = ["# " + tr("s_ki_g_x_titel"), "",
                tr("s_ki_g_x_kopf", str(version), _day(now.strftime("%Y-%m-%d")), now.strftime("%H:%M"), trn("ki_g_n", len(entries), _count(len(entries))), EXPORT_FORMAT, EXPORT_VERSION),
                "", "## " + tr("s_ki_g_x_notizen"), ""]

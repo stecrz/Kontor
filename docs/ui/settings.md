@@ -124,12 +124,12 @@ Mac … · Arbeitsspeicher …".
 - **Abschirmung von macOS**: Streng (recommended), Einfach (still no network) or Aus – only the user can weaken it.
 
 ### settings.assistant.memory — Gedächtnis
-"Gedächtnis verwenden" (default on) and the notes the assistant keeps from what the user said: number, pinned ones, progress of
-the search by meaning. Add a note by hand, search the notes, and per note its date and how it came about ("in einer Unterhaltung
-gesagt", "in den Einstellungen notiert", "aus einer Sicherung", "importiert"; "immer dabei" = goes with every question), pin, change, forget; "Alles vergessen". Never passwords, PINs, TANs or keys.
+"Gedächtnis verwenden" (default on) and the notes the assistant keeps -- short, condensed from what the user said or from its
+answers: number, pinned ones, progress of the search by meaning. Add a note by hand, search the notes, and per note its date and how
+it came about ("in einer Unterhaltung gesagt", "aus einer Antwort des Assistenten", "in den Einstellungen notiert", "aus einer Sicherung", "importiert"; "immer dabei" = goes with every question), pin, change, forget; "Alles vergessen". Never passwords, PINs, TANs or keys.
 "Exportieren": all notes that count as one file in an open format, not encrypted – on top a Markdown list to read (per note its
 day, where it came from, whether it is pinned, what it replaced), under it the same as JSON for programs (format `kontor-memory`:
-the format's version, the time of the export, Kontor's version; per note `text`, `created`, `origin`, `pinned`, `replaces`).
+the format's version, the time of the export, Kontor's version; per note `text`, `created`, `origin` -- chat, answer, pasted, manual, backup, import --, `pinned`, `replaces`).
 "Importieren …": such a file, or a plain text or Markdown list with one note per line (from another system). Kontor checks the
 whole file first, shows the notes it would bring and takes all of it or nothing: a note that is empty, longer than a note may be
 or holds a credential refuses the file, named by its line or number. What comes in is marked "importiert", is never pinned and

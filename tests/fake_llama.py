@@ -261,7 +261,14 @@ def main():
                     given = {"said": "", "names": named}
                 texts = [str(given.get("said") or "")] + [str(x) for x in given.get("earlier") or []] + [str(given.get("answer") or "")] + [str(k.get("text") or "") for k in given.get("known") or []]
                 noticed = {"notes": [], "forget": []}
-                order = next((re.search(r"merke (\{.*\})", x, re.S) for x in texts if re.search(r"merke (\{.*\})", x, re.S)), None)
+                order = None
+                for x in texts:                                     # (one that is no JSON -- written inside other JSON, as a tool's result in the answer: not an order)
+                    for m in re.finditer(r"merke (\{.*\})", x, re.S):
+                        try:
+                            json.loads(m.group(1))
+                            order = order or m
+                        except ValueError:
+                            pass
                 said = str(given.get("said") or "")
                 if given.get("names"):
                     noticed = given["names"]

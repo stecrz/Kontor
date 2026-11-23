@@ -79,7 +79,7 @@ anhängen – nie löschen.
 - **Gedächtnis des KI-Assistenten:** Er merkt sich von selbst, was dauerhaft ist – über den Nutzer, seine Pläne, Entscheidungen,
   Menschen, Vorlieben und wie er antworten soll –, auch über Finanzen hinaus („zweites Gehirn“, nur auf diesem Mac). „Merk dir …“
   gilt immer, „Vergiss …“ löscht. Nur aus den eigenen Worten des Nutzers, nie aus Buchungstexten, Belegen, Dateien, Webseiten oder
-  Werkzeug-Ergebnissen. Gespeichert sofort; die Antwort zeigt „Gemerkt: …“ mit „Rückgängig“. Jede Notiz mit Datum und Herkunft
+  Werkzeug-Ergebnissen (geändert am 23.11.2026: auch aus der Antwort, sinngemäß – siehe „Gedächtnis kompakt“). Gespeichert sofort; die Antwort zeigt „Gemerkt: …“ mit „Rückgängig“. Jede Notiz mit Datum und Herkunft
   (Unterhaltung); widerspricht eine neue einer alten, ersetzt sie diese sichtbar („ersetzt: …“, rückgängig). Zwei Stufen, damit es
   ohne Grenze wachsen kann und jede Anfrage gleich viel kostet: ein Steckbrief in jeder Anfrage (angeheftete, dann zuletzt gemerkte
   und benutzte Notizen; höchstens etwa 1.500 Token, ändert sich selten – der Zwischenspeicher greift) und eine Suche für alles
@@ -210,6 +210,13 @@ anhängen – nie löschen.
   Mac-App ist nur ein Fenster – der Dienst und damit das Modell laufen unabhängig davon weiter. Ein Ende mit der Mac-App ist nicht
   einfach (der Dienst erkennt ihr Beenden nicht verlässlich: die Seite ruht in verdeckten Fenstern, eine Prozessabfrage wäre ein
   neuer Aufruf nach außen) und deshalb nicht umgesetzt. (umgesetzt in 3.17.20)
+- **Gedächtnis kompakt** (Nutzer, 2026-11-23): Notizen sinngemäß und so kurz wie möglich statt im Wortlaut (er diktiert viel;
+  jede Notiz kostet bei jeder Anfrage Platz) – Zahlen, Namen und Daten genau. Notizen dürfen auch aus dem stammen, was der
+  Assistent geliefert hat (seine Antwort), nicht nur aus den Worten des Nutzers; der Assistent legt sie von selbst an, der Nutzer
+  wird nur informiert (unter der Antwort, mit „Zurücknehmen“), was gemerkt ist, steht immer in den Einstellungen. Ersetzt beim
+  Gedächtnis „nur aus den eigenen Worten des Nutzers“; Vorhandenes wird nicht umgeschrieben. (umgesetzt in 3.17.26: Notizen aus
+  der Antwort ungefragt nur Tatsachen, Gründe, Personen – Wünsche, Regeln, Pläne nur aus seinen Worten –, gekennzeichnet „aus der
+  Antwort“; mit Internet-, Beleg- oder Dateitext in der Unterhaltung erst nach Klick)
 
 - **Modellliste ohne Modus-Wörter** (Nutzer, 2026-11-23): Die Gruppen der Modellliste dürfen nicht wie eine Wahl je Denkaufwand
   wirken (Schnell/Ausgewogen/Gründlich im Chat) – gewählt wird ein Modell für alles; Überschriften nur nach Zweck. (umgesetzt in 3.17.21)

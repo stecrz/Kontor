@@ -56,9 +56,10 @@ the answer cites; their addresses are text in the chat until Kontor has read the
 credit, Anthropic's limit or overload, the day's limit set in the settings.
 
 ## assistant.notes — Notizen
-Lines under an answer about the assistant's memory (notes in the user's words, kept by Kontor, never from bookings, files, pages or
-the internet): "Gemerkt: …" (with "Zurücknehmen"; "aus eingefügtem Text" when it came from pasted text; "ersetzt: …" names an older
-note it replaces), "Merken?" with "Merken"/"Nicht merken" (asked when internet or receipt text is in the conversation), "Vergessen:
+Lines under an answer about the assistant's memory (short notes, condensed by Kontor from what the user said or from the answer --
+never straight from bookings, files, pages or the internet): "Gemerkt: …" (with "Zurücknehmen"; "aus eingefügtem Text" when it came
+from pasted text, "aus der Antwort" when it came from the answer; "ersetzt: …" names an older note it replaces), "Merken?" with
+"Merken"/"Nicht merken" (a note from the answer while internet, receipt or file text is in the conversation), "Vergessen:
 …", "Wieder gemerkt: …", "Nicht gemerkt". "Aus deinen Notizen: …" = the notes the answer rests on (hover: the day noted).
 
 ## assistant.steps — Gedanken und Kennzahlen
