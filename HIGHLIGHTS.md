@@ -5,7 +5,7 @@ die nach der Gesamtprüfung erscheint. Nur die großen Themen, höchstens sechs 
 Einstellungen → Updates zeigt den Überblick vor den einzelnen Versionen; die kommende Hauptversion als „in Arbeit“.
 
 ## 3.18
-- KI-Assistent kennt jede Stelle jeder Seite: der Rechtsklick sagt, was eine Zahl ist – Wert des Zeitraums, Anteil oder Veränderung
+- KI-Assistent kennt jede Stelle jeder Seite (Rechtsklick: was eine Zahl ist) und sucht Ursachen über Konten, Umsätze und Beteiligungen hinweg
 - Updates fragen nur bei echtem Risiko – je Fund in klaren Worten erklärt, mit den betroffenen Zeilen
 - Planung: Regeln je Bereich, Position und Kategorie, Modelle mit einem Klick, jede Planzahl erklärt; Sparquote, Reichweite, Zinslast
 - KI-Assistent: Modellauswahl nach Zweck mit Hersteller, Lizenz, Speicher; fragt auf Wunsch Claude (Anthropic) – jede Frage vorher auf einer Karte

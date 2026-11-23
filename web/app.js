@@ -7855,7 +7855,7 @@ function asSteps(run, i, j, now) {
 function asHead() {
   const hd = $('#as-head'); if (!hd) return;
   const page = S.tab === 'assistant', sv = (AS.st || {}).server || {}, st = sv.state || 'stopped';
-  const effTip = t('h_ki_denken') + (sv.tps ? ' ' + t('ki_denken_zeit', asN(2000 / sv.tps)) : '');          // the limited one's time on this Mac (from its measured speed)
+  const effTip = t('h_ki_denken') + (sv.tps ? ' ' + t('ki_denken_zeit', asN(4000 / sv.tps)) : '');          // the limited one's time on this Mac (from its measured speed)
   hd.innerHTML = `<b>${t('ki_assistent')}</b><span class="as-st ${esc(st)}" title="${esc(t(`ki_z_${st}`))}"></span>
     <span class="as-hb"><select id="as-eff" title="${esc(effTip)}" aria-label="${esc(t('ki_denken'))}">${AS_EFFORTS.map(k => `<option value="${k}" ${asEffort() === k ? 'selected' : ''}>${t(`ki_denken_${k}`)}</option>`).join('')}</select>
     <button class="icon as-hist-btn${AS.list ? ' on' : ''}" title="${esc(t('ki_verlaeufe'))}" aria-label="${esc(t('ki_verlaeufe'))}" aria-pressed="${AS.list}">${ICON.history}</button>

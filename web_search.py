@@ -52,7 +52,8 @@ TAVILY_FREE_STOP = 200                     # without a key (Tavily names no figu
 TAVILY_DAYS = 31
 OUT_MAX = 6 << 20                          # bytes the reader may hand back
 GRACE = 15.0                               # seconds the reader process gets beyond its request's own time limit (then it is ended)
-TEXT_MAX = 5000                            # characters of one page's text for the model (a tool result is cut at 7,000)
+TEXT_MAX = 5000                            # characters of one page's text for the model (a tool result is cut at 7,000) ...
+TEXT_ROOM = 40000                          # ... and at most where the assistant asks for more (a model with a large context: text_max)
 SNIPPET = 360
 HITS = 6
 PLAN_MAX = 6                               # lookups asked for together (one card, one click)
@@ -1408,7 +1409,7 @@ def _jsonstat(d: dict) -> dict:
 
 def _read(p: dict, fetch: Callable[[dict], dict]) -> dict:
     src = p["source"]
-    most = max(500, min(TEXT_MAX, int(p.get("text_max") or TEXT_MAX)))      # characters of the page's text (several read together: less each)
+    most = max(500, min(TEXT_ROOM, int(p.get("text_max") or TEXT_MAX)))     # characters of the page's text (several read together: less each)
     if src == "wikipedia":
         data = _got(fetch(_req(p, p["url"], "json")), dict)
         pg = next((x for x in ((data.get("query") or {}).get("pages") or []) if isinstance(x, dict) and not x.get("missing")), None)

@@ -158,13 +158,18 @@ class World:
         t("gbr.vd", self.purchase, -1250000.0, "Verkäufer", "Kaufpreisstundung")
         t("gbr.vd", _months_back(self.purchase, -1).replace(day=15), 50000.0, GBR_NAME, "Sondertilgung")
         t("gbr.kk", _months_back(self.purchase, -1).replace(day=15), -50000.0, "Verkäufer", "Sondertilgung Kaufpreisdarlehen", "Umbuchung")
+        # what the purchase cost besides its price (as the property's calculation has it: config), paid the month after -- money
+        # that is gone, not part of the property's value: the GbR's net worth falls by it, and with it the partners' shares
+        for n, amount, name, purpose in ((12, -52500.0, "Finanzamt", "Grunderwerbsteuer Parkweg 7"), (18, -7500.0, "Notariat am Markt", "Kaufvertrag Parkweg 7"),
+                                         (27, -3000.0, "Amtsgericht", "Grundbuch Parkweg 7")):
+            t("gbr.kk", _months_back(self.purchase, -1).replace(day=n), amount, name, purpose)
         for m in self._months(_months_back(self.purchase, -1)):
             t("gbr.kk", date(m.year, m.month, 5), 9500.0, "Mieter Parkweg", "Miete", "Vermietung\\Parkweg\\Mieteinnahmen")
             t("gbr.kk", date(m.year, m.month, 6), -800.0, "Hausverwaltung", "Bewirtschaftung", "Vermietung\\Parkweg\\Bewirtschaftung")
         for m in self._months(self.first_annuity):
             t("gbr.kk", m, -6000.0, "Verkäufer", ANNUITY_TEXT, "Umbuchung", SELLER_IBAN)
         # balances now: what was there at the start and everything since
-        opening = {"priv.giro": 9000.0, "priv.tr": 0.0, "priv.darl": -340000.0, "ug.kk": 0.0, "ug.tg": 0.0, "gbr.kk": 310000.0,
+        opening = {"priv.giro": 9000.0, "priv.tr": 0.0, "priv.darl": -340000.0, "ug.kk": 0.0, "ug.tg": 0.0, "gbr.kk": 375000.0,
                    "gbr.immo": 0.0, "gbr.vd": 0.0}
         self.balances = dict(opening)
         key_of = {uid(k): k for k in self._keys()}

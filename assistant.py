@@ -61,16 +61,20 @@ import pdf_tables
 import receipt_text
 import table_text
 from decimal import ROUND_HALF_UP, Decimal
-from model import fmt_eur, norm_cat
+from model import fmt_eur, has_mark, norm_cat
 from report import PLAN_AREA_METHODS, PLAN_METHODS, PLAN_MODELS
 from llm_local import CATALOG, EMBED, EMBED_CONTEXT, EMBED_IDS, SANDBOXES, SPEECH, Cancelled, LocalAI, ModelError, SPEECH_IDS, SPEECH_CONTEXT, MAX_AUDIO, fit, physical_ram
+from llm_local import tuning as model_tuning
 from storage import StoreError, StoreLocked, selftest
 
 log = logging.getLogger("kontor.assistant")
 
 FOLDER = "assistant"                               # in Kontor's data folder: llama.cpp and the model files
 EFFORTS = ("fast", "balanced", "thorough")
-THINK_BUDGET = 2000            # "balanced": at most this many tokens of thinking per answer (all steps together), then it answers
+THINK_BUDGET = 4000            # "balanced": at most this many tokens of thinking before each step of an answer (a lookup, the answer itself)
+# what the model's thinking ends with when it runs into that limit (llama.cpp puts it there): a thought that just breaks off
+# leaves the answer without its conclusion
+THINK_END = {"de": "\n\nGenug überlegt – ich antworte jetzt mit dem, was ich habe.", "en": "\n\nEnough thinking -- I answer now with what I have."}
 CONTEXTS = (16384, 32768, 65536, 131072)           # tokens the model keeps in view (the tools' descriptions take about 5,000 -- 4,000 in a small one)
 COMPACT_BELOW = 32768                              # a smaller context gets the tools without the hints on their parameters (_specs)
 
@@ -103,8 +107,9 @@ PAGES = ("overview", "balance", "cashflow", "planning", "properties", "tax", "tr
 PLAN_LIMITS = {"horizon_months": (1, 240), "inflation_percent_pa": (-5, 20), "income_increase_percent_pa": (-20, 50), "expense_increase_percent_pa": (-20, 50),
                "return_percent_pa": (-20, 30)}     # the planning's assumptions the assistant may propose, and their bounds
 MAX_STEPS = 10                                     # tool rounds per question
+DRIVERS_DEPTH = 2                                  # get_net_worth_drivers follows participations that many areas down
 QUICK_STEPS, QUICK_TOKENS = 2, 120                 # a quick explanation (right click): one lookup at most, an answer of two short sentences
-MAX_RESULT = 7000                                  # characters of one tool result
+MAX_RESULT = 7000                                  # characters of one tool result -- in a small context; more where the model keeps more in view (result_room)
 KEEP_RESULT = 400                                  # characters of a result of an earlier question kept in the conversation (longer: left out)
 EARLIER_RESULT = '{"note":"read for an earlier question and left out to save room -- call the tool again if you need it now"}'
 MAX_QUESTION = 40000                               # characters; less with a small context (question_limit)
@@ -117,7 +122,7 @@ SCREEN_ROOM = 7000                                 # characters of it given with
 SCREEN_HEAD = re.compile(r"(#{1,3})\s+([a-z][a-z0-9.-]*)\s+[\u2014\u2013-]\s+(.+?)\s*$")
 CONFIRM_SECONDS = 900
 WEB_SECONDS = 180                                  # a card asking to fetch from the internet: no answer in this time is a no
-WEB_RESULT = 12000                                 # characters of what lookups asked for together hand to the model (one tool result)
+WEB_RESULT = 12000                                 # characters of what lookups asked for together hand to the model (one tool result; more in a large context: result_room)
 WAITS = ("enter", "web")                           # kinds of tools that wait for the user's click on a card
 MAX_PROPOSALS = 60                                 # changes proposed in one answer at most (all on one card)
 RECEIPT_TYPES = {".pdf": "PDF", ".png": "PNG", ".jpg": "JPEG", ".jpeg": "JPEG", ".heic": "HEIC", ".gif": "GIF"}      # what can be read (macOS's text recognition)
@@ -317,6 +322,13 @@ def stored(st: dict) -> dict:
     out = {k: v for k, v in st.items() if k != "context_auto"}
     out["context"] = 0 if st.get("context_auto") else st["context"]
     return out
+
+
+def result_room(context: int, web: bool = False) -> int:
+    """Characters of one tool result (web: of everything the lookups of one research bring together): what fitted a small
+    context (MAX_RESULT, WEB_RESULT) at least -- and about a tenth (the internet: a sixth) of what the model keeps in view
+    where that is more, so that it reads a table, a page or a law in a few large pieces instead of many cut ones."""
+    return max(WEB_RESULT, min(60000, int(context * 0.55))) if web else max(MAX_RESULT, min(40000, int(context * 0.36)))
 
 
 def question_limit(context: int) -> int:
@@ -2210,6 +2222,7 @@ class Assistant:
             return out
         sections = []
         budgets = ds.get("budgets") or {}
+        ties, names, followed = self._ties(), ds.get("area_names") or {}, ""
         for sek in b["cashflow"].get("sections") or []:
             sums = b["cashflow"].get("sums") or {}
             s = {"section": label.get(sek["name"], sek["name"]), "total": [_num(sum((sums.get(m) or {}).get(sek["name"]) or 0 for m in ms)) for _, ms in cols]}
@@ -2220,6 +2233,8 @@ class Assistant:
                     if not any(v):
                         continue
                     row = {"row": _row_name(z), **({"group": _group_name(z)} if _group_name(z) else {}), "values": v}
+                    if (ties.get(str(z.get("account") or "")) or {}).get("area") in names:      # a participation: it changes with its company's net worth
+                        row["follows_area"] = followed = names[ties[z["account"]]["area"]]
                     dv = lambda d: vals(d.get("amounts") or {}, (d.get("plan") or {}).get("amounts"))          # a category: its plan in plan months too
                     det = [d for d in z.get("details") or [] if any(dv(d))]
                     bud = lambda c: {"monthly_budget": budgets[c]} if c in budgets else {}           # MoneyMoney's budget of that category
@@ -2236,8 +2251,10 @@ class Assistant:
                 "current_month_unfinished": cur if cur in sel else None, "sections": sections,
                 "sums": {tr("cf_operativ"): line("operating"), "interest (part of %s)" % tr("cf_finanzierung"): line("Zinsen"),
                          "bank_balance_change": line("cash_change"), "net_worth_change": line("net_worth_delta")},
-                "note": "%s = %s + %s; outflows are negative%s" % (tr("cf_operativ"), tr("einnahmen"), tr("ausgaben"),
-                                                                    "; monthly_budget: the budget set in MoneyMoney (a positive amount per month)" if detail == "categories" and budgets else "")}
+                "note": "%s = %s + %s; outflows are negative%s%s" % (tr("cf_operativ"), tr("einnahmen"), tr("ausgaben"),
+                                                                      "; monthly_budget: the budget set in MoneyMoney (a positive amount per month)" if detail == "categories" and budgets else "",
+                                                                      "; follows_area: a participation -- its value changes with that area's net worth "
+                                                                      "(get_net_worth_drivers follows it there)" if followed else "")}
 
     def t_get_changes(self, a: dict, ctx: dict) -> Any:
         """What changed in income and expenses: a period against the same period a year before, or against the average of
@@ -2299,6 +2316,153 @@ class Assistant:
                 "current_month_unfinished": cur if cur in sel else None, "totals": totals, "changes": rows[:20], **({"more_rows": len(rows) - 20} if len(rows) > 20 else {}),
                 "note": "largest change first; expenses are negative, so a negative change in an expense row means more was spent; percent: how much larger (+) "
                         "or smaller (-) the amount is than 'before', by size, as the pages show it (an expense of -1,140 against -1,000: +14 = more spent)"}
+
+    def _ties(self) -> Dict[str, dict]:
+        """What the user's rules and settings tie an account to: account id -> {"area": the company whose net worth a
+        participation account follows (a booking rule keeps it at share x that net worth)} | {"property": the property whose
+        calculation belongs to it} | {"loan": the loan rule that books its interest and repayment} | {"mirror": the account it
+        mirrors}. So that a change can be followed to where it comes from."""
+        cfg = self.app.config
+        ref = lambda x: str(x or "").split("|")[0].strip()
+        out: Dict[str, dict] = {}
+        for c in cfg.get("companies") or []:
+            if isinstance(c, dict) and ref(c.get("participation")):
+                out.setdefault(ref(c["participation"]), {})["area"] = str(c.get("area") or "")
+        for im in cfg.get("real_estate") or []:
+            if isinstance(im, dict) and ref(im.get("property_account")):
+                out.setdefault(ref(im["property_account"]), {})["property"] = str(im.get("name") or "")[:60]
+        for d in cfg.get("loans") or []:
+            if isinstance(d, dict) and ref(d.get("loan_account")):
+                out.setdefault(ref(d["loan_account"]), {})["loan"] = str(d.get("name") or "")[:60]
+        for m in cfg.get("account_mirrors") or []:
+            if isinstance(m, dict) and ref(m.get("a")) and ref(m.get("b")):
+                out.setdefault(ref(m["a"]), {})["mirror"] = ref(m["b"])
+                out.setdefault(ref(m["b"]), {})["mirror"] = ref(m["a"])
+        return out
+
+    def _drivers(self, ds: dict, key: str, months: List[str], n: int, with_tx: bool, depth: int, seen: frozenset) -> Dict[str, Any]:
+        """One area's part of get_net_worth_drivers: how its net worth changed over these months and what carried it -- the
+        cash flow's lines, the accounts whose balance changed most, the largest transactions -- and below it the areas its
+        participations follow (depth levels at most). Only what Kontor's own figures say; no reason is given."""
+        names, info = ds.get("area_names") or {}, ds.get("area_info") or {}
+        b = (ds.get("areas") or {}).get(key) or {}
+        if not b or "error" in b:
+            return {"area": names.get(key), "error": (b or {}).get("error", "not calculated")}
+        known = b["months"]
+        sel = [m for m in months if m in known]
+        if not sel:
+            return {"area": names.get(key), "note": "no figures for these months"}
+        before = known[known.index(sel[0]) - 1] if known.index(sel[0]) > 0 else None
+        bal, cf = b["balance"], b["cashflow"]
+        sums, nw = cf.get("sums") or {}, bal.get("net_worth") or {}
+        tot = lambda f: _num(sum((sums.get(m) or {}).get(f) or 0 for m in sel))
+        was, now = (nw.get(before) if before else None), nw.get(sel[-1])
+        out: Dict[str, Any] = {"area": names.get(key), "period": [sel[0], sel[-1]],
+                               "net_worth": {"before": _num(was), "after": _num(now), "change": _num(now - was) if was is not None and now is not None else tot("net_worth_delta")},
+                               "by_cash_flow": {tr("einnahmen"): tot("income"), tr("ausgaben"): tot("expenses"), tr("cf_investitionen"): tot("investing"),
+                                                tr("cf_finanzierung"): tot("financing"), tr("cf_wertaenderungen"): tot("valuation"), tr("cf_unklar"): tot("unclear"),
+                                                "bank_balance_change": tot("cash_change")}}
+        if b["actual_until"] in sel:
+            out["current_month_unfinished"] = b["actual_until"]
+        i, j = known.index(sel[0]), known.index(sel[-1])
+        around = known[max(0, i - 3):j + 3]              # (whether the change stands out, and what came before and after)
+        if len(around) > 18:                             # a long period: its ends, and each year's end between them
+            around = known[max(0, i - 3):i + 1] + [m for m in known[i + 1:j] if m.endswith("-12")] + known[j:j + 3]
+        out["net_worth_month_ends_around"] = {m: _num(nw.get(m)) for m in around}
+        ties = self._ties()
+        label = {"income": tr("einnahmen"), "expenses": tr("ausgaben"), "investing": tr("cf_investitionen"), "financing": tr("cf_finanzierung"),
+                 "valuation": tr("cf_wertaenderungen"), "unclear": tr("cf_unklar")}
+        rows = []
+        for sek in cf.get("sections") or []:
+            for z in sek.get("rows") or []:
+                v = sum((z.get("amounts") or {}).get(m) or 0 for m in sel)
+                if abs(v) >= 0.005:
+                    rows.append(dict({"line": label.get(sek["name"], sek["name"]), "row": _row_name(z)}, **({"group": _group_name(z)} if _group_name(z) else {}), amount=_num(v)))
+        rows.sort(key=lambda r: -abs(r["amount"]))
+        out["largest_rows"] = rows[:n]
+        if len(rows) > n:
+            out["more_rows"] = len(rows) - n
+        position = {r.get("role"): r["name"] for r in bal.get("rows") or [] if r.get("group")}
+        accounts, follow = [], []
+        for r in bal.get("rows") or []:
+            if r.get("group") or r.get("role") in ("contingent", "ignore"):
+                continue
+            am = r.get("amounts") or {}
+            dark = before is None or bool(r.get("projected_before") and before < r["projected_before"])     # no balance known before the period
+            v0, v1 = (None if dark else am.get(before)), am.get(sel[-1])
+            if v1 is None or (v0 is None and abs(v1) < 0.005) or (v0 is not None and abs(v1 - v0) < 0.005):
+                continue
+            e: Dict[str, Any] = {"account": r["name"], "position": position.get(r.get("role")), "before": _num(v0), "after": _num(v1), "change": _num(v1 - v0) if v0 is not None else None}
+            if v0 is not None and abs(v0) < 0.005 and not any(abs(am.get(m) or 0) >= 0.005 for m in known[:known.index(sel[0])]):
+                e["first_balance_in_period"] = True       # (new in these months: bought, opened, valued for the first time)
+            tie = ties.get(str(r.get("id") or "")) or {}
+            if tie.get("area") in names:
+                share = (info.get(tie["area"]) or {}).get("share")
+                e["follows"] = "%sthe net worth of the area %s (a booking rule keeps it there)" % ("%s %% of " % ("%g" % round(share * 100, 2)) if isinstance(share, (int, float)) else "", names[tie["area"]])
+                follow.append((abs(v1 - (v0 or 0)), tie["area"], r["name"]))
+            if tie.get("property"):
+                e["property"] = tie["property"]
+            if tie.get("loan"):
+                e["loan_rule"] = tie["loan"]
+            if tie.get("mirror"):
+                other = next((x for x in ds.get("accounts") or [] if x.get("uuid") == tie["mirror"]), None)
+                if other:
+                    e["mirror_of"] = str(other.get("path") or other.get("name") or "")[:90]
+            accounts.append(e)
+        accounts.sort(key=lambda e: -abs(e["change"] if e["change"] is not None else e["after"]))
+        out["accounts"] = accounts[:n]
+        if len(accounts) > n:
+            out["more_accounts"] = len(accounts) - n
+        if with_tx:
+            # money that moved: not the bookings of Kontor's own rules (values, interest, mirrors -- also those just made, not read back yet)
+            txs = [t for t in self.hooks["transactions"]({"entity": key, "from": sel[0] + "-01", "to": sel[-1] + "-31"})
+                   if not t.get("kontor") and not (int(t.get("id") or 0) < 0 and has_mark(t.get("purpose")))]
+            txs.sort(key=lambda t: -abs(t["amount"]))
+            out["largest_transactions"] = [dict({"date": t["date"], "amount": _num(t["amount"]), "name": (t.get("name") or "")[:60], "purpose": (t.get("purpose") or "")[:90],
+                                                 "category": t.get("category") or None, "account": t.get("account_name")}, **({"transfer": True} if t.get("transfer") else {}))
+                                           for t in txs[:n]]
+            if len(txs) > n:
+                out["more_transactions"] = len(txs) - n
+        counted = [(k, v) for k, v in ties.items() if v.get("area") == key]
+        if counted:                                       # a company: where its net worth counts (the participation accounts that follow it)
+            accs = {x.get("uuid"): x for x in ds.get("accounts") or []}
+            out["counts_in"] = [str((accs.get(k) or {}).get("path") or "")[:90] for k, _ in counted if accs.get(k)][:4]
+        if depth > 0:
+            linked = []
+            most = max((abs(e["change"] if e["change"] is not None else e["after"]) for e in accounts), default=0.0)
+            for size, area, via in sorted(follow, key=lambda x: -x[0]):
+                if area in seen or len(linked) >= 3 or size < 0.1 * most:      # (only what carries the change: not every participation)
+                    continue
+                seen = seen | {area}
+                linked.append(dict({"followed_by": via}, **self._drivers(ds, area, sel, n, with_tx, depth - 1, seen)))
+            if linked:
+                out["linked_areas"] = linked
+        return out
+
+    def t_get_net_worth_drivers(self, a: dict, ctx: dict) -> Any:
+        """Why net worth changed: Kontor follows the change down -- from the area to its accounts and transactions and, through a
+        participation, into the company behind it (and the companies behind that). Facts only, in one result: a small model
+        does not plan six lookups in a row, and without the link between a participation and its company it stops at
+        "value changes"."""
+        ds = self._ds()
+        key, b = self._area(ds, a.get("area"), ctx)
+        cur, known = b["actual_until"], b["months"]
+        frm, to = _month(a.get("from")), _month(a.get("to"))
+        sel = [m for m in known if (not frm or m >= frm) and (not to or m <= to)] if frm or to else [m for m in known if m < cur][-1:]
+        if not sel:
+            raise ToolError("No months in that period: known %s to %s." % (known[0], known[-1]))
+        with_tx = bool(self.settings()["rights"].get("transactions"))
+        room = ctx.get("room", MAX_RESULT) - 700
+        out: Dict[str, Any] = {}
+        for n in (8, 6, 5, 4, 3, 2):                     # as much as fits: the result is never cut
+            out = self._drivers(ds, key, sel, n, with_tx, DRIVERS_DEPTH, frozenset((key,)))
+            if len(json.dumps(out, ensure_ascii=False, separators=(",", ":"))) <= room:
+                break
+        out["note"] = ("before = the end of the month before the period, after = its end, change = after - before; by_cash_flow: the cash flow's lines over the period; "
+                       "accounts: balances that changed, largest first (first_balance_in_period: new in these months); an account that 'follows' an area changes "
+                       "with that area's net worth -- that area is under linked_areas, read the same way%s. These are facts, no reasons: conclude what happened, "
+                       "say what is proven and mark what you assume." % ("" if with_tx else "; transactions are not shown (the user has switched reading them off)"))
+        return out
 
     def t_get_planning(self, a: dict, ctx: dict) -> Any:
         ds = self._ds()
@@ -2667,10 +2831,11 @@ class Assistant:
         try:
             sums = [table_text.sum_range(book, sheet, str(x)) for x in (a.get("sum") if isinstance(a.get("sum"), list) else [a["sum"]] if a.get("sum") else [])[:10]]
             out: Dict[str, Any] = {}
-            chars = table_text.RENDER_CHARS
+            room = ctx.get("room", MAX_RESULT)
+            chars = max(table_text.RENDER_CHARS, room - 2200)       # (a larger context: larger pieces of the table per read)
             for _ in range(4):                           # as much of the grid as fits beside the rest: the answer is never cut
                 out = self._table_answer(f, book, excel, sums, table_text.render(book, sheet, str(a.get("range") or ""), formulas=a.get("formulas") is True, chars=chars))
-                over = len(json.dumps(out, ensure_ascii=False, separators=(",", ":"))) - (MAX_RESULT - 60)
+                over = len(json.dumps(out, ensure_ascii=False, separators=(",", ":"))) - (room - 60)
                 if over <= 0:
                     break
                 chars = max(600, chars - over - 200)
@@ -3255,7 +3420,7 @@ class Assistant:
         if not memory_mod.terms(q):
             raise ToolError("Give a few words to look for.")
         given = ctx.setdefault("given", {})
-        out, room = [], MAX_RESULT - 400
+        out, room = [], ctx.get("room", MAX_RESULT) - 400
         meaning = self._meaning_of(q)
         for n in self.memory.search(q, RECALL_FOUND, meaning=meaning):
             if len(n["text"]) + 40 > room:
@@ -3807,7 +3972,7 @@ class Assistant:
         later = [x for x in free if x.get("fallback") and plan.index(x) > first_ask]          # a reserve behind something asked: only after its answer
         free = [x for x in free if x not in later]
         reads = lambda xs: sum(1 for x in xs if x["p"]["what"] == "read")
-        done: Dict[str, Any] = {"found": 0, "got": 0, "cache": {}, "own": own}     # (cache: an address two lookups share -- a feed picked by other words: fetched once)
+        done: Dict[str, Any] = {"found": 0, "got": 0, "cache": {}, "own": own, "room": ctx.get("web_room", WEB_RESULT)}     # (cache: an address two lookups share -- a feed picked by other words: fetched once)
         if free:                                         # trusted, and this conversation allows the internet: no card -- shown as it is made
             wid = secrets.token_hex(6)
             job.emit("web", id=wid, state="run", free=True, **card(free))
@@ -3841,7 +4006,7 @@ class Assistant:
             if not chosen and not free and not done["got"]:
                 return {"approved": False, "note": "The user did not approve this (or did not answer in time): nothing was fetched. Answer "
                                                    "without it, or ask the user."}
-        self._web_fit(told_all, WEB_RESULT - 900)
+        self._web_fit(told_all, ctx.get("web_room", WEB_RESULT) - 900)
         out: Dict[str, Any] = {"untrusted_web_text": web_search.UNTRUSTED, "fetched": datetime.now().strftime("%Y-%m-%d %H:%M")} if done["got"] else {}
         if all(x["p"]["what"] == "read" for x in plan):
             out.update(pages=told_all, note="Name the sources with their links.")
@@ -3862,8 +4027,8 @@ class Assistant:
                     x["told"]["approved"] = False
                     job.emit("web_item", id=wid, item=x["id"], state="declined")
                     continue
-                if n_read > 1:                           # pages read together share the room of one tool result
-                    x["p"]["text_max"] = max(1500, (WEB_RESULT - 900) // n_read - 400)
+                if n_read > 1 or done.get("room", WEB_RESULT) > WEB_RESULT:       # pages read together share the room of one tool result (a large context: more of each page)
+                    x["p"]["text_max"] = max(1500, (done.get("room", WEB_RESULT) - 900) // max(1, n_read) - 400)
                 job.emit("web_item", id=wid, item=x["id"], state="run")
                 n = self._web_fetch(job, wid, x, reason, conv, done.get("cache"), done.get("own"))
                 done["got"] += n >= 0
@@ -4462,9 +4627,19 @@ class Assistant:
             "Rules:",
             "- Figures about the user's own money come from your tools only, never from memory and never estimated. What the tools do not give is unknown: say so. "
             "Numbers the user gives you in the conversation are the user's: use them as given.",
-            "- Never present a guess as a fact -- rather no information than wrong information. When the reference, Kontor's description of the place, "
-            "the help or your tools do not say what a figure is, how it comes about or why it is so, say plainly that you do not know it. A likely "
-            "reading may follow only marked as such (\"%s\"), never as a fact." % ("vermutlich …, sicher ist das nicht" if de else "probably …, I cannot be sure"),
+            "- Never present a guess as a fact -- rather no information than wrong information. What a figure on a page is and how it is calculated: "
+            "only as the reference, Kontor's description of the place, the help or your tools say it -- where they do not, say plainly that you do "
+            "not know it. A likely reading may follow only marked as such (\"%s\"), never as a fact." % ("vermutlich …, sicher ist das nicht" if de else "probably …, I cannot be sure"),
+        ] + ([
+            # how to work on a question about a cause -- a way of working, no case of its own: what applies is the user's data
+            "- Why something rose or fell, what is behind a figure, what stands out: do not read the table back -- find the cause. Start with what "
+            "carries the change (get_net_worth_drivers for net worth, get_changes for income and expenses). Then follow the largest driver down "
+            "until transactions or a rule explain it: a participation follows its company's area (read that area for the same months), a property "
+            "its purchase and what it cost, a loan its payments; look at the months before and after where that helps. Then say in one or two "
+            "sentences what most probably happened. Keep apart what is proven -- figures and facts exactly as your tools gave them -- and what you "
+            "conclude from it, marked as a conclusion (\"%s\") with what it rests on: a well-founded assumption is wanted, a bare list of rows "
+            "is not. If the data does not settle it, name what is missing." % ("vermutlich …, weil …" if de else "probably …, because …"),
+        ] if r["figures"] else []) + [
             "- Arithmetic: use the calculate tool instead of calculating in your head.",
             "- Words of the interface (%s): net worth = %s, income = %s, expenses = %s, surplus = %s, investing = %s, financing = %s, value changes = %s; "
             "pages: %s." % (lang, tr("nettovermoegen"), tr("einnahmen"), tr("ausgaben"), tr("cf_operativ"), tr("cf_investitionen"), tr("cf_finanzierung"), tr("cf_wertaenderungen"),
@@ -4674,22 +4849,40 @@ class Assistant:
         ev, done = j.after(max(0, after), wait=1.0)
         return {"events": ev, "done": done and not j.events[max(0, after) + len(ev):]}
 
-    def _effort(self, st: dict, used: int = 0) -> dict:
-        """What the thinking effort means for llama.cpp: fast -- no thinking; balanced -- at most THINK_BUDGET tokens of thinking for
-        the whole answer (used: thought so far in this answer), then the model must answer; thorough -- no limit. Both names of the
-        limit are sent (llama.cpp builds before b9982 read only thinking_budget_tokens)."""
+    def _effort(self, st: dict) -> dict:
+        """What the thinking effort means for llama.cpp -- with the sampling the model's maker recommends for it (llm_local.tuning;
+        nothing for a model Kontor does not know: llama.cpp's own defaults then):
+        fast -- no thinking;
+        balanced -- it thinks before every step of an answer (each lookup and the answer itself), at most THINK_BUDGET tokens
+        each: a limit for the whole answer left nothing for the step that counts most, the answer after reading. Where the
+        model's chat template knows levels of thinking of its own (Qwen3.8: without one it takes its highest and thinks for
+        minutes), the middle one -- never one the template refuses (LocalAI.caps);
+        thorough -- no limit, the template's own level.
+        Both names of the limit are sent (llama.cpp builds before b9982 read only thinking_budget_tokens)."""
+        tune = model_tuning(str(st.get("model") or ""))
         if st["effort"] == "fast":
-            return {"reasoning_effort": "none", "chat_template_kwargs": {"enable_thinking": False}}
+            return dict(tune["plain"], reasoning_effort="none", chat_template_kwargs={"enable_thinking": False})
+        out = dict(tune["think"])
         if st["effort"] == "balanced":
-            left = max(0, THINK_BUDGET - used)
-            return {"reasoning_budget_tokens": left, "thinking_budget_tokens": left}
-        return {}
+            out.update(reasoning_budget_tokens=THINK_BUDGET, thinking_budget_tokens=THINK_BUDGET, reasoning_budget_message=THINK_END["de" if i18n.lang() == "de" else "en"])
+            caps = self.ai.caps or {}
+            level = tune["levels"].get("balanced") or ("medium" if "medium" in (caps.get("levels") or []) else "")
+            if level and level not in (caps.get("rejected") or []):
+                out["chat_template_kwargs"] = {"reasoning_effort": level}
+        return out
 
     def _trim(self, messages: List[dict], st: dict, room: int = 0) -> List[dict]:
         """The conversation so far, shortened from its beginning (whole questions with their answers) to what fits (room:
         characters the new question needs)."""
         budget = max(0, int(st["context"] * 3.0 * 0.55) - room)          # characters: about 55 % of the context
         size = lambda m: len(json.dumps(m, ensure_ascii=False))
+        over = sum(size(m) for m in messages) - budget
+        if over > 0 and any(m.get("reasoning_content") for m in messages):      # the thoughts of earlier answers go first, the oldest
+            messages = list(messages)                                           # first: a question and its answer say more than how it was reached
+            for i, m in enumerate(messages):
+                if over > 0 and m.get("reasoning_content"):
+                    messages[i] = {k: v for k, v in m.items() if k != "reasoning_content"}
+                    over -= size(m) - size(messages[i])
         starts = [i for i, m in enumerate(messages) if m.get("role") == "user"]
         while starts and sum(size(m) for m in messages) > budget:
             if len(starts) == 1:
@@ -4698,15 +4891,30 @@ class Assistant:
             starts = [i for i, m in enumerate(messages) if m.get("role") == "user"]
         return messages
 
-    def _fit(self, turn: List[dict], st: dict) -> None:
-        """A question that needed many tools: when what was read no longer fits, the earliest results of this question make
-        room (the model is told and can read them again)."""
-        budget = int(st["context"] * 3.0 * 0.6)
-        tools = [m for m in turn if m.get("role") == "tool"]
-        for m in tools[:-2]:
-            if sum(len(str(x.get("content") or "")) for x in turn) <= budget:
-                break
+    def _fit(self, turn: List[dict], st: dict, fixed: int = 0) -> None:
+        """A question that needed many tools: when what was read and thought no longer fits, the earliest results of this
+        question make room (the model is told and can read them again) -- then its earliest thoughts (what it concluded from a
+        result says more in less room than the result; the last two steps keep both). Its room: 60 % of the context, less
+        where the system text and the tools (fixed: their characters) leave less beside a sixth for the answer."""
+        whole = int(st["context"] * 3.0)
+        budget = min(int(whole * 0.6), max(whole // 5, whole - fixed - whole // 6))
+        size = lambda: sum(len(str(x.get("content") or "")) + len(str(x.get("reasoning_content") or "")) for x in turn)
+        for m in [m for m in turn if m.get("role") == "tool"][:-2]:
+            if size() <= budget:
+                return
             m["content"] = '{"note":"dropped to save room -- call the tool again if you still need it"}'
+        for m in [m for m in turn if m.get("reasoning_content")][:-2]:
+            if size() <= budget:
+                return
+            del m["reasoning_content"]
+
+    def _give_way(self, history: List[dict], turn: List[dict], st: dict, fixed: int) -> List[dict]:
+        """The earlier questions of the conversation beside what this one has read so far: when both no longer fit (with the
+        system text and the tools -- fixed -- and a sixth of the context for the answer), the oldest earlier questions give
+        way, one at a time -- before the model refuses the whole request and the answer has to go on without any of them."""
+        whole = int(st["context"] * 3.0)
+        need = fixed + sum(len(json.dumps(m, ensure_ascii=False)) for m in turn) + whole // 6 - (whole - int(whole * 0.55))
+        return self._trim(history, st, room=need) if history and need > 0 else history
 
     def _run(self, job: Job, question: str, st: dict, ctx: dict) -> None:
         t0 = time.time()
@@ -4770,20 +4978,27 @@ class Assistant:
             retried = nudged = cut = limit = False
             thought = reads = 0                              # tokens of thinking in this answer; reads of the user's data
             seen: Dict[Tuple[str, str], int] = {}
-            while steps < steps_max:
+            ctx["room"], ctx["web_room"] = result_room(st["context"]), result_room(st["context"], web=True)      # how long a tool's result may be
+            fixed = len(json.dumps(system, ensure_ascii=False)) + len(json.dumps(specs, ensure_ascii=False))     # what every request of this answer carries
+            extra = 0                                        # one more step when the last one asked for a lookup instead of answering
+            while steps < steps_max + extra:
                 steps += 1
-                self._fit(turn, st)
+                last = steps >= steps_max                    # the lookups of this answer are used up: now it must answer
+                self._fit(turn, st, fixed)
+                history = self._give_way(history, turn, st, fixed)
                 msgs = [system] + history + turn
                 room = st["context"] - len(json.dumps(msgs, ensure_ascii=False)) // 3 - len(json.dumps(specs, ensure_ascii=False)) // 3 - 256
-                effort = self._effort(st, thought)
-                body = dict({"messages": msgs, "stream": True, "stream_options": {"include_usage": True}, "temperature": 0.5, "top_p": 0.9, "top_k": 40,
+                effort = self._effort(st)
+                body = dict({"messages": msgs, "stream": True, "stream_options": {"include_usage": True},
                              "max_tokens": max(st["context"] // 4, min(st["context"] // 2, room)),     # thinking and answer together
                              "cache_prompt": True}, **effort)
                 if quick:
                     body["max_tokens"] = min(body["max_tokens"], QUICK_TOKENS)
-                if specs and steps < steps_max:
-                    body["tools"] = specs
-                text, calls, cut = "", {}, False
+                if specs:                                    # in every step, the last one too: the request stays the same from its start
+                    body["tools"] = specs                    # (what the model has read is not read anew), and a call is still told apart
+                    if last:
+                        body["tool_choice"] = "none"
+                text, mind, calls, cut = "", "", {}, False
                 think_n, think_told = 0, None                    # this step's thinking: pieces counted / as llama.cpp reports it
                 try:
                     for piece in self.ai.chat(body, job.cancel):
@@ -4800,6 +5015,7 @@ class Assistant:
                         d = ch.get("delta") if isinstance(ch.get("delta"), dict) else {}
                         if isinstance(d.get("reasoning_content"), str) and d["reasoning_content"]:
                             think_n += 1                             # llama.cpp streams one token per piece
+                            mind += d["reasoning_content"]
                             job.emit("think", text=d["reasoning_content"])
                         if isinstance(d.get("content"), str) and d["content"]:
                             text += d["content"]
@@ -4828,7 +5044,21 @@ class Assistant:
                         calls = {i: {"id": "", "name": n, "args": json.dumps(args, ensure_ascii=False)} for i, (n, args) in enumerate(written)}
                         text = ""
                         job.emit("reset")                    # what was shown of it was the call, not an answer
+                if calls and last:                           # told that the lookups are used up, it asks for one more: not made
+                    if text:
+                        job.emit("reset")                    # (what it wrote before the call led to it: no answer)
+                    text, calls = "", {}
+                bad: Dict[int, str] = {}                     # calls whose arguments are no JSON object (cut off, garbled): position -> as written
+                for i, (_, c) in enumerate(sorted(calls.items())):
+                    try:
+                        whole = isinstance(json.loads(c["args"] or "{}"), dict)
+                    except ValueError:
+                        whole = False
+                    if not whole:                            # llama.cpp refuses a conversation that holds such a call (the whole answer
+                        bad[i], c["args"] = c["args"], "{}"  # would end in an error): kept as a call without arguments, the model is told
                 msg: Dict[str, Any] = {"role": "assistant", "content": text}
+                if mind.strip():                             # its thoughts stay with the step (the makers of Qwen and Gemma: never removed
+                    msg["reasoning_content"] = mind.strip()  # between the tool calls of one answer -- without them it starts each step blind)
                 if calls:
                     msg["tool_calls"] = [{"id": c["id"] or "call_%d_%d" % (steps, i), "type": "function", "function": {"name": c["name"], "arguments": c["args"] or "{}"}}
                                          for i, c in sorted(calls.items())]
@@ -4837,6 +5067,7 @@ class Assistant:
                     if text.strip() or nudged:
                         break
                     nudged = True                            # nothing said (some models stop after reading): asked once to answer
+                    extra = 1 if last else extra             # (the last step: one more for it)
                     turn.pop()
                     turn.append({"role": "user", "content": "[Kontor: now answer the question above in words, from what you have read.]"})
                     continue
@@ -4844,14 +5075,19 @@ class Assistant:
                     job.emit("delta", text="\n\n")
                 again = set()                                # calls made before in this answer (going round in circles): told, not done again
                 for i, tc in enumerate(msg["tool_calls"]):
+                    if i in bad:                             # (not made: the same call with whole arguments is no repetition)
+                        continue
                     key = (tc["function"]["name"], tc["function"]["arguments"])
                     seen[key] = seen.get(key, 0) + 1
                     if seen[key] > 1 and (next((t["kind"] for t in TOOLS if t["name"] == key[0]), "") in ("read", "web") or key[0] == "show_chart"):
                         again.add(i)
-                together = _web_together(msg["tool_calls"], again)
+                together = _web_together(msg["tool_calls"], again | set(bad))
                 for i, tc in enumerate(msg["tool_calls"]):
                     key = (tc["function"]["name"], tc["function"]["arguments"])
-                    if i in again:
+                    if i in bad:
+                        out = json.dumps({"error": "The arguments of this call were not a complete JSON object (cut off or garbled): %s -- call %s again with "
+                                                   "complete arguments." % (bad[i][:300], key[0][:40])}, ensure_ascii=False)
+                    elif i in again:
                         out = json.dumps({"note": "You already made this call in this answer and have its result above. Do not repeat it -- answer the user now."})
                     elif i in together and together[i] is None:          # asked with the first call of its kind in this step (one card)
                         out = json.dumps({"note": "Asked together with your other %s call of this step -- see its result." % key[0]})
@@ -4859,6 +5095,8 @@ class Assistant:
                         out = self._use(job, tc["function"]["name"], together.get(i) or tc["function"]["arguments"], ctx)
                         reads += next((t["kind"] for t in TOOLS if t["name"] == key[0]), "") == "read"
                     turn.append({"role": "tool", "tool_call_id": tc["id"], "content": out})
+                if steps == steps_max - 1:                   # said with the last result (not as a message of its own: the request stays as it was read)
+                    turn[-1]["content"] += "\n[Kontor: that was the last lookup of this answer -- now answer the user from what you have read, and say what is still missing.]"
                 job.emit("status", state="thinking")
             if not (turn[-1].get("role") == "assistant" and str(turn[-1].get("content") or "").strip()):
                 if not job.batch:
@@ -4890,7 +5128,10 @@ class Assistant:
                     job.emit("entry_state", id=p["id"], state="declined")
             # the conversation goes on with what was said and read; an answer cut off stays out (for the model; the page shows it)
             if len(turn) > 1 and turn[-1].get("role") == "assistant" and not turn[-1].get("tool_calls"):
-                conv["messages"] = self._trim(_earlier(conv["messages"]) + turn, st)
+                # (its thoughts go on into the next questions only where the model's template keeps them there -- Qwen3.6 and later
+                # are trained so; elsewhere they would only take room)
+                kept = turn if (self.ai.caps or {}).get("preserve") else [{k: v for k, v in m.items() if k != "reasoning_content"} for m in turn]
+                conv["messages"] = self._trim(_earlier(conv["messages"]) + kept, st)
             if not answered and mine in unnoticed:           # stopped or failed: what was said with it is not looked at later either
                 unnoticed.remove(mine)
             if answered and unnoticed and not job.cancel.is_set() and not conv.get("deleted"):      # the answer is there: now the look at what the user said
@@ -4945,7 +5186,7 @@ class Assistant:
             log.warning("Assistant: tool %s failed (%s)", name, type(e).__name__)
             return json.dumps({"error": "That did not work (%s). Check the arguments." % type(e).__name__})
         out = json.dumps(res, ensure_ascii=False, separators=(",", ":"))
-        most = WEB_RESULT if tool["kind"] == "web" else MAX_RESULT          # (several lookups, fetched together, in one result)
+        most = ctx.get("web_room", WEB_RESULT) if tool["kind"] == "web" else ctx.get("room", MAX_RESULT)          # (several lookups, fetched together, in one result)
         if len(out) > most:
             out = out[:most] + ' …"}  [cut: too long -- ask for less (a shorter period, less detail, a filter)]'
         return out
@@ -5361,15 +5602,37 @@ def _web_state(p: dict, ev: dict) -> None:
 
 
 _CALL_TAG = re.compile(r"<tool_call>\s*(\{.*?\})\s*</tool_call>", re.S)
+_CALL_XML = re.compile(r"<tool_call>\s*<function=([\w.-]{1,60})>(.*?)</function>\s*</tool_call>", re.S)     # as Qwen3.5 and later write a call
+_CALL_PARAM = re.compile(r"<parameter=([\w.-]{1,60})>\n?(.*?)\n?</parameter>", re.S)
 
 
 def _written_calls(text: str, names: set) -> List[Tuple[str, dict]]:
     """Tool calls a model wrote into its text instead of handing them over: <tool_call>{"name": ..., "arguments": {...}}
-    </tool_call> blocks, or the whole text one such JSON object. Only calls of tools that exist; anything else is an answer."""
+    </tool_call> blocks, the whole text one such JSON object, or Qwen's own form <tool_call><function=name><parameter=key>
+    value</parameter></function></tool_call> (a value is text where the tool wants text, else what it says as JSON). Only
+    calls of tools that exist; anything else is an answer."""
+    xml = _CALL_XML.findall(text or "")
+    if xml:
+        out: List[Tuple[str, dict]] = []
+        for name, inner in xml[:4]:
+            if name not in names:
+                return []
+            props = next((t["params"].get("properties") or {} for t in TOOLS if t["name"] == name), {})
+            args: Dict[str, Any] = {}
+            for key, raw in _CALL_PARAM.findall(inner):
+                value: Any = raw
+                if (props.get(key) or {}).get("type") != "string":
+                    try:
+                        value = json.loads(raw)
+                    except ValueError:
+                        pass
+                args[key] = value
+            out.append((name, args))
+        return out
     found = _CALL_TAG.findall(text or "")
     if not found and (text or "").strip().startswith("{") and (text or "").strip().endswith("}"):
         found = [text.strip()]
-    out: List[Tuple[str, dict]] = []
+    out = []
     for raw in found[:4]:
         try:
             obj = json.loads(raw)
@@ -5632,6 +5895,8 @@ TOOLS: List[dict] = [
     _tool("get_changes", "figures", "read", "Changes in income and expenses: a period against the same months a year before or the average of the twelve months before -- per row and category, largest first. Default: the last closed month against the average.",
           {"area": _AREA, "from": {"type": "string", "description": "YYYY-MM"}, "to": {"type": "string", "description": "YYYY-MM"},
            "against": {"type": "string", "enum": ["year_before", "average"]}}),
+    _tool("get_net_worth_drivers", "figures", "read", "Why net worth rose or fell in a period (default: the last closed month): the change, the cash flow lines behind it, the accounts whose balance changed most, the largest transactions -- and for a participation the same for the company it follows (linked_areas), two levels down. Start here for causes.",
+          {"area": _AREA, "from": {"type": "string", "description": "YYYY-MM"}, "to": {"type": "string", "description": "YYYY-MM"}}),
     _tool("get_planning", "figures", "read", "The planning of an area: parameters, events, planned rows per year, the loans (where each stands, how it runs down, when paid off), planned net worth.", {"area": _AREA}),
     _tool("get_tax", "figures", "read", "The tax overview of a year: income and expenses in the positions of the tax return (employment, rental, special expenses ...), each rental property's result (rent, costs, loan interest, depreciation). Default: the last finished year, all areas.",
           {"year": {"type": "string", "description": "YYYY"}, "area": {"type": "string", "description": "Only this area"}}),

@@ -7,7 +7,12 @@ model. What it answers is told by the question itself:
   fail                   -> the server answers with an error
   toolong                -> "exceeds the available context size" while earlier turns are in the request
   silent                 -> says nothing (until it is asked again); mute -> says nothing at all
-  loop <tool> {json}     -> calls that tool again and again, as long as tools are offered; then "Ende."
+  loop <tool> {json}     -> calls that tool again and again, as long as it may (tools offered, tool_choice not "none"); then "Ende."
+  stubborn <tool> {json} -> like loop, but when it may not call any more it writes the call into its text (Qwen's form
+                            <tool_call><function=...>); asked to answer in words it says "Gut: Schluss."
+  ponder <tool> {json}   -> thinks ("Ich brauche <tool>."), then calls the tool; after its result: "Ergebnis: <result>"
+  badargs <tool>         -> calls the tool with arguments that break off ({"expression": "1+); after its result: "Ergebnis: ..."
+                            ("badargs <tool> again": told that they were broken, it calls the tool once more, with {})
   written <tool> {json}  -> writes the call into its text (<tool_call>...</tool_call>) instead of handing it over
   cut                    -> an answer that runs into its limit (finish_reason "length")
   anything else          -> "Antwort: <question>"
@@ -29,13 +34,20 @@ Wagen ...) and three times as much; the instruction before a question and the en
 about the same thing are alike without a word in common, as with a real model. (embed-fails beside it: an error; record: the
 last request to embed.json)
 
+Like llama.cpp it refuses a conversation it cannot put into the model's template (HTTP 500): a tool call in it whose
+arguments are no JSON object, thoughts (reasoning_content) that are no text, a message without content; a reasoning_effort
+the template refuses (HTTP 400); a picture without a picture part (--mmproj). GET /props tells what the template can do
+(chat_template_caps: no levels of thinking, earlier thoughts not kept; modalities: vision with --mmproj) -- props.json beside
+it changes that ({"chat_template_caps": {...}}), no-props makes it an older build that does not answer there.
+
 Files beside it tell it more (Kontor starts it with an environment of its own, so nothing else reaches it):
   record     -> it writes how it was started (arguments, names of environment variables) to started.json and the last
                 request to request.json (the last look at what to remember: to notice.json)
   refuse     -> the start fails
   slowstart  -> /health says "loading" for a moment (its text: for that many seconds)
   script.json -> prepared answers (for the help images): [{"q": part of the question, "steps": [{"call": tool, "args": {...}} |
-                {"think": text} | {"say": text}, ...]}] -- one step per round (a step after each tool result)
+                {"think": text} | {"say": text}, ...]}] -- one step per round (a step after each tool result); a call or a say
+                may carry its thoughts ("think") with it
 """
 import json
 import re
@@ -132,9 +144,63 @@ def main():
             self.end_headers()
             self.wfile.write(raw)
 
+        def _props(self):
+            """What llama.cpp's /props says of the model, as far as Kontor reads it."""
+            sees = "--mmproj" in sys.argv and os.path.exists(arg("--mmproj") or "") and "--embedding" not in sys.argv
+            props = {"default_generation_settings": {"n_ctx": int(arg("--ctx-size", "0") or 0)}, "total_slots": int(arg("--parallel", "1") or 1),
+                     "modalities": {"vision": sees, "audio": False}, "build_info": "b4711-fake",
+                     "chat_template_caps": {"supports_tools": True, "supports_tool_calls": True, "supports_preserve_reasoning": False,
+                                            "supports_reasoning_effort": False, "reasoning_effort_levels": [], "reasoning_effort_rejected": []}}
+            if os.path.exists(os.path.join(here, "props.json")):
+                with open(os.path.join(here, "props.json"), encoding="utf-8") as f:
+                    for k, v in json.load(f).items():
+                        props[k] = dict(props.get(k) or {}, **v) if isinstance(v, dict) else v
+            return props
+
+        def _refused(self, body):
+            """Why llama.cpp would not take this conversation (None: it does) -- (status, message)."""
+            caps = self._props()["chat_template_caps"]
+            effort = body.get("reasoning_effort")
+            if isinstance(effort, str) and effort in caps["reasoning_effort_rejected"]:
+                return 400, 'reasoning_effort "%s" is not supported by the chat template' % effort
+            for m in body.get("messages") or []:
+                if not isinstance(m, dict) or "role" not in m:
+                    return 500, "Missing 'role' in message"
+                if m["role"] != "assistant" and "content" not in m:
+                    return 400, "All non-assistant messages must contain 'content'"
+                if m["role"] == "assistant" and "content" not in m and "tool_calls" not in m:
+                    return 400, "Assistant message must contain either 'content' or 'tool_calls'!"
+                if "reasoning_content" in m and not isinstance(m["reasoning_content"], str):
+                    return 500, "type must be string, but is %s" % type(m["reasoning_content"]).__name__
+                c = m.get("content")
+                if isinstance(c, list):
+                    for part in c:
+                        if not isinstance(part, dict) or part.get("type") not in ("text", "image_url"):
+                            return 500, "Unsupported content part type"
+                        if part["type"] == "image_url":
+                            url = str((part.get("image_url") or {}).get("url") or "")
+                            if not self._props()["modalities"]["vision"]:
+                                return 500, "image input is not supported - hint: if this is unexpected, you may need to provide the mmproj"
+                            if not url.startswith("data:image/"):
+                                return 500, "this stand-in takes pictures only as data: (never an address)"
+                elif c is not None and not isinstance(c, str):
+                    return 500, "Invalid 'content' type: expected string or array"
+                for tc in m.get("tool_calls") or []:
+                    args = ((tc or {}).get("function") or {}).get("arguments")
+                    try:
+                        if not isinstance(json.loads(args) if isinstance(args, str) else args, dict):
+                            raise ValueError
+                    except ValueError:
+                        return 500, "Failed to parse tool call arguments as JSON: " + str(args)[:80]
+            return None
+
         def do_GET(self):
             if self.path == "/health":
                 return self._json(200, {"status": "ok"}) if time.time() >= ready_at else self._json(503, {"error": {"message": "Loading model"}})
+            if self.path == "/props" and not os.path.exists(os.path.join(here, "no-props")):
+                if self.headers.get("Authorization") != "Bearer " + key or not key:
+                    return self._json(401, {"error": {"message": "Invalid API Key"}})
+                return self._json(200, self._props())
             self._json(404, {"error": {"message": "File Not Found"}})
 
         def _send(self, obj):
@@ -175,6 +241,9 @@ def main():
                 return self._json(200, {"object": "list", "data": [{"object": "embedding", "index": i, "embedding": embedding(str(t))} for i, t in enumerate(texts)]})
             if self.path != "/v1/chat/completions":
                 return self._json(404, {"error": {"message": "not found"}})
+            no = self._refused(body)
+            if no is not None:
+                return self._json(no[0], {"error": {"message": no[1]}})
             msgs = body.get("messages") or []
             noticed = None
             if isinstance((body.get("response_format") or {}).get("schema"), dict):       # the look at what to remember: answered from what it holds
@@ -215,6 +284,10 @@ def main():
                     json.dump(body, f)
             last = msgs[-1] if msgs else {}
             users = [m for m in msgs if m.get("role") == "user"]
+            for m in users:                                 # a message of several parts (text beside pictures): its text, and how many pictures
+                if isinstance(m.get("content"), list):
+                    seen = sum(1 for x in m["content"] if x.get("type") == "image_url")
+                    m["content"] = "".join(str(x.get("text") or "") for x in m["content"] if x.get("type") == "text") + (" [%d Bild(er) gesehen]" % seen if seen else "")
             q = str((users[-1] if users else {}).get("content") or "")
             if q.startswith(("[Page: ", "[Seite: ")) and "]\n" in q:           # Kontor's line before the question: where the user is
                 q = q.split("]\n", 1)[1]
@@ -249,12 +322,18 @@ def main():
                         self._send(delta({"content": text[i:i + 30]}))
                 elif first.startswith("mute") or q.startswith("silent"):
                     pass
-                elif first.startswith("loop "):
-                    name, _, args = first[5:].partition(" ")
-                    if names:
+                elif first.startswith(("loop ", "stubborn ")):
+                    kind, _, rest = first.partition(" ")
+                    name, _, args = rest.partition(" ")
+                    if names and body.get("tool_choice") != "none":
                         self._send(delta({"tool_calls": [{"index": 0, "id": "", "type": "function", "function": {"name": name, "arguments": args.strip() or "{}"}}]}))
+                    elif kind == "stubborn" and not str(users[-1].get("content") or "").startswith("[Kontor: now answer"):
+                        text = "Noch eins. <tool_call>\n<function=%s>\n%s</function>\n</tool_call>" % (name, "".join(
+                            "<parameter=%s>\n%s\n</parameter>\n" % (k, v if isinstance(v, str) else json.dumps(v)) for k, v in json.loads(args.strip() or "{}").items()))
+                        for i in range(0, len(text), 11):
+                            self._send(delta({"content": text[i:i + 11]}))
                     else:
-                        self._send(delta({"content": "Ende."}))
+                        self._send(delta({"content": "Gut: Schluss." if kind == "stubborn" else "Ende."}))
                 elif first.startswith("written ") and last.get("role") != "tool":
                     name, _, args = first[8:].partition(" ")
                     text = 'Moment. <tool_call>\n{"name": "%s", "arguments": %s}\n</tool_call>' % (name, args.strip() or "{}")
@@ -275,7 +354,8 @@ def main():
                             for w in step["think"].split(" "):
                                 self._send(delta({"reasoning_content": w + " "}))
                                 time.sleep(0.01)
-                            continue
+                            if "call" not in step and "say" not in step:      # (thoughts alone: the next step follows in the same round)
+                                continue
                         if "call" in step:
                             self._send(delta({"tool_calls": [{"index": calls, "id": "call_%d" % calls, "type": "function",
                                                               "function": {"name": step["call"], "arguments": json.dumps(step.get("args") or {})}}]}))
@@ -286,6 +366,15 @@ def main():
                             self._send(delta({"content": text[i:i + 24]}))
                             time.sleep(0.005)
                         break
+                elif first.startswith("ponder ") and last.get("role") != "tool":
+                    name, _, args = first[7:].partition(" ")
+                    for w in ("Ich brauche %s." % name).split(" "):
+                        self._send(delta({"reasoning_content": w + " "}))
+                    self._send(delta({"tool_calls": [{"index": 0, "id": "call_0", "type": "function", "function": {"name": name, "arguments": args.strip() or "{}"}}]}))
+                elif first.startswith("badargs ") and last.get("role") != "tool":
+                    self._send(delta({"tool_calls": [{"index": 0, "id": "call_0", "type": "function", "function": {"name": first[8:].split()[0], "arguments": '{"expression": "1+'}}]}))
+                elif first.startswith("badargs ") and first.rstrip().endswith(" again") and "not a complete JSON object" in str(last.get("content")):
+                    self._send(delta({"tool_calls": [{"index": 0, "id": "call_1", "type": "function", "function": {"name": first[8:].split()[0], "arguments": "{}"}}]}))
                 elif last.get("role") == "tool":
                     text = "Ergebnis: " + str(last.get("content"))[:1500]
                     for i in range(0, len(text), 40):

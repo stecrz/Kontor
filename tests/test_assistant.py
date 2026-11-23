@@ -870,6 +870,11 @@ class Server(_Open):
             self.assertIn(flag, argv)
         for never in ("--tools", "--api-key", "--api-key-file", "--mcp-servers-config", "--media-path", "--models-dir", "--hf-repo", "--model-url"):
             self.assertNotIn(never, argv)
+        # the model's own chat template (never one from elsewhere), one conversation at a time, and its memory of the conversation
+        # never stored coarser (that costs the precision of tool calls)
+        for never in ("--chat-template", "--chat-template-file", "--cache-type-k", "-ctk", "--cache-type-v", "-ctv", "--reasoning-budget", "--no-jinja"):
+            self.assertNotIn(never, argv)
+        self.assertIn("--jinja", argv); self.assertEqual(argv[argv.index("--parallel") + 1], "1")
         self.assertNotIn(self.ai.key, " ".join(argv))                              # the key: never in the command line
         self.assertTrue(started["key_in_env"])
         self.assertTrue(len(self.ai.key) >= 32)
@@ -1075,14 +1080,14 @@ class Tools(_Assist):
         self.assertEqual(text_of(evs), "Fertig.")
         self.assertEqual((evs[-1]["thought"], evs[-1]["limit"]), (3, False))          # how much it thought: one token per piece
         self.assertEqual(self.a.conv["turns"][-1]["meta"]["thought"], 3)
-        # "balanced": the limit for the whole answer -- reached, the answer says so
+        # "balanced": a limit for each step of an answer -- reached, the answer says so
         orig = A.THINK_BUDGET
         A.THINK_BUDGET = 20
         try:
             evs = self.ask("think " + " ".join("w%d" % i for i in range(20)), effort="balanced")
             self.assertEqual((evs[-1]["thought"], evs[-1]["limit"]), (20, True))
-            self.assertEqual(self.a._effort({"effort": "balanced"}, 15), {"reasoning_budget_tokens": 5, "thinking_budget_tokens": 5})
-            self.assertEqual(self.a._effort({"effort": "balanced"}, 30), {"reasoning_budget_tokens": 0, "thinking_budget_tokens": 0})
+            eff = self.a._effort({"effort": "balanced", "model": "qwen3.6-35b-a3b"})
+            self.assertEqual((eff["reasoning_budget_tokens"], eff["thinking_budget_tokens"]), (20, 20))
         finally:
             A.THINK_BUDGET = orig
         self.assertEqual(self.tool("get_overview") and self.a.job.events[-1]["reads"], 1)    # lookups of the user's data
@@ -1577,7 +1582,8 @@ class Tools(_Assist):
         with self.assertRaises(ValueError):
             self.a.set({"model": "not-downloaded"})
         self.assertEqual(self.a._effort({"effort": "fast"}), {"reasoning_effort": "none", "chat_template_kwargs": {"enable_thinking": False}})
-        self.assertEqual(self.a._effort({"effort": "balanced"}), {"reasoning_budget_tokens": 2000, "thinking_budget_tokens": 2000})
+        self.assertEqual(self.a._effort({"effort": "balanced"}), {"reasoning_budget_tokens": A.THINK_BUDGET, "thinking_budget_tokens": A.THINK_BUDGET,
+                                                                  "reasoning_budget_message": A.THINK_END["de"]})      # (a limit for each step: Asking)
         self.assertEqual(self.a._effort({"effort": "thorough"}), {})
         rights = dict(self.a.settings()["rights"])                                    # a refused change leaves the settings in use as they were
         with self.assertRaises(ValueError):
@@ -1961,6 +1967,352 @@ class Tools(_Assist):
         self.assertIn("Assistant: question answered", log); self.assertIn("search_transactions", log)
         for secret in ("Zahnarzt", "4711,23", "Miete", "98765", "Antwort", self.a.ai.key):
             self.assertNotIn(secret, log)
+
+
+class Asking(_Assist):
+    """How the model is asked: with the values its maker recommends, with its thoughts kept between the steps of an answer, with
+    results as long as its context allows -- and no broken step of a model ends an answer."""
+
+    def beside(self, name):
+        return os.path.join(os.path.dirname(self.a.ai.runtime()["path"]), name)
+
+    def sent(self):
+        with open(self.beside("request.json")) as f:
+            return json.load(f)
+
+    def test_sampling_as_the_makers_recommend(self):
+        for c in L.CATALOG:
+            t = L.tuning(c["id"])
+            self.assertTrue(t["id"], "%s: no family in llm_local.FAMILIES -- add how its maker wants it asked (its model card)" % c["id"])
+            for mode in ("think", "plain"):
+                self.assertTrue(0.0 < t[mode]["temperature"] <= 1.0 and 0.5 <= t[mode]["top_p"] <= 1.0 and t[mode]["top_k"] >= 20, (c["id"], t[mode]))
+                self.assertLessEqual(t[mode].get("presence_penalty", 0), 0, c["id"])      # digits, the bars of a table, the quotes of a call repeat: never punished
+                self.assertFalse({"repeat_penalty", "frequency_penalty", "seed"} & set(t[mode]), c["id"])
+        qwen = L.tuning("qwen3.6-35b-a3b")
+        self.assertEqual((qwen["id"], qwen["think"]), ("qwen3", {"temperature": 0.6, "top_p": 0.95, "top_k": 20, "min_p": 0.0, "presence_penalty": 0.0}))
+        self.assertEqual((qwen["plain"], qwen["levels"]), ({"temperature": 0.7, "top_p": 0.8, "top_k": 20, "min_p": 0.0, "presence_penalty": 0.0}, {}))
+        q38 = L.tuning("qwen3.8-27b")
+        self.assertEqual((q38["id"], q38["think"]["temperature"], q38["plain"]["temperature"], q38["levels"]), ("qwen3.8", 1.0, 0.7, {"balanced": "medium"}))
+        self.assertEqual(L.tuning("gemma-4-26b-a4b")["think"], {"temperature": 1.0, "top_p": 0.95, "top_k": 64})
+        self.assertEqual(L.tuning("qwen3.5-4b")["id"], "qwen3")                          # (its repository is another maker's: by the model's name)
+        self.assertEqual(L.tuning("unsloth/Qwen3.8-27B-GGUF/Qwen3.8-27B-Q6_K.gguf")["id"], "qwen3.8")       # a model added by its repository
+        for unknown in ("someone/Model-9-GGUF/model.gguf", "ggml-org/Qwen3-ASR-1.7B-GGUF/x.gguf", "x/Qwen4-27B-GGUF/q.gguf", ""):
+            self.assertEqual(L.tuning(unknown), {"id": "", "think": {}, "plain": {}, "levels": {}}, unknown)
+        # as sent: "balanced" unless chosen
+        open(self.beside("record"), "w").close()
+        self.a.stop_all()
+        self.ask("Hallo")
+        req = self.sent()
+        self.assertEqual({k: req.get(k) for k in ("temperature", "top_p", "top_k", "min_p", "presence_penalty")},
+                         {"temperature": 0.6, "top_p": 0.95, "top_k": 20, "min_p": 0.0, "presence_penalty": 0.0})
+        self.assertEqual((req["reasoning_budget_tokens"], req["thinking_budget_tokens"]), (A.THINK_BUDGET, A.THINK_BUDGET))
+        self.assertGreaterEqual(A.THINK_BUDGET, 2000)
+        self.assertIn("Genug überlegt", req["reasoning_budget_message"])              # a thought cut off ends with a sentence, not in mid-word
+        self.assertNotIn("chat_template_kwargs", req); self.assertNotIn("reasoning_effort", req)
+        self.ask("Hallo", effort="fast")
+        req = self.sent()
+        self.assertEqual((req["temperature"], req["top_p"], req["top_k"], req["reasoning_effort"], req["chat_template_kwargs"]), (0.7, 0.8, 20, "none", {"enable_thinking": False}))
+        self.assertFalse({"reasoning_budget_tokens", "thinking_budget_tokens", "reasoning_budget_message"} & set(req))
+        self.ask("Hallo", effort="thorough")
+        req = self.sent()
+        self.assertEqual(req["temperature"], 0.6)
+        self.assertFalse({"reasoning_budget_tokens", "thinking_budget_tokens", "chat_template_kwargs", "reasoning_effort"} & set(req))
+        for never in ("repeat_penalty", "frequency_penalty", "seed", "grammar", "cache_type_k"):
+            self.assertNotIn(never, req)
+        # a model Kontor does not know: nothing of its own -- llama.cpp's values (and what the model file carries)
+        self.assertEqual(self.a._effort({"effort": "thorough", "model": "someone/Model-9-GGUF/model.gguf"}), {})
+        self.assertEqual(self.a._effort({"effort": "fast", "model": "someone/Model-9-GGUF/model.gguf"}), {"reasoning_effort": "none", "chat_template_kwargs": {"enable_thinking": False}})
+
+    def test_a_models_own_levels_of_thinking(self):
+        self.assertEqual(self.a.ai.caps, {})                                           # not started: nothing known
+        self.ask("Hallo")
+        self.assertEqual(self.a.ai.caps, {"levels": [], "rejected": [], "preserve": False, "vision": False})
+        kw = lambda model, effort="balanced": self.a._effort({"effort": effort, "model": model}).get("chat_template_kwargs")
+        self.assertIsNone(kw("qwen3.6-35b-a3b"))                                       # its template knows no levels
+        self.assertEqual(kw("qwen3.8-27b"), {"reasoning_effort": "medium"})            # Qwen3.8: without a level it takes its highest
+        self.assertIsNone(kw("qwen3.8-27b", "thorough"))                               # ... which "thorough" means
+        self.assertEqual(kw("qwen3.8-27b", "fast"), {"enable_thinking": False})
+        # what the running model's template tells (llama.cpp's /props)
+        with open(self.beside("props.json"), "w") as f:
+            json.dump({"chat_template_caps": {"supports_preserve_reasoning": True, "reasoning_effort_levels": ["low", "medium", "high"], "reasoning_effort_rejected": ["max"]}}, f)
+        self.a.stop_all()
+        self.assertEqual(self.a.ai.caps, {})
+        self.ask("Hallo")
+        self.assertEqual(self.a.ai.caps, {"levels": ["low", "medium", "high"], "rejected": ["max"], "preserve": True, "vision": False})
+        self.assertEqual(kw("someone/Model-9-GGUF/model.gguf"), {"reasoning_effort": "medium"})
+        self.assertIsNone(kw("someone/Model-9-GGUF/model.gguf", "thorough"))
+        self.a.ai.caps = dict(self.a.ai.caps, rejected=["medium"])                    # a level the template refuses is never sent (llama.cpp would answer with an error)
+        self.assertIsNone(kw("qwen3.8-27b")); self.assertIsNone(kw("someone/Model-9-GGUF/model.gguf"))
+        # an older llama.cpp that tells nothing: nothing is assumed
+        open(self.beside("no-props"), "w").close()
+        self.a.stop_all()
+        self.ask("Hallo")
+        self.assertEqual(self.a.ai.caps, {})
+        self.assertIsNone(kw("someone/Model-9-GGUF/model.gguf")); self.assertEqual(kw("qwen3.8-27b"), {"reasoning_effort": "medium"})
+        # what it tells is checked like any input
+        self.assertEqual(L.template_caps({"chat_template_caps": {"reasoning_effort_levels": ["low", 7, "x" * 40, "<b>", None], "reasoning_effort_rejected": "max",
+                                                                 "supports_preserve_reasoning": "yes"}, "modalities": {"vision": 1}}),
+                         {"levels": ["low"], "rejected": [], "preserve": False, "vision": False})
+        for junk in (None, [], "x", {}, {"chat_template_caps": []}):
+            self.assertEqual(L.template_caps(junk), {})
+
+    def test_thoughts_stay_between_the_steps_of_an_answer(self):
+        """What it thought before a lookup is given back with that step (the makers' rule for Qwen and Gemma) -- into the next
+        questions only where the model's template keeps thoughts there."""
+        open(self.beside("record"), "w").close()
+        self.a.stop_all()
+        evs = self.ask('ponder calculate {"expression": "2 + 3"}')
+        self.assertEqual(evs[-1]["type"], "done")
+        self.assertIn('"result":5', text_of(evs))
+        self.assertEqual("".join(e["text"] for e in evs if e["type"] == "think"), "Ich brauche calculate. ")
+        req = self.sent()                                                              # the second step, after the lookup
+        step = next(m for m in req["messages"] if m["role"] == "assistant")
+        self.assertEqual((step["reasoning_content"], step["content"], step["tool_calls"][0]["function"]["name"]), ("Ich brauche calculate.", "", "calculate"))
+        self.assertTrue(req["tools"])
+        self.assertFalse(any("reasoning_content" in m for m in self.a.conv["messages"]))       # this template drops earlier thoughts: not kept
+        with open(self.beside("props.json"), "w") as f:                               # one that keeps them (Qwen3.6 and later)
+            json.dump({"chat_template_caps": {"supports_preserve_reasoning": True}}, f)
+        self.a.stop_all()
+        self.ask('ponder calculate {"expression": "4 + 4"}', conversation=self.a.conv["id"])
+        self.assertEqual([m.get("reasoning_content") for m in self.a.conv["messages"] if m.get("tool_calls")], [None, "Ich brauche calculate."])
+        self.ask("und jetzt?", conversation=self.a.conv["id"])
+        self.assertEqual([m["reasoning_content"] for m in self.sent()["messages"] if "reasoning_content" in m], ["Ich brauche calculate."])
+        saved = self.a._chat_read(self.a.conv["id"])                                   # a saved conversation holds what the page showed, as before
+        self.assertNotIn("reasoning_content", json.dumps(A._history(saved["turns"])))
+
+    def test_a_broken_step_does_not_end_the_answer(self):
+        # arguments of a call that break off (the answer ran into its limit, a small model): llama.cpp refuses a conversation that
+        # holds them -- the call stays without arguments, the model is told and goes on
+        evs = self.ask("badargs calculate")
+        self.assertEqual(evs[-1]["type"], "done", evs[-1])
+        self.assertIn("not a complete JSON object", text_of(evs)); self.assertIn('1+', text_of(evs))
+        self.assertEqual(next(m for m in self.a.conv["messages"] if m.get("tool_calls"))["tool_calls"][0]["function"]["arguments"], "{}")
+        broken = [{"role": "user", "content": "x"}, {"role": "assistant", "content": "", "tool_calls": [
+            {"id": "c", "type": "function", "function": {"name": "calculate", "arguments": '{"expression": "1+'}}]}, {"role": "tool", "tool_call_id": "c", "content": "{}"}]
+        with self.assertRaises(L.ModelError) as cm:                                    # (as the stand-in, like llama.cpp, answers otherwise)
+            list(self.a.ai.chat({"messages": broken, "stream": True}, threading.Event()))
+        self.assertIn("Failed to parse tool call arguments", str(cm.exception))
+        # the broken call was not made: the same call with whole arguments is no repetition
+        evs = self.ask("badargs get_status again")
+        self.assertEqual((evs[-1]["type"], [e["name"] for e in evs if e["type"] == "tool"]), ("done", ["get_status"]))
+        told = [m["content"] for m in self.a.conv["messages"] if m["role"] == "tool"]
+        self.assertEqual(len(told), 2)
+        self.assertIn("not a complete JSON object", told[0]); self.assertNotIn("already made this call", told[1]); self.assertIn('"last_sync"', told[1])
+        # the last step of an answer: the tools stay in the request (it is not read anew), the last result says that it was the
+        # last; a call all the same is not made -- asked once more, it answers
+        open(self.beside("record"), "w").close()
+        evs = self.ask("stubborn get_status {}")
+        self.assertEqual((evs[-1]["type"], text_of(evs).endswith("Gut: Schluss.")), ("done", True), text_of(evs)[-200:])
+        self.assertEqual([e["name"] for e in evs if e["type"] == "tool"], ["get_status"])
+        told = [m["content"] for m in self.a.conv["messages"] if m["role"] == "tool"]
+        self.assertEqual(len(told), A.MAX_STEPS - 1)
+        self.assertIn("that was the last lookup of this answer", told[-1])
+        self.assertFalse(any("last lookup" in x for x in told[:-1]))
+        self.assertIn("reset", [e["type"] for e in evs])                               # what it wrote of the call is taken back on the page
+        req = self.sent()
+        self.assertTrue(req["tools"]); self.assertEqual(req["tool_choice"], "none")
+        self.assertEqual(A._written_calls("<tool_call>\n<function=get_cashflow>\n<parameter=area>\nPrivat\n</parameter>\n<parameter=from>\n2026-01\n</parameter>\n"
+                                          "<parameter=with_plan>\ntrue\n</parameter>\n</function>\n</tool_call>", {"get_cashflow"}),
+                         [("get_cashflow", {"area": "Privat", "from": "2026-01", "with_plan": True})])       # Qwen's own form of a call: text where the tool wants text
+        self.assertEqual(A._written_calls("<tool_call><function=get_tax><parameter=year>2025</parameter></function></tool_call>", {"get_tax"}), [("get_tax", {"year": "2025"})])
+        self.assertEqual(A._written_calls("<tool_call><function=delete_all><parameter=x>1</parameter></function></tool_call>", {"get_tax"}), [])
+
+    def test_thoughts_make_room_before_questions_do(self):
+        """Thoughts kept in the conversation count in its room: in an answer of many steps the earliest results go first, then
+        the earliest thoughts; of earlier answers the thoughts go before a whole question does."""
+        st = {"context": 16384}
+        steps = [m for i in range(5) for m in ({"role": "assistant", "content": "", "reasoning_content": "g" * 5000,
+                                                "tool_calls": [{"id": "c%d" % i, "type": "function", "function": {"name": "get_status", "arguments": "{}"}}]},
+                                               {"role": "tool", "tool_call_id": "c%d" % i, "content": "r" * 3000})]
+        turn = [{"role": "user", "content": "Frage"}] + steps
+        self.a._fit(turn, st)                                                          # 40,000 characters in a room of 29,491
+        self.assertEqual([len(m["content"]) == 3000 for m in turn if m["role"] == "tool"], [False, False, False, True, True])
+        self.assertEqual(["reasoning_content" in m for m in turn if m["role"] == "assistant"], [False, True, True, True, True])
+        self.assertLessEqual(sum(len(m["content"]) + len(m.get("reasoning_content") or "") for m in turn), int(16384 * 3.0 * 0.6))
+        tight = [{"role": "user", "content": "Frage"}] + [dict(m) for m in steps]
+        self.a._fit(tight, st, 30000)                                                  # system text and tools take most of a small context: less room
+        self.assertEqual([len(m["content"]) == 3000 for m in tight if m["role"] == "tool"], [False, False, False, True, True])
+        self.assertEqual(["reasoning_content" in m for m in tight if m["role"] == "assistant"], [False, False, False, True, True])      # (the last two steps keep both)
+        small = [{"role": "user", "content": "Frage"}] + [dict(m) for m in steps[:4]]
+        small[1]["reasoning_content"] = small[3]["reasoning_content"] = "kurz"
+        before = json.dumps(small)
+        self.a._fit(small, st)
+        self.assertEqual(json.dumps(small), before)                                    # what fits stays as it is
+        msgs = [{"role": "user", "content": "eins"}, {"role": "assistant", "content": "A1", "reasoning_content": "x" * 20000},
+                {"role": "user", "content": "zwei"}, {"role": "assistant", "content": "A2", "reasoning_content": "y" * 9000}]
+        out = self.a._trim(msgs, st)                                                   # a room of 27,033: the older thought goes, both questions stay
+        self.assertEqual([(m["content"], "reasoning_content" in m) for m in out], [("eins", False), ("A1", False), ("zwei", False), ("A2", True)])
+        self.assertIn("reasoning_content", msgs[1])                                    # (the conversation itself is changed only by what is stored back)
+        out = self.a._trim(msgs + [{"role": "user", "content": "drei"}, {"role": "assistant", "content": "z" * 27000}], st)
+        self.assertEqual([m["content"][:4] for m in out], ["drei", "zzzz"])            # no thought left to give: then whole questions, the oldest first
+        # what a question reads needs room as it goes: the oldest earlier questions give way one at a time -- not all at once
+        # when the model refuses the request
+        old = [m for i in range(4) for m in ({"role": "user", "content": "Frage %d" % i}, {"role": "assistant", "content": "a" * 5000})]
+        turn = [{"role": "user", "content": "neu"}]
+        self.assertEqual(self.a._give_way(old, turn, st, 20000), old)
+        turn.append({"role": "tool", "tool_call_id": "c", "content": "r" * 6500})
+        self.assertEqual([m["content"] for m in self.a._give_way(old, turn, st, 20000) if m["role"] == "user"], ["Frage 2", "Frage 3"])
+        turn.append({"role": "tool", "tool_call_id": "d", "content": "r" * 20000})
+        self.assertEqual(self.a._give_way(old, turn, st, 20000), [])
+        self.assertEqual(self.a._give_way(old, turn, {"context": 65536}, 20000), old)  # a large context: room for all of it
+
+    def test_results_as_long_as_the_context_allows(self):
+        self.assertEqual([A.result_room(c) for c in A.CONTEXTS], [7000, 11796, 23592, 40000])
+        self.assertEqual([A.result_room(c, web=True) for c in A.CONTEXTS], [12000, 18022, 36044, 60000])
+        page = {"route": "#cashflow", "title": "Cashflow", "area": "", "text": "Zeile 1234,56 € " * 700}
+        self.a.set({"context": 65536})
+        self.assertEqual(len(self.tool("get_current_page", page=page)["text"]), A.MAX_PAGE)        # the page as a whole
+        self.a.set({"context": 16384})
+        self.ask("call get_current_page {}", page=page)
+        self.assertIn("[cut: too long", next(m["content"] for m in reversed(self.a.conv["messages"]) if m["role"] == "tool"))
+
+
+class Causes(_Open):
+    """Why a figure changed: Kontor follows a change of net worth down -- accounts, largest transactions, through a participation
+    into the company behind it -- and hands the model the facts; what happened is the model's conclusion. On the demo's world:
+    Parkweg GbR bought its property, and the month after it paid what the purchase cost besides the price."""
+
+    @classmethod
+    def setUpClass(cls):
+        import demo
+        cls.keep = L._open
+        cls.dir = tempfile.mkdtemp(prefix="kontor-causes-")
+        T.patch_today()
+        store = T.new_store(cls.dir)
+        cls.world = demo.World(T.TODAY)
+        store.save("config.json", demo.config(cls.world, {}, os.path.join(cls.dir, "Belege")))
+        store.save("state.json", cls.world.state())
+        cls.app = MA.App(store, cls.dir, bridge_factory=cls.world.bridge)
+        cls.app.do_run(False, True)
+        cls.app.rebuild_report(wait=True)
+        install(cls.app)
+        cls.a = cls.app.assistant
+        cls.month = "%d-12" % cls.world.purchase.year                           # the month after the purchase
+        cls.ds = cls.app.dataset()
+        cls.area = {v: k for k, v in cls.ds["area_names"].items()}
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.app.assistant_stop()
+        L._open = cls.keep
+        shutil.rmtree(cls.dir, ignore_errors=True)
+
+    def drivers(self, room=None, **args):
+        ctx = dict({"job": A.Job(), "conv": self.a.conv, "area": ""}, **({"room": room} if room else {}))
+        return self.a.t_get_net_worth_drivers(dict(args), ctx)
+
+    def test_a_drop_is_followed_into_the_company_behind_it(self):
+        m, ds = self.month, self.ds
+        before = "%d-11" % self.world.purchase.year
+        priv, gbr = ds["areas"][self.area["Privat"]], ds["areas"][self.area["Parkweg GbR"]]
+        got = self.drivers(area="Privat", **{"from": m, "to": m})
+        self.assertEqual((got["area"], got["period"]), ("Privat", [m, m]))
+        nw = priv["balance"]["net_worth"]
+        self.assertEqual(got["net_worth"], {"before": round(nw[before], 2), "after": round(nw[m], 2), "change": round(nw[m] - nw[before], 2)})
+        self.assertLess(got["net_worth"]["change"], -20000)                           # a month in which net worth fell, among months in which it grows
+        self.assertEqual(got["by_cash_flow"]["Wertänderungen"], round(priv["cashflow"]["sums"][m]["valuation"], 2))
+        self.assertEqual(list(got["net_worth_month_ends_around"])[:4], ["%d-09" % self.world.purchase.year, "%d-10" % self.world.purchase.year, before, m])
+        first = got["accounts"][0]                                                     # what carried it: the participation -- and what it follows
+        self.assertEqual((first["account"], first["position"], first["follows"]),
+                         ("Beteiligung Parkweg GbR", "Beteiligungen", "50 % of the net worth of the area Parkweg GbR (a booking rule keeps it there)"))
+        self.assertEqual([x["area"] for x in got["linked_areas"]], ["Parkweg GbR"])    # followed there -- not into the company whose share hardly moved
+        self.assertIn("Beteiligung Muster UG", [x["account"] for x in got["accounts"]])
+        g = got["linked_areas"][0]
+        gnw = gbr["balance"]["net_worth"]
+        self.assertEqual((g["followed_by"], g["net_worth"]["change"]), ("Beteiligung Parkweg GbR", round(gnw[m] - gnw[before], 2)))
+        self.assertEqual(first["change"], round(0.5 * g["net_worth"]["change"], 2))    # the share of it, to the cent
+        self.assertEqual(g["counts_in"], ["Privat / Beteiligungen / Beteiligung Parkweg GbR"])
+        costs = [(t["amount"], t["name"], t["purpose"]) for t in g["largest_transactions"] if "Parkweg 7" in t["purpose"]]
+        self.assertEqual(costs, [(-52500.0, "Finanzamt", "Grunderwerbsteuer Parkweg 7"), (-7500.0, "Notariat am Markt", "Kaufvertrag Parkweg 7"),
+                                 (-3000.0, "Amtsgericht", "Grundbuch Parkweg 7")])     # the cause is in the transactions
+        calc = self.app.config["real_estate"][0]["calcs"][0]["inputs"]                 # (what the property's calculation expects the purchase to cost)
+        self.assertEqual(-sum(c[0] for c in costs), calc["purchase_price"] * calc["closing_costs"]["transfer_tax_percent"] / 100 + calc["closing_costs"]["notary"] + calc["closing_costs"]["land_register"])
+        every = got["largest_transactions"] + g["largest_transactions"]
+        self.assertFalse([t for t in every if "#kontor" in t["purpose"]])              # money that moved, not the bookings of Kontor's own rules
+        self.assertTrue(any(t.get("transfer") for t in g["largest_transactions"]))     # (a transfer between own accounts is marked as one)
+        self.assertIn("conclude what happened", got["note"]); self.assertIn("mark what you assume", got["note"])
+        # the month of the purchase, in the company: the property is new there
+        buy = self.drivers(area="Parkweg GbR", **{"from": before, "to": before})
+        new = {x["account"]: x for x in buy["accounts"]}
+        self.assertEqual((new["Immobilie Parkweg"].get("first_balance_in_period"), new["Immobilie Parkweg"].get("property"), new["Immobilie Parkweg"]["change"]), (True, "Parkweg", 1500000.0))
+        self.assertEqual(new["Kaufpreisdarlehen"].get("loan_rule"), "Kaufpreisdarlehen")
+        self.assertNotIn("first_balance_in_period", new["Geschäftskonto"]); self.assertNotIn("linked_areas", buy)
+        # nothing said: the last closed month of the area on screen; a period of several months
+        last = self.drivers()
+        self.assertEqual(last["period"], [[x for x in priv["months"] if x < priv["actual_until"]][-1]] * 2)
+        whole = self.drivers(area="Privat", **{"from": priv["months"][0], "to": priv["actual_until"]})      # years: the month ends at its ends, each year's end between
+        ends = list(whole["net_worth_month_ends_around"])
+        self.assertLessEqual(len(ends), 18); self.assertEqual(ends[0], priv["months"][0]); self.assertIn(priv["actual_until"], ends)
+        self.assertEqual([x for x in ends[1:-3] if not x.endswith("-12")], [])
+        self.assertEqual(whole["current_month_unfinished"], priv["actual_until"])
+        year = self.drivers(area="Privat", **{"from": "%d-01" % (self.world.purchase.year + 1), "to": "%d-12" % (self.world.purchase.year + 1)})
+        self.assertEqual(year["net_worth"]["change"], round(nw["%d-12" % (self.world.purchase.year + 1)] - nw[m], 2))
+        self.assertEqual(year["net_worth"]["change"], round(sum(priv["cashflow"]["sums"][x]["net_worth_delta"] for x in priv["months"] if x[:4] == str(self.world.purchase.year + 1)), 2))
+        with self.assertRaises(A.ToolError):
+            self.drivers(area="Privat", **{"from": "1999-01", "to": "1999-02"})
+        with self.assertRaises(A.ToolError):
+            self.drivers(area="Niemand")
+        # it always fits: as much as the context has room for, never cut
+        tight, small, large = [self.drivers(room=r, area="Privat", **{"from": m, "to": m}) for r in (4200, A.MAX_RESULT, A.result_room(65536))]
+        size = lambda x: len(json.dumps(x, ensure_ascii=False, separators=(",", ":")))
+        self.assertLessEqual(size(tight), 4200); self.assertLessEqual(size(small), A.MAX_RESULT); self.assertLessEqual(size(large), A.result_room(65536))
+        self.assertGreater(len(large["largest_transactions"]), len(tight["largest_transactions"]))
+        self.assertEqual(tight["linked_areas"][0]["net_worth"], g["net_worth"])        # (fewer rows, the same links)
+        # a tool that reads, with the right to read figures; transactions only with the right to read them
+        tool = next(t for t in A.TOOLS if t["name"] == "get_net_worth_drivers")
+        self.assertEqual((tool["kind"], tool["right"], sorted(tool["params"]["properties"])), ("read", "figures", ["area", "from", "to"]))
+        self.a.set({"rights": {"transactions": False}})
+        try:
+            no_tx = self.drivers(area="Privat", **{"from": m, "to": m})
+            self.assertNotIn("largest_transactions", json.dumps(no_tx)); self.assertIn("transactions are not shown", no_tx["note"])
+            self.assertEqual(no_tx["linked_areas"][0]["net_worth"], g["net_worth"])
+        finally:
+            self.a.set({"rights": {"transactions": True}})
+        # the cash flow says the same link where it shows the row
+        cf = self.a.t_get_cashflow({"area": "Privat", "from": m, "to": m}, {"job": A.Job(), "conv": self.a.conv, "area": ""})
+        row = next(z for s in cf["sections"] for z in s.get("rows") or [] if z["row"] == "Beteiligung Parkweg GbR")
+        self.assertEqual(row["follows_area"], "Parkweg GbR"); self.assertIn("get_net_worth_drivers follows it there", cf["note"])
+        self.assertNotIn("follows_area", json.dumps(self.a.t_get_cashflow({"area": "Parkweg GbR", "from": m, "to": m}, {"job": A.Job(), "conv": self.a.conv, "area": ""})))
+
+    def test_the_way_from_the_question_to_the_cause(self):
+        """With the stand-in only the course of an answer: the model is told how to work on a cause, thinks before each step
+        with what it thought before, reads twice and answers -- what a real model makes of it shows the test set at the Mac."""
+        rt = os.path.dirname(self.a.ai.runtime()["path"])
+        m = self.month
+        steps = [{"think": "Der Rückgang kommt aus den Wertänderungen. Was trägt ihn?", "call": "get_net_worth_drivers", "args": {"area": "Privat", "from": m, "to": m}},
+                 {"think": "Die Beteiligung folgt der GbR. Dort die Umsätze ansehen.", "call": "search_transactions", "args": {"area": "Parkweg GbR", "from": m, "to": m, "sort": "amount", "limit": 5}},
+                 {"think": "Grunderwerbsteuer, Notar, Grundbuch: Kaufnebenkosten.", "say": "Belegt: Die Beteiligung Parkweg GbR sank. Vermutlich Kaufnebenkosten, weil die GbR Grunderwerbsteuer zahlte."}]
+        with open(os.path.join(rt, "script.json"), "w", encoding="utf-8") as f:
+            json.dump([{"q": "Warum ist mein Nettovermögen", "steps": steps}], f)
+        open(os.path.join(rt, "record"), "w").close()
+        try:
+            self.a.stop_all()
+            evs = events(self.a, self.a.ask({"question": "Warum ist mein Nettovermögen im Dezember %d gefallen?" % self.world.purchase.year, "effort": "balanced"})["job"])
+        finally:
+            os.remove(os.path.join(rt, "script.json"))
+        self.assertEqual(evs[-1]["type"], "done", evs[-1])
+        self.assertEqual([e["name"] for e in evs if e["type"] == "tool"], ["get_net_worth_drivers", "search_transactions"])
+        self.assertEqual(evs[-1]["reads"], 2); self.assertFalse(evs[-1]["limit"])
+        self.assertTrue(text_of(evs).strip().endswith("weil die GbR Grunderwerbsteuer zahlte."))
+        with open(os.path.join(rt, "request.json")) as f:
+            req = json.load(f)                                                         # the last step: everything before it is in view
+        kept = [m_ for m_ in req["messages"] if m_["role"] == "assistant"]
+        self.assertEqual([m_["reasoning_content"] for m_ in kept], [steps[0]["think"], steps[1]["think"]])       # its thoughts of the steps before
+        self.assertEqual((req["reasoning_budget_tokens"], len([m_ for m_ in req["messages"] if m_["role"] == "tool"])), (A.THINK_BUDGET, 2))       # thinking in every step, not used up by the first
+        told = json.loads(next(m_["content"] for m_ in req["messages"] if m_["role"] == "tool"))
+        self.assertEqual(told["linked_areas"][0]["area"], "Parkweg GbR")
+        # how to work on a cause stands in the system text -- as a way of working, with no case of its own
+        system = req["messages"][0]["content"]
+        for part in ("find the cause", "get_net_worth_drivers", "follow the largest driver down", "a participation follows its company's area", "Keep apart what is proven",
+                     "vermutlich …, weil …", "name what is missing"):
+            self.assertIn(part, system)
+        for case in ("Grunderwerb", "Kaufnebenkosten", "closing cost", "Notar"):
+            self.assertNotIn(case, system)
+        self.assertNotIn("why it is so", system)                                      # no rule beside it tells it to say "I do not know" where a cause is asked for
+        self.assertIn("What a figure on a page is and how it is calculated: only as", system)
+        self.assertIn("get_net_worth_drivers", [t["function"]["name"] for t in req["tools"]])
+        without = self.a._system(dict(self.a.settings(), rights=dict(self.a.settings()["rights"], figures=False)), {})
+        self.assertNotIn("get_net_worth_drivers", without)                            # (without the right to read figures: no word of it)
 
 
 class Charts(_Assist):

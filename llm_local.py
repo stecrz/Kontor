@@ -163,6 +163,53 @@ class ModelError(Exception):
     """The model did not start or did not answer (its text is for the user)."""
 
 
+# How a family of models wants to be asked -- its maker's recommendation on the model card, not one setting for all of them
+# (a model asked with other values answers worse than it can). "think": the sampling while it thinks before it answers,
+# "plain": without thinking; "levels": how much it thinks where its chat template knows levels of its own (Kontor's effort ->
+# the template's reasoning_effort). A family is known by the name of the model (its id in the list, its repository, its file).
+# Sources (read 2026-11-23):
+#   Qwen3.8 -- card of Qwen3.8-27B: thinking 1.0 / 0.95 / 20 / min_p 0 / presence 0, without 0.7 / 0.80 / 20; reasoning_effort
+#              low, medium, xhigh (xhigh when none is given: it then thinks very long);
+#   Qwen3.5, 3.6 -- card of Qwen3.6-35B-A3B: thinking, precise tasks 0.6 / 0.95 / 20 / min_p 0 / presence 0; without 0.7 / 0.8 / 20;
+#   Gemma 4 -- Google's defaults: 1.0 / 0.95 / 64.
+# presence_penalty stays 0 for all, also where a card names 1.5 for general chat: it lowers every sign that stood shortly
+# before -- digits, the bars of a table, the quotes of a tool call -- and makes Qwen mix languages (as the card says itself).
+# Nothing here for a model Kontor does not know: llama.cpp then uses its own defaults (and what the model file carries).
+FAMILIES: List[Dict[str, Any]] = [
+    {"id": "qwen3.8", "match": r"qwen[\W_]?3\.8",
+     "think": {"temperature": 1.0, "top_p": 0.95, "top_k": 20, "min_p": 0.0, "presence_penalty": 0.0},
+     "plain": {"temperature": 0.7, "top_p": 0.8, "top_k": 20, "min_p": 0.0, "presence_penalty": 0.0},
+     "levels": {"balanced": "medium"}},
+    {"id": "qwen3", "match": r"qwen[\W_]?3(?![\w.\-]*(?:asr|embed|rerank|tts))",
+     "think": {"temperature": 0.6, "top_p": 0.95, "top_k": 20, "min_p": 0.0, "presence_penalty": 0.0},
+     "plain": {"temperature": 0.7, "top_p": 0.8, "top_k": 20, "min_p": 0.0, "presence_penalty": 0.0}},
+    {"id": "gemma4", "match": r"gemma[\W_]?4",
+     "think": {"temperature": 1.0, "top_p": 0.95, "top_k": 64},
+     "plain": {"temperature": 1.0, "top_p": 0.95, "top_k": 64}},
+]
+
+
+def tuning(model_id: str) -> Dict[str, Any]:
+    """How the model with this id wants to be asked (FAMILIES): {"id", "think", "plain", "levels"} -- for a model of the
+    list by its repository too, for any other by its own name (repository/file). Unknown: {"id": "", ...} with nothing set."""
+    entry = next((c for c in CATALOG if c["id"] == model_id), None)
+    name = ("%s %s" % (model_id, entry["repo"] if entry else "")).lower()
+    fam = next((f for f in FAMILIES if re.search(f["match"], name)), None)
+    return {"id": fam["id"] if fam else "", "think": dict(fam["think"]) if fam else {}, "plain": dict(fam["plain"]) if fam else {},
+            "levels": dict(fam.get("levels") or {}) if fam else {}}
+
+
+def template_caps(props: Any) -> Dict[str, Any]:
+    """What llama.cpp's /props says of the running model, every value checked (see LocalAI._caps)."""
+    if not isinstance(props, dict) or not isinstance(props.get("chat_template_caps"), dict):
+        return {}
+    c = props["chat_template_caps"]
+    words = lambda v: [x for x in v if isinstance(x, str) and re.fullmatch(r"[a-z]{2,12}", x)][:12] if isinstance(v, list) else []
+    mod = props.get("modalities") if isinstance(props.get("modalities"), dict) else {}
+    return {"levels": words(c.get("reasoning_effort_levels")), "rejected": words(c.get("reasoning_effort_rejected")),
+            "preserve": c.get("supports_preserve_reasoning") is True, "vision": mod.get("vision") is True}
+
+
 def host_allowed(url: str, kind: str) -> bool:
     """HTTPS to GitHub (llama.cpp) or Hugging Face (model files) and their download hosts -- nothing else."""
     u = urlparse(url)
@@ -365,6 +412,7 @@ class LocalAI:
         self.last_used = 0.0
         self.busy = False
         self.tps: Optional[float] = None
+        self._told: tuple = (0, {})                    # what the running model's chat template can do (caps), and which start told it
         self.tail: deque = deque(maxlen=40)
         self._conn: Optional[http.client.HTTPConnection] = None
         self._halt = threading.Event()                 # "stop" while a start is waiting for the model
@@ -884,6 +932,42 @@ class LocalAI:
             self.error = (tr("s_ki_sandbox_start") % why) if seal and not reached else why
             log.warning("Assistant: model did not start (sandbox: %s): %s", seal or "off", why[:300])
             raise ModelError(tr("s_ki_startet_nicht") % self.error)
+
+    @property
+    def caps(self) -> Dict[str, Any]:
+        """What the running model's chat template can do, as llama.cpp tells it (/props, on 127.0.0.1 with this start's key;
+        asked once for each start): {"levels": the levels of thinking the template knows (reasoning_effort, lowest first),
+        "rejected": those it refuses, "preserve": earlier thoughts stay in the conversation, "vision": it reads pictures (its
+        picture part is loaded)} -- {} when no model runs or the build does not say (an older llama.cpp): nothing is assumed."""
+        p = self.proc
+        pid = p.pid if p is not None and p.poll() is None and self.state == "ready" else 0
+        if not pid:
+            return {}
+        if self._told[0] != pid:
+            told = self._props()
+            if told is None:                             # not reached right now: asked again with the next question
+                return {}
+            self._told = (pid, told)
+        return self._told[1]
+
+    @caps.setter
+    def caps(self, told: Dict[str, Any]) -> None:
+        self._told = (self.proc.pid if self.proc is not None else 0, dict(told))
+
+    def _props(self) -> Optional[Dict[str, Any]]:
+        """None: the model did not answer (busy, just ending)."""
+        try:
+            c = self._connect(10)
+            c.request("GET", "/props", headers={"Authorization": "Bearer " + self.key})
+            r = c.getresponse()
+            raw = r.read(4 << 20)
+            c.close()
+            d = json.loads(raw.decode("utf-8", "replace")) if r.status == 200 else {}
+        except (OSError, http.client.HTTPException):
+            return None
+        except ValueError:
+            return {}
+        return template_caps(d)
 
     def _kill(self) -> None:
         p, self.proc = self.proc, None

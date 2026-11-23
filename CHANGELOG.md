@@ -1,5 +1,16 @@
 # Änderungen
 
+## 3.17.17 (2026-11-23 16:41)
+- KI-Assistent: sucht Ursachen statt Zeilen aufzuzählen – über Konten, größte Umsätze und Beteiligungen bis in die Gesellschaft dahinter
+- KI-Assistent: trennt Belegtes von Vermutetem („vermutlich …, weil …“)
+- KI-Assistent: jedes Modell so gefragt, wie sein Hersteller es empfiehlt (Qwen, Gemma)
+- KI-Assistent: Gedanken bleiben zwischen den Abfragen einer Antwort erhalten
+- KI-Assistent: „Ausgewogen“ denkt vor jeder Abfrage und vor der Antwort (je bis 4.000 Token); Qwen3.8 auf mittlerer Denkstufe
+- KI-Assistent: großer Kontext – längere Ergebnisse je Abfrage (Tabellen, Seite, Internet)
+- KI-Assistent: wird der Platz knapp, weichen zuerst alte Gedanken und die ältesten Fragen – nicht mehr der ganze Verlauf
+- KI-Assistent: verstümmelte Abfrage des Modells beendet die Antwort nicht mehr
+- Demo: Kaufnebenkosten der Parkweg GbR – ein Fall für „Warum ist mein Nettovermögen gefallen?“
+
 ## 3.17.16 (2026-11-23 15:50)
 - Cashflow: Zahlung in einen anderen Bereich nimmt keine von Hand gebuchte Gegenbuchung mehr, die genauso gut zu einer anderen Zahlung ohne IBAN passt – Einlage und Entnahme stimmen auf beiden Seiten überein
 - Entwicklung: Zufallsfall der Nacht (754384078) behoben und fest aufgenommen
