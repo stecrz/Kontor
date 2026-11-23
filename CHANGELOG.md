@@ -1,5 +1,12 @@
 # Änderungen
 
+## 3.17.34 (2026-11-23 23:25)
+- Cashflow: Auszahlung unter einer Tilgungs-Kategorie zählt als Darlehensaufnahme, gesondert von der Tilgung; Rücklastschrift bleibt Tilgung.
+- Cashflow: Darlehen ohne Konto in MoneyMoney – Abgleich mit der Bilanz geht auf (Zeile „Darlehen ohne Konto“ unter Wertänderungen).
+- Cashflow-Positionen: neue Position „Einlagen & Entnahmen“ für Mitgesellschafter – Firma unter Finanzierung, privat unter Beteiligungen.
+- Cashflow-Positionen: „Sparen & Anlegen“ heißt in Firmen „Anlagevermögen & Geldanlagen“.
+- Cashflow-Positionen: empfohlene Kategorien für private und Firmenbereiche, je Position eine; Kennzeichen „privat“/„Firma“.
+
 ## 3.17.33 (2026-11-23 22:48)
 - KI-Assistent: Abschirmung ohne jedes Netz – das Modell lauscht auf keiner Adresse mehr, auch nicht innerhalb des Macs (eine Datei im eigenen Ordner statt 127.0.0.1)
 - KI-Assistent: gilt auch für Diktieren und die Suche nach Bedeutung; ein llama.cpp, das das nicht kann, wird nicht installiert und nicht gestartet

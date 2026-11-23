@@ -1359,7 +1359,8 @@ def positions_overview(ledger: Ledger, config: dict, categories: List[dict], tod
                     "proposal": prop, "proposal_also": also,
                     "own": mine.get(p), "account": konto.get(p) or "", "property_name": obj,
                     "company": 2 * sum(in_firm[q] for q in sub) > sum(count[q] for q in sub)})
-    return {"categories": out, "positions": [[k, sec] for k, sec, _ in POSITIONS], "transfer": list(kf.get("transfer_categories") or ["Umbuchung"])}
+    return {"categories": out, "positions": [[k, sec] for k, sec, _ in POSITIONS], "transfer": list(kf.get("transfer_categories") or ["Umbuchung"]),
+            "kinds": sorted({b.get("kind") or "private" for b in bereiche})}
 
 
 def save_positions(config: dict, body: dict, ledger: Optional[Ledger]) -> dict:

@@ -306,8 +306,8 @@ class CashflowCases(Reconciles):
         self.assertEqual(g["Einlagen/Entnahmen Gesellschafter"]["amounts"]["2026-02"], 5000.0)
         self.assertFalse({"Sonstige Ausgaben", "Sonstige Einnahmen", "Erstattungen", "Freizeit & Reisen"} & (set(p) | set(g)))
         # named for the positions page: categories Kontor does not know and you did not place (between areas they stay contributions)
-        self.assertEqual(data["Privat"]["cashflow"]["uncertain"], {"Einlage": 10000.0})           # moved, either way
-        self.assertEqual(data["Muster GbR"]["cashflow"]["uncertain"], {"Privat / Entnahmen und Einlagen": 10000.0})
+        # ("Einlage", "Entnahmen und Einlagen": Kontor knows them now -- contributions and withdrawals, so nothing unsure)
+        self.assertEqual((data["Privat"]["cashflow"]["uncertain"], data["Muster GbR"]["cashflow"]["uncertain"]), ({}, {}))
         data = build(txs, {"cashflow": {"positions": {"Einlage": "other_expenses"}}})
         self.assertNotIn("Einlage", data["Privat"]["cashflow"]["uncertain"])         # your choice: no longer unsure
         self.assertEqual(rows(data["Privat"])["Sonstige Ausgaben"]["amounts"]["2026-02"], -10000.0)
@@ -704,7 +704,11 @@ class Positions(Reconciles):
                  ("Gehälter", False): "staff", ("Abos", False): "leisure", ("Wareneinkauf", False): "goods",
                  ("Einkommen", True): "work_income", ("Privat / Einkommen", True): "work_income", ("Mieteinkommen", True): "rental",
                  ("Kapitaleinkommen", True): "capital_income", ("Einkommensteuer", False): "taxes",
-                 ("Einkommen / Kindergeld", True): "other_income", ("Hereinkommende Zahlungen", True): "other_income"}
+                 ("Einkommen / Kindergeld", True): "other_income", ("Hereinkommende Zahlungen", True): "other_income",
+                 ("Gesellschafter / Einlage", True): "partners", ("Ausschüttung", False): "partners", ("Ausschüttung", True): "capital_income",
+                 ("Privatentnahme", False): "partners", ("Gewinnausschüttung", False): "partners",
+                 ("Personal / Gesellschafter-Geschäftsführer", False): "staff",
+                 ("Sparen / Spareinlage", False): "saving"}
         for (path, inc), want in cases.items():
             self.assertEqual(R.propose_position(path, inc), want, path)
 
@@ -1192,6 +1196,43 @@ class StatementGroups(Reconciles):
         self.assertEqual(fin["Darlehen Hausbau / Tilgung"]["lbl"], ["cf_name", "Darlehen Hausbau"])
         gbr = build([(1, "kk", date(2026, 3, 3), -500.0, {"cat": "Sparen"})], {"cashflow": {"positions": {"Sparen": "saving"}}})["Muster GbR"]
         self.assertEqual(rows(gbr, "investing")["Sparen"]["group"], "Sparen & Anlegen")       # no depot there: no account known
+        self.assertEqual(rows(gbr, "investing")["Sparen"]["glbl"], ["pos_saving_g"])           # a company's name for it
+
+    def test_loan_paid_out_by_category_is_taken_up(self):
+        """Money in under a repayment category is a loan taken up (its own row), never a negative repayment; a returned debit
+        stays with its payment. Without a loan account the debt is in no account: the net worth Kontor sees moves by it."""
+        cfg = {"cashflow": {"positions": {"Darlehen / Tilgung": "repayment", "Darlehen / Zinsen": "loan_interest"}}}
+        data = build([(1, "giro", date(2026, 1, 5), 3000.0, {"cat": "Einkommen\\Gehalt"}),
+                      (2, "giro", date(2026, 3, 2), 20000.0, {"cat": "Darlehen\\Tilgung"}),
+                      (3, "giro", date(2026, 4, 1), -400.0, {"cat": "Darlehen\\Tilgung"}),
+                      (4, "giro", date(2026, 4, 6), 400.0, {"cat": "Darlehen\\Tilgung"}),
+                      (5, "giro", date(2026, 4, 30), -400.0, {"cat": "Darlehen\\Tilgung"}),
+                      (6, "giro", date(2026, 4, 30), -60.0, {"cat": "Darlehen\\Zinsen"})], cfg)
+        self.assertAddsUp(data)
+        fin = rows(data["Privat"], "financing")
+        self.assertEqual((fin["Darlehensaufnahme"]["amounts"]["2026-03"], fin["Darlehensaufnahme"]["kind"], fin["Darlehensaufnahme"]["group"]),
+                         (20000.0, "drawdown", "Darlehensaufnahme"))
+        self.assertEqual(fin["Darlehensaufnahme"]["amounts"].get("2026-04", 0.0), 0.0)            # the returned debit: no loan taken up
+        self.assertEqual((fin["Tilgung"]["amounts"]["2026-04"], fin["Zinsen"]["amounts"]["2026-04"]), (-400.0, -60.0))
+        self.assertEqual(fin["Darlehensaufnahme"]["details"][0]["category"], "Darlehen / Tilgung")
+        val = rows(data["Privat"], "valuation")["Darlehen ohne Konto"]["amounts"]
+        self.assertEqual((val["2026-03"], val["2026-04"]), (20000.0, -400.0))
+
+    def test_partners_outside_the_areas(self):
+        """Payments from and to partners outside your areas: a company's equity under financing, yours a participation under
+        investing -- neither income nor expense."""
+        cfg = {"cashflow": {"positions": {"Gesellschafter": "partners"}}}
+        data = build([(1, "kk", date(2026, 1, 5), 9000.0, {"cat": "Erlöse", "name": "Kunde"}),
+                      (2, "giro", date(2026, 1, 5), 3000.0, {"cat": "Einkommen\\Gehalt"}),
+                      (3, "kk", date(2026, 3, 2), -9000.0, {"cat": "Gesellschafter\\Ausschüttung", "name": "Mitgesellschafter"}),
+                      (4, "kk", date(2026, 3, 5), 5000.0, {"cat": "Gesellschafter\\Einlage", "name": "Mitgesellschafter"}),
+                      (5, "giro", date(2026, 3, 9), -2500.0, {"cat": "Gesellschafter", "name": "Fremde GmbH"})], cfg)
+        self.assertAddsUp(data)
+        g = rows(data["Muster GbR"], "financing")["Einlagen/Entnahmen Gesellschafter"]
+        self.assertEqual((g["amounts"]["2026-03"], g["group"]), (-4000.0, "Einlagen/Entnahmen Gesellschafter"))
+        p = rows(data["Privat"], "investing")["Einlagen & Entnahmen"]
+        self.assertEqual((p["amounts"]["2026-03"], p["group"]), (-2500.0, "Beteiligungen"))
+        self.assertNotIn("Sonstige Ausgaben", rows(data["Muster GbR"]))
 
 
 class OpeningBalance(Reconciles):

@@ -49,10 +49,11 @@ estimate, nothing is written into MoneyMoney; link "Zuordnen" to assign them.
 ### cashflow.table.investing — Investitionen
 Investitionen (CFI): buying (−) and selling (+) assets – money leaves the bank account but stays wealth, so it is no expense. Kinds
 (rows below it, by the kind of the account the money went to): Immobilien, Wertpapiere & Geldanlagen, Sachwerte, Sonstige Anlagen,
-Beteiligungen (money paid into or out of a company of the user, named by the company), Andere Bereiche (contributions to and
+Beteiligungen (money paid into or out of a company of the user, named by the company; "Einlagen & Entnahmen" = a category with
+that position in a private area: money into or out of a company Kontor does not keep), Andere Bereiche (contributions to and
 withdrawals from another area of the user, named by the area), Gewährte Darlehen (the account; "<account> / Zinsen" = interest
 received on a loan granted), Fremdwährung (money moved into an account in another currency), Sparen & Anlegen (saving whose account
-is unknown). Under each kind its accounts – or, for saving by a MoneyMoney category, the category ("… → <Konto>" when the user chose
+is unknown; a company's: "Anlagevermögen & Geldanlagen"). Under each kind its accounts – or, for saving by a MoneyMoney category, the category ("… → <Konto>" when the user chose
 another account for a recipient; "… → kein Konto in MoneyMoney" = money that leaves the wealth Kontor sees). A kind's row is the sum
 of its rows. Plan columns: saving by category and loans granted planned like positions; transfers into or out of accounts,
 contributions and withdrawals not planned (0).
@@ -65,7 +66,9 @@ had to come from loans or from cash. Shown from the level "Positionen".
 Finanzierung (CFF): payments to and from lenders and partners. Kinds: Darlehensaufnahme (+, a loan paid out – never a "negative
 repayment"), Tilgung (−, repayment), Zinsen (−, interest paid – costs net worth, unlike repayment), Einlagen & Entnahmen der
 Gesellschafter (companies). Under each kind the loan accounts by name; "Nach Kategorie" = repayment or interest booked by a
-MoneyMoney category beside the loans; "<area>: <account>" = a payment between two areas booked against a capital or loan account.
+MoneyMoney category beside the loans (money in under a repayment category counts as Darlehensaufnahme, "Nach Kategorie"); "<area>:
+<account>" = a payment between two areas booked against a capital or loan account. Einlagen & Entnahmen der Gesellschafter also holds
+payments of a category with the position "Einlagen & Entnahmen" (partners outside the user's areas).
 
 ### cashflow.table.unclear — Unklar
 Bookings Kontor could not place, with their amount (they count in Veränderung Bankguthaben and Veränderung Nettovermögen), grouped
@@ -101,7 +104,8 @@ Geldanlagen, Tilgung, Darlehensaufnahme).
 Changes of net worth without a payment: prices of portfolios (change of the depot's value minus what was paid in), balance
 corrections of accounts kept by balances ("<Konto> / Korrektur Kontostand"), bookings of non-bank accounts, the value of a
 participation beyond the money paid in, "Anfangssaldo <Konto>" (an account starting with a balance), "Anlage ohne Zielkonto" (saving
-whose account is unknown – it offsets the rise of the depot it went into; link "Ziel festlegen"). One row per account; a depot
+whose account is unknown – it offsets the rise of the depot it went into; link "Ziel festlegen"), "Darlehen ohne Konto" (a loan
+taken up or repaid by category: its debt is in none of the user's accounts, so the net worth Kontor sees moves by that amount). One row per account; a depot
 with no balance known before some month has a second row "<Depot> / bis <Monat> unbekannt": up to that month its first known
 balance stands carried back, so what is there is only what was paid in or out (with the sign turned), no real change in value. In plan
 columns the total also holds the planned changes in value that have no row of their own (Wertentwicklung je Konto, participations

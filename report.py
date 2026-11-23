@@ -603,6 +603,15 @@ FIN_GROUPS = {"drawdown": ("Darlehensaufnahme", "cf_g_aufnahme", 710), "repaymen
               "interest": ("Zinsen", "cf_g_zinsen", 730), "partners": ("Einlagen/Entnahmen Gesellschafter", "cf_einlagen_gesellschafter", 740)}
 
 
+def _saving_grp(kind: str, company: bool) -> dict:
+    """The group of saving by a category: by the kind of its target account, else "Sparen & Anlegen" (a company's name for it:
+    fixed assets and investments)."""
+    g = _grp(INVEST_GROUPS, kind if kind in INVEST_GROUPS else "saving_group")
+    if company and g["glbl"] == ("pos_saving",):
+        g["glbl"] = ("pos_saving_g",)
+    return g
+
+
 def _grp(table: Dict[str, tuple], kind: str) -> dict:
     """The keyword arguments of Rows.add for a row in the group of its kind (investing or financing)."""
     g, key, o = table[kind]
@@ -909,6 +918,7 @@ POSITIONS = [  # (key, section, row -- German, the key of your planning; shown i
     ("vat", "expenses", "Umsatzsteuer"),
     ("donations", "expenses", "Geschenke & Spenden"), ("other_expenses", "expenses", "Sonstige Ausgaben"),
     ("saving", "investing", "Sparen & Anlegen"), ("repayment", "financing", "Tilgung"), ("loan_interest", "financing", "Zinsen"),
+    ("partners", "financing", "Einlagen & Entnahmen"),
     ("ignore", "", ""),
 ]
 POS = {k: (sec, row, i) for i, (k, sec, row) in enumerate(POSITIONS)}
@@ -929,6 +939,7 @@ def position_row(pos: str, company: bool) -> Tuple[str, str]:
 POSITION_FIRST = [  # (words, in, out, only at the start of a word); not for costs of these (fees, card) -- see FIRST_NOT
     (("zins", "finanzierungskost"), "capital_income", "loan_interest", False),
     (("tilgung", "kredit", "darlehen", "finanzierung", "annuit"), "repayment", "repayment", False),
+    (("einlage", "entnahme", "privateinlage", "privatentnahme", "kapitaleinlage", "gewinnausschuett", "gewinnverwendung"), "partners", "partners", True),
     (("sparen", "sparplan", "bauspar", "invest", "wertpapier", "depot", "etf", "aktie", "fonds", "geldanlage", "ruecklage", "krypto",
       "altersvorsorge", "beteiligung", "immobilienkauf", "kapitalanlage"), "saving", "saving", True),
 ]
@@ -947,7 +958,7 @@ POSITION_HINTS = [
     (("mieteink", "pachteink"), "rental", "property_costs"),
     (("kapitaleink",), "capital_income", "other_expenses"),
     (("gehalt", "gehaelt", "lohn", "loehn", "tantieme", "bonus", "gratifikation", "verguetung", "honorar", "arbeit"), "work_income", "staff"),
-    (("dividend", "kapitalertr", "ausschuett"), "capital_income", "other_expenses"),
+    (("dividend", "kapitalertr", "ausschuett"), "capital_income", "partners"),
     (("mieteinnahm", "pacht"), "rental", "property_costs"),
     (("erstattung", "rueckzahlung", "gutschrift", "cashback"), "refunds", "other_expenses"),
     (("geldautomat", "bargeld", "barabhebung", "abhebung"), "other_income", "other_expenses"),
@@ -1199,7 +1210,7 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
             hits = [c for c in objekte if cat == c or cat.startswith(c + " / ")]
             obj = objekte[max(hits, key=len)] if hits else None
             pos, yours = position_of(cat, config, totals)
-            if obj and (pos in ("repayment", "loan_interest") or (yours and pos in ("saving", "ignore"))):
+            if obj and (pos in ("repayment", "loan_interest") or (yours and pos in ("saving", "ignore", "partners"))):
                 obj = None
             r = pos_memo[cat] = (pos, obj)
         return r
@@ -1443,6 +1454,20 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
             R.add("unclear", "Konto ohne Position", acc.name + " (Position unbekannt)", mk, t.amount, kind="unclear", tx=t.id,
                   lbl=("cf_position_unbekannt", acc.name), glbl=("cf_konto_ohne_position",)); unclear += 1
 
+    # money back under a category that undoes a payment of the same amount within ten days (a returned debit): no loan taken up
+    neg_by: Dict[Tuple[str, int], List[Tx]] = defaultdict(list)
+    for o in in_root:
+        if o.amount < 0 and o.category_path:
+            neg_by[(norm_cat(o.category_path), int(round(-o.amount * 100)))].append(o)
+    undone: Set[int] = set()
+    for o in sorted((o for o in in_root if o.amount > 0 and o.category_path), key=lambda o: o.booking_date):
+        cands = neg_by.get((norm_cat(o.category_path), int(round(o.amount * 100)))) or []
+        n = next((n for n in cands if abs((o.booking_date - n.booking_date).days) <= 10), None)
+        if n is not None:
+            undone.add(o.id)
+            cands.remove(n)
+    loan_no_account: Dict[str, float] = defaultdict(float)     # taken up and repaid by category: the debt is in no account
+
     for t in in_root:
         R.cur = t.id                                     # every row added for it holds it (a click shows the bookings behind a figure)
         acc = ledger.accounts[t.account_uuid]
@@ -1566,7 +1591,7 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
             if pos == "housing" and company and objekte and t.amount < 0:    # a landlord: costs of the building
                 pos = "property_costs"
         # an estimate only ever counts as income or expense (or interest) -- never as saving, repayment, transfer or left out
-        if pos is None or pos not in POS or (not mine and pos in ("saving", "repayment", "ignore")):
+        if pos is None or pos not in POS or (not mine and pos in ("saving", "repayment", "ignore", "partners")):
             R.add(sec, "Ohne Kategorie", "Ohne Kategorie", mk, t.amount, ord=900, lbl=("cf_ohne_kategorie",))
             continue
         det = cat if mine else ""                        # "" = without a category in MoneyMoney (estimated)
@@ -1604,7 +1629,7 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
                 same = any(ledger.accounts[u].name == acc_t.name for u in root_leaves if u != target and u in ledger.accounts)
                 zeile = "%s → %s" % (cat, acc_t.path if same else acc_t.name)
             R.add("investing", row=zeile, mk=mk, amount=t.amount, account=target, kind="category", nw=how == "external",
-                  **({"lbl": lbl} if lbl else {}), **_grp(INVEST_GROUPS, kind if kind in INVEST_GROUPS else "saving_group"))
+                  **({"lbl": lbl} if lbl else {}), **_saving_grp(kind, company))
             if target in depots:
                 inbound[target][mk] += -t.amount
             elif target and verlauf.get(target) == "balances" and roles.get(target) in ASSET_LIKE:
@@ -1627,9 +1652,25 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
                 sv["how"], sv["target"] = "mixed", None
             if (sv["auto_target"], sv["auto_how"]) != auto:
                 sv["auto_how"], sv["auto_target"] = "mixed", None
+        elif pos == "repayment" and t.amount > 0 and t.id not in undone:
+            # money in under a repayment category: a loan paid out -- taken up, never a negative repayment
+            R.add("financing", row="Darlehensaufnahme", mk=mk, amount=t.amount, kind="drawdown", nw=False, lbl=("cf_g_aufnahme",), detail=det,
+                  **_grp(FIN_GROUPS, "drawdown"))
+            loan_no_account[mk] += t.amount
         elif pos in ("repayment", "loan_interest"):
+            if pos == "repayment":
+                loan_no_account[mk] += t.amount
             R.add("financing", row=prow, mk=mk, amount=t.amount, kind="interest" if pos == "loan_interest" else "repayment", nw=pos == "loan_interest",
                   lbl=("pos_" + pos,), detail=det, **_grp(FIN_GROUPS, "interest" if pos == "loan_interest" else "repayment"))
+        elif pos == "partners":
+            # payments to and from partners outside your areas: a company's equity (financing); yours: money put into or taken
+            # out of a company Kontor does not keep (investing) -- neither income nor expense
+            if company:
+                R.add("financing", row="Einlagen/Entnahmen Gesellschafter", mk=mk, amount=t.amount, kind="external", nw=True,
+                      lbl=("cf_einlagen_gesellschafter",), detail=det, **_grp(FIN_GROUPS, "partners"))
+            else:
+                R.add("investing", row="Einlagen & Entnahmen", mk=mk, amount=t.amount, kind="external", nw=True, lbl=("pos_partners",),
+                      detail=det, **_grp(INVEST_GROUPS, "participations"))
         else:
             row, key = position_row(pos, company)
             R.add(psec, row, row, mk, t.amount, ord=pord, lbl=(key,), detail=det)
@@ -1645,6 +1686,12 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
             R.add("valuation", acc.name, acc.name, mk, -v, account=st, kind="account", nw=True)
     # saving whose account is unknown: out of the net worth Kontor sees, until you name the account (Cashflow-Positionen) --
     # where it did go into a depot, that depot's change in value holds it, and this row takes it out again
+    # a loan taken up or repaid by category: its debt is in none of your accounts, so the net worth Kontor sees moves by it
+    # (a loan kept by its balances shows the same amount the other way as its change in value)
+    for mk, v in loan_no_account.items():
+        if abs(v) >= 0.005:
+            R.add("valuation", "Darlehen ohne Konto", "Darlehen ohne Konto", mk, round(v, 2), kind="no_account", nw=True,
+                  lbl=("cf_darlehen_ohne_konto",), glbl=("cf_darlehen_ohne_konto",))
     for mk, v in no_target.items():
         if abs(v) >= 0.005:
             R.add("valuation", "Anlage ohne Zielkonto", "Anlage ohne Zielkonto", mk, round(v, 2), kind="no_target", nw=True,
@@ -1927,7 +1974,7 @@ def build_dataset(ledger: Ledger, config: dict, state: dict, today: date, bereic
             gcount[z["group"]] += 1
         for z in zeilen:                                 # e.g. "Tilgung" by category beside the loans of the group "Tilgung"
             if sec in ("investing", "financing") and gcount[z["group"]] > 1 and z["row"] == z["group"] and not z.get("account") \
-                    and z["kind"] in ("repayment", "interest", "category"):
+                    and z["kind"] in ("repayment", "interest", "category", "drawdown"):
                 z["lbl"] = ["cf_per_kategorie"]
         # the fixed outline first (positions in their order), then the rest by size
         zeilen.sort(key=lambda z: (z.get("ord", 500), -gsum[z["group"]], z["group"], z["row"]))

@@ -5795,10 +5795,10 @@ function bindEingetragen(main) {
 // Cashflow-Positionen: Kontor's fixed outline; each of MoneyMoney's categories counts in one position (Kontor proposes by
 // name, a choice counts for the categories below it too). A property's categories have their own rows.
 const POS_SEC = {income: 'einnahmen', expenses: 'ausgaben', investing: 'sek_investitionen', financing: 'finanzierung'};
-const posLabel = (k, firma) => t(firma && k === 'housing' ? 'pos_housing_g' : `pos_${k}`);   // one name: a company's where the category is a company's
-const OBJ_OUT = ['saving', 'repayment', 'loan_interest', 'ignore'];            // pos_<key>: every position has its text (tests: Positions)
+const posLabel = (k, firma) => t(firma && I18N[`pos_${k}_g`] ? `pos_${k}_g` : `pos_${k}`);   // one name: a company's where the category is a company's
+const OBJ_OUT = ['saving', 'repayment', 'loan_interest', 'partners', 'ignore'];            // pos_<key>: every position has its text (tests: Positions)
 async function vPositionen() {
-  const d = await api('/api/categories/positions');
+  const d = await api('/api/categories/positions'); KB_KINDS = d.kinds || ['private'];
   if (!d.categories.length) return `<div class="card" data-ex="accounts.positions"><div class="d">${esc(d.hint || t('noch_keine_kategorien_geladen_abgleich'))}</div></div>`;
   const secs = []; for (const [k, sec] of d.positions) { if (k === 'ignore') continue; let g = secs.find(x => x[0] === sec); if (!g) secs.push(g = [sec, []]); g[1].push(k); }
   const opts = (sel, firma) => `<option value=""></option>` + secs.map(([sec, ks]) => `<optgroup label="${esc(t(POS_SEC[sec] || sec))}">${ks.map(k => `<option value="${k}" ${sel === k ? 'selected' : ''}>${esc(posLabel(k, firma))}</option>`).join('')}</optgroup>`).join('')
@@ -5820,15 +5820,23 @@ async function vPositionen() {
   });
   return h + '</tbody></table></div>' + vAnlageEmpfaenger() + '</div>';
 }
-// what Kontor needs from your categories in MoneyMoney: the recommended tree, grouped like the positions' menu, each group
-// with how it is best set up; per row whether one of yours counts there (and which) -- updated as you change a position below
-// [key (text kb_<key>: the category to create, kb_<key>_sub its subcategories, kb_<key>_tip why), group, positions, only if needed]
-const KB_TREE = [['work_income', 'einnahmen', ['work_income']], ['capital_income', 'einnahmen', ['capital_income']],
-  ['housing', 'ausgaben', ['housing']], ['living', 'ausgaben', ['living']], ['mobility', 'ausgaben', ['mobility']],
-  ['insurance', 'ausgaben', ['insurance']], ['health', 'ausgaben', ['health']], ['leisure', 'ausgaben', ['leisure']],
-  ['taxes', 'ausgaben', ['taxes']], ['saving', 'sek_investitionen', ['saving'], true], ['loans', 'finanzierung', ['repayment', 'loan_interest'], true],
-  ['transfer', 'sonstiges', ['transfer']], ['property', 'kb_g_property', ['property']], ['property_buy', 'kb_g_property', ['property_saving'], true]];
+// what Kontor needs from your categories in MoneyMoney: the recommended tree -- one category per position, grouped like the
+// positions' menu, each group with how it is best set up; rows for the kinds of areas you have (yours, a company's); per row
+// whether one of yours counts there (and which) -- updated as you change a position below
+// [key (texts kb_<key>, kb_<key>_sub, kb_<key>_tip; a company's: kb_<key>_g …), group, positions, only if needed, for ('p' yours,
+// 'f' a company's, '' both), hidden once a property is linked (its own rows take it)]
+const KB_TREE = [['work_income', 'einnahmen', ['work_income'], 0, 'p'], ['revenue', 'einnahmen', ['revenue'], 0, 'f'],
+  ['rental', 'einnahmen', ['rental'], 1, '', 1], ['capital_income', 'einnahmen', ['capital_income'], 0, ''], ['refunds', 'einnahmen', ['refunds'], 1, ''],
+  ['goods', 'ausgaben', ['goods'], 0, 'f'], ['staff', 'ausgaben', ['staff'], 0, 'f'], ['housing', 'ausgaben', ['housing'], 0, ''],
+  ['operations', 'ausgaben', ['operations'], 0, 'f'], ['living', 'ausgaben', ['living'], 0, 'p'], ['mobility', 'ausgaben', ['mobility'], 0, ''],
+  ['insurance', 'ausgaben', ['insurance'], 0, ''], ['health', 'ausgaben', ['health'], 0, 'p'], ['leisure', 'ausgaben', ['leisure'], 0, 'p'],
+  ['property_costs', 'ausgaben', ['property_costs'], 1, '', 1], ['administration', 'ausgaben', ['administration'], 0, ''],
+  ['taxes', 'ausgaben', ['taxes'], 0, ''], ['vat', 'ausgaben', ['vat'], 0, 'f'], ['donations', 'ausgaben', ['donations'], 1, 'p'],
+  ['saving', 'sek_investitionen', ['saving'], 1, ''], ['loans', 'finanzierung', ['repayment', 'loan_interest'], 1, ''],
+  ['partners', 'finanzierung', ['partners'], 1, 'f'], ['transfer', 'sonstiges', ['transfer'], 0, ''],
+  ['property', 'kb_g_property', ['property'], 0, ''], ['property_buy', 'kb_g_property', ['property_saving'], 1, '']];
 const KB_SAME_TIP = ['mobility', 'insurance', 'health', 'leisure', 'taxes'];      // one reason for these (kb_more_tip)
+let KB_KINDS = ['private'];
 let kbSeen = false;
 function kbCard() {
   if (!kbSeen && setupOpen()) KEEP_OPEN.add('kp-kb');          // open while you set Kontor up (closed afterwards: as you left it)
@@ -5839,22 +5847,27 @@ function kbCard() {
 function kbRefresh(eff) {
   const body = $('#kb-body'); if (!body) return;
   const at = new Map();
-  for (const r of eff) { const k = r.obj ? (r.eff === 'saving' ? 'property_saving' : ['repayment', 'loan_interest', 'ignore'].includes(r.eff) ? r.eff : 'property') : r.eff;
+  for (const r of eff) { const k = r.obj ? (r.eff === 'saving' ? 'property_saving' : ['repayment', 'loan_interest', 'partners', 'ignore'].includes(r.eff) ? r.eff : 'property') : r.eff;
     if (k) { if (!at.has(k)) at.set(k, []); at.get(k).push(r.path); } }
   const props = ((S.CFG || {}).real_estate || []).length > 0 || eff.some(r => r.obj);
+  const hasF = KB_KINDS.includes('company'), hasP = !hasF || KB_KINDS.includes('private');
+  // a text in the kinds of areas you have: yours, a company's, or both (" / ") where they differ
+  const kt = key => { const p = I18N[key] ? t(key) : '', f = I18N[key + '_g'] ? t(key + '_g') : p;
+    return hasP && hasF && p !== f ? (key.endsWith('_tip') ? `${p} ${t('kb_firma')}: ${f}` : [p, f].filter(Boolean).join(' / ')) : hasF ? f : p; };
   let ok = 0, all = 0, grp = '', rows = '';
-  for (const [k, g, ps, opt] of KB_TREE) {
-    if (g === 'kb_g_property' && !props) continue;
+  for (const [k, g, ps, opt, only, noProp] of KB_TREE) {
+    if ((g === 'kb_g_property' && !props) || (noProp && props) || (only === 'p' && !hasP) || (only === 'f' && !hasF)) continue;
     const mine = ps.flatMap(p => at.get(p) || []), have = mine.length > 0, miss = ps.filter(p => !(at.get(p) || []).length);
     if (have) ok++;
     if (have || !opt) all++;
-    if (g !== grp) { grp = g; const how = I18N[`kb_how_${g}`] ? t(`kb_how_${g}`) : '';
+    if (g !== grp) { grp = g; const how = kt(`kb_how_${g}`);
       rows += `<tr class="kb-sec"><td colspan="3"><b>${esc(t(g))}</b>${how ? ` <span class="small muted">${esc(how)}</span>` : ''}</td></tr>`; }
     const names = mine.slice(0, 2).map(CP).join(', ') + (mine.length > 2 ? ' ' + t('kb_und_n', mine.length - 2) : '');
     const part = have && miss.length && ps.length > 1 ? ` · <span class="kb-miss">${esc(t('kb_fehlt_noch', miss.map(p => posLabel(p)).join(', ')))}</span>` : '';
-    const sub = I18N[`kb_${k}_sub`] ? t(`kb_${k}_sub`) : '', tip = t(`kb_${KB_SAME_TIP.includes(k) ? 'more' : k}_tip`) + (have ? '' : ' ' + t('kb_anlegen'));
+    const sub = kt(`kb_${k}_sub`), tip = kt(`kb_${KB_SAME_TIP.includes(k) ? 'more' : k}_tip`) + (have ? '' : ' ' + t('kb_anlegen'));
+    const tag = hasP && hasF && only ? ` <span class="tag">${t(only === 'f' ? 'kb_firma' : 'kb_privat')}</span>` : '';
     rows += `<tr class="${have ? 'kb-ok' : opt ? 'kb-opt' : ''}"><td class="kb-mark">${have ? '✓' : '○'}</td>`
-      + `<td>${esc(t(`kb_${k}`))}${sub ? ` <span class="muted">› ${esc(sub)}</span>` : ''}<span class="hq" tabindex="0" data-tip="${esc(tip)}">?</span></td>`
+      + `<td>${esc(kt(`kb_${k}`))}${sub ? ` <span class="muted">› ${esc(sub)}</span>` : ''}${tag}<span class="hq" tabindex="0" data-tip="${esc(tip)}">?</span></td>`
       + `<td>${have ? esc(names) + part : esc(t(opt ? 'kb_bei_bedarf' : 'kb_fehlt'))}</td></tr>`;
   }
   body.innerHTML = `<table class="plain kb-table"><thead><tr><th></th><th>${t('kb_empfohlen')}</th><th>${t('kb_bei_dir')}</th></tr></thead><tbody>${rows}</tbody></table>`;
