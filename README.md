@@ -4,7 +4,7 @@
 
 **Dein digitaler CFO.** Der Überblick über dein Privatvermögen und die Gesellschaften dahinter – Bilanz, Cashflow, Planung und Steuerübersicht auf Basis von [MoneyMoney](https://moneymoney-app.com) (macOS), für dich privat und für jede Gesellschaft getrennt – und ein KI-Assistent, der nur auf deinem Mac läuft, sich erinnert und Routine abnimmt.
 
-Ein kleiner Dienst, der dauerhaft auf dem Mac läuft, mit einer Oberfläche unter `http://127.0.0.1:8765/` – im Browser, als eigene Mac-App und vom iPhone. Nur Bordmittel von macOS (Python 3, `openssl`, `osascript`, Swift für kleine Helfer), keine Fremdbibliotheken, keine Zugangsdaten außerhalb von MoneyMoney. Kontor enthält keine Annahmen über deine Konten: Alles wird in der Oberfläche eingerichtet.
+Ein kleiner Dienst, der dauerhaft auf dem Mac läuft, mit einer Oberfläche unter `http://127.0.0.1:8765/` – im Browser, als eigene Mac-App und vom iPhone. Nur Bordmittel von macOS (`openssl`, `osascript`, Swift für kleine Helfer) und Python – das des Macs oder ein aktuelles, das Kontor geprüft in seinen eigenen Ordner lädt –, keine Fremdbibliotheken, keine Zugangsdaten außerhalb von MoneyMoney. Kontor enthält keine Annahmen über deine Konten: Alles wird in der Oberfläche eingerichtet.
 
 - **Alles bleibt auf dem Mac:** verschlüsselt, lesbar erst nach deiner Anmeldung (Passwort oder Touch ID) – auch für jemanden am entsperrten Mac.
 - **Vom iPhone mit Face ID:** über dein privates Tailscale-Netz; jedes iPhone einmal am Mac hinzugefügt, jede Änderung von dort mit Face ID bestätigt, „Entfernen“ sperrt es sofort ([Zugriff vom iPhone](docs/help.de.md#iphone-devices)).
@@ -19,7 +19,7 @@ Auf einem Mac mit MoneyMoney diese Zeile im Terminal ausführen (Programme → D
 bash <(curl -fsSL https://raw.githubusercontent.com/stecrz/Kontor/main/install.sh)
 ```
 
-Sie lädt Kontor, richtet es als Dienst im Hintergrund ein und öffnet die Oberfläche im Browser – dort ein Passwort festlegen, dann führt die [Einrichtung](docs/help.de.md#setup) durch alles Weitere. Eigener Installationsordner, Aktualisieren und Entfernen: [Hilfe](docs/help.de.md#install).
+Sie lädt Kontor und ein aktuelles [Python](docs/help.de.md#python) dazu, richtet es als Dienst im Hintergrund ein und öffnet die Oberfläche im Browser – dort ein Passwort festlegen, dann führt die [Einrichtung](docs/help.de.md#setup) durch alles Weitere. Eigener Installationsordner, Aktualisieren und Entfernen: [Hilfe](docs/help.de.md#install).
 
 ## Was Kontor zeigt
 
@@ -69,7 +69,7 @@ Sie lädt Kontor, richtet es als Dienst im Hintergrund ein und öffnet die Oberf
 - Bilder für Hilfe und README: `python3 tests/screenshots.py [Ordner|-] [de|en]` (aus denselben erfundenen Daten).
 - Seiten ansehen (hell/dunkel, Mac/iPhone): `python3 tests/preview.py <Ordner> ['#route' …]`.
 - Regeln für Änderungen (Version, Sprache, Sicherheit): [CLAUDE.md](CLAUDE.md). Fahrplan: [ROADMAP.md](ROADMAP.md). Änderungen: [CHANGELOG.md](CHANGELOG.md).
-- Jeder Push wird automatisch getestet (GitHub Actions: Python 3.9 und neu, Chrome und Safari-Engine, dazu macOS mit den Swift-Helfern und der Mac-App); nachts laufen 1000 feste und so viele neue Zufallsfälle, wie in drei Stunden passen.
+- Jeder Push wird automatisch getestet (GitHub Actions: Python 3.9 und neu, Chrome und Safari-Engine, dazu macOS mit Apples und Kontors eigenem Python, den Swift-Helfern und der Mac-App); nachts laufen 1000 feste und so viele neue Zufallsfälle, wie in drei Stunden passen.
 
 ## Lizenz
 

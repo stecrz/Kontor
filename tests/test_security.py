@@ -1169,6 +1169,7 @@ class NothingGoesOut(unittest.TestCase):
         "llm_local.py": {"urllib.request", "http.client", "socket"},   # llama.cpp and model files (downloads on your click); the model on 127.0.0.1
         "security_names.py": {"urllib.request"},                       # names of securities at OpenFIGI: on your click, ISINs only
         "web_reader.py": {"urllib.request", "http.client", "socket", "ssl"},          # the assistant's internet search: one fetch you approved, in a process of its own
+        "pyselftest.py": {"ssl"},                                      # tries a Python before Kontor runs in it: are the certificates for https there? Connects nowhere
     }
     NETWORK_MODULES = {"socket", "ssl", "http.client", "http.server", "urllib.request", "socketserver", "ftplib", "smtplib", "poplib", "imaplib",
                        "telnetlib", "nntplib", "xmlrpc", "asyncio", "selectors", "webbrowser", "requests", "httpx", "aiohttp", "urllib3", "websocket",
@@ -1176,6 +1177,7 @@ class NothingGoesOut(unittest.TestCase):
     # hosts written in the program: the ones it connects to, by part ...
     HOSTS = {"updates.py": {"api.github.com", "github.com", "raw.githubusercontent.com"},
              "llm_local.py": {"api.github.com", "huggingface.co"},
+             "pyruntime.py": {"github.com"},                # Kontor's own Python: the one file named there, on your click (over llm_local's checked way)
              "security_names.py": {"api.openfigi.com"},
              # the internet search's sources (each fetch after your click; the reader checks the host again) -- and, named only:
              # the program's page (in its User-Agent), the ECB's and GLEIF's pages that results link to
@@ -1187,9 +1189,11 @@ class NothingGoesOut(unittest.TestCase):
     # other programs started by their name (all of macOS or Apple's tools, git for an update of a clone)
     COMMANDS = {"openssl", "swiftc", "codesign", "open", "launchctl", "/bin/launchctl", "/usr/sbin/sysctl", "ps", "pgrep", "tmutil",
                 "osascript", "/usr/bin/osascript", "xcode-select", "git", "/bin/sh",
-                "sips", "iconutil", "defaults", "tccutil"}          # Kontor's own Mac app: its icon, its address, gone on uninstall
+                "sips", "iconutil", "defaults", "tccutil",          # Kontor's own Mac app: its icon, its address, gone on uninstall
+                "/usr/bin/xattr", "/usr/bin/codesign"}              # Kontor's own Python, unpacked: the mark for files from the internet off, signed on this Mac if need be
     # ... and by a path Kontor made up itself (its Touch ID helper, the password window, llama.cpp, Tailscale's own tool, lsof, the receipt reader, the web reader)
-    COMMANDS_BY_PATH = {"auth.py", "mm_history.py", "llm_local.py", "tls_cert.py", "receipt_text.py", "web_search.py"}     # receipt_text: its text recognition, sealed; web_search: python3 -I web_reader.py (in the sandbox)
+    COMMANDS_BY_PATH = {"auth.py", "mm_history.py", "llm_local.py", "tls_cert.py", "receipt_text.py", "web_search.py",     # receipt_text: its text recognition, sealed; web_search: python3 -I web_reader.py (in the sandbox)
+                        "pyboot.py", "pyruntime.py"}        # Kontor's own Python, only from inside .python/ in the program folder: the starter runs the service in it; a build is tried before
     # where links on the pages lead (opened by you, in a new window; the pages themselves only talk to Kontor)
     LINKS = {"github.com", "tailscale.com", "login.tailscale.com", "apps.apple.com", "www.w3.org"}
     HOST = re.compile(r"(?:https?|wss?|ftp)://([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+)")
@@ -1267,7 +1271,7 @@ class NothingGoesOut(unittest.TestCase):
                     else:
                         by_path.add(name)
                 elif (base == "os" and (attr in ("system", "popen") or attr.startswith(("spawn", "posix_spawn")))) or (not base and attr in ("eval", "exec", "__import__")) \
-                        or base == "importlib" or (base == "os" and attr.startswith("exec") and name != "service.py"):
+                        or base == "importlib" or (base == "os" and attr.startswith("exec") and name not in ("service.py", "pyboot.py")):      # (both: themselves anew)
                     odd.append("%s:%d %s" % (name, n.lineno, attr))
         self.assertEqual(odd, [])
         self.assertEqual(names - self.COMMANDS, set(), "a program started by name that is not in NothingGoesOut.COMMANDS")

@@ -40,12 +40,12 @@ jobs:
             python: "3.9"
             os: ubuntu-24.04
             tests: tests --ignore=tests/test_e2e.py
-          - name: "Python 3.13 · Chrome + Safari-Engine · Seiten"
-            python: "3.13"
+          - name: "Python 3.15 · Chrome + Safari-Engine · Seiten"
+            python: "3.15"
             os: ubuntu-24.04          # not ubuntu-latest: on 26.04 the browser libraries come from a crawling mirror (17+ min)
             tests: tests/test_e2e.py
-          - name: "Python 3.13 · Chrome + Safari-Engine · Assistent, Rundgang, Regeln · Code-Checks"
-            python: "3.13"
+          - name: "Python 3.15 · Chrome + Safari-Engine · Assistent, Rundgang, Regeln · Code-Checks"
+            python: "3.15"
             os: ubuntu-24.04
             tests: tests --ignore=tests/test_e2e.py
             checks: true
@@ -81,7 +81,7 @@ jobs:
           for i in 1 2 3 4; do sudo apt-get update -q && sudo apt-get install -y -q sqlcipher && break; [ $i = 4 ] && exit 1; sleep 30; done
           uv pip install -q pytest playwright cryptography      # cryptography: MoneyMoney's database in the tests (the Mac has its own)
           # WebKit (Safari's engine) on the newer runner: the tables' alignment as on the Mac
-          for i in 1 2 3 4; do python -m playwright install --with-deps chromium ${{ matrix.python == '3.13' && 'webkit' || '' }} && break; [ $i = 4 ] && exit 1; sleep 30; done
+          for i in 1 2 3 4; do python -m playwright install --with-deps chromium ${{ matrix.python == '3.15' && 'webkit' || '' }} && break; [ $i = 4 ] && exit 1; sleep 30; done
           # only versions the server still offers (else the cache grows by every replaced version, week after week); readable for
           # the cache upload at the end of the job (apt leaves root-only files behind)
           sudo apt-get autoclean -q
@@ -94,19 +94,29 @@ jobs:
           python -m pyflakes *.py tests/*.py .claude/hooks/*.py
           npm install -s --no-save --no-package-lock eslint@9 globals
           npx --no-install eslint -c .github/eslint.config.mjs web
+      - name: A real build of Python (tests of Kontor's own Python start the service in it; python-build-standalone, checked)
+        if: ${{ !endsWith(matrix.tests, 'test_e2e.py') }}
+        run: |
+          # the same version Kontor names for the Mac (pyruntime.py), built for this machine; not there: that test is skipped
+          f="cpython-3.15.2+20261110-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz"
+          for i in 1 2 3; do curl -fsSL -o "$RUNNER_TEMP/$f" "https://github.com/astral-sh/python-build-standalone/releases/download/20261110/${f/+/%2B}" && break; sleep 10; done
+          if echo "ad23d1b73fac26440b0306ae06911031344c49a90ec19716c8362e7fa40cae43  $RUNNER_TEMP/$f" | sha256sum -c -; then
+            echo "KONTOR_PYTHON_ARCHIVE=$RUNNER_TEMP/$f" >> "$GITHUB_ENV"
+          fi
       - name: Tests
         timeout-minutes: 30                 # today 4 min per half: room for many more tests
         env:
           TZ: Europe/Berlin
         run: python -m pytest -q -rs ${{ matrix.tests }}       # -rs: what was skipped, and why, at the end
 
-  # Kontor runs only on the Mac: what only a Mac can check -- Apple's own Python, the Swift helpers (Touch ID, balances from
-  # MoneyMoney's database), Kontor's own app, the bridge to MoneyMoney, installing the background service. MoneyMoney itself is
-  # not there.
+  # Kontor runs only on the Mac: what only a Mac can check -- Apple's own Python and Kontor's own (the build it names, really
+  # loaded: checked, tried, switched to, damaged, updated to from the version before), the Swift helpers (Touch ID,
+  # balances from MoneyMoney's database), Kontor's own app, the bridge to MoneyMoney, installing the background service.
+  # MoneyMoney itself is not there.
   mac:
-    name: "macOS · Apples Python · Swift · Mac-App · MoneyMoney-Brücke · Installation"
+    name: "macOS · Apples Python und Kontors eigenes · Swift · Mac-App · MoneyMoney-Brücke · Installation"
     runs-on: macos-15
-    timeout-minutes: 20
+    timeout-minutes: 40
     env:
       PATH: /usr/bin:/bin:/usr/sbin:/sbin           # Apple's python3, swiftc, git -- not Homebrew's
     steps:
@@ -242,9 +252,15 @@ jobs:
           # a transaction's comment (anything but its category) stays blocked too
           if out=$(osascript -l JavaScript mm_bridge.jxa '{"method":"setTransaction","args":{"id":1,"commentTo":"x"}}' 2>&1); then echo "comment let through"; exit 1; fi
           echo "$out" | grep -q "Angabe nicht erlaubt" || { echo "unexpected: $out"; exit 1; }
+      - name: Kontor's own Python (the build Kontor names, from GitHub -- a wrong file refused; made runnable; tried)
+        timeout-minutes: 10
+        run: python3 tests/mac_python.py build
+      - name: The same parts in Kontor's own Python (every part of Kontor, the reader in its sandbox, https, the data key)
+        timeout-minutes: 10
+        run: python3 tests/mac_python.py parts "$(cat "$RUNNER_TEMP/kontor-python")"
       - name: Install and service
         run: |
-          bash install.sh < /dev/null
+          bash install.sh < /dev/null           # a new installation: with Kontor's own Python from its first start
           curl -fsS -o /dev/null http://127.0.0.1:8765/ && echo "service answers"
           # the app shows Kontor, as an app: the page sees the app (and the app's name in the browser's name), the app has the
           # words of its menu, its commands with their keys (Find works through the menu) and the theme from the page, the page's
@@ -254,5 +270,32 @@ jobs:
           out=$(Kontor.app/Contents/MacOS/Kontor --check http://127.0.0.1:8765/) && echo "$out"
           echo "$out" | python3 -c "import json, sys; d = json.load(sys.stdin); assert d['title'] == 'Kontor' and d['bridge'] and d['shell'] and d['app'] and d['agent'] and d['print'] and d['badge'] and d['dark'], d; assert d['capture'] in ('stream', 'NotFoundError') if d['mic'] == 'granted' else d['capture'] == 'NotAllowedError', d; assert d['menu'] == ['Kontor', 'Ablage', 'Bearbeiten', 'Darstellung', 'Fenster', 'Hilfe'], d; assert d['chrome']['full'] and d['chrome']['band'] > 0 and 0 <= d['chrome']['top'] < 20 and abs(d['chrome']['top'] - d['chrome']['left']) <= 4 and d['chrome']['middle'] < 26, d; assert ['Mit MoneyMoney abgleichen', '⇧r'] in d['commands'] and ['Suchen …', 'f'] in d['commands'] and ['Rückwärts suchen', '⇧g'] in d['commands'], d; assert d['reload'] == 'r' and d['findBar'], d"
           ! Kontor.app/Contents/MacOS/Kontor --check http://127.0.0.1:8766/ && echo "another address refused"
-          python3 kontor.py uninstall --yes
-          ! curl -fsS -o /dev/null http://127.0.0.1:8765/ 2>/dev/null && echo "service gone"
+          echo "installed: $(cat VERSION)"
+      - name: Kontor's own Python in the installed service (started anew by launchd, damaged, tried again)
+        timeout-minutes: 15
+        run: python3 tests/mac_python.py service
+      - name: Uninstall from the page while Kontor runs in its own Python (everything gone, that Python too)
+        timeout-minutes: 5
+        run: |
+          test -d .python                       # (there until now)
+          python3 tests/mac_python.py uninstall
+          if curl -fsS -o /dev/null http://127.0.0.1:8765/ 2>/dev/null; then echo "the service still answers"; exit 1; fi
+          test ! -e .python && test -f kontor.py
+          echo "everything gone"
+      - name: Update from the version before (an installation of it gets this version over its own update, then Kontor's own Python)
+        if: ${{ github.event.before != '' && github.event.before != '0000000000000000000000000000000000000000' }}
+        continue-on-error: true           # new (3.17.12): watched for a few versions, then it counts like every step
+        timeout-minutes: 15
+        run: |
+          OLD="$HOME/Applications/Kontor"
+          git clone --quiet --depth 20 "https://github.com/$GITHUB_REPOSITORY.git" "$OLD"
+          git -C "$OLD" checkout --quiet -B main "${{ github.event.before }}"
+          echo "installing $(cat "$OLD/VERSION") ($(git -C "$OLD" rev-parse --short HEAD))"
+          KONTOR_PYTHON=apple python3 "$OLD/kontor.py" install < /dev/null
+          python3 tests/mac_python.py update "$OLD"
+          # removed in the terminal (the password asked for there comes from the pipe: this machine has no terminal), with the program folder
+          printf 'nur-ein-test-passwort\n' | python3 "$OLD/kontor.py" uninstall --yes --program
+          if pgrep -f "kontor.py --quiet start"; then echo "a process is left"; exit 1; fi
+          test ! -e "$OLD/.python"
+          test ! -e "$OLD/kontor.py"
+          echo "everything gone"

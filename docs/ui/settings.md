@@ -162,6 +162,17 @@ these files. Below, quiet and folded: "N Änderungen an Regeln – nur strenger"
 with only these the update installs with the ordinary button. Fields: **Automatisch prüfen** (täglich, wöchentlich, nie), **Quelle (GitHub)** – a tag warns when it is not the
 official repository.
 
+### settings.updates.python — Python
+The Python Kontor runs in: its version and whose it is — "des Macs (von Apple)" (it comes with macOS's command line tools;
+"ohne Sicherheitsupdates seit <date>" when python.org no longer fixes that line) or "von Kontor geladen <date>" (Kontor's own:
+one fixed build of CPython, downloaded from GitHub on a click, checked by its size and SHA-256, compared with its archive,
+tried with every part of Kontor, only then switched to). Buttons, only at the Mac: "Python <version> laden" (download, check,
+try, switch, restart), "Erneut versuchen" and "Entfernen" after one that did not start, and "Aktualisieren" beside "neuer: <version>" when a version of Kontor names a newer build. While it
+works: a bar with "Laden … x von y MB", then "Prüfen und entpacken", "Testen", "Umstellen". A red line: "… ist nicht gestartet"
+(Kontor's own Python did not get Kontor running; Kontor went on with the Mac's Python by itself) or why a download or test
+failed (nothing was switched then). "gilt ab dem nächsten Start von Kontor": chosen, not yet what runs. A green line right
+after a switch names the version Kontor runs with now.
+
 ### settings.updates.changes — Änderungen
 "Neu in …": all changes since the installed version, when one is available. "Änderungen je Hauptversion": per major version (e.g.
 3.17 = 3.16.1 … 3.17.0; one not out yet "in Arbeit") a short overview of its big topics, its single versions folded, older major

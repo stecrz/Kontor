@@ -33,6 +33,16 @@ from typing import List, Optional
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
+# Before any other part of Kontor is loaded: `start` may hand the service to Kontor's own Python (pyboot.py) -- this process
+# then only stays as its starter. Whatever goes wrong there is no reason not to start: the service runs here, as before.
+# (This file and pyboot.py keep running with Python 3.9: it is the Mac's own Python that starts them.)
+try:
+    import pyboot  # noqa: E402
+    if __name__ == "__main__" and pyboot.is_start(sys.argv[1:]):
+        pyboot.start(HERE, sys.argv)
+except Exception as _e:  # pragma: no cover
+    sys.stderr.write("Kontor: its own Python could not be started (%s: %s) -- running in this one\n" % (type(_e).__name__, _e))
+
 import access  # noqa: E402
 import auth  # noqa: E402
 import updates  # noqa: E402
@@ -121,9 +131,36 @@ class Lock:
 # Befehle
 # ---------------------------------------------------------------------------
 
+def which_python() -> None:
+    """In the service: to the starter that Kontor's parts are loaded in this Python (pyboot.py; that Kontor serves is said in
+    service.serve), and to the log which Python this is -- and why not Kontor's own, when that did not start."""
+    own = False
+    try:
+        pyboot.ready()
+        pyboot.watch()
+        own = bool(pyboot.starter())
+        for line in pyboot.notes:
+            log.error(line)
+    except Exception:  # pragma: no cover - never a reason not to serve
+        log.exception("Starter")
+    log.info("Python %s (%s)", ".".join(str(x) for x in sys.version_info[:3]), "Kontor's own" if own else "the Mac's")
+
+
+def tidy_python() -> None:
+    """In the one service that runs (it holds the lock): what an earlier try to load a Python left behind and a build no
+    longer in use go."""
+    try:
+        import pyruntime
+        pyruntime.Runtime(HERE).sweep()
+    except Exception:  # pragma: no cover - never a reason not to serve
+        log.exception("Python")
+
+
 def cmd_start(args) -> int:
     from service import App, serve
+    which_python()
     with Lock("service.lock"):
+        tidy_python()
         app = App(Store.closed(DATA_DIR), DATA_DIR)         # locked: the data key comes with the first sign-in
         serve(app)
     return 0
@@ -212,6 +249,22 @@ def build_touchid() -> str:
     return auth.build_touchid(force=True)
 
 
+def own_python() -> None:
+    """Installing: Kontor's own Python (pyruntime.py) -- loaded, checked and tried now, so that the service starts in it (also a
+    newer one than the one loaded). Not when you say so here (KONTOR_PYTHON=apple); whatever goes wrong, the Mac's Python serves
+    and the line says why."""
+    if sys.platform != "darwin" or os.environ.get("KONTOR_PYTHON") == "apple":
+        return
+    try:
+        import pyruntime
+        rt = pyruntime.Runtime(HERE)
+        st = rt.status()
+        if st["supported"] and not (st["use"] == "own" and st["loaded"] and not st["newer"] and not st["failed"]):
+            rt.install_now(print)
+    except Exception as e:
+        print(tr("s_py_cli_fehler") % ("%s: %s" % (type(e).__name__, e)))
+
+
 def cmd_install(args) -> int:
     cfg = start_config()
     if not access.password_set(DATA_DIR):
@@ -223,9 +276,11 @@ def cmd_install(args) -> int:
         print(tr("s_mac_app") % mac_app.build())
     except Exception as e:
         print(tr("s_mac_app") % e)
+    own_python()
     plist = {
         "Label": LAUNCHD_LABEL,
-        "ProgramArguments": [sys.executable, os.path.join(HERE, "kontor.py"), "--quiet", "start"],
+        # the Mac's own Python starts Kontor, always (pyboot.py): with Kontor's own chosen, it hands the service over at each start
+        "ProgramArguments": [pyboot.launch_python(HERE), os.path.join(HERE, "kontor.py"), "--quiet", "start"],
         "RunAtLoad": True,
         "KeepAlive": True,
         "ProcessType": "Interactive",

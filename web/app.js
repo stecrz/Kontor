@@ -201,7 +201,7 @@ const H = {
   months_back: t('wie_viele_monate_historie_gelesen'),
   bind: t('auf_diesem_mac_ist_die'),
   tls: t('optional_zertifikat_schluessel_pem_fue'),
-  updates: t('einzige_netzverbindung_von_kontor_einm'),
+  updates: t('einzige_netzverbindung_von_kontor_einm'), python: t('h_python'),
   assistent: t('h_assistent'), ki_abschirmung: t('h_ki_abschirmung'), ki_kontext: t('h_ki_kontext'), ki_leerlauf: t('h_ki_leerlauf'),
   ki_eintragen: t('h_ki_eintragen'), ki_eigenes: t('h_ki_eigenes'), ki_diktat: t('h_ki_diktat'), ki_bedeutung: t('h_ki_bedeutung'), ki_sp_start: t('h_ki_sp_start'), ki_mikrofilter: t('h_ki_mikrofilter'), ki_speichern: t('h_ki_speichern'), ki_internet: t('h_ki_internet'), ki_tavily: t('h_ki_tavily'), ki_vertraut: t('h_ki_vertraut'), ki_websites: t('h_ki_websites'),
   ki_gedaechtnis: t('h_ki_gedaechtnis'),
@@ -263,7 +263,7 @@ const HELP_AT = {als_app: 'app', berechtigung: 'setup', immo_abrechnung: 'proper
   h_l_gp: 'rules-loans', h_l_kt: 'rules-loans', h_l_kz: 'rules-loans', h_co_anteil: 'areas', h_co_bet: 'rules-companies', h_co_gk: 'rules-mirrors', h_gk_rueck: 'rules-mirrors',
   h_co_rueck: 'rules-back', h_co_takt: 'rules-companies', h_co_schwelle: 'rules-companies', h_co_gp: 'rules-companies', method: 'planning', plan_modell: 'planning', inflation: 'planning', steig_ein: 'planning',
   rendite: 'planning', event: 'planning', wert_bereich: 'planning', fern: 'iphone', fern_was: 'iphone', offline: 'iphone', bind: 'iphone', tls: 'iphone',
-  port: 'iphone', touchid: 'security', package: 'backup', timemachine: 'backup', datenschluessel: 'security', diagnose: 'troubleshooting', einrichtung_knoepfe: 'setup', updates: 'updates',
+  port: 'iphone', touchid: 'security', package: 'backup', timemachine: 'backup', datenschluessel: 'security', diagnose: 'troubleshooting', einrichtung_knoepfe: 'setup', updates: 'updates', python: 'python',
   update_quelle: 'updates', belege_ordner: 'receipts', belege_sub: 'receipts', documents: 'properties', assistent: 'assistant', ki_diktat: 'assistant-dictation', ki_bedeutung: 'assistant-memory', ki_sp_start: 'assistant-dictation', ki_mikrofilter: 'assistant-dictation', ki_abschirmung: 'assistant-safety', ki_kontext: 'assistant-setup', ki_leerlauf: 'assistant-setup', ki_auto_suchen: 'assistant-setup', ki_eintragen: 'assistant-rights', ki_eigenes: 'assistant-setup', ki_speichern: 'assistant', ki_programm: 'assistant-setup', ki_modelle: 'assistant-setup', ki_ablage: 'assistant-setup', ki_internet: 'assistant-internet', ki_tavily: 'assistant-internet', ki_vertraut: 'assistant-internet', ki_websites: 'assistant-internet'};
 const more = id => ` <a href="#help/${id}" class="more">${t('mehr_in_der_hilfe')}</a>`;   // Verweis auf einen Abschnitt der Hilfe
 // beside a page's title: what the page does in a line, a click opens its part of the help (settings and Konten & Regeln: per tab)
@@ -1285,6 +1285,7 @@ async function openItems(D) {
   for (const w of (D.warnings || []).slice(0, 3)) items.push(['warn', w, '#bookings', '']);
   if (S.STATUS.update && S.STATUS.update.newer) items.push(upFinds(S.STATUS.update).length ? ['warn', t('upd_braucht_freigabe', S.STATUS.update.available), '#settings/updates', ''] : ['info', t('update') + S.STATUS.update.available + t('verfuegbar'), '#settings/updates', '']);
   if (asNewer()) items.push(['info', t('ki_neues_da'), '#settings/assistant', '']);
+  if (S.STATUS.python) items.push([S.STATUS.python === 'newer' ? 'info' : 'warn', t(`py_offen_${S.STATUS.python}`), '#settings/updates', '']);
   return items;
 }
 
@@ -6533,12 +6534,81 @@ async function upInstall(ui) { if (ui.disabled) return;
     ui.disabled = true; toast(t('update_wird_installiert'), 30000);
     try { const r = await api('/api/update/install', finds.length ? {approved: rev.digest} : {}); toast(r.text, 8000);
       if (r.ok && r.restart) waitAndReload(true); else if (r.needs_approval) { S.STATUS = await api('/api/status'); statusMini(); softRoute(); } else ui.disabled = false; } catch (e) { ui.disabled = false; toast(e.message, 8000); } }
+// Einstellungen -> Updates: the Python Kontor runs in -- the Mac's own or Kontor's own (pyruntime.py): what runs, what can be
+// loaded, the button that fits, and while it is loaded and tried how far it is. Changed only at the Mac; every click is the
+// decision. After a switch Kontor restarts and the page waits for it.
+const PY = {timer: null, busy: false};
+function pyBox(py) {
+  if (!py) return '';
+  const run = py.running || {}, off = py.offered, have = py.loaded, job = py.job || {}, on = job.state === 'running', local = S.STATUS.local;
+  const dis = on || PY.busy ? 'disabled' : local ? '' : t('disabled_title_nur_am_mac'), mb = n => Math.round((n || 0) / 1e6);
+  const sub = [run.own ? t('py_von_kontor') + (have && have.date ? ' ' + FDT(have.date) : '') : t('py_von_apple')];
+  if (run.ended) sub.push(t('py_ohne_updates', FD(run.ended)));
+  if (py.restart && !on) sub.push(t('py_nach_neustart'));
+  const btn = (id, key, cls, arg) => `<button class="small${cls ? ' ' + cls : ''}" id="${id}" ${dis}>${t(key, arg)}</button>`;
+  let act = '';
+  if (py.failed) act = btn('py-install', 'py_nochmal') + btn('py-remove', 'ki_entfernen', 'secondary');
+  else if (run.own) act = (py.newer && off ? `<span class="pill info">${t('ki_neuer', esc(off.version))}</span>` + btn('py-install', 'ki_aktualisieren') : '');
+  else if (have) act = '';
+  else if (off) act = btn('py-install', 'py_laden', '', esc(off.version));
+  const step = on ? (job.step === 'load' ? t('py_schritt_load', mb(job.done), mb(job.total)) : t(`py_schritt_${job.step}`)) : '';
+  const prog = on ? `<div class="prog-wrap"><div class="prog"><i style="width:${job.step === 'load' ? (job.total ? Math.round(100 * job.done / job.total) : 0) : 100}%"></i></div><span class="prog-l">${esc(step)}</span><button class="secondary small" id="py-cancel">${t('ki_abbrechen')}</button></div>` : '';
+  const why = py.failed ? `<div class="banner err small">${t('py_gescheitert', esc((have || off || {}).version || ''), esc(t(`py_warum_${['start', 'slow', 'missing', 'exec', 'ended'].includes(py.failed.why) ? py.failed.why : 'start'}`) + (py.failed.detail ? ': ' + py.failed.detail : '')))}</div>` : '';
+  const err = !on && job.state === 'error' ? `<div class="banner err small">${esc(job.text || '')}</div>` : '';
+  let note = '';
+  try { if (run.own && LS.get('kontor.py') === '1') { LS.del('kontor.py'); note = `<div class="banner ok small">${t('py_laeuft_jetzt', esc(run.version))}${((S.CFG.ui || {}).bind || '127.0.0.1') !== '127.0.0.1' ? ' ' + t('py_firewall') : ''}</div>`; } } catch (e) { /* no note then */ }
+  return `<div data-ex="settings.updates.python" id="py-box"><h2>${t('py_titel')}${hq('python')}</h2>${note}
+    <div class="as-list"><div class="as-item"><span><b>Python ${esc(run.version || '')}</b><br><span class="muted small">${sub.join(' · ')}</span></span><span class="as-act">${act}</span></div></div>
+    ${prog}${why}${err}</div>`;
+}
+function pyDraw(py) { const box = $('#py-box'); if (!box) return false; box.outerHTML = pyBox(py); pyBind(); return true; }
+async function pyDo(action) {
+  if (PY.busy) return;
+  PY.busy = true;
+  try {
+    const r = await api('/api/python', {action});
+    PY.busy = false;
+    pyDraw(r.python); pyWatch();
+  } catch (e) { PY.busy = false; toast(e.message, 8000); }
+}
+async function pyRestart(before, own) {
+  try { if (own) LS.set('kontor.py', '1'); } catch (e) { /* the note is left out */ }
+  toast(t('py_startet_neu'), 90000);
+  for (let i = 0; i < 90; i++) {                 // until the service answers as another start than this one, then the page anew (you sign in once)
+    await new Promise(r => setTimeout(r, 1000));
+    let j = null;
+    try { const r = await fetch('/api/session', {credentials: 'same-origin', cache: 'no-store', headers: {'X-Kontor-Net': 'direct'}}); j = r.ok ? await r.json() : null; } catch (e) { j = null; }
+    if (j && j.instance && j.instance !== before) break;
+  }
+  location.reload();
+}
+// while Python is loaded and tried: how far it is, every second; done: Kontor restarts with it
+function pyWatch() {
+  clearTimeout(PY.timer);
+  PY.timer = setTimeout(async () => {
+    if (!$('#py-box')) return;
+    let r; try { r = await api('/api/python'); } catch (e) { pyWatch(); return; }
+    const job = r.python.job || {};
+    if (job.state === 'done' && r.python.restart) { pyDraw(r.python); pyRestart(r.instance, true); return; }
+    pyDraw(r.python);
+    if (job.state === 'running') pyWatch();
+    else { S.STATUS = await api('/api/status'); statusMini(); }
+  }, 1000);
+}
+function pyBind() {
+  const on = (id, fn) => { const b = $('#' + id); if (b) b.addEventListener('click', fn); };
+  on('py-install', () => pyDo('install'));
+  on('py-cancel', () => pyDo('cancel'));
+  on('py-remove', () => pyDo('remove'));
+  if ($('#py-cancel')) pyWatch();
+}
 async function vUpdates(form) {
   const r = await api('/api/update/status'), st = S.STATUS, info = r.info, finds = upFinds(info);
   let h = `<div data-ex="settings.updates"><div class="cards"><div class="card"><div class="l">${t('installiert')}</div><div class="v">${esc(r.version)}${r.date ? `<span class="vdate">${t('vom_0', FDT(r.date))}</span>` : ''}</div><div class="d">${t('programmordner_wird_beim_update_ersetz')}</div></div>
     <div class="card"><div class="l">${t('verfuegbar_3')}</div><div class="v">${info ? (info.error ? '<span class="pill err">?</span>' : esc(info.available || '–') + (info.date ? `<span class="vdate">${t('vom_0', FDT(info.date))}</span>` : '')) : '–'}</div><div class="d">${info ? (info.error ? esc(info.error) : (info.newer ? `<span class="pill ${finds.length ? 'warn' : 'ok'}">${t(finds.length ? 'upd_wartet' : 'neuer_als_installiert')}</span>` : t('kontor_ist_aktuell')) + (info.newer && info.review && !finds.length ? t('upd_geprueft_ok') : '')) : t('noch_nicht_geprueft')}${r.verified ? t('geprueft') + new Date(r.verified * 1000).toLocaleString(LOCALE) : ''}</div></div></div>
     <div class="actions"><button id="up-check" class="secondary">${t('jetzt_pruefen')}</button><button id="up-install" ${finds.length ? 'class="danger" ' : ''}${info && info.newer && st.local ? '' : 'disabled'}>${t(finds.length ? 'upd_freigeben' : 'update_installieren_und_dienst_neu')}</button>${((S.CFG.updates || {}).repo || 'stecrz/Kontor') !== 'stecrz/Kontor' ? ` <span class="tag warn">${t('update_fremde_quelle', esc((S.CFG.updates || {}).repo))}</span>` : ''}</div>
     ${upReview(info)}
+    ${pyBox(r.python)}
     ${form || ''}
     <div data-ex="settings.updates.changes">${info && info.notes && info.newer ? `<h2>${t('neu_in_0', esc(info.since && info.since !== info.available ? t('0_bis_1', info.since, info.available) : info.available))}</h2>${clHtml(info.notes)}` : ''}
     ${clHistory(r.history)}</div>
@@ -7251,6 +7321,7 @@ function bind(main) {
   // Updates
   const uc = $('#up-check', main); if (uc) uc.addEventListener('click', async () => { toast(t('pruefe')); await api('/api/update/check', {}); S.STATUS = await api('/api/status'); softRoute(); });
   const ui = $('#up-install', main); if (ui) ui.addEventListener('click', () => upInstall(ui));
+  pyBind();
   const lr = $('#log-refresh', main); if (lr) lr.addEventListener('click', route);
   $$('#log-min button', main).forEach(bt => bt.addEventListener('click', () => { S.logMin = +bt.dataset.min; route(); }));
   const ls = $('#log-show', main); if (ls) ls.addEventListener('click', async () => { try { await api('/api/file/reveal', {path: ((S.STATUS.storage || {}).folder || '') + '/kontor.log'}); } catch (e) { toast(e.message, 5000); } });

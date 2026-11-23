@@ -150,7 +150,12 @@ anhängen – nie löschen.
   Verbindung zu anderen Programmen; in der Oberfläche und Hilfe erklärt.
 - **Aktuelles Python** (Nutzer, 2026-11-23): Kontor läuft auf einer aktuellen, festen Python-Version in seinem eigenen Ordner statt
   auf Apples Python 3.9 (seit 31.10.2025 ohne Sicherheitsupdates); geladen nur nach Klick, geprüft, mit Rückweg; Installation und
-  Umstellung ohne Handgriffe des Nutzers, wo es irgend geht.
+  Umstellung ohne Handgriffe des Nutzers, wo es irgend geht. (umgesetzt in 3.17.12: Einstellungen → Updates → Python und bei der Installation;
+  der Dienst läuft im eigenen Python 3.15, gestartet wird er weiter vom Python des Macs, das nur noch den Starter ausführt –
+  startet das eigene nicht, läuft Kontor im selben Start mit dem des Macs weiter. Mindestversion und was am Mac zu prüfen ist: siehe Offen.)
+  Nutzer, 23.11.: kein Rückweg nötig – immer das aktuellste Python. (Der Knopf zurück zum Python des Macs entfällt; geladen wird das
+  neueste stabile Python, mit dem Kontors Tests grün sind – heute 3.15.2; neuere bietet ein Update von Kontor an, geladen nach Klick.
+  Bleibt: vor dem Umschalten geprüft und probegestartet, sonst wird nicht umgeschaltet; Python 3.9 als Startpython und in CI vorerst.)
 - **Fertige Bibliotheken statt Eigenbau** (Nutzer, 2026-11-23): Wo bewährte offene Bibliotheken oder Modelle eine Aufgabe besser
   lösen – vor allem PDF- und Excel-Lesen, auch KI-Dokumentmodelle für schwierige PDFs –, nutzt Kontor sie: nur in abgeschirmten
   Hilfsprozessen, mit fester Version und Prüfsumme, geladen nach Klick, für den Nutzer mit Name, Version, Lizenz und Herkunft
@@ -193,6 +198,35 @@ anhängen – nie löschen.
 - Zukunft: eine gemeinsame KI für Nutzer und Geschäftspartner (später Mitarbeiter) auf einem eigenen Rechner mit starker
   Grafikkarte, Zugang je Konto über einen sicheren Kanal, gemeinsames Gedächtnis; widerspricht heute „alles auf diesem Mac“ –
   erst nach ausdrücklicher Entscheidung. (Ein Gedächtnis über Finanzen hinaus, nur auf diesem Mac: entschieden, siehe Gedächtnis.)
+- Python nach der Umstellung (siehe Entschieden „Aktuelles Python“) – am Mac zu prüfen, dann Vorschlag zur Mindestversion:
+  Am Mac prüfen (lässt sich auf GitHub nicht testen): fragt macOS nach der Umstellung erneut nach der Steuerung von MoneyMoney
+  oder nach Ordnern (erwartet: nein, der Starter bleibt Apples Python); fragt die Firewall bei eingeschaltetem iPhone-Zugang
+  einmal nach dem neuen Programm (erwartet: ja, einmal je Python-Version).
+  Mindestversion: Der ganze Code läuft vorerst weiter mit 3.9, weil das Python des Macs Starter und Reserve ist (startet das eigene nicht, bedient es selbst). Anheben in
+  Schritten: (1) einige Wochen Betrieb im eigenen Python ohne Rückfall; (2) das eigene Python wird Pflicht – Installation und
+  Update laden es, die Reserve ist dann der vorige eigene Build (zwei nebeneinander) statt Apples Python; (3) erst danach darf der
+  Code über dem Starter das eigene Python (heute 3.15) voraussetzen (`kontor.py` bis `pyboot.ready()` und `pyboot.py` bleiben 3.9-tauglich, solange Apples
+  Python startet), CI ohne 3.9; (4) später launchd direkt auf das eigene Python, Apples Python wird nicht mehr gebraucht.
+  Zu entscheiden: ob und wann Kontor auf Apples Python als Reserve verzichtet (ein beschädigtes eigenes Python braucht dann das
+  Netz zum Reparieren). Empfehlung: Schritt 2 frühestens mit der nächsten Python-Version, die Kontor anbietet.
+- Bibliotheken in abgeschirmten Helfern (Grundlage für „Fertige Bibliotheken statt Eigenbau“; noch keine Bibliothek eingebaut) –
+  Vorschlag für den Mechanismus, Entscheidung zur Herkunft steht aus:
+  Voraussetzung ist Kontors eigenes Python (fertige Pakete passen nur zu einer festen Version und Rechnerart; mit Apples Python
+  bleibt es beim heutigen Lesen). Der Kern lädt nie ein Paket: Dienst, Zugang, Schlüssel, Freigaben, Update-Prüfung bleiben
+  Standardbibliothek und laufen mit `-I -S` (kein `site-packages`). Je Aufgabe ein Helfer als eigener Prozess
+  (`[python, -I, -S, helfer.py]`), der nur seinen eigenen Paketordner auf den Suchpfad nimmt, die Datei über stdin bekommt und ein
+  geprüftes JSON zurückgibt – in der Sandbox wie `receipt_text._profile`: kein Netz (auch nicht innerhalb des Macs), keine anderen
+  Programme, keine Apple-Events, liest im Benutzerordner nur sein Programm und seine Pakete, nie Kontors oder MoneyMoneys Daten,
+  schreibt nur in einen Zwischenordner je Aufruf; ohne Sandbox startet er nicht.
+  Pakete: nur fertige Wheels (nie Quellpakete, nie `pip`, kein Installationsskript), je Paket Name, Version, Datei, Größe, SHA-256,
+  Lizenz und Herkunft fest im Code – ein Eintrag, aus dem auch die Liste „Verwendete Programme“ entsteht; geladen nur nach Klick,
+  entpackt und verglichen wie das Python (`pyruntime`: laden → entpacken → jede Datei gegen das Archiv → Probe im Helfer → erst
+  dann umbenennen), abhängige Pakete einzeln genannt, nichts wird aufgelöst. Ort: `.python/libs/<name>-<version>/` im
+  Programmordner (nie im Datenordner; Deinstallieren entfernt ihn mit; ein anderes Python verwirft ihn, weil die Pakete nicht
+  mehr passen). Fehlt ein Paket oder scheitert die Probe, liest Kontor wie bisher und sagt es.
+  Zu entscheiden: Herkunft der Wheels – die Paketablage von Python (files.pythonhosted.org; ein neuer Host, den das Update als
+  Fund zeigt) oder nur Bibliotheken, die ihre Wheels auch bei GitHub veröffentlichen; und welche Lizenzen in Frage kommen
+  (Empfehlung: nur MIT, BSD, Apache 2.0, MPL 2.0 – keine AGPL-Bibliothek wie PyMuPDF).
 
 ## 1. Daten erst nach Anmeldung (Sicherheit) – umgesetzt in 3.16.83 (3.17.0: Umstellung von früher entfernt, nur Neueinrichtung)
 Ziel: Wer den entsperrten Mac hat, aber nicht bei Kontor angemeldet ist, kommt an keine Kontor-Daten.

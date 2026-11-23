@@ -192,6 +192,10 @@ CHECKED: Dict[str, Tuple[str, ...]] = {
     "updates.py": ("_get",),                                              # allowed hosts only
     "tls_cert.py": ("setup", "renew_if_due", "cert_expiry", "ask"),       # Tailscale's own program (found by Kontor), paths in Kontor's data folder; fixed questions, read only
     "security_names.py": ("_post", "lookup"),                             # one fixed address; ISINs only
+    # Kontor's own Python: the starter runs only the program inside Kontor's own .python/ that the state file names, with
+    # Kontor's own kontor.py (or itself anew); a build is tried alone (-I -S -B) and only from inside that folder; Apple's
+    # xattr and codesign only on a folder inside it
+    "pyboot.py": ("_serve", "_again"), "pyruntime.py": ("run_python", "unmark", "sign"),
 }
 # -- more rules (review before 3.17), kept apart from the lists above: who may install an update and with whose approval (only
 # at the Mac; the approval the page sent, never one made up by the program; a backup cannot change where updates come from),
@@ -200,7 +204,13 @@ CHECKED: Dict[str, Tuple[str, ...]] = {
 # at where the request comes from, and what it hands on is the approval the page sent.
 for _rel, _names in (("service.py", ("_is_local", "_loopback", "_update_install", "restored_config", "_proxied", "PROXIED", "_at_mac")),
                      ("auth.py", ("is_loopback",)),
-                     ("llm_local.py", ("_fetch", "pick_asset", "repo_files", "latest_runtime", "RUNTIME_REPO", "RELEASES_URL"))):
+                     ("llm_local.py", ("_fetch", "pick_asset", "repo_files", "latest_runtime", "RUNTIME_REPO", "RELEASES_URL")),
+                     # Kontor's own Python (3.17.12): the one build that is loaded and from where, with its size and SHA-256; that
+                     # it is compared with its archive and tried before the switch, in this order; which program the starter
+                     # takes for the service and which one launchd starts; who may ask for it (only at the Mac)
+                     ("pyruntime.py", ("REPO", "VERSION", "BUILD", "FILES", "URL", "build", "fetch", "same", "tried", "runnable", "_work")),
+                     ("pyboot.py", ("FOLDER", "DIR_RE", "inside", "exe_in", "chosen", "start", "launch_python")),
+                     ("service.py", ("_python_do",))):
     RULES[_rel] = tuple(RULES.get(_rel, ())) + _names
 CHECKED["service.py"] = CHECKED["service.py"] + ("_update_install",)
 # ... on the pages: what the update page shows of the findings and how it sends the approval, each as a whole
@@ -267,6 +277,12 @@ RULE_GROUPS: Tuple[Tuple[str, str, Dict[str, Tuple[str, ...]]], ...] = (
     ("model_shield", "shield", {"llm_local.py": ("sandbox_profile",)}),
     # where the assistant's programs and models come from and that each file is checked
     ("downloads", "risk", {"llm_local.py": ("host_allowed", "_safe_join", "_fetch", "pick_asset", "repo_files", "latest_runtime", "RUNTIME_REPO", "RELEASES_URL")}),
+    # Kontor's own Python: which build is loaded from where and that it is checked, compared and tried before anything is
+    # switched; which program runs the service -- a change can load, start or keep another program. A newer build changes
+    # the lines that name it: asked about as well, as one entry
+    ("python", "risk", {"pyruntime.py": ("REPO", "VERSION", "BUILD", "FILES", "URL", "build", "fetch", "same", "tried", "runnable", "_work"),
+                        "pyboot.py": ("FOLDER", "DIR_RE", "inside", "exe_in", "chosen", "start", "launch_python"),
+                        "service.py": ("_python_do",)}),
     # what goes to OpenFIGI (only ISINs) -- after a click, but not shown before
     ("isin", "risk", {"security_names.py": ("valid_isin",)}),
     # which receipt files Kontor hands out or opens
@@ -287,11 +303,11 @@ for _rel, _names in PROFILES.items():
 # the entries of the update page: (title, explanation) as keys of web/i18n.js, by topic -- a title takes the entry's {0}
 RULE_TOPICS = frozenset([g[0] for g in RULE_GROUPS] + [t for names in PROFILES.values() for t in names.values()] + ["check", "rules"])
 TOPIC_TEXT = {t: ("upd_t_" + t, "upd_w_" + t) for t in (
-    "check", "access", "reader", "reader_shield", "trust", "filter", "web_changes", "model_shield", "receipt_shield", "downloads", "isin",
+    "check", "access", "reader", "reader_shield", "trust", "filter", "web_changes", "model_shield", "receipt_shield", "downloads", "python", "isin",
     "receipts", "rules", "shadow", "module", "detour", "self", "place", "address", "page", "file", "script", "extra", "unreadable",
     "new_host", "new_program", "new_net", "new_other", "way_host", "way_program", "way_net", "way_other")}
 # ... in this order on the page (a topic not named here after them)
-TOPIC_ORDER = ("check", "access", "model_shield", "reader_shield", "receipt_shield", "reader", "trust", "web_changes", "downloads", "isin",
+TOPIC_ORDER = ("check", "access", "model_shield", "reader_shield", "receipt_shield", "reader", "trust", "web_changes", "downloads", "python", "isin",
                "receipts", "rules", "shadow", "self", "detour", "module", "new_host", "new_program", "new_net", "new_other", "address", "place",
                "page", "script", "file", "extra", "unreadable", "way_host", "way_program", "way_net", "way_other", "filter")
 _PY_BREAK = re.compile(r"\r\n|\r|\n")                 # where Python ends a line (splitlines cuts at more)
@@ -365,7 +381,7 @@ BESIDE_ENDS = (".py", ".md", ".txt", ".json", ".yml", ".yaml", ".toml", ".cfg", 
                ".csv", ".png", ".jpg", ".jpeg", ".gif", ".pdf", ".xlsx", ".xlsm", ".wav", ".swift", ".jxa")
 # ... and what a helper or Python itself makes beside the program while it runs: never part of an update, whatever the
 # repository's own list (.gitignore) says
-MADE_HERE = "__pycache__/\n*.pyc\n*.pyo\n.touchid/\n.receipt_ocr/\n*.app/\n.mac-app-*/\n.mac_app_build\n.old/\nmm_touchid\n.files\n"
+MADE_HERE = "__pycache__/\n*.pyc\n*.pyo\n.touchid/\n.receipt_ocr/\n*.app/\n.mac-app-*/\n.mac_app_build\n.old/\nmm_touchid\n.files\n.python/\n"
 STARTUP = frozenset(("sitecustomize.py", "usercustomize.py"))       # loaded by Python itself, wherever it finds them
 # the parts of Python by name (3.9 to 3.13, also those since removed): a file or folder of that name in the program folder
 # is loaded instead

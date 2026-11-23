@@ -10,6 +10,7 @@ Einstellungen → Updates zeigt den Überblick vor den einzelnen Versionen; die 
 - Planung: Regeln je Bereich, Position und Kategorie, Modelle mit einem Klick, jede Planzahl erklärt; Sparquote, Reichweite, Zinslast
 - KI-Assistent: Modellauswahl nach Zweck – gründlich, schnell, klein – mit Hersteller, Lizenz und Speicherbedarf; empfohlen ist das gründlichste
 - iPhone: eigener Face-ID-Schlüssel je Gerät, jede Änderung mit Face ID bestätigt, Geräte am Mac entfernbar; Tailscale wird geprüft
+- Sicherheit: eigenes, aktuelles Python statt Apples Python 3.9 – nach Klick geladen, geprüft und erst nach bestandener Probe in Gebrauch
 
 ## 3.17
 - Sicherheit: Daten erst nach deiner Anmeldung lesbar (Passwort oder Touch ID); jedes Update vor dem Installieren gelesen und geprüft

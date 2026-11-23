@@ -6,7 +6,10 @@
 # Laedt Kontor nach ~/Applications/Kontor (der Programme-Ordner des Benutzers; git, ohne git als ZIP), richtet den Hintergrunddienst ein (startet beim Anmelden),
 # uebersetzt den Touch-ID-Helfer, baut Kontors eigene App (Kontor.app) und oeffnet sie. Jederzeit wiederholbar; Einstellungen und Daten bleiben.
 # Im Programmordner aufgerufen (bash install.sh) wird nichts geladen, nur eingerichtet.
-# Variablen: KONTOR_HOME (Zielordner), KONTOR_REPO (Standard stecrz/Kontor), KONTOR_REF (Zweig, Standard main).
+# Kontor laeuft danach mit seinem eigenen, aktuellen Python: eine feste Version, von GitHub geladen, an ihrer Pruefsumme geprueft und
+# mit Kontor getestet (pyruntime.py) -- gestartet wird es weiter vom Python des Macs, das bei jedem Fehler selbst uebernimmt.
+# Variablen: KONTOR_HOME (Zielordner), KONTOR_REPO (Standard stecrz/Kontor), KONTOR_REF (Zweig, Standard main),
+# KONTOR_PYTHON=apple (kein eigenes Python laden: Kontor laeuft mit dem des Macs).
 set -euo pipefail
 if [ "$(uname)" != "Darwin" ]; then echo "Kontor laeuft nur unter macOS (MoneyMoney)."; exit 1; fi
 if ! xcode-select -p >/dev/null 2>&1; then

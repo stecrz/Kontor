@@ -53,6 +53,8 @@ import history_import
 import categorize
 import updates
 import changelog
+import pyboot
+import pyruntime
 import assistant as assistant_mod
 import demo
 import devices as devices_mod
@@ -1348,11 +1350,33 @@ class App:
                 "passkeys": self.passkey_site() is not None, "passkey_only": self.passkey_only(),
                 "devices": len(self.devices.all()) if self.devices is not None else 0}
 
-    def request_restart(self) -> None:
-        """Dienst neu starten (neue Adresse/Zertifikat), kurz nachdem die Antwort raus ist. Nur im echten Dienst."""
+    def request_restart(self, why: str = "new access settings") -> None:
+        """Dienst neu starten (neue Adresse/Zertifikat, ein anderes Python), kurz nachdem die Antwort raus ist. Nur im echten Dienst."""
         if self.restart_allowed:
-            log.info("Restarting service for new access settings")
+            log.info("Restarting service for %s", why)
             threading.Timer(1.5, restart_process).start()
+
+    # -- Kontor's own Python (pyruntime.py; which one serves is decided at the start: pyboot.py) ------------------------------------
+    @property
+    def python(self) -> "pyruntime.Runtime":
+        rt = getattr(self, "_python", None)
+        if rt is None:
+            rt = self._python = pyruntime.Runtime(self.program_dir)
+            rt.on_switch = lambda: self.request_restart("another Python")
+        return rt
+
+    def python_hint(self) -> str:
+        """What there is to do about Python, for the overview: "failed" (the own one did not start), "newer" (Kontor names a
+        newer build than the one loaded), "old" (the Mac's own gets no security fixes and you have not said to keep it) -- or ""."""
+        try:
+            st = self.python.status()
+        except Exception:  # pragma: no cover - a note only
+            return ""
+        if st["failed"]:
+            return "failed"
+        if st["newer"]:
+            return "newer"
+        return "old" if st["supported"] and st["running"]["ended"] and not st["use"] else ""
 
     def remote_retry(self) -> None:
         bind = ((self.config.get("ui") or {}).get("bind") or "127.0.0.1").strip()
@@ -2020,6 +2044,14 @@ class App:
                 os.remove(plist); done.append(plist)
             except OSError:
                 left.append(plist)
+        try:                                          # Kontor's own Python, whether or not the program folder stays
+            own = pyruntime.remove_all(prog, program)
+            if own == "later":                        # this process runs in it: the starter removes it once the service has ended
+                keep = keep + [_canon(pyboot.folder(prog))]
+            if own:
+                done.append(pyboot.folder(prog))
+        except OSError:
+            left.append(pyboot.folder(prog))
         if program:
             (done if _remove_tree(prog, keep) else left).append(prog)
         # the data folder: only Kontor's own files (whatever else lies there stays), then the folder when it is empty
@@ -2141,7 +2173,8 @@ DEMO_NEVER = frozenset(("/api/setup", "/api/login", "/api/touchid", "/api/touchi
                         "/api/assistant/memory", "/api/assistant/memory/export", "/api/assistant/memory/import",
                         # the iPhones added at the Mac and their passkeys: the demo knows none (a sign-in with one opens the demo in the real Kontor)
                         "/api/passkey/options", "/api/passkey/login", "/api/pair/begin", "/api/pair/finish", "/api/devices",
-                        "/api/devices/pair", "/api/devices/set", "/api/devices/remove"))
+                        "/api/devices/pair", "/api/devices/set", "/api/devices/remove",
+                        "/api/python"))
 DEMO_FIXED = ("ui", "receipts", "updates", "assistant", "notifications")    # settings of the demo no page changes (how it looks and works)
 DEMO_SESSIONS = 20                     # at the same time at most
 DEMO_IDLE = 2 * 3600                   # seconds without any session (locked, closed): then it ends, its folder goes
@@ -3367,6 +3400,7 @@ def make_handler(app: App):
                     st["confirm"] = not st["read_only"]
                 st["trusted"] = self._may_change(s)              # the page offers what is Mac-like (booking, taking back ...): at the Mac or an added iPhone
                 st["exposed"] = app.exposed()                     # "tailscale serve"/Funnel passes Kontor on (Einstellungen -> Zugang says how to stop it)
+                st["python"] = "" if app.DEMO else app.python_hint()       # what there is to do about Python (Einstellungen -> Updates)
                 return self._json(200, st)
             if path == "/api/dataset":
                 return self._json(200, app.dataset())
@@ -3528,7 +3562,9 @@ def make_handler(app: App):
                 return self._json(200, dict(getattr(app, "read_state", {"running": False}), now=time.time()))
             if path == "/api/update/status":
                 return self._json(200, {"info": app.update_info, "verified": app.update_checked, "version": version(), "date": updates.installed_date(),
-                                        "history": changelog.history()})
+                                        "history": changelog.history(), "python": app.python.status()})
+            if path == "/api/python":                    # while it is loaded and tried: how far it is
+                return self._json(200, {"python": app.python.status(), "instance": app.instance})
             if path == "/api/history":
                 return self._json(200, self._historie(q.get("account") or "", q.get("source") if q.get("source") in ("transactions", "balances") else None))
             if path == "/api/securities/lookup":
@@ -4078,6 +4114,22 @@ def make_handler(app: App):
             log.info("Link to add a device made (valid 10 minutes, while this session lasts)")
             return self._json(200, self._pairing())
 
+        def _python_do(self, body: dict, s: dict):
+            """Kontor's own Python -- loaded and switched to, a failed one removed: only at the Mac, only what the page
+            asks for by one of these words (update_guard keeps this function as a whole)."""
+            if not self._is_local(s):
+                return self._json(403, {"error": tr("s_nur_von_diesem_mac_aus")})
+            what, py = str(body.get("action") or ""), app.python
+            if what == "install":
+                py.install()
+            elif what == "cancel":
+                py.cancel()
+            elif what == "remove":
+                py.remove()
+            else:
+                raise ValueError("action: install|cancel|remove")
+            return self._json(200, {"python": py.status(), "instance": app.instance})
+
         def _assistant_ok(self, s: dict) -> bool:
             """The assistant answers at the Mac -- and from other devices only with its right "remote"."""
             return self._is_local(s) or bool(assistant_mod.settings(app.config)["rights"]["remote"])
@@ -4449,6 +4501,8 @@ def make_handler(app: App):
                 return self._json(200, {"info": app.update_info, "version": version()})
             if path == "/api/update/install":
                 return self._update_install(body, s)
+            if path == "/api/python":
+                return self._python_do(body, s)
             if path == "/api/history":
                 return self._json(200, self._historie_set(body))
             if path == "/api/history/import":
@@ -5318,7 +5372,7 @@ MAC_ONLY = frozenset(("/api/password", "/api/remote", "/api/devices/pair", "/api
                       "/api/history/mm-import", "/api/history/mm-reveal", "/api/file/choose", "/api/file/open", "/api/file/reveal", "/api/receipts/open",
                       "/api/assistant/settings", "/api/assistant/check", "/api/assistant/update-all", "/api/assistant/runtime/install",
                       "/api/assistant/runtime/remove", "/api/assistant/model/files", "/api/assistant/model/download", "/api/assistant/model/cancel",
-                      "/api/assistant/model/delete", "/api/assistant/web", "/api/assistant/server", "/api/assistant/memory/import"))
+                      "/api/assistant/model/delete", "/api/assistant/web", "/api/assistant/server", "/api/assistant/memory/import", "/api/python"))
 # Requests that change nothing: from another device without Face ID (reading, computing what something would do, asking
 # the assistant, locking, the challenge for a confirmation). Every other request from another device changes something and
 # waits for Face ID on the iPhone it was signed in from (service: _remote_check) -- one not named here is a change.
@@ -5478,6 +5532,8 @@ def restart_process(app: Optional["App"] = None) -> None:
     if app is not None:
         app.assistant_stop()
     logging.shutdown()
+    if pyboot.starter():                    # run by a starter (Kontor's own Python): it starts anew and decides which Python serves
+        os._exit(pyboot.EX_RESTART)
     try:
         os.execv(sys.executable, [sys.executable] + sys.argv)
     except OSError:  # pragma: no cover - dann eben beenden; launchd (KeepAlive) startet neu
@@ -5530,6 +5586,8 @@ def serve(app: App) -> None:
         pass
     app.start_remote()                      # zweiter Zugang (Tailscale); sonst spaeter erneut vom Zeitplaner
     app.restart_allowed = True
+    for line in pyboot.serves():            # Kontor serves: said to the starter when one runs this service (pyboot.py) -- and what
+        log.error(line)                     # there is to say about an own Python that ended before it got this far
     threading.Thread(target=app.scheduler, daemon=True).start()
     log.info("Kontor %s: UI at %s (data %s)", version(),
              ", ".join("%s://%s:%d/" % (sc, h, port) for sc, h, _ in servers + ([(app.remote_listening[0], app.remote_listening[1], None)] if app.remote_listening else [])),

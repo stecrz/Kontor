@@ -17,3 +17,4 @@ mm-historie-aufbau.txt
 node_modules/
 .coverage
 .receipt_ocr/
+.python/

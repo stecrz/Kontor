@@ -1,5 +1,14 @@
 # Änderungen
 
+## 3.17.12 (2026-11-23 13:50)
+- Python: Kontor läuft auf Wunsch mit einem eigenen, aktuellen Python 3.15 statt Apples 3.9 (ohne Sicherheitsupdates) – Einstellungen → Updates → Python
+- Python: geladen nur nach Klick von GitHub – Prüfsumme, Vergleich jeder Datei, Test mit allen Teilen von Kontor, erst dann umgestellt
+- Python: startet es einmal nicht, läuft Kontor sofort mit dem Python des Macs weiter und sagt es – „Erneut versuchen“ lädt es neu
+- Installation: richtet das eigene Python gleich mit ein (ohne: `KONTOR_PYTHON=apple`); Deinstallieren entfernt es
+- Übersicht: Hinweis, solange das Python des Macs keine Sicherheitsupdates bekommt
+- Updates: dieses Update braucht einmal deine Freigabe – Kontor kann jetzt eine Datei von GitHub laden (Python) und sie starten; die Prüfung selbst kennt das neu
+- Entwicklung: macOS-Test lädt das echte Python, stellt um, beschädigt es, deinstalliert, aktualisiert von der Version davor
+
 ## 3.17.11 (2026-11-23 13:38)
 - KI-Assistent: Gedächtnis exportieren – eine Datei zum Lesen (Markdown) mit denselben Notizen als Daten für Programme (JSON); je Notiz Tag, Herkunft, angeheftet, was sie ersetzt hat
 - KI-Assistent: Gedächtnis importieren – so eine Datei oder eine Liste mit einer Notiz je Zeile aus einem anderen System; vorab geprüft, ganz oder gar nicht
