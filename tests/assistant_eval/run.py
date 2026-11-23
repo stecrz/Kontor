@@ -167,8 +167,8 @@ def use_stand_in(a, mode: str, tasks: list) -> str:
     with open(binp, "wb") as f:
         f.write(src)
     os.chmod(binp, 0o755)
-    version, flags = a.ai._probe(binp, "off")
-    a.ai._save("runtime.json", {"tag": "fake", "dir": "fake", "bin": "llama-server", "version": version, "flags": flags, "sha256": "", "installed": ""})
+    version, flags, sock = a.ai._probe(binp, "off")
+    a.ai._save("runtime.json", {"tag": "fake", "dir": "fake", "bin": "llama-server", "version": version, "flags": flags, "sock": sock, "sha256": "", "installed": ""})
     repo, name = "kontor/stand-in", "stand-in.gguf"
     path = a.ai.model_path(repo, name)
     os.makedirs(os.path.dirname(path), exist_ok=True)

@@ -139,6 +139,9 @@ anhängen – nie löschen.
   austauschbar. Der Assistent läuft weiter auf dem MacBook; vorbereitet wird, dass ein stärkerer eigener Rechner später nur eine
   andere Auswahl ist. Sicher geht vor lokal: lokal ist der Weg, nicht das Ziel. Ein Kauf (Mac Studio o. Ä.) erst, wenn er einen
   entscheidenden Vorteil bringt.
+  (vorbereitet in 3.17.9–3.17.V4: Modellauswahl mit größeren Modellen; der Aufruf des Modells liegt an einer Stelle,
+  `LocalAI._connect` – heute fest der Kindprozess auf diesem Mac, keine Adresse, keine Einstellung; was ein zweiter eigener
+  Rechner vorher braucht, steht unter „Offen“)
 - **Claude als Recherche-Stufe** (Nutzer, 2026-11-23): Der Assistent darf Claude über Anthropics Schnittstelle fragen – mit dem
   eigenen API-Schlüssel des Nutzers (API-Guthaben seines Claude-Abos), nie über ein Abo-Login –, als stärkere Internetsuche neben
   Tavily: Kontor sendet, vorher steht der volle Wortlaut auf der Karte (immer mit Klick, auch in einer erlaubten Unterhaltung),
@@ -148,6 +151,8 @@ anhängen – nie löschen.
   (umgesetzt in 3.17.9 – die verständliche Auswahl – und 3.17.29 – größere Modelle, auch in mehreren Dateien)
 - **Abschirmung** (Nutzer, 2026-11-23): heißt wirklich kein Netz – auch nicht innerhalb des Macs – und möglichst keine
   Verbindung zu anderen Programmen; in der Oberfläche und Hilfe erklärt.
+  (umgesetzt in 3.17.V4: kein Netz, auch nicht innerhalb des Macs – das Modell lauscht auf einer Datei statt auf 127.0.0.1;
+  im Tooltip und in der Hilfe erklärt. Noch offen: Dienste von macOS nur nach Liste – siehe „Modelle und Rechner“)
 - **Aktuelles Python** (Nutzer, 2026-11-23): Kontor läuft auf einer aktuellen, festen Python-Version in seinem eigenen Ordner statt
   auf Apples Python 3.9 (seit 31.10.2025 ohne Sicherheitsupdates); geladen nur nach Klick, geprüft, mit Rückweg; Installation und
   Umstellung ohne Handgriffe des Nutzers, wo es irgend geht. (umgesetzt in 3.17.12: Einstellungen → Updates → Python und bei der Installation;
@@ -302,6 +307,13 @@ anhängen – nie löschen.
   Grafik) – Empfehlung: ja; den Bildteil mit dem Modell laden oder mit eigenem Klick (etwa 1 GB mehr Arbeitsspeicher) –
   Empfehlung: eigener Klick; PDF-Seiten als Bild erst danach. Vorher am Mac prüfen: zu Qwen3.8 27B gibt es laut Modell-Recherche
   offene Meldungen über Abstürze beim Laden eines Bildes.
+- Modelldienst auf einem zweiten eigenen Rechner (KI-Plattform: „später nur eine andere Auswahl“) – vorbereitet, nicht gebaut:
+  Kontor spricht das Modell an genau einer Stelle an (`LocalAI._connect`, OpenAIs Formate; heute fest der Kindprozess auf diesem
+  Mac über seine Socket-Datei). Einschalten wäre ein neuer Weg nach außen und braucht vorher, alles zusammen: nur im eigenen
+  Tailnet (keine andere Adresse wählbar, nie Heimnetz oder Internet); beide Seiten weisen sich aus (je Rechner ein eigener
+  Schlüssel, einmal am Mac gekoppelt – ohne ihn keine Antwort); der andere Rechner ohne Internet und dort abgeschirmt wie hier;
+  dort keine Protokolle über Eingaben und Antworten, nichts davon auf der Festplatte; Programm und Modelle dort nur über Kontor
+  (per SHA-256 geprüft, nie von selbst aktualisiert). Empfehlung: erst angehen, wenn ein Kauf ansteht; bis dahin nur dieser Mac.
 
 ## 1. Daten erst nach Anmeldung (Sicherheit) – umgesetzt in 3.16.83 (3.17.0: Umstellung von früher entfernt, nur Neueinrichtung)
 Ziel: Wer den entsperrten Mac hat, aber nicht bei Kontor angemeldet ist, kommt an keine Kontor-Daten.
@@ -452,6 +464,19 @@ Modelle und Rechner (Auftrag vom 23.11.2026: verständliche Auswahl, größere M
   Nicht aufgenommen: GLM-5.3 Flash (antwortet nie ohne Nachdenken – das brauchen die kurzen Schritte hier; llama.cpp kann es erst
   seit Kurzem), DeepSeek V4.1 Flash (nur mit eigener Laufzeit), MiMo-V2.6 Flash und DeepSeek V4 Flash (lesen lange Dokumente bei
   160–170 GB nicht zuverlässiger als Qwen3.8 27B). Auf einem Rechner mit 128 GB prüfen: Laden, Start und Tempo von Flash Next.
+- [x] 3.17.V4 Abschirmung ohne jedes Netz: das Modell (auch Diktieren und Suche nach Bedeutung) lauscht auf einer Socket-Datei in
+  seinem eigenen Zwischenordner statt auf 127.0.0.1; die Sandbox verbietet das Netz ganz, erlaubt ist allein das Lauschen auf
+  dieser einen Datei (beide Stufen; auch ohne Abschirmung keine Adresse). Kontor spricht das Modell an einer Stelle an
+  (`LocalAI._connect`). Ein llama.cpp, das nur auf einer Adresse lauschen kann, wird nicht installiert und nicht gestartet – kein
+  Rückweg auf 127.0.0.1. Tooltip und Hilfe („Abschirmung“) sagen, was sie verhindert und was nicht. Im macOS-Lauf:
+  `tests/test_mac_model.py` – die Regeln mit einem kleinen Programm (zählt), das echte llama.cpp mit einem winzigen Modell
+  (berichtet nur, weil es GitHub, Hugging Face und das llama.cpp des Tages braucht; soll nach einigen Versionen zählen).
+  Offen – Dienste von macOS nur nach Liste statt alle: Auf GitHubs Mac (macOS 15) fragt llama.cpp nach elf Diensten
+  (coreservicesd, diskarbitrationd, MTLCompilerService, analyticsd, bsd.dirhelper, logd, system.notification_center,
+  opendirectoryd.libinfo und .membership, tccd.system, windowserver.active); ganz ohne lädt kein Modell, mit genau diesen läuft
+  es, jeder einzelne ist dort entbehrlich. Der Grafikchip dort ist ein Ersatz – ein echter Mac kann andere brauchen, und eine
+  falsche Liste ließe das Modell nicht starten oder nur langsam rechnen. Deshalb erst nach einem Lauf am echten Mac festlegen
+  (die Probe dazu: `tests/mac_sandbox_probe.py` in 3.17.29).
 
 ## 3. GbR-Entlastung: Immobilien, Steuer, Umsatzsteuer
 Ziel: Eine vermögensverwaltende GbR lässt sich mit Kontor führen – Objekte, Steuer, Voranmeldung, Nebenkosten, Ausschüttungen –
@@ -566,7 +591,9 @@ Gedächtnis, Internet, Daten erst nach Anmeldung, Netzverbindungen), Hilfe-Bilde
   macOS' Sandbox ohne ausgehendes Netz.
 - Filter der Internetsuche: Ziffern statt Buchstaben, rückwärts Geschriebenes und Umlaut-Schreibweisen erkennt er erst ab sechs
   Buchstaben (kürzere Namen gingen so durch); „Q3 2025“ lehnt er als lange Ziffernfolge ab – jede Suche steht vorher auf einer Karte im Chat.
-- Abschirmung: harte Links im eigenen Zwischenordner könnten pfadbasierte Regeln umgehen – am Mac prüfen, dann `(deny file-link*)`.
+- ~~Abschirmung: harte Links im eigenen Zwischenordner könnten pfadbasierte Regeln umgehen – am Mac prüfen, dann `(deny file-link*)`.~~
+  (geprüft auf GitHubs Mac, macOS 15, 3.17.29: in beiden Stufen lehnt die Sandbox schon das Anlegen eines Links auf eine Datei ab, die das
+  Modell nicht lesen darf – „link: Operation not permitted“; eine Regel `file-link*` kennt macOS nicht)
 - Beschädigte Dateien: Planung, Kategorien und Belegindex nennen die Seiten mit Dateinamen (nicht beiseitegelegt); sind Einstellungen,
   Stand und Anmeldedaten zugleich beschädigt, sperrt die Anmeldung („Schlüssel passt nicht“) – ein falscher Schlüssel sieht gleich aus.
 - Planung: Zinsen und Anteile in der Vorschau noch mit gerundeten Kommazahlen (gebucht wird exakt).

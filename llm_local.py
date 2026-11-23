@@ -7,15 +7,17 @@ What goes over the network -- only on such a click, only downloads, HTTPS, fixed
   - a model file from Hugging Face (huggingface.co and its download hosts *.huggingface.co, *.hf.co), checked by its SHA-256.
 Nothing of yours is ever sent: a request names the file to fetch, nothing else.
 
-How the model runs: as a child process of the service, listening on 127.0.0.1 only, on a free port, with a key made for that
-start (kept in memory only, given to it in its environment, never on its command line); without its chat app, without tools of
-its own, offline. On the Mac inside the system's sandbox (sandbox-exec): no network at all but connections coming in on this
-Mac; it starts no other program, sends no Apple events (cannot steer MoneyMoney or a browser), opens nothing through the system,
-writes only into a temporary folder of its own (made for each start; besides it the system's caches) -- never into Kontor's
-temporary folders -- and reads nothing in your home folder but its own folder -- so not Kontor's data, not MoneyMoney's,
-no documents. That sandbox is a second line behind llama.cpp itself (should the program or a model file ever be faulty); which
-rules apply is your setting -- nothing the process does makes Kontor try weaker ones. Kontor talks to it at 127.0.0.1 and
-nowhere else (there is no address to set). It ends when you stop it, after some idle minutes, and when Kontor restarts.
+How the model runs: as a child process of the service, listening on no address of any network -- not even this Mac's own
+(127.0.0.1) -- but on a socket file in a temporary folder made for that start, which only this user's programs can reach;
+with a key made for that start (kept in memory only, given to it in its environment, never on its command line); without its
+chat app, without tools of its own, offline. On the Mac inside the system's sandbox (sandbox-exec): no network at all -- that
+one file excepted, on which it may listen; it starts no other program, sends no Apple events (cannot steer MoneyMoney or a
+browser), opens nothing through the system, writes only into that temporary folder of its own (besides it the system's
+caches) -- never into Kontor's temporary folders -- and reads nothing in your home folder but its own folder -- so not
+Kontor's data, not MoneyMoney's, no documents. That sandbox is a second line behind llama.cpp itself (should the program or a
+model file ever be faulty); which rules apply is your setting -- nothing the process does makes Kontor try weaker ones.
+Kontor talks to it over that file and nowhere else (LocalAI._connect: there is no address to set). It ends when you stop it,
+after some idle minutes, and when Kontor restarts.
 
 Nothing here knows your figures: what the model is asked and may do is in assistant.py.
 """
@@ -71,6 +73,8 @@ START_SECONDS = 420                 # a large model from a slow disk
 REACH_SECONDS = 45                  # llama-server listens (and says "loading") long before the model is there
 SANDBOX = "/usr/bin/sandbox-exec"
 TMP_PREFIX = "llm-run-"             # a model process's own temporary folder, a new one for every start (never "kontor-...")
+SOCK_NAME = "m.sock"                # the socket file the model's server listens on, in that folder (llama.cpp: a --host ending in .sock)
+SOCK_MAX = 100                      # bytes of its whole path at most (macOS takes 103)
 
 # Models Kontor names (they change with Kontor's versions); any other GGUF from Hugging Face can be added by its repository.
 # In the order the settings show them, by what a model is for ("kind"), within a kind the most thorough first:
@@ -344,11 +348,14 @@ def resolve_pick(files: List[dict], pick: Any) -> Optional[dict]:
 SANDBOXES = ("strict", "basic", "off")
 
 
-def sandbox_profile(data_dir: str, program_dir: str, base_dir: str, level: str = "strict", home: Optional[str] = None) -> str:
+def sandbox_profile(data_dir: str, program_dir: str, base_dir: str, level: str = "strict", home: Optional[str] = None, sock: str = "") -> str:
     """The rules for sandbox-exec (later rules win).
-    Both levels: no network but connections coming in on this Mac -- none going out at all; nothing written into Kontor's
-    folders, nor into Kontor's temporary folders (kontor-..., where e.g. the helper for MoneyMoney's password is built and
-    started, an update is unpacked, Touch ID answers); Kontor's data not read (only the model's own folder inside it).
+    Both levels: no network at all -- no connection going out, none coming in, no address listened on, not even this Mac's
+    own; the one thing excepted is the socket file of this start (sock, in the process's own temporary folder), on which it
+    may listen and take what comes in (without sock, as when a new llama.cpp is only tried: nothing at all); nothing written
+    into Kontor's folders, nor into Kontor's temporary folders (kontor-..., where e.g. the helper for MoneyMoney's password
+    is built and started, an update is unpacked, Touch ID answers); Kontor's data not read (only the model's own folder
+    inside it).
     strict: besides that it starts no other program, sends no Apple events (so it cannot steer MoneyMoney, a browser or any
     other app), opens nothing through the system (no addresses, no files), signals no other process, does not read the
     clipboard, reads nothing in the home folder and writes only into the temporary folder Kontor makes for each start
@@ -357,8 +364,8 @@ def sandbox_profile(data_dir: str, program_dir: str, base_dir: str, level: str =
     into the compilers' module caches among the caches, from which Kontor's helpers are built (the one asking for
     MoneyMoney's password)."""
     q = lambda p: json.dumps(os.path.realpath(p), ensure_ascii=False)
-    rules = ["(version 1)", "(allow default)", "(deny network*)",
-             '(allow network-bind (local ip "localhost:*"))', '(allow network-inbound (local ip "localhost:*"))']
+    listen = ["(allow network-bind (local unix-socket (path-literal %s)))" % q(sock), "(allow network-inbound (local unix-socket (path-literal %s)))" % q(sock)] if sock else []
+    rules = ["(version 1)", "(allow default)", "(deny network*)", *listen]
     if level == "strict":
         rules += ["(deny process-exec*)", "(allow process-exec* (subpath %s))" % q(os.path.join(base_dir, "runtime")),
                   "(deny appleevent-send)", "(deny lsopen)",
@@ -443,6 +450,35 @@ def unpack(archive: str, dest: str) -> None:
             os.remove(target)
 
 
+def listens_on_file(helped: str) -> bool:
+    """Does this llama-server's own help say that --host takes a socket file (a path ending in .sock) instead of an address?
+    What it says about --host may run over several lines (up to the next option)."""
+    m = re.search(r"(?m)^[ \t]*--host\b.*(?:\n(?![ \t]*-).*)*", helped)
+    said = re.sub(r"\s+", " ", m.group(0)) if m else ""
+    return bool(re.search(r"(?i)unix socket", said) and ".sock" in said)
+
+
+class _OnFile(http.client.HTTPConnection):
+    """HTTP over the socket file of a model Kontor started: nothing of it travels over any network, no address is listened
+    on. Only ever such a file -- named SOCK_NAME, in a folder made by own_tmp -- whatever path it is handed."""
+
+    def __init__(self, path: str, timeout: int):
+        super().__init__("localhost", timeout=timeout)        # (a name for the request's Host line only: never looked up, never connected to)
+        self.path = path
+
+    def connect(self) -> None:
+        if os.path.basename(self.path) != SOCK_NAME or not os.path.basename(os.path.dirname(self.path)).startswith(TMP_PREFIX):
+            raise OSError("no socket file of a model")
+        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        s.settimeout(self.timeout)
+        try:
+            s.connect(self.path)
+        except OSError:
+            s.close()
+            raise
+        self.sock = s
+
+
 class LocalAI:
     """llama.cpp and the models in one folder (base_dir), and the one running model."""
 
@@ -454,7 +490,7 @@ class LocalAI:
         self.job: Optional[dict] = None                # a download in progress (or its end)
         self.news: dict = {}                           # the last look for newer versions (by itself or on your click)
         self.proc: Optional[subprocess.Popen] = None
-        self.port = 0
+        self.sock = ""                                 # the socket file the running model listens on (in its own temporary folder)
         self.key = ""
         self.model = ""
         self.file = ("", "")                           # the running model's file (path, SHA-256): a newer one starts it anew
@@ -495,7 +531,8 @@ class LocalAI:
         os.replace(tmp, self._p(name))
 
     def runtime(self) -> dict:
-        """The installed llama.cpp: {} or {"tag", "bin", "version", "flags", "installed"} (bin exists)."""
+        """The installed llama.cpp: {} or {"tag", "bin", "version", "flags", "sock", "installed"} (bin exists; sock: it can
+        listen on a socket file -- not there for one installed before Kontor asked: ensure asks then)."""
         r = self._load("runtime.json")
         b = self._p("runtime", str(r.get("dir") or ""), str(r.get("bin") or "")) if r.get("dir") and r.get("bin") else ""
         inside = os.path.realpath(b).startswith(os.path.realpath(self._p("runtime")) + os.sep) if b else False    # only ever a program in its own folder
@@ -716,7 +753,9 @@ class LocalAI:
                 except OSError:
                     pass
             try:
-                version, flags = self._probe(os.path.join(tmp, rel), sandbox)   # a build that does not start here is not kept (the old one stays)
+                version, flags, sock = self._probe(os.path.join(tmp, rel), sandbox)   # a build that does not start here is not kept (the old one stays)
+                if not sock:                               # ... nor one that could only be talked to at an address
+                    raise ValueError(tr("s_ki_nur_adresse"))
             except Exception:
                 shutil.rmtree(tmp, ignore_errors=True)
                 raise
@@ -724,7 +763,7 @@ class LocalAI:
             final = os.path.join(rdir, tag)
             shutil.rmtree(final, ignore_errors=True)
             os.replace(tmp, final)
-            self._save("runtime.json", {"tag": a["tag"], "dir": tag, "bin": rel, "version": version, "flags": flags, "sha256": sha,
+            self._save("runtime.json", {"tag": a["tag"], "dir": tag, "bin": rel, "version": version, "flags": flags, "sock": sock, "sha256": sha,
                                         "installed": datetime.now().strftime("%Y-%m-%d %H:%M")})
             for name in os.listdir(rdir):                   # older versions go
                 if name != tag:
@@ -734,8 +773,9 @@ class LocalAI:
         return self._start_job("runtime", "llama.cpp", "llama.cpp", work)
 
     def _probe(self, binp: str, level: str = "strict") -> tuple:
-        """Version and options of a llama-server (run inside the sandbox where there is one): a build that does not start
-        here is not kept."""
+        """Version and options of a llama-server (run inside the sandbox where there is one, with nothing of any network
+        allowed), and whether it can listen on a socket file instead of an address: a build that does not start here is not
+        kept."""
         if level != "off" and not self._can_seal() and sys.platform == "darwin":
             raise ModelError(tr("s_ki_sandbox_fehlt"))          # as at the start: the sandbox asked for but not there -- not run without it
 
@@ -749,15 +789,16 @@ class LocalAI:
             tmp = own_tmp()
             ver = run("--version")
             m = re.search(r"version:\s*([^\n]+)", ver)
-            flags = sorted(set(re.findall(r"(?<![\w-])--[a-z][a-z0-9-]+", run("--help"))))
+            helped = run("--help")
+            flags = sorted(set(re.findall(r"(?<![\w-])--[a-z][a-z0-9-]+", helped)))
         except (OSError, subprocess.TimeoutExpired) as e:
             raise ValueError(tr("s_ki_startet_nicht") % str(e)[:200])
         finally:
             if tmp:
                 shutil.rmtree(tmp, ignore_errors=True)
-        if "--port" not in flags or "--model" not in flags:
+        if "--host" not in flags or "--model" not in flags:
             raise ValueError(tr("s_ki_startet_nicht") % (ver.strip()[:200] or "llama-server"))
-        return (m.group(1).strip()[:60] if m else ""), flags
+        return (m.group(1).strip()[:60] if m else ""), flags, listens_on_file(helped)
 
     def remove_runtime(self) -> None:
         self._changing("")
@@ -964,8 +1005,8 @@ class LocalAI:
     def _can_seal(self) -> bool:
         return sys.platform == "darwin" and os.path.exists(SANDBOX)
 
-    def _sealed_cmd(self, cmd: List[str], level: str = "strict") -> List[str]:
-        return [SANDBOX, "-p", sandbox_profile(self.data_dir, self.program_dir, self.base, level)] + cmd
+    def _sealed_cmd(self, cmd: List[str], level: str = "strict", sock: str = "") -> List[str]:
+        return [SANDBOX, "-p", sandbox_profile(self.data_dir, self.program_dir, self.base, level, sock=sock)] + cmd
 
     def _env(self, key: str, tmp: str = "") -> Dict[str, str]:
         """A small environment of its own: no proxies, no tokens, nothing of Kontor's -- and for temporary files its own folder
@@ -997,27 +1038,27 @@ class LocalAI:
             pass
 
     def _spawn(self, binp: str, flags: List[str], model_path: str, ctx: int, seal: str, extra: Optional[List[str]] = None) -> subprocess.Popen:
-        """seal: "" = not in a sandbox, else its level ("strict" | "basic"). extra: further arguments (a model's audio part)."""
-        s = socket.socket()
-        s.bind(("127.0.0.1", 0))
-        port = s.getsockname()[1]
-        s.close()
+        """seal: "" = not in a sandbox, else its level ("strict" | "basic"). extra: further arguments (a model's audio part).
+        The server listens on a socket file in its own temporary folder of this start -- on no address, at every level."""
         key = secrets.token_urlsafe(32)
-        args = [binp, "--model", model_path, "--host", "127.0.0.1", "--port", str(port), "--ctx-size", str(ctx), "--parallel", "1"] + list(extra or [])
+        tmp = own_tmp()                                   # for this start only; gone with the process (_kill)
+        sock = os.path.join(tmp, SOCK_NAME)
+        args = [binp, "--model", model_path, "--host", sock, "--ctx-size", str(ctx), "--parallel", "1"] + list(extra or [])
         for flag in ("--no-webui", "--offline", "--jinja", "--no-slots"):     # only what this build knows
             if flag in flags:
                 args.append(flag)
         if "--no-webui" not in flags and "--no-ui" in flags:
             args.append("--no-ui")
-        cmd = self._sealed_cmd(args, seal) if seal else args
-        tmp = own_tmp()                                   # for this start only; gone with the process (_kill)
         try:
+            if len(sock.encode("utf-8")) > SOCK_MAX:      # (a temporary folder with a very long path: the system takes no such file)
+                raise OSError(tr("s_ki_pfad_lang") % tmp)
+            cmd = self._sealed_cmd(args, seal, sock) if seal else args
             proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=self._env(key, tmp),
                                     cwd=os.path.dirname(binp), close_fds=True)
         except OSError:
             shutil.rmtree(tmp, ignore_errors=True)
             raise
-        self.port, self.key, self.tmp = port, key, tmp
+        self.sock, self.key, self.tmp = sock, key, tmp
 
         def drain(p=proc):                                # its output: only the last lines, in memory, for a failed start
             try:
@@ -1031,8 +1072,11 @@ class LocalAI:
         return proc
 
     def _connect(self, timeout: int) -> http.client.HTTPConnection:
-        """To the model on this Mac -- the only address the model is ever talked to at."""
-        return http.client.HTTPConnection("127.0.0.1", self.port, timeout=timeout)
+        """To the model -- the one place that decides where a model is talked to: always the socket file of the process this
+        object started, never an address (there is none to set). chat, transcribe and embed speak OpenAI's formats over what
+        this returns, with the key of that start. (A model service on another machine of your own would be a second answer
+        here; nothing of that is built -- what it needs first is in ROADMAP.md under "Offen".)"""
+        return _OnFile(self.sock, timeout=timeout)
 
     def _healthy(self) -> Optional[bool]:
         """True: ready; False: still loading; None: not reachable."""
@@ -1045,6 +1089,16 @@ class LocalAI:
             return r.status == 200
         except (OSError, http.client.HTTPException):
             return None
+
+    def _ask_file(self, sandbox: str) -> dict:
+        """Asks the installed llama.cpp once whether it can listen on a socket file, and notes the answer (runtime.json)."""
+        try:
+            kept = dict(self._load("runtime.json"), **dict(zip(("version", "flags", "sock"), self._probe(self.runtime()["path"], sandbox))))
+        except ValueError as e:
+            self.state, self.error = "error", str(e)[:300]
+            raise ModelError(self.error)
+        self._save("runtime.json", kept)
+        return self.runtime()
 
     def ensure(self, model_id: str, ctx: int, sandbox: str = "strict", cancel: Optional[threading.Event] = None) -> None:
         """The model runs and is ready (started if needed; another model, context size or sandbox: started anew).
@@ -1061,6 +1115,11 @@ class LocalAI:
                 raise ModelError(tr("s_ki_nicht_installiert"))
             if not m:
                 raise ModelError(tr("s_ki_modell_fehlt"))
+            if rt.get("sock") is None:                   # installed before Kontor asked whether it can listen on a file: asked now, once
+                rt = self._ask_file(sandbox)
+            if not rt.get("sock"):                       # never on an address instead -- a newer llama.cpp can
+                self.state, self.error = "error", tr("s_ki_zu_alt")
+                raise ModelError(self.error)
             ram = physical_ram()
             if ram and int(m.get("size") or 0) + 2 ** 30 > ram:        # larger than the memory itself: it would only swap, the Mac with it
                 raise ModelError(tr("s_ki_passt_nicht") % (round(m["size"] / 1e9), round(ram / 2 ** 30)))
@@ -1110,7 +1169,7 @@ class LocalAI:
 
     @property
     def caps(self) -> Dict[str, Any]:
-        """What the running model's chat template can do, as llama.cpp tells it (/props, on 127.0.0.1 with this start's key;
+        """What the running model's chat template can do, as llama.cpp tells it (/props, over its socket file with this start's key;
         asked once for each start): {"levels": the levels of thinking the template knows (reasoning_effort, lowest first),
         "rejected": those it refuses, "preserve": earlier thoughts stay in the conversation, "vision": it reads pictures (its
         picture part is loaded)} -- {} when no model runs or the build does not say (an older llama.cpp): nothing is assumed."""
@@ -1155,8 +1214,8 @@ class LocalAI:
                     p.kill()
                 except OSError:
                     pass
-        tmp, self.tmp = self.tmp, ""
-        if tmp:                                          # its temporary folder of that start
+        tmp, self.tmp, self.sock = self.tmp, "", ""
+        if tmp:                                          # its temporary folder of that start (with its socket file)
             shutil.rmtree(tmp, ignore_errors=True)
         try:
             os.remove(self._p(self.role + ".json"))
@@ -1185,8 +1244,8 @@ class LocalAI:
                 pass
 
     def chat(self, body: dict, cancel: threading.Event) -> Iterator[dict]:
-        """One answer of the model as its stream of pieces (OpenAI's chat format). Only ever 127.0.0.1 and the port and
-        key of the model Kontor started."""
+        """One answer of the model as its stream of pieces (OpenAI's chat format). Only ever the model Kontor started: over
+        its socket file (_connect), with the key of that start."""
         if self.state != "ready" or self.proc is None or self.proc.poll() is not None:
             raise ModelError(tr("s_ki_laeuft_nicht"))
         conn = self._connect(900)
@@ -1237,7 +1296,7 @@ class LocalAI:
 
     def transcribe(self, wav: bytes, language: str = "") -> str:
         """What is said in a recording (WAV), written down by the speech model that runs -- llama.cpp's /v1/audio/transcriptions,
-        on 127.0.0.1 with this start's key."""
+        over its socket file with this start's key."""
         if self.state != "ready" or self.proc is None or self.proc.poll() is not None:
             raise ModelError(tr("s_ki_laeuft_nicht"))
         mark = "kontor" + secrets.token_hex(12)
@@ -1268,8 +1327,8 @@ class LocalAI:
                 pass
 
     def embed(self, texts: List[str], query: bool = False, task: str = "") -> List[List[float]]:
-        """Each text as its embedding, by the model for finding by meaning that runs -- llama.cpp's /v1/embeddings on 127.0.0.1
-        with this start's key; query: the texts are questions (said so to the model, with what is looked for: task, else the
+        """Each text as its embedding, by the model for finding by meaning that runs -- llama.cpp's /v1/embeddings over its
+        socket file with this start's key; query: the texts are questions (said so to the model, with what is looked for: task, else the
         model's own). Each cut to EMBED_DIMS numbers and to length 1, so that comparing two is one sum of products."""
         if self.state != "ready" or self.proc is None or self.proc.poll() is not None:
             raise ModelError(tr("s_ki_laeuft_nicht"))

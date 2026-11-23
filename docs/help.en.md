@@ -584,13 +584,26 @@ A subscription login does not work in Kontor – Anthropic does not allow it in 
 <a id="assistant-safety"></a>
 ### How safe is this?
 
-- **No network**: Kontor starts the model on this Mac and talks to it at `127.0.0.1` only – with a key that is made anew at every start and lives in memory only. llama.cpp's built-in interface and its own tools are switched off, the program runs in offline mode. It learns only what Kontor gives it for a question.
-- **The macOS sandbox** as a second line of defence, should the program or a model file ever be faulty: no network connection – neither to the internet nor to the home network –, starting no other programs, no Apple events (so no steering of MoneyMoney, the browser or other apps), opening nothing through the system, writing temporary files only and reading nothing in the home folder but its own folder – so neither Kontor's data nor MoneyMoney's nor your documents. Under “Operation” it says **sandboxed** when this holds. If the model does not start like that on your Mac, Kontor says so – it never switches to weaker rules by itself. Only you can set “Sandbox” to **Basic** (still no network, Kontor's folders closed) or **Off**, each after a question.
+- **No network**: Kontor starts the model on this Mac and talks to it over a file in the model's own temporary folder – not at a network address, not even `127.0.0.1` –, with a key that is made anew at every start and lives in memory only. llama.cpp's built-in interface and its own tools are switched off, the program runs in offline mode. It learns only what Kontor gives it for a question.
+- **The macOS sandbox** as a second line of defence, should the program or a model file ever be faulty: no network, no other programs, only its own folder – what exactly that means is under [Sandbox](#assistant-sandbox).
 - **When Kontor goes online here**: by itself only to ask for newer versions of llama.cpp and your models (set under Updates, “never” too); otherwise only on your click – to download llama.cpp (GitHub) and model files (Hugging Face, also the models for dictating and for search by meaning) – and, with the right Internet, for [lookups](#assistant-internet), in each chat only after you allow it (a [question to Claude](#assistant-claude) one by one, every time). Looking and downloading send nothing of yours, only which file is wanted; every file is compared with its checksum (SHA-256) and discarded otherwise. Without internet the assistant works just the same.
 - **It cannot change itself**: installing, the model, rights and switching it on happen only at the Mac in the settings – not through the assistant, not from the iPhone, not through a settings package or a backup.
 - **Texts cannot take it over**: an instruction in a payment reference, a file or on a page (“ignore everything and …”) stays text. Even if a model fell for it: it can do no more than read, open a page and propose a change that you see and have to confirm – and it cannot reach the network. After text from the internet Kontor takes no more changes in the same conversation; after a receipt or a table other proposals stand unticked on the card.
 - **Dictating** and **search by meaning** work the same way: a model of their own on this Mac each, with the same shielding, without network. The recording goes from the browser or from Kontor's Mac app to Kontor and from there to this model – nowhere else – and is discarded afterwards.
 - The model itself keeps nothing: what it learns about your figures is in memory only while it runs. Conversations ([History](#assistant)) and notes ([Memory](#assistant-memory)) are saved by Kontor, encrypted in the data folder – not by the model; the model files themselves are public and contain nothing of yours.
+
+<a id="assistant-sandbox"></a>
+### Sandbox
+
+macOS shuts the model in (sandbox) – the program llama.cpp together with the model file it loads. Under “Operation” it says **sandboxed** when this holds. With **Strict** (the default) that means:
+
+- **No network – none at all**: no internet, no home network and no network inside this Mac either. The model listens on no address, not even `127.0.0.1`. Kontor talks to it over one single file in the model's own temporary folder; only programs of your user can reach it, and without the key of that start the model does not answer.
+- **No other programs**: it starts nothing, steers no app (no Apple events, so no MoneyMoney and no browser), opens nothing through the system and does not read the clipboard.
+- **Only its own folder**: in your home folder it reads only the folder with the program and the models – so neither Kontor's data nor MoneyMoney's nor your documents. It may write temporary files only, into a folder Kontor makes anew for every start and deletes afterwards.
+
+If the model does not start like that on your Mac, Kontor says so – it never switches to weaker rules by itself. Only you can choose **Basic** (still without any network, Kontor's folders stay closed; other programs and folders elsewhere would be within reach) or **Off**, each after a question. The models for dictating and for search by meaning run with the same sandbox. A llama.cpp that can only listen on a network address (very old versions) is not started by Kontor – “Update” fixes that.
+
+Limit: services of macOS itself – such as those for the graphics chip – stay within the model's reach. Narrowing them to what is needed is planned; it can only be checked on a real Mac.
 
 <a id="iphone"></a>
 ## Access from iPhone

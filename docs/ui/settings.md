@@ -118,14 +118,17 @@ täglich, wöchentlich, monatlich (default), nie; nothing of the user is sent, n
 Mac … · Arbeitsspeicher …".
 
 ### settings.assistant.operation — Betrieb
-- **Zustand**: gestoppt, startet …, läuft or Fehler; "abgeschirmt" when it runs in macOS's strict sandbox (no network, no other
+- **Zustand**: gestoppt, startet …, läuft or Fehler; "abgeschirmt" when it runs in macOS's strict sandbox (no network at all – no internet and none inside this Mac either: Kontor
+  talks to the model over one file in the model's own temporary folder –, no other
   programs, cannot read Kontor's or MoneyMoney's data); memory and processor use, speed of the last answer (tokens per second);
   "Starten"/"Stoppen".
 - **Kontext**: how much the model keeps in view at once (Automatisch by the Mac's memory, or 16–128 K tokens).
 - **Beenden bei Leerlauf**: the model ends after 5, 10, 30 (default) or 60 minutes without a question, or never ("nie – läuft immer": started by Kontor right after the sign-in and after every restart, running as long as Kontor's service runs, whether the Mac app is open or not; after "Stoppen" off until the next question).
 - **Verläufe speichern** (default on): conversations kept encrypted to open again under "Verläufe"; number and size; "Ältere als ein
   Jahr löschen", "Alle Verläufe löschen".
-- **Abschirmung von macOS**: Streng (recommended), Einfach (still no network) or Aus – only the user can weaken it.
+- **Abschirmung von macOS**: Streng (recommended: no internet and no network inside this Mac, no other programs, reads only its
+  own folder – so neither Kontor's nor MoneyMoney's data), Einfach (still without any network, Kontor's folders closed) or Aus –
+  only the user can weaken it, Kontor never does.
 
 ### settings.assistant.memory — Gedächtnis
 "Gedächtnis verwenden" (default on) and the notes the assistant keeps -- short, condensed from what the user said or from its

@@ -487,7 +487,8 @@ class Program(unittest.TestCase):
         self.assertEqual(h["common"], [])
         self.assertEqual(sorted(k[2] for k in self.scan[0] if k[0] == "rule" and k[1] == "service.py"), sorted(G.RULES["service.py"]))
         # what hands on today: the open starters of programs and what passes a program's place on to them -- a short list
-        self.assertLessEqual(sum(len(v) for v in h["functions"].values()), 30, h["functions"])
+        # (31: llm_local._ask_file hands on only the sandbox level, to ask an installed llama.cpp once about socket files)
+        self.assertLessEqual(sum(len(v) for v in h["functions"].values()), 31, h["functions"])
         self.assertIn("run", h["functions"]["tls_cert.py"]); self.assertIn("_git", h["functions"]["updates.py"])
 
     def test_no_big_function_is_a_guarded_place(self):

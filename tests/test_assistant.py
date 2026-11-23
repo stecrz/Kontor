@@ -1,8 +1,8 @@
 """The assistant (assistant.py, llm_local.py) with a stand-in for llama.cpp's server (tests/fake_llama.py) and downloads that
 never leave this machine (llm_local._open replaced). All data made up.
 
-What must hold: downloads only from GitHub and Hugging Face, checked; the model started on 127.0.0.1 with a key that is not in
-its command line, without tools of its own; what the assistant reads equals what the pages show; nothing is entered without
+What must hold: downloads only from GitHub and Hugging Face, checked; the model started on a socket file of its own -- on no
+address of any network, not even this machine's -- with a key that is not in its command line, without tools of its own; what the assistant reads equals what the pages show; nothing is entered without
 the user's click, and it can be taken back; settings only at the Mac and never by the assistant; nothing of a conversation in
 the log.
 """
@@ -16,6 +16,7 @@ import logging
 import os
 import re
 import shutil
+import stat
 import sys
 import tarfile
 import tempfile
@@ -34,6 +35,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 import assistant as A          # noqa: E402
 import categorize               # noqa: E402
+import fake_llama as HELP_OF     # noqa: E402
 import llm_local as L          # noqa: E402
 import service as MA           # noqa: E402
 import test_e2e as T           # noqa: E402
@@ -259,14 +261,24 @@ class Hosts(unittest.TestCase):
             L._open("https://example.org/x", L.GITHUB)
 
     def test_no_other_way_out(self):
-        """The modules of the assistant reach the network only through _open (and 127.0.0.1 for the model)."""
+        """The modules of the assistant reach the network only through _open; the model is talked to at one place, over the
+        socket file of its start -- never at an address."""
         for name in ("llm_local.py", "assistant.py"):
             src = open(os.path.join(HERE, "..", name), encoding="utf-8").read()
             self.assertNotIn("urlopen(", src)
             self.assertNotIn("requests", src.replace("requests answered", ""))
         src = open(os.path.join(HERE, "..", "llm_local.py"), encoding="utf-8").read()
         self.assertEqual(src.count("build_opener("), 1)
-        self.assertEqual(set(__import__("re").findall(r'HTTPConnection\("([^"]+)"', src)), {"127.0.0.1"})
+        code = "\n".join(line.split("#")[0] for line in src.split('"""', 2)[2].split("\n"))     # (below the module's own words, without comments)
+        self.assertEqual(re.findall(r"HTTPConnection\(", code), [])                            # only what _OnFile is built on: never made with an address
+        self.assertEqual((code.count("_OnFile("), code.count("socket.socket("), code.count("socket.AF_UNIX")), (2, 1, 1))      # made in _connect alone
+        for never in ("127.0.0.1", "AF_INET", "create_connection", ".bind(", "--port", "0.0.0.0"):
+            self.assertNotIn(never, code, never)
+        self.assertIn('return _OnFile(self.sock, timeout=timeout)', code)
+        with self.assertRaises(OSError):                                                   # ... and only ever a model's socket file, whatever it is handed
+            L._OnFile("/var/run/mDNSResponder", timeout=1).connect()
+        with self.assertRaises(OSError):
+            L._OnFile(os.path.join(tempfile.gettempdir(), "kontor-x", L.SOCK_NAME), timeout=1).connect()
         self.assertNotIn("http.client", open(os.path.join(HERE, "..", "assistant.py"), encoding="utf-8").read())
 
 
@@ -280,9 +292,15 @@ class Sandbox(unittest.TestCase):
             lines = p.split("\n")
             self.assertEqual(lines[:3], ["(version 1)", "(allow default)", "(deny network*)"])
             self.assertNotIn("network-outbound", p)                                  # nothing ever goes out, at any level
-            self.assertEqual([l for l in lines if l.startswith("(allow network")],     # and only this Mac comes in
-                             ['(allow network-bind (local ip "localhost:*"))', '(allow network-inbound (local ip "localhost:*"))'])
-            self.assertNotIn("*:*", p)
+            self.assertEqual([l for l in lines if "network" in l], ["(deny network*)"])       # ... and nothing comes in: no address at all, not even this Mac's
+            for word in ("localhost", " ip ", "*:*", "tcp", "udp"):
+                self.assertNotIn(word, p)
+            sock = "/private/var/folders/ab/cd_123xyz/T/%sa1b2c3d4/%s" % (L.TMP_PREFIX, L.SOCK_NAME)
+            with_file = L.sandbox_profile(data, prog, base, level, home=home, sock=sock).split("\n")
+            self.assertEqual([l for l in with_file if "network" in l],                      # but the one socket file of this start, to listen on
+                             ["(deny network*)", '(allow network-bind (local unix-socket (path-literal "%s")))' % sock,
+                              '(allow network-inbound (local unix-socket (path-literal "%s")))' % sock])
+            self.assertEqual([l for l in with_file if "network" not in l], [l for l in lines if "network" not in l])      # nothing else differs
             own = lines.index('(allow file-read* (subpath "%s"))' % base)
             deny = next(i for i, l in enumerate(lines) if l.startswith("(deny file-read*"))
             self.assertLess(deny, own)                                               # later rules win: only its own folder inside the data
@@ -489,6 +507,28 @@ class Runtime(_Open):
         self.ai.remove_runtime()
         self.assertEqual(self.ai.runtime(), {})
         self.assertFalse(os.path.exists(os.path.join(self.dir, "assistant", "runtime")))
+
+    def test_only_a_llama_cpp_that_listens_on_a_file(self):
+        """What llama.cpp's help says about --host decides -- in whatever lines it says it."""
+        real = HELP_OF.HELP                                                            # (as GitHub's Mac printed it for b12648: over several lines)
+        self.assertIn("UNIX socket paths\n", real); self.assertTrue(L.listens_on_file(real))
+        one_line = "--host HOST   ip address to listen, or bind to an UNIX socket if the address ends with .sock (default: 127.0.0.1)\n--port PORT   port"
+        self.assertTrue(L.listens_on_file(one_line))
+        for no in ("", "--host HOST   ip address to listen (default: 127.0.0.1)\n--port PORT  port to listen\n--api-key-file F   or UNIX socket paths ending in .sock",
+                   "--hostess X  UNIX socket paths ending in .sock", "--port P\n     UNIX socket .sock\n--host HOST  ip address", real.replace(HELP_OF.SOCK_SAID, "ip address to listen")):
+            self.assertFalse(L.listens_on_file(no), no)
+        self.ai.install_runtime(); self.assertEqual(wait_job(self.ai)["state"], "done", self.ai.job)
+        self.assertIs(self.ai.runtime()["sock"], True)
+        # a newer release that could only be talked to at an address is not installed: the one there stays
+        arch = runtime_archive(extra=[("llama-%s/nosock" % TAG, b"")])
+        self.net.files[self.net.asset_url] = arch
+        self.net.release["assets"][1].update(size=len(arch), digest="sha256:" + hashlib.sha256(arch).hexdigest())
+        self.net.release = dict(self.net.release, tag_name="b4712")
+        self.ai.install_runtime()
+        j = wait_job(self.ai)
+        self.assertEqual(j["state"], "error"); self.assertIn("Netzadresse", j["text"])
+        self.assertEqual((self.ai.runtime()["tag"], self.ai.runtime()["sock"]), (TAG, True))
+        self.assertEqual(sorted(os.listdir(os.path.join(self.dir, "assistant", "runtime"))), [TAG])
 
     def test_zip(self):
         arch = runtime_archive(zipped=True)
@@ -1173,7 +1213,11 @@ class Server(_Open):
         with open(os.path.join(self.bin, "started.json")) as f:
             started = json.load(f)
         argv = started["argv"]
-        self.assertEqual(argv[argv.index("--host") + 1], "127.0.0.1")
+        self.assertEqual(argv[argv.index("--host") + 1], os.path.join(self.ai.tmp, L.SOCK_NAME))      # a socket file in its own folder of this start,
+        self.assertNotIn("--port", argv); self.assertNotIn("127.0.0.1", " ".join(argv))                # no address and no port at all
+        self.assertTrue(stat.S_ISSOCK(os.stat(self.ai.sock).st_mode)); self.assertEqual(self.ai.sock, os.path.join(self.ai.tmp, L.SOCK_NAME))
+        self.assertEqual(os.stat(self.ai.tmp).st_mode & 0o777, 0o700)                                  # reachable for this user's programs only
+        self.assertLessEqual(len(self.ai.sock.encode()), L.SOCK_MAX)
         self.assertEqual(argv[argv.index("--ctx-size") + 1], "16384")
         for flag in ("--no-webui", "--offline", "--no-slots"):
             self.assertIn(flag, argv)
@@ -1208,12 +1252,59 @@ class Server(_Open):
         with self.assertRaises(L.ModelError):
             list(self.ai.chat({"messages": []}, threading.Event()))
 
-    def test_wrong_key_gets_nothing(self):
-        import http.client
+    def test_never_on_an_address(self):
+        """A llama.cpp installed before Kontor asked is asked once at the next start; one that can only listen on an address is
+        not started at all -- there is no other way to the model."""
+        path = os.path.join(self.dir, "assistant", "runtime.json")
+        was = json.load(open(path))
+        self.assertIs(was["sock"], True)
+        json.dump({k: v for k, v in was.items() if k != "sock"}, open(path, "w"))          # as an earlier Kontor wrote it
+        self.assertIsNone(self.ai.runtime().get("sock"))
+        runs = []
+        real = self.ai._probe
+        self.ai._probe = lambda *a, **k: runs.append(1) or real(*a, **k)
         self.ai.ensure("qwen3.6-35b-a3b", 8192, "off")
-        c = http.client.HTTPConnection("127.0.0.1", self.ai.port, timeout=5)
+        self.assertEqual((len(runs), json.load(open(path))["sock"], self.ai.state), (1, True, "ready"))
+        self.assertEqual(json.load(open(path))["tag"], was["tag"]); self.assertEqual(json.load(open(path))["sha256"], was["sha256"])
+        self.ai.stop(); self.ai.ensure("qwen3.6-35b-a3b", 8192, "off")
+        self.assertEqual(len(runs), 1)                                                     # asked once, then known
+        self.ai.stop()
+        # an old one: asked, noted, never started
+        json.dump({k: v for k, v in was.items() if k != "sock"}, open(path, "w"))
+        self.mark("nosock"); self.mark("record")
+        with self.assertRaises(L.ModelError) as cm:
+            self.ai.ensure("qwen3.6-35b-a3b", 8192, "off")
+        self.assertIn("zu alt", str(cm.exception)); self.assertIn("aktualisieren", str(cm.exception))
+        self.assertEqual((self.ai.proc, self.ai.state, json.load(open(path))["sock"]), (None, "error", False))
+        self.assertFalse(os.path.exists(os.path.join(self.bin, "started.json")))           # not once
+        self.mark("nosock", False)
+        with self.assertRaises(L.ModelError):                                              # (what was noted stands until llama.cpp is installed anew)
+            self.ai.ensure("qwen3.6-35b-a3b", 8192, "off")
+        self.assertEqual(len(runs), 2)
+        # a temporary folder whose path is too long for a socket file: said so, nothing started, nothing left behind
+        json.dump(was, open(path, "w"))
+        made = []
+        real_tmp = L.own_tmp
+
+        def long_tmp():
+            made.append(os.path.realpath(tempfile.mkdtemp(prefix=L.TMP_PREFIX + "x" * 90)))
+            return made[-1]
+        L.own_tmp = long_tmp
+        try:
+            with self.assertRaises(L.ModelError) as cm:
+                self.ai.ensure("qwen3.6-35b-a3b", 8192, "off")
+        finally:
+            L.own_tmp = real_tmp
+        self.assertIn("zu lang", str(cm.exception)); self.assertEqual((self.ai.proc, self.ai.sock, self.ai.state), (None, "", "error"))
+        self.assertFalse(os.path.exists(made[-1])); self.assertFalse(os.path.exists(os.path.join(self.bin, "started.json")))
+        self.ai.ensure("qwen3.6-35b-a3b", 8192, "off"); self.assertEqual(self.ai.state, "ready")
+
+    def test_wrong_key_gets_nothing(self):
+        self.ai.ensure("qwen3.6-35b-a3b", 8192, "off")
+        c = L._OnFile(self.ai.sock, timeout=5)
         c.request("POST", "/v1/chat/completions", b"{}", {"Content-Type": "application/json", "Authorization": "Bearer nope"})
         self.assertEqual(c.getresponse().status, 401)
+        c.close()
 
     def test_start_fails(self):
         self.mark("refuse")
@@ -1291,19 +1382,30 @@ class Server(_Open):
                     "os.execv(sys.argv[3], sys.argv[3:])\n" % (sys.executable, log))
         os.chmod(sb, 0o755)
         profiles = lambda: [p for p in open(log).read().split("\n----\n") if p]
-        strict = L.sandbox_profile(self.dir, self.dir + "-prog", os.path.join(self.dir, "assistant"))
+        plain = L.sandbox_profile(self.dir, self.dir + "-prog", os.path.join(self.dir, "assistant"))          # (to try a llama.cpp: nothing of any network)
+        socks = []
+        real_tmp = L.own_tmp
+
+        def own_tmp():
+            socks.append(os.path.join(real_tmp(), L.SOCK_NAME))
+            return os.path.dirname(socks[-1])
+        L.own_tmp = own_tmp
+        strict = lambda: L.sandbox_profile(self.dir, self.dir + "-prog", os.path.join(self.dir, "assistant"), sock=socks[-1])     # (a start: its socket file, nothing else)
         orig = (L.SANDBOX, L.LocalAI._can_seal, L.sys.platform, L.REACH_SECONDS)
         L.SANDBOX, L.LocalAI._can_seal = sb, lambda s: True
         try:
             self.ai.ensure("qwen3.6-35b-a3b", 8192)                                    # the default: strict
             self.assertEqual(self.ai.status()["server"]["sealed"], "strict")
-            self.assertEqual(profiles(), [strict])
+            self.assertEqual(profiles(), [strict()]); self.assertEqual(socks[-1], self.ai.sock)
+            self.assertEqual(profiles()[0].count("(allow network"), 2); self.assertIn(json.dumps(self.ai.sock), profiles()[0])
             self.assertEqual(list(self.ai.chat({"messages": [{"role": "user", "content": "x"}], "stream": True}, threading.Event()))[1]["choices"][0]["delta"]["content"], "Antwort: x")
             pid = self.ai.proc.pid
             self.ai.ensure("qwen3.6-35b-a3b", 8192, "strict"); self.assertEqual(self.ai.proc.pid, pid)       # as it runs: no new start
             self.ai.ensure("qwen3.6-35b-a3b", 8192, "basic"); self.assertNotEqual(self.ai.proc.pid, pid)     # another level (set by the user): a new start
             self.assertEqual(self.ai.status()["server"]["sealed"], "basic")
             self.assertNotIn("process-exec", profiles()[-1]); self.assertIn("(deny network*)", profiles()[-1])
+            self.assertEqual([l for l in profiles()[-1].split("\n") if l.startswith("(allow network")],           # the same one file at this level, nothing more
+                             ['(allow network-%s (local unix-socket (path-literal %s)))' % (k, json.dumps(self.ai.sock)) for k in ("bind", "inbound")])
             self.ai.ensure("qwen3.6-35b-a3b", 8192, "off")
             self.assertEqual(self.ai.status()["server"]["sealed"], "")
             self.assertEqual(len(profiles()), 2)                                      # off: not through sandbox-exec
@@ -1314,7 +1416,7 @@ class Server(_Open):
                 open(log, "w").close()
                 with self.assertRaises(L.ModelError) as cm:
                     self.ai.ensure("qwen3.6-35b-a3b", 8192, "strict")
-                self.assertEqual(profiles(), [strict])
+                self.assertEqual(profiles(), [strict()])
                 self.assertIn("Abschirmung", str(cm.exception))
                 self.assertEqual((self.ai.status()["server"]["state"], self.ai.proc), ("error", None))
             os.remove(log + ".fails")
@@ -1325,12 +1427,12 @@ class Server(_Open):
             with self.assertRaises(L.ModelError):
                 self.ai.ensure("qwen3.6-35b-a3b", 8192, "strict")
             self.assertLess(time.time() - t0, 15)
-            self.assertEqual(profiles(), [strict])
+            self.assertEqual(profiles(), [strict()])
             os.remove(log + ".hangs")
             # a new llama.cpp is tried inside the sandbox too (its --version, --help)
             open(log, "w").close()
             self.ai._probe(self.ai.runtime()["path"], "strict")
-            self.assertEqual(profiles(), [strict, strict])
+            self.assertEqual(profiles(), [plain, plain]); self.assertNotIn("(allow network", plain)
             # the sandbox asked for but not there (a Mac without it): no start without it
             L.LocalAI._can_seal = lambda s: False
             L.sys.platform = "darwin"
@@ -1344,6 +1446,7 @@ class Server(_Open):
             self.assertTrue(self.ai._probe(self.ai.runtime()["path"], "off")[1])      # (switched off by you: tried as it is)
         finally:
             L.SANDBOX, L.LocalAI._can_seal, L.sys.platform, L.REACH_SECONDS = orig
+            L.own_tmp = real_tmp
 
 
 class _Assist(T._AppBase):
@@ -2173,7 +2276,7 @@ class Tools(_Assist):
             self.assertTrue(all(x <= 44 + 32000 * A.SPEECH_PART + 32000 for x in sizes), sizes)
             self.assertGreater(sum(sizes), 32000 * 95)                                   # nothing of what was said left out
         self.assertTrue(self.a.ai.proc.poll() is None and self.a.speech.proc.poll() is None and self.a.ai.proc.pid != self.a.speech.proc.pid)
-        self.assertNotEqual((self.a.ai.port, self.a.ai.key), (self.a.speech.port, self.a.speech.key))
+        self.assertNotEqual(self.a.ai.sock, self.a.speech.sock); self.assertNotEqual(self.a.ai.key, self.a.speech.key)
         self.assertEqual(text_of(self.ask("noch da?")), "Antwort: noch da?")
         self.assertTrue(os.path.exists(os.path.join(self.dir, "assistant", "speech.json")) and os.path.exists(os.path.join(self.dir, "assistant", "server.json")))
         # the model that answers cannot take dictation (it has no audio part)

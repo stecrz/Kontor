@@ -45,6 +45,7 @@ Files beside it tell it more (Kontor starts it with an environment of its own, s
                 request to request.json (the last look at what to remember: to notice.json)
   refuse     -> the start fails
   slowstart  -> /health says "loading" for a moment (its text: for that many seconds)
+  nosock     -> an older llama.cpp: its help knows no socket file for --host, and it listens on none
   script.json -> prepared answers (for the help images): [{"q": part of the question, "steps": [{"call": tool, "args": {...}} |
                 {"think": text} | {"say": text}, ...]}] -- one step per round (a step after each tool result); a call or a say
                 may carry its thoughts ("think") with it
@@ -52,6 +53,8 @@ Files beside it tell it more (Kontor starts it with an environment of its own, s
 import json
 import re
 import os
+import socket
+import socketserver
 import sys
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -63,7 +66,11 @@ HELP = """----- common params -----
 -m,    --model FNAME                    model path to load
 --offline                               Offline mode: forces use of cache, prevents network access
 -np,   --parallel N                     number of server slots
---host HOST                             ip address to listen
+--host HOST                             IP addresses to listen on, comma-separated, or UNIX socket paths
+                                        ending in .sock; with multiple TCP addresses, :: binds IPv6 only;
+                                        overlapping addresses result in undefined behavior (default:
+                                        127.0.0.1)
+                                        (env: LLAMA_ARG_HOST)
 --port PORT                             port to listen (default: 9931)
 --ui,  --webui, --no-ui, --no-webui     whether to enable the built-in chat app
 --api-key KEY                           API key to use for authentication
@@ -104,14 +111,19 @@ def arg(name, default=None):
     return sys.argv[sys.argv.index(name) + 1] if name in sys.argv else default
 
 
+# what llama.cpp's help says about --host (b12648, as GitHub's Mac printed it: over several lines)
+SOCK_SAID = HELP.split("--host HOST", 1)[1].split("(env: LLAMA_ARG_HOST)")[0].strip()
+
+
 def main():
     if "--version" in sys.argv:
         print("version: 4711 (fake)\nbuilt for tests", file=sys.stderr)
         return 0
-    if "--help" in sys.argv:
-        print(HELP)
-        return 0
     here = os.path.dirname(os.path.abspath(__file__))
+    old = os.path.exists(os.path.join(here, "nosock"))
+    if "--help" in sys.argv:
+        print(HELP.replace(SOCK_SAID, "ip address to listen (default: 127.0.0.1)") if old else HELP)
+        return 0
     note = os.path.join(here, "started.json")
     if os.path.exists(os.path.join(here, "record")):       # the tests ask for a record of how it was started
         with open(note, "w") as f:
@@ -421,7 +433,17 @@ def main():
             except (BrokenPipeError, ConnectionResetError):
                 pass
 
-    srv = ThreadingHTTPServer((arg("--host", "127.0.0.1"), int(arg("--port", "9931"))), H)
+    host = arg("--host", "127.0.0.1")
+    if host.endswith(".sock") and not old:                 # as llama.cpp's server: a socket file instead of an address (the port is ignored)
+        class OnFile(ThreadingHTTPServer):
+            address_family = socket.AF_UNIX
+
+            def server_bind(self):                         # (HTTPServer's own asks for the name of the host, which a file has not)
+                socketserver.TCPServer.server_bind(self)
+                self.server_name, self.server_port = "localhost", 0
+        srv = OnFile(host, H)
+    else:
+        srv = ThreadingHTTPServer((host, int(arg("--port", "9931"))), H)
     srv.daemon_threads = True
     try:
         srv.serve_forever()

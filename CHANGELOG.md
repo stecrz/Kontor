@@ -1,5 +1,11 @@
 # Änderungen
 
+## 3.17.33 (2026-11-23 22:48)
+- KI-Assistent: Abschirmung ohne jedes Netz – das Modell lauscht auf keiner Adresse mehr, auch nicht innerhalb des Macs (eine Datei im eigenen Ordner statt 127.0.0.1)
+- KI-Assistent: gilt auch für Diktieren und die Suche nach Bedeutung; ein llama.cpp, das das nicht kann, wird nicht installiert und nicht gestartet
+- KI-Assistent: Tooltip und Hilfe-Abschnitt „Abschirmung“ – was sie verhindert und was nicht
+- Entwicklung: macOS-Lauf prüft die Abschirmung der Modelle (Regeln fest, echtes llama.cpp als Bericht); Fahrplan: Modelldienst auf einem zweiten Rechner unter „Offen“
+
 ## 3.17.32 (2026-11-23 22:30)
 - Einstellungen: speichern sich bei jeder Änderung selbst – kein „Einstellungen speichern“ mehr (MoneyMoney-Sync, Zugang, Belege, Updates, Steuer)
 
