@@ -96,9 +96,11 @@ categories are never changed; Kontor creates none.
 A folded card (also during setup); its title shows "X von Y vorhanden" (Y: the recommended rows plus those "bei Bedarf" that are present). The
 recommended category tree for MoneyMoney – one category per position –, grouped like the position menu (Einnahmen, Ausgaben,
 Investitionen, Finanzierung, Sonstiges, "Je Immobilie"), each group with one line on how it is best set up.
-Rows follow the kinds of the user's areas: private ones (Gehalt, Lebenshaltung, Gesundheit …), companies' (Umsatzerlöse,
-Wareneinkauf, Personal, Betriebskosten, Umsatzsteuer, Gesellschafter › Einlagen · Ausschüttungen); with both kinds such rows carry
-a tag "privat" or "Firma", and a name that differs is shown as both ("Wohnen / Raumkosten", "Sparen & Anlegen / Investitionen").
+A first line gives the rule: one tree for every kind of area (private, sole trader, GbR, GmbH …) – the account decides the
+area, the category only the purpose; a name meaning different things by side (receiving or paying a salary) needs two. All rows
+always show, without tags; rows of a kind the user has no area of (Gehalt, Lebenshaltung … for companies only; Umsatzerlöse,
+Wareneinkauf, Personal, Betriebskosten, Umsatzsteuer, Gesellschafter for private only) are "bei Bedarf". A name that differs by
+kind is shown as both ("Wohnen / Raumkosten", "Sparen & Anlegen / Investitionen").
 "Je Immobilie" always (every rented property, private or a company's, by its own linked category; "bei Bedarf" until one is linked). Investitionen and Finanzierung: best every investment and every loan
 as an account in MoneyMoney; then Kontor splits by the account's kind (and shows payout, repayment and interest per loan) with no
 category – their rows are "bei Bedarf". Column **Empfohlen in MoneyMoney**: the category to create, its subcategories after "›".

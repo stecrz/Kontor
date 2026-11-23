@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.17.41 (2026-11-24 00:45)
+- Cashflow-Positionen: Kategorien-Karte als ein Baum für alle Bereiche, Grundregel als erste Zeile, keine Marken „privat“/„Firma“ mehr; Unpassendes „bei Bedarf“.
+
 ## 3.17.40 (2026-11-24 00:26)
 - KI-Assistent: Bilder (hochgeladen oder eingefügt) gehen als Ganzes an das Modell – für Aufbau, Stempel, Grafik; Zahlen weiter nur aus der Texterkennung
 - KI-Assistent: Bildteil des Modells (etwa 1 GB) kommt mit dem Modell; bei geladenen Modellen per Aktualisieren, ohne das Modell neu zu laden

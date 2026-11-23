@@ -5821,7 +5821,7 @@ async function vPositionen() {
   return h + '</tbody></table></div>' + vAnlageEmpfaenger() + '</div>';
 }
 // what Kontor needs from your categories in MoneyMoney: the recommended tree -- one category per position, grouped like the
-// positions' menu, each group with how it is best set up; rows for the kinds of areas you have (yours, a company's); per row
+// positions' menu, each group with how it is best set up; one tree for all areas (rows of kinds you lack: if needed); per row
 // whether one of yours counts there (and which) -- updated as you change a position below
 // [key (texts kb_<key>, kb_<key>_sub, kb_<key>_tip; a company's: kb_<key>_g …), group, positions, only if needed, for ('p' yours,
 // 'f' a company's, '' both)]; a rented property: always by its own category (Je Immobilie) -- only if needed until one is linked
@@ -5848,13 +5848,13 @@ function kbRefresh(eff) {
     if (k) { if (!at.has(k)) at.set(k, []); at.get(k).push(r.path); } }
   const props = ((S.CFG || {}).real_estate || []).length > 0 || eff.some(r => r.obj);
   const hasF = KB_KINDS.includes('company'), hasP = !hasF || KB_KINDS.includes('private');
-  // a text in the kinds of areas you have: yours, a company's, or both (" / ") where they differ
+  // one tree for every kind of area (private, sole trader, GbR, GmbH …): a name that differs by kind shows both (" / "); a tip
+  // in the kinds you have. Rows of a kind you do not have stay visible as "bei Bedarf" -- no tags, the account decides the area
   const kt = key => { const p = I18N[key] ? t(key) : '', f = I18N[key + '_g'] ? t(key + '_g') : p;
-    return hasP && hasF && p !== f ? (key.endsWith('_tip') ? `${p} ${t('kb_firma')}: ${f}` : [p, f].filter(Boolean).join(' / ')) : hasF ? f : p; };
+    return key.endsWith('_tip') ? (hasP && hasF && p !== f ? `${p} ${f}` : hasF ? f : p) : p !== f ? [p, f].filter(Boolean).join(' / ') : p; };
   let ok = 0, all = 0, grp = '', rows = '';
   for (const [k, g, ps, o, only] of KB_TREE) {
-    const opt = o || (g === 'kb_g_property' && !props);
-    if ((only === 'p' && !hasP) || (only === 'f' && !hasF)) continue;
+    const opt = o || (g === 'kb_g_property' && !props) || (only === 'p' && !hasP) || (only === 'f' && !hasF);
     const mine = ps.flatMap(p => at.get(p) || []), have = mine.length > 0, miss = ps.filter(p => !(at.get(p) || []).length);
     if (have) ok++;
     if (have || !opt) all++;
@@ -5863,12 +5863,11 @@ function kbRefresh(eff) {
     const names = mine.slice(0, 2).map(CP).join(', ') + (mine.length > 2 ? ' ' + t('kb_und_n', mine.length - 2) : '');
     const part = have && miss.length && ps.length > 1 ? ` · <span class="kb-miss">${esc(t('kb_fehlt_noch', miss.map(p => posLabel(p)).join(', ')))}</span>` : '';
     const sub = kt(`kb_${k}_sub`), tip = kt(`kb_${KB_SAME_TIP.includes(k) ? 'more' : k}_tip`) + (have ? '' : ' ' + t('kb_anlegen'));
-    const tag = hasP && hasF && only ? ` <span class="tag">${t(only === 'f' ? 'kb_firma' : 'kb_privat')}</span>` : '';
     rows += `<tr class="${have ? 'kb-ok' : opt ? 'kb-opt' : ''}"><td class="kb-mark">${have ? '✓' : '○'}</td>`
-      + `<td>${esc(kt(`kb_${k}`))}${sub ? ` <span class="muted">› ${esc(sub)}</span>` : ''}${tag}<span class="hq" tabindex="0" data-tip="${esc(tip)}">?</span></td>`
+      + `<td>${esc(kt(`kb_${k}`))}${sub ? ` <span class="muted">› ${esc(sub)}</span>` : ''}<span class="hq" tabindex="0" data-tip="${esc(tip)}">?</span></td>`
       + `<td>${have ? esc(names) + part : esc(t(opt ? 'kb_bei_bedarf' : 'kb_fehlt'))}</td></tr>`;
   }
-  body.innerHTML = `<table class="plain kb-table"><thead><tr><th></th><th>${t('kb_empfohlen')}</th><th>${t('kb_bei_dir')}</th></tr></thead><tbody>${rows}</tbody></table>`;
+  body.innerHTML = `<p class="small kb-rule">${esc(t('kb_regel'))}</p><table class="plain kb-table"><thead><tr><th></th><th>${t('kb_empfohlen')}</th><th>${t('kb_bei_dir')}</th></tr></thead><tbody>${rows}</tbody></table>`;
   const sum = $('#kb-sum'); if (sum) sum.textContent = t('kb_n_von', ok, all);
 }
 // the target account a saving category gets by itself (from the recipients in the cash flow): not needed (transfers to your

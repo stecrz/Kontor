@@ -4816,6 +4816,7 @@ class BrowserTest(unittest.TestCase):
                 pg.evaluate("document.querySelector('details.kb').open = true")
                 n0 = pg.inner_text("#kb-sum"); self.assertRegex(n0, r"^\d+ von \d+ vorhanden$")
                 kb = pg.inner_text(".kb-table"); self.assertIn("Finanzierung", kb); self.assertIn("Am besten jedes Darlehen", kb); self.assertIn("Empfohlen in MoneyMoney", kb); self.assertIn("Umsatzerlöse", kb); self.assertIn("Gesellschafter", kb)   # rows of the companies too
+                self.assertIn("erkennt Kontor am Konto", pg.inner_text("#kb-body")); self.assertEqual(pg.locator(".kb-table .tag").count(), 0)   # the rule; one tree, no tags
                 pg.select_option('.kp-table tr[data-p="Umbuchung"] .kp-pos', "living"); pg.wait_for_timeout(100)
                 self.assertNotEqual(pg.inner_text("#kb-sum"), n0); self.assertIn("fehlt", pg.inner_text(".kb-table"))
                 pg.select_option('.kp-table tr[data-p="Umbuchung"] .kp-pos', ""); pg.wait_for_timeout(100); self.assertEqual(pg.inner_text("#kb-sum"), n0)
