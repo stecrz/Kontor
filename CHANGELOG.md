@@ -1,5 +1,9 @@
 # Änderungen
 
+## 3.17.16 (2026-11-23 15:50)
+- Cashflow: Zahlung in einen anderen Bereich nimmt keine von Hand gebuchte Gegenbuchung mehr, die genauso gut zu einer anderen Zahlung ohne IBAN passt – Einlage und Entnahme stimmen auf beiden Seiten überein
+- Entwicklung: Zufallsfall der Nacht (754384078) behoben und fest aufgenommen
+
 ## 3.17.15 (2026-11-23 15:49)
 - KI-Assistent: fragt auf Wunsch Claude (Anthropic) – Stufe 4 der Internetsuche, ein stärkeres Modell, das selbst im Web sucht; nur mit eigenem API-Schlüssel
 - KI-Assistent: jede Frage an Claude vorher im ganzen Wortlaut auf der Karte, nie ohne Klick – auch im erlaubten Chat; auf eigene Daten geprüft

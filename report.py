@@ -1337,6 +1337,13 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
         if claimable(o) and mate.get(o.id) is None:
             pool[cents_(o.amount)].append(o)
     claims_by: List[Tuple[Tx, List[Tx], List[Tx]]] = []
+    rivals: Dict[int, List[Tx]] = defaultdict(list)      # amount in cents -> payments that pair by amount alone (no IBAN of yours)
+    for amount_, lst in by_amount.items():
+        for r in lst:
+            m_ = mate.get(r.id)
+            if (by_cat[r.id] or pairable(r)) and (m_ is None or (m_.account_uuid != r.account_uuid and roles.get(m_.account_uuid) != "cash"
+                                                                  and m_.account_uuid in ledger.accounts and ledger.accounts[m_.account_uuid].offline)):
+                rivals[amount_].append(r)
     for t in in_root:
         p_t = partner.get(t.id)
         if roles.get(t.account_uuid) != "cash" or mate.get(t.id) is not None or p_t is None:
@@ -1346,8 +1353,16 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
                 or paid_for_something(t):
             continue                                     # paid for something, or into another currency: no contribution
         c = [o for o in pool.get(-cents_(t.amount), []) if abs((o.booking_date - t.booking_date).days) <= COUNTER_DAYS]
+        lk = [o for o in c if tied(o, name)]
+        # a booking not tied to that area which a payment without an IBAN could just as well belong to (the opposite amount, as
+        # near or nearer, within PAIR_DAYS -- unpaired, or paired by amount alone with another booking by hand: among many of
+        # one amount the pairs may have shifted by one) is not this payment's: it stays as it was, the payment a plain
+        # contribution -- on both sides (found by a night's random case: 3.17.16)
+        c = [o for o in c if o in lk or not any(
+            abs((r.booking_date - o.booking_date).days) <= min(PAIR_DAYS, abs((o.booking_date - t.booking_date).days))
+            for r in rivals.get(cents_(t.amount), ()))]
         if c:
-            claims_by.append((t, [o for o in c if tied(o, name)], c))
+            claims_by.append((t, lk, c))
     # in steps by distance (the same day, up to PAIR_DAYS, up to COUNTER_DAYS), each with the tied accounts first, and within a
     # step day by day: what is clear in an earlier step is out of the later ones -- of two payments the nearer one takes the
     # booking, but a tied account a day further beats one that is not (a contribution every week stays linked; a mirrored

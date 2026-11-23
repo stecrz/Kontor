@@ -19,7 +19,8 @@ U: Dict[str, str] = {}
 # random cases a night found (KONTOR_FUZZ_RANDOM) -- once fixed, their number goes here, so every run checks them from then on
 FOUND: List[int] = [377654401, 357881360,     # 3.16.58: two payments of one amount, one took the other's only counterpart
                      763175317,                   # 3.16.62: a moved mirrored booking, its original entered again -- mirrored twice
-                     224088165]                   # 3.16.100: two PayPal transfers of one amount a week apart (the worlds no longer build that)
+                     224088165,                   # 3.16.100: two PayPal transfers of one amount a week apart (the worlds no longer build that)
+                     754384078]                   # 3.17.16: many of one amount -- a payment to another area took a booking by hand a payment without IBAN could as well belong to
 
 
 def fuzz_seeds(name: str = "") -> Iterator[int]:

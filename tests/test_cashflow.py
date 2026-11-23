@@ -1598,6 +1598,25 @@ class CashflowFuzz(Reconciles, PlanAddsUp):
         else:
             add("kk", d, amt * 2, cat="Miete")
 
+    def test_a_booking_by_hand_that_could_be_another_payments_is_not_a_contributions(self):
+        """Found by a night's random case (seed 754384078, a month with hundreds of bookings of one amount): payments to a
+        friend, each booked by hand days later, are paired by amount -- and a booking by hand is left over. A payment of the
+        same amount to another area on that day does not take it (it is not tied to that area, and a payment without an IBAN
+        is as near): what one area pays in, the other receives. Without such a rival it is claimed as before."""
+        cfg = {"companies": [{"area": "Muster GbR", "participation": "Beteiligung an Muster GbR"}]}
+        friend = [(2, "kredit", date(2026, 3, 30), 80.0, {"name": "Freund"}),
+                  (3, "giro", date(2026, 3, 29), -80.0, {"name": "Freund"}), (4, "ford", date(2026, 3, 31), 80.0, {"name": "Freund"})]
+        child = [(7, "giro", date(2026, 3, 29), -80.0, {"iban": "DE31", "cat": "Umbuchung"}), (8, "kind", date(2026, 3, 29), 80.0, {"iban": "DE11", "cat": "Umbuchung"})]
+        data = build(friend + child, cfg)
+        p, k = rows(data["Privat"]), rows(data["Kinder"])
+        self.assertEqual(round(sum(p["Einlage/Entnahme Kinder"]["amounts"].values()), 2), -80.0)
+        self.assertEqual(round(sum(k["Einlage/Entnahme Privat"]["amounts"].values()), 2), 80.0)
+        self.assertFalse([r for r in p if "Kinder" in r and r != "Einlage/Entnahme Kinder"], sorted(p))
+        self.assertAddsUp(data)
+        alone = [(4, "ford", date(2026, 3, 31), 80.0, {"name": "Freund"})] + child      # nothing else it could belong to: the payment went into it
+        p = rows(build(alone, cfg)["Privat"])
+        self.assertEqual([r for r in p if "Kinder" in r], ["Einlage/Entnahme Kinder / Darlehen an Freund"])
+
     def test_random_months_add_up(self):
         cfg = {"companies": [{"area": "Muster GbR", "participation": "Beteiligung an Muster GbR"}],
                "cashflow": {"positions": {"Privatentnahme": "ignore"}}}
