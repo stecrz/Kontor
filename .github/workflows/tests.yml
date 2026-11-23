@@ -175,7 +175,7 @@ jobs:
         timeout-minutes: 10
         env:
           GH_TOKEN: ${{ github.token }}   # GitHub answers a runner without a name only now and then (asked for the newest llama.cpp)
-        run: python3 tests/mac_sandbox_probe.py
+        run: python3 -u tests/mac_sandbox_probe.py
       - name: Swift helpers
         run: |
           swiftc -O -o "$RUNNER_TEMP/touchid" touchid.swift

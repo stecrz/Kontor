@@ -753,7 +753,8 @@ class Models(_Open):
         where only the small ones run; what does not fit says what it needs; a model larger than the memory is not started
         at all."""
         GB = 2 ** 30
-        want = {8: "", 16: "", 18: "", 24: "", 32: "qwen3.8-27b", 36: "qwen3.8-27b", 48: "qwen3.8-27b", 64: "qwen3.8-27b-q6", 128: "qwen3.8-27b-q6"}
+        want = {8: "", 16: "", 18: "", 24: "", 32: "qwen3.8-27b", 36: "qwen3.8-27b", 48: "qwen3.8-27b", 64: "qwen3.8-27b-q6", 128: "qwen3.8-27b-q6",
+                256: "qwen3.8-27b-q6", 512: "qwen3.8-27b-q6"}                                 # (the large ones are shown, never suggested)
         for ram, model in want.items():
             self.assertEqual(L.recommended(ram * GB), model, ram)
             self.assertEqual(L.recommended(int(ram * GB * 0.99)), model, ram)        # (a Mac names a little less than the round number)
@@ -774,11 +775,15 @@ class Models(_Open):
         self.assertEqual({c["id"] for c in L.CATALOG if c["kind"] == "thorough"}, {"qwen3.8-27b-q6", "qwen3.8-27b"})      # only these are ever suggested
         fits = lambda ram: {c["id"]: L.fit(c["gb"], c["ram"], ram * GB) for c in L.CATALOG}
         self.assertEqual(fits(16), {"qwen3.8-27b-q6": "big", "qwen3.8-27b": "big", "qwen3.6-35b-a3b": "big", "qwen3.6-35b-a3b-compact": "big",
-                                    "gemma-4-26b-a4b": "big", "gemma-4-12b": "tight", "qwen3.5-9b": "good", "qwen3.5-4b": "good"})
-        self.assertEqual({k for k, v in fits(32).items() if v != "good"}, {"qwen3.8-27b-q6", "qwen3.6-35b-a3b"})
+                                    "gemma-4-26b-a4b": "big", "gemma-4-12b": "tight", "qwen3.5-9b": "good", "qwen3.5-4b": "good", "qwen3.8-flash-next": "big"})
+        self.assertEqual({k for k, v in fits(32).items() if v != "good"}, {"qwen3.8-27b-q6", "qwen3.6-35b-a3b", "qwen3.8-flash-next"})
         self.assertEqual((fits(32)["qwen3.8-27b-q6"], fits(32)["qwen3.6-35b-a3b"]), ("tight", "tight"))
         self.assertEqual(fits(48)["qwen3.8-27b-q6"], "tight")                         # (suggested only where it leaves room: from 64 GB)
-        self.assertEqual(set(fits(64).values()), {"good"})
+        self.assertEqual({k for k, v in fits(64).items() if v != "good"}, {"qwen3.8-flash-next"})
+        # for a machine with far more memory: named with what it needs, loaded where it fits
+        self.assertEqual([c["id"] for c in L.CATALOG if c["kind"] == "large"], ["qwen3.8-flash-next"])
+        self.assertEqual([fits(ram)["qwen3.8-flash-next"] for ram in (64, 96, 128, 192, 256)], ["big", "big", "tight", "good", "good"])
+        self.assertEqual(L.least_ram(L.CATALOG[-1]["gb"]), 128)
         # what a model too big for a Mac needs: the smallest memory Macs are sold with on which it runs at all
         self.assertEqual([L.least_ram(gb) for gb in (3, 8, 17, 22, 46, 94, 162, 400)], [8, 16, 32, 32, 64, 128, 256, 0])
         for c in L.CATALOG:
@@ -831,6 +836,310 @@ class Models(_Open):
             L.shutil.disk_usage = orig
         self.assertEqual(j["state"], "error")
         self.assertEqual([u for u, _ in self.net.calls if "resolve" in u], [])
+
+
+FLASH = "unsloth/Qwen3.8-Flash-Next-GGUF"
+
+
+class Several(_Open):
+    """A model in several files (large ones: "...-00001-of-00003.gguf", a folder for each variant): one model in the list of a
+    repository; every file loaded and checked by its SHA-256, in place only when all of them are right; one progress; room
+    asked for all of it first; a try that stopped goes on; a newer file replaces only what changed; deleted with all its
+    files; started with the first."""
+
+    def setUp(self):
+        super().setUp()
+        self.dir = tempfile.mkdtemp(prefix="kontor-ai-")
+        self.ai = L.LocalAI(os.path.join(self.dir, "assistant"), self.dir, self.dir + "-prog")
+        self.net = Net()
+        L._open = self.net.open
+        self.parts = [b"GGUF-1" + bytes(range(256)) * 9, b"GGUF-2" + bytes(range(200)) * 30, b"GGUF-3" + bytes(range(100)) * 3]
+        self.names = ["Qwen3.8-Flash-Next-UD-IQ4_XS-%05d-of-00003.gguf" % i for i in (1, 2, 3)]
+        self.lfs = lambda data: {"oid": hashlib.sha256(data).hexdigest(), "size": len(data)}
+        file = lambda path, data: {"type": "file", "path": path, "size": len(data), "lfs": self.lfs(data)}
+        self.net.trees[FLASH] = [
+            {"type": "file", "path": "README.md", "size": 10}, {"type": "directory", "path": "UD-IQ4_XS", "size": 0},
+            file("imatrix_unsloth.gguf", b"imatrix"), file("dspark-Qwen3.8-Flash-Next-Q8_0.gguf", b"drafter"), file("mmproj-F16.gguf", b"eyes"),
+            file("MTP/mtp-Qwen3.8-Flash-Next-shared-Q8_0.gguf", b"mtp"), file("engram/Qwen3.8-Flash-Next-engram-Q8_0.gguf_file", b"table"),
+            file("deep/er/Qwen3.8-Flash-Next-Q8_0.gguf", b"too deep"), file("UD-Q2_K_XL/Qwen3.8-Flash-Next-UD-Q2_K_XL-00001-of-00002.gguf", b"half"),
+            file("UD-Q3_K_XL/Qwen3.8-Flash-Next-UD-Q3_K_XL-00002-of-00002.gguf", b"q3-2"), file("UD-Q3_K_XL/Qwen3.8-Flash-Next-UD-Q3_K_XL-00001-of-00002.gguf", b"q3-1"),
+        ] + [file("UD-IQ4_XS/" + n, d) for n, d in zip(self.names, self.parts)]
+        for n, d in zip(self.names, self.parts):
+            self.net.files[self.url(n)] = d
+        self.place = lambda n: self.ai.model_path(FLASH, n)
+
+    def tearDown(self):
+        self.ai.stop()
+        super().tearDown()
+        shutil.rmtree(self.dir, ignore_errors=True)
+
+    def url(self, name):
+        return "https://huggingface.co/%s/resolve/main/UD-IQ4_XS/%s" % (FLASH, name)
+
+    def fetched(self):
+        return [u.split("?")[0].rsplit("/", 1)[-1] for u, _ in self.net.calls if "/resolve/" in u]
+
+    def load(self, state="done"):
+        self.net.calls.clear()
+        self.ai.download_model("qwen3.8-flash-next")
+        self.assertEqual(wait_job(self.ai, 30)["state"], state, self.ai.job)
+        return self.ai.job_view()
+
+    def test_one_model_in_the_list(self):
+        files = self.ai.repo_files(FLASH)
+        whole = hashlib.sha256("\n".join(hashlib.sha256(d).hexdigest() for d in self.parts).encode()).hexdigest()
+        self.assertEqual([(f["file"], f["size"], len(f.get("parts") or [])) for f in files],        # no drafter, no measurements, no projector, nothing deeper, no half model
+                         [("Qwen3.8-Flash-Next-UD-Q3_K_XL-00001-of-00002.gguf", 8, 2), (self.names[0], sum(map(len, self.parts)), 3)])
+        f = files[1]
+        self.assertEqual((f["sha256"], [x["file"] for x in f["parts"]], [x["path"] for x in f["parts"]]), (whole, self.names, ["UD-IQ4_XS/" + n for n in self.names]))
+        self.assertEqual(self.net.calls[0][0], "https://huggingface.co/api/models/%s/tree/main?recursive=true" % FLASH)       # the folders with it, in one question
+        self.assertEqual(L.resolve_pick(files, ["UD-IQ4_XS", "UD-Q3_K_XL"])["file"], self.names[0])
+        self.assertEqual(L.resolve_pick(files, ["UD-Q4_K_XL", "UD-Q3_K_XL"])["file"], "Qwen3.8-Flash-Next-UD-Q3_K_XL-00001-of-00002.gguf")
+        self.assertIsNone(L.resolve_pick(files, "UD-Q2_K_XL"))
+        self.assertEqual((L.plain_name(self.names[1]), L.plain_name("x-Q4.gguf")), ("Qwen3.8-Flash-Next-UD-IQ4_XS.gguf", "x-Q4.gguf"))
+        # numbers that are none, a count out of reach, a file twice: no model
+        mk = lambda name: {"file": name, "path": name, "size": 1, "sha256": "a" * 64}
+        self.assertEqual(L.whole([mk("x-00000-of-00002.gguf"), mk("x-00002-of-00002.gguf"), mk("y-00003-of-00002.gguf"), mk("z-00001-of-00100.gguf")]), [])
+        self.assertEqual([f["file"] for f in L.whole([mk("x-00001-of-00001.gguf"), mk("y.gguf")])], ["y.gguf", "x-00001-of-00001.gguf"])
+        one = dict(mk("w-00002-of-00002.gguf"), sha256="")                               # one file without a SHA-256: the model has none
+        self.assertEqual(L.whole([mk("w-00001-of-00002.gguf"), one])[0]["sha256"], "")
+        self.assertEqual(self.ai.repo_files(FLASH, projectors=True)[0]["file"], "mmproj-F16.gguf")
+        # the projectors and the plain models of a repository: as before
+        self.assertEqual([f["file"] for f in self.ai.repo_files("unsloth/Qwen3.6-35B-A3B-GGUF")], ["Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf", QWEN])
+
+    def test_every_file_checked_then_all_in_place(self):
+        seen = []
+        real = self.ai._fetch
+
+        def fetch(url, kind, dest, total, sha256, job):
+            seen.append((os.path.basename(dest), sorted(os.listdir(os.path.dirname(dest))) if os.path.isdir(os.path.dirname(dest)) else [], self.ai.job_view()["done"]))
+            return real(url, kind, dest, total, sha256, job)
+        self.ai._fetch = fetch
+        v = self.load()
+        total = sum(map(len, self.parts))
+        self.assertEqual((v["done"], v["total"]), (total, total))                        # one progress over all of them
+        self.assertEqual(self.fetched(), self.names)
+        self.assertEqual([x[0] for x in seen], [n + ".new" for n in self.names])         # each beside its place until all are right ...
+        self.assertEqual(seen[2][1], [self.names[0] + ".new", self.names[1] + ".new"])   # ... nothing in place before
+        self.assertEqual([x[2] for x in seen], [0, len(self.parts[0]), len(self.parts[0]) + len(self.parts[1])])
+        m = self.ai.models()["qwen3.8-flash-next"]
+        self.assertEqual((m["file"], m["size"], m["path"], [x["file"] for x in m["parts"]]), (self.names[0], total, self.place(self.names[0]), self.names))
+        self.assertEqual(m["sha256"], hashlib.sha256("\n".join(hashlib.sha256(d).hexdigest() for d in self.parts).encode()).hexdigest())
+        self.assertEqual(sorted(os.listdir(os.path.dirname(m["path"]))), self.names)     # nothing left beside them
+        for n, d in zip(self.names, self.parts):
+            with open(self.place(n), "rb") as f:
+                self.assertEqual(f.read(), d)
+        self.assertEqual(self.ai.begun(), {})
+        st = next(x for x in self.ai.status()["models"] if x["id"] == "qwen3.8-flash-next")
+        self.assertEqual((st["installed"], st["size"], st["file"], st["partial"], st["kind"], st["licence"]), (True, total, self.names[0], 0, "large", "Qwen Community 1.0"))
+        self.assertFalse(self.ai.check()["models"]["qwen3.8-flash-next"]["newer"])
+        # started with its first file (llama.cpp finds the others beside it)
+        self.ai._fetch = real
+        self.ai.install_runtime(); self.assertEqual(wait_job(self.ai)["state"], "done", self.ai.job)
+        open(os.path.join(os.path.dirname(self.ai.runtime()["path"]), "record"), "w").close()
+        self.ai.ensure("qwen3.8-flash-next", 8192, "off")
+        with open(os.path.join(os.path.dirname(self.ai.runtime()["path"]), "started.json")) as f:
+            argv = json.load(f)["argv"]
+        self.assertEqual(argv[argv.index("--model") + 1], self.place(self.names[0]))
+        self.ai.stop()
+        # a file of it gone: no model any more (never started with a part missing)
+        os.remove(self.place(self.names[1]))
+        self.assertEqual(self.ai.models(), {})
+        with self.assertRaises(L.ModelError):
+            self.ai.ensure("qwen3.8-flash-next", 8192, "off")
+        # by repository and file (a model of your own): named by its first file
+        self.ai.download_model("", FLASH, self.names[0]); self.assertEqual(wait_job(self.ai)["state"], "done", self.ai.job)
+        own = self.ai.models()[FLASH + "/" + self.names[0]]
+        self.assertEqual((own["name"], len(own["parts"])), ("Qwen3.8-Flash-Next-UD-IQ4_XS", 3))
+        with self.assertRaises(ValueError):
+            self.ai.download_model("", FLASH, "UD-IQ4_XS/" + self.names[0])               # (a name, never a path)
+
+    def test_room_for_all_of_it_and_every_checksum_first(self):
+        orig = L.shutil.disk_usage
+        L.shutil.disk_usage = lambda p: type("U", (), {"free": (1 << 30) + sum(map(len, self.parts)) - 1})()
+        try:
+            v = self.load("error")
+        finally:
+            L.shutil.disk_usage = orig
+        self.assertIn("Speicherplatz", v["text"]); self.assertEqual(self.fetched(), [])   # not one byte loaded
+        tree = self.net.trees[FLASH]
+        at = next(i for i, f in enumerate(tree) if f["path"].endswith(self.names[2]))
+        tree[at] = dict(tree[at], lfs={"oid": "", "size": len(self.parts[2])})
+        v = self.load("error")
+        self.assertIn("Prüfsumme", v["text"]); self.assertEqual(self.fetched(), [])
+        self.assertEqual(self.ai.models(), {}); self.assertEqual(self.ai.begun(), {})
+
+    def test_a_wrong_file_then_going_on(self):
+        self.net.files[self.url(self.names[1])] = b"X" * len(self.parts[1])
+        v = self.load("error")
+        self.assertIn("Prüfsumme", v["text"])
+        self.assertEqual(self.ai.models(), {})                                           # nothing of it counts as a model
+        folder = os.path.dirname(self.place(self.names[0]))
+        self.assertEqual(sorted(os.listdir(folder)), [self.names[0] + ".new"])           # what was right stays for the next try, the wrong file is gone
+        left = self.ai.begun()["qwen3.8-flash-next"]
+        self.assertEqual((left["bytes"], left["files"], left["size"]), (len(self.parts[0]), self.names, sum(map(len, self.parts))))
+        row = next(x for x in self.ai.status()["models"] if x["id"] == "qwen3.8-flash-next")
+        self.assertEqual((row["installed"], row["partial"]), (False, len(self.parts[0])))
+        self.net.files[self.url(self.names[1])] = self.parts[1]
+        v = self.load()
+        self.assertEqual(self.fetched(), self.names[1:])                                 # the first one is here and right: read, not loaded again
+        self.assertEqual((v["done"], v["total"]), (sum(map(len, self.parts)),) * 2)
+        self.assertEqual(sorted(os.listdir(folder)), self.names)
+        # a staged file that is not what was announced (changed on the disk meanwhile): not trusted, loaded again
+        self.ai.delete_model("qwen3.8-flash-next"); self.assertFalse(os.path.exists(folder))
+        os.makedirs(folder)
+        with open(self.place(self.names[0]) + ".new", "wb") as f:
+            f.write(b"Y" * len(self.parts[0]))
+        self.load()
+        self.assertEqual(self.fetched(), self.names)
+        with open(self.place(self.names[0]), "rb") as f:
+            self.assertEqual(f.read(), self.parts[0])
+
+    def test_cancelled_goes_on_or_is_discarded(self):
+        real, hold, reads = self.net.open, threading.Event(), [0]
+
+        def slow(url, kind, headers=None, timeout=30):
+            r = real(url, kind, headers, timeout)
+            if url.split("?")[0].endswith(self.names[1]):
+                inner = r.read
+
+                def read(n=-1):
+                    reads[0] += 1
+                    if reads[0] > 10:
+                        hold.wait(10)                    # stuck in the middle of the second file
+                    return inner(64)
+                r.read = read
+            return r
+        L._open = slow
+        self.ai.download_model("qwen3.8-flash-next")
+        t0 = time.time()
+        while reads[0] <= 10 and time.time() - t0 < 10:
+            time.sleep(0.01)
+        v = self.ai.job_view()
+        self.assertEqual((v["state"], v["total"]), ("running", sum(map(len, self.parts))))
+        self.assertTrue(len(self.parts[0]) + 64 <= v["done"] < len(self.parts[0]) + len(self.parts[1]), v)      # the first file and a piece of the second
+        with self.assertRaises(ValueError):
+            self.ai.download_model("qwen3.6-35b-a3b")                                    # one at a time
+        self.ai.cancel_job(); hold.set()
+        self.assertEqual(wait_job(self.ai)["state"], "cancelled")
+        L._open = real
+        folder = os.path.dirname(self.place(self.names[0]))
+        self.assertEqual(sorted(os.listdir(folder)), [self.names[0] + ".new", self.names[1] + ".new.part"])
+        have = os.path.getsize(self.place(self.names[1]) + ".new.part")
+        self.assertEqual(self.ai.begun()["qwen3.8-flash-next"]["bytes"], len(self.parts[0]) + have)
+        self.assertEqual(self.ai.models(), {})
+        self.load()                                                                       # goes on where it stopped
+        self.assertEqual(self.fetched(), self.names[1:])
+        self.assertEqual(self.net.calls[1][1].get("Range"), "bytes=%d-" % have)
+        self.assertEqual(sorted(os.listdir(folder)), self.names); self.assertEqual(self.ai.begun(), {})
+        # ... or what a try left behind is removed, without the model ever having arrived
+        self.ai.delete_model("qwen3.8-flash-next"); self.assertFalse(os.path.exists(folder))
+        self.net.files[self.url(self.names[2])] = b"Z"
+        self.load("error")
+        self.assertEqual(sorted(os.listdir(folder)), [self.names[0] + ".new", self.names[1] + ".new"])
+        self.assertTrue(self.ai.begun())
+        self.ai.delete_model("qwen3.8-flash-next")
+        self.assertFalse(os.path.exists(folder)); self.assertEqual(self.ai.begun(), {}); self.assertEqual(self.ai.models(), {})
+        self.assertEqual(self.ai._load("models.json").get("begun"), {})
+
+    def test_a_newer_file_replaces_only_what_changed(self):
+        self.load()
+        old = self.ai.models()["qwen3.8-flash-next"]["sha256"]
+        new = self.parts[2] + b"v2"
+        tree = self.net.trees[FLASH]
+        at = next(i for i, f in enumerate(tree) if f["path"].endswith(self.names[2]))
+        tree[at] = dict(tree[at], size=len(new), lfs=self.lfs(new))
+        self.assertTrue(self.ai.check()["models"]["qwen3.8-flash-next"]["newer"])
+        self.net.files[self.url(self.names[2])] = b"W" * len(new)                         # the update fails on the way: the model stays as it was
+        self.load("error")
+        m = self.ai.models()["qwen3.8-flash-next"]
+        self.assertEqual(m["sha256"], old)
+        for n, d in zip(self.names, self.parts):
+            with open(self.place(n), "rb") as f:
+                self.assertEqual(f.read(), d)
+        self.net.files[self.url(self.names[2])] = new
+        stopped = []
+        self.ai.on_change = stopped.append
+        self.load()
+        self.assertEqual(self.fetched(), [self.names[2]])                                 # two files are as they were: only the third comes
+        self.assertEqual(stopped, ["qwen3.8-flash-next"])                                 # what runs on it ends before the files change
+        m = self.ai.models()["qwen3.8-flash-next"]
+        self.assertNotEqual(m["sha256"], old); self.assertEqual(m["size"], len(self.parts[0]) + len(self.parts[1]) + len(new))
+        with open(self.place(self.names[2]), "rb") as f:
+            self.assertEqual(f.read(), new)
+        self.assertEqual(sorted(os.listdir(os.path.dirname(m["path"]))), self.names)
+        self.assertFalse(self.ai.check()["models"]["qwen3.8-flash-next"]["newer"])
+        # the repository now has it in two files: the third one goes
+        two = [self.parts[0], self.parts[1] + new]
+        names = ["Qwen3.8-Flash-Next-UD-IQ4_XS-%05d-of-00002.gguf" % i for i in (1, 2)]
+        self.net.trees[FLASH] = [f for f in tree if "UD-IQ4_XS/" not in f["path"]] + [
+            {"type": "file", "path": "UD-IQ4_XS/" + n, "size": len(d), "lfs": self.lfs(d)} for n, d in zip(names, two)]
+        for n, d in zip(names, two):
+            self.net.files[self.url(n)] = d
+        self.load()
+        self.assertEqual(sorted(os.listdir(os.path.dirname(m["path"]))), names)
+        self.assertEqual([x["file"] for x in self.ai.models()["qwen3.8-flash-next"]["parts"]], names)
+
+    def test_never_old_and_new_files_mixed(self):
+        self.load()
+        new = [d + b"v2" for d in self.parts]
+        self.net.trees[FLASH] = [f for f in self.net.trees[FLASH] if "UD-IQ4_XS/" not in f["path"]] + [
+            {"type": "file", "path": "UD-IQ4_XS/" + n, "size": len(d), "lfs": self.lfs(d)} for n, d in zip(self.names, new)]
+        for n, d in zip(self.names, new):
+            self.net.files[self.url(n)] = d
+        real = os.replace
+
+        def stuck(a, b):                                 # the second file does not get to its place (the disk, a crash)
+            if b == self.place(self.names[1]):
+                raise OSError("no")
+            return real(a, b)
+        os.replace = stuck
+        try:
+            self.load("error")
+        finally:
+            os.replace = real
+        with open(self.place(self.names[0]), "rb") as f:
+            self.assertEqual(f.read(), new[0])                                           # the first is the new one, the others the old ones:
+        self.assertEqual(self.ai.models(), {})                                           # no model -- never started on such a mix
+        with self.assertRaises(L.ModelError):
+            self.ai.ensure("qwen3.8-flash-next", 8192, "off")
+        row = next(x for x in self.ai.status()["models"] if x["id"] == "qwen3.8-flash-next")
+        self.assertEqual((row["installed"], row["partial"]), (False, len(new[1]) + len(new[2])))
+        self.load()                                                                       # going on: nothing is loaded again, all of it read and put in place
+        self.assertEqual(self.fetched(), [])
+        self.assertEqual([x["size"] for x in self.ai.models()["qwen3.8-flash-next"]["parts"]], [len(d) for d in new])
+        for n, d in zip(self.names, new):
+            with open(self.place(n), "rb") as f:
+                self.assertEqual(f.read(), d)
+        self.assertNotIn("replacing", self.ai._load("models.json")["models"]["qwen3.8-flash-next"])
+        self.assertEqual(sorted(os.listdir(os.path.dirname(self.place(self.names[0])))), self.names)
+        # and nothing is deleted from under a download that is writing it
+        self.ai.job = {"kind": "model", "id": "qwen3.8-flash-next", "state": "running", "label": "", "done": 0, "total": 0, "text": "", "started": time.time(), "cancel": threading.Event()}
+        with self.assertRaises(ValueError):
+            self.ai.delete_model("qwen3.8-flash-next")
+        self.ai.job["state"] = "done"
+        self.assertIn("qwen3.8-flash-next", self.ai.models())
+
+    def test_models_json_names_nothing_outside(self):
+        self.load()
+        data = self.ai._load("models.json")
+        good = data["models"]["qwen3.8-flash-next"]
+        for parts in ([{"file": "../../x.gguf"}], [{"file": self.names[0]}, {"file": "a/b.gguf"}], [{"file": self.names[1]}, {"file": self.names[0]}],
+                      [{"file": self.names[0]}, {"file": self.names[0]}], [{"file": self.names[0]}] * 0, "x", [None], [{"file": "n%d.gguf" % i} for i in range(100)]):
+            data["models"]["qwen3.8-flash-next"] = dict(good, parts=parts)
+            self.ai._save("models.json", data)
+            self.assertEqual(self.ai.models(), {}, parts)
+            self.assertEqual(L.part_names({"parts": parts}) if parts != [{"file": self.names[1]}, {"file": self.names[0]}] else [], [], parts)
+        outside = os.path.join(self.dir, "outside.gguf.part")
+        with open(outside, "wb") as f:
+            f.write(b"mine")
+        data["models"] = {}
+        data["begun"] = {"x": {"repo": "../..", "files": ["outside.gguf"]}, "y": {"repo": FLASH, "files": ["../../../outside.gguf"]}, "z": "no", "w": {"repo": FLASH, "files": "outside.gguf"}}
+        self.ai._save("models.json", data)
+        self.assertEqual(self.ai.begun(), {})
+        for mid in ("x", "y", "z", "w"):
+            self.ai.delete_model(mid)
+        self.assertTrue(os.path.exists(outside))
 
 
 class Server(_Open):
@@ -4533,7 +4842,7 @@ class Newer(_Assist):
         before = len(self.net.calls)
         self.look()
         asked = [u for u, _ in self.net.calls[before:]]
-        self.assertEqual(asked, [L.RELEASES_URL, "https://huggingface.co/api/models/unsloth/Qwen3.6-35B-A3B-GGUF/tree/main"])
+        self.assertEqual(asked, [L.RELEASES_URL, "https://huggingface.co/api/models/unsloth/Qwen3.6-35B-A3B-GGUF/tree/main?recursive=true"])
         self.assertFalse(self.app.assistant_look())              # looked: not again today
         self.assertEqual(self.a.newer(), {"items": [], "marked": 0})
         self.assertTrue(self.a.ai.status()["checked"])
@@ -5136,7 +5445,7 @@ class Browser(unittest.TestCase):
                 # maker, licence, size and how it sits in this Mac's memory. Suggested is the most thorough one that runs well
                 # here (one, and its button stands out) -- none on a small Mac, where a model too big names what it needs and
                 # cannot be loaded. The model in use stays the one chosen, whatever is suggested
-                rows = ("Object.fromEntries([...document.querySelectorAll('.as-model')].map(e => [e.querySelector('b').textContent, [!!e.querySelector('.pill.info'), "
+                rows = ("Object.fromEntries([...document.querySelectorAll('.as-model')].map(e => [e.querySelector('b').textContent, [!!e.querySelector('.chk .pill.info'), "
                         "(e.querySelector('.as-dl') || {className: 'none'}).className.includes('secondary') ? 'quiet' : e.querySelector('.as-dl') ? 'main' : 'none', "
                         "e.classList.contains('dim'), e.querySelector('.as-m-note') ? e.querySelector('.as-m-note').textContent : '', e.querySelector('.small').textContent]]))")
                 ram = L.physical_ram
@@ -5144,7 +5453,8 @@ class Browser(unittest.TestCase):
                     L.physical_ram = lambda: 64 * 2 ** 30
                     pg.evaluate("route()"); until(pg, "/Arbeitsspeicher: 64 GB/.test((document.querySelector('.as-folder') || {}).textContent || '')")
                     self.assertEqual(pg.evaluate("[...document.querySelectorAll('.as-group')].map(e => e.firstChild.textContent)"),
-                                     ["Für Zahlen, Dokumente und Recherche", "Für kurze Fragen – flotter, weniger genau", "Nur für einfache Fragen", "Andere Modelle"])
+                                     ["Für Zahlen, Dokumente und Recherche", "Für kurze Fragen – flotter, weniger genau", "Nur für einfache Fragen",
+                                      "Für einen stärkeren Rechner", "Andere Modelle"])
                     got = pg.evaluate(rows)
                     self.assertEqual(list(got), [c["name"] for c in L.CATALOG])
                     self.assertEqual(got["Qwen3.8 27B"], [True, "main", False, "Liest lange Dokumente und Zahlen am zuverlässigsten; antwortet langsamer.",
@@ -5154,6 +5464,31 @@ class Browser(unittest.TestCase):
                     self.assertIn("Rät oft", got["Gemma 4 26B-A4B"][3]); self.assertTrue(got["Gemma 4 26B-A4B"][4].startswith("Google · Lizenz Apache 2.0 · "))
                     self.assertEqual(pg.evaluate("document.querySelector('input[name=as-model]:checked').value"), "qwen3.6-35b-a3b")
                     self.assertIn("unsloth/Qwen3.8-27B-GGUF", pg.get_attribute(".as-model b", "title"))      # where it comes from: on demand
+                    # a larger model for a machine with far more memory: there to see, with what it needs -- not to load here
+                    self.assertEqual(got["Qwen3.8 Flash Next"][:3], [False, "none", True])
+                    self.assertEqual(got["Qwen3.8 Flash Next"][4], "Alibaba · Lizenz Qwen Community 1.0 · ca. 94 GB · braucht einen Mac mit mindestens 128 GB Arbeitsspeicher")
+                    self.assertIn("nicht frei", pg.get_attribute(".as-model:has(.as-m-warn) .small span[title]", "title"))
+                    L.physical_ram = lambda: 128 * 2 ** 30
+                    pg.evaluate("route()"); until(pg, "/Arbeitsspeicher: 128 GB/.test((document.querySelector('.as-folder') || {}).textContent || '')")
+                    got = pg.evaluate(rows)
+                    self.assertEqual(got["Qwen3.8 Flash Next"][:3], [False, "quiet", False]); self.assertTrue(got["Qwen3.8 Flash Next"][4].endswith("ab 192 GB Arbeitsspeicher · läuft knapp auf diesem Mac"))
+                    self.assertEqual([k for k, v in got.items() if v[0] or v[1] == "main"], ["Qwen3.8 27B"])      # ... and never the one suggested
+                    L.physical_ram = lambda: 64 * 2 ** 30
+                    # a download that did not arrive whole: named with what is here of it, to go on with or to remove
+                    ai = app.assistant.ai
+                    data = ai._load("models.json")
+                    data["begun"] = {"qwen3.8-27b": {"repo": "unsloth/Qwen3.8-27B-GGUF", "files": ["Qwen3.8-27B-UD-Q4_K_M.gguf"], "size": 16600000000}}
+                    ai._save("models.json", data)
+                    left = ai.model_path("unsloth/Qwen3.8-27B-GGUF", "Qwen3.8-27B-UD-Q4_K_M.gguf") + ".part"
+                    os.makedirs(os.path.dirname(left), exist_ok=True)
+                    with open(left, "wb") as f:
+                        f.truncate(7300000000)
+                    pg.evaluate("route()"); pg.wait_for_selector(".as-del[data-id='qwen3.8-27b']")
+                    self.assertEqual(pg.evaluate("[...document.querySelector(\".as-del[data-id='qwen3.8-27b']\").closest('.as-act').children].map(e => e.textContent.trim())"),
+                                     ["angefangen · 7,3 GB", "Weiter laden", "Verwerfen"])
+                    pg.click(".as-del[data-id='qwen3.8-27b']"); until(pg, "!document.querySelector(\".as-del[data-id='qwen3.8-27b']\")")
+                    self.assertFalse(os.path.exists(left)); self.assertEqual(ai.begun(), {})
+                    self.assertEqual(pg.inner_text(".as-dl[data-id='qwen3.8-27b']"), "Laden")
                     L.physical_ram = lambda: 16 * 2 ** 30
                     pg.evaluate("route()"); until(pg, "/Arbeitsspeicher: 16 GB/.test((document.querySelector('.as-folder') || {}).textContent || '')")
                     got = pg.evaluate(rows)

@@ -91,13 +91,16 @@ newer version is shown), "Entfernen". Loaded from GitHub only on a click; a prog
 The models that answer, from Hugging Face, one chosen for all answers (the thinking effort is picked per question in the chat), in groups by what each is for: "Für Zahlen, Dokumente und Recherche"
 (reads long documents and figures most reliably, answers more slowly), "Für kurze Fragen – flotter, weniger genau" (about four times as fast,
 less reliable with long documents), "Nur für einfache Fragen" (small models often guess instead of saying that they do
-not know), "Andere Modelle" (what the user loaded himself: any GGUF file by "provider/name", "Dateien zeigen"). Per model: its
+not know), "Für einen stärkeren Rechner" (a larger model for a machine with far more memory, never suggested), "Andere Modelle"
+(what the user loaded himself: any GGUF file by "provider/name", "Dateien zeigen" – a model in several files is one entry, "… Dateien").
+Per model: its
 name (hover: repository and file), one line on what it is good at, then maker, licence (hover: what it allows), file size ("ca."
 before it is loaded), the memory from which it runs well ("ab … GB Arbeitsspeicher") and how it sits in this Mac's memory:
 "läuft gut auf diesem Mac", "läuft knapp auf diesem Mac" (runs, needs most of the memory), "zu groß für diesen Mac" – or, not
 loaded yet, "braucht einen Mac mit mindestens … GB Arbeitsspeicher": such a model cannot be loaded. "empfohlen": the most thorough
 model that runs well on this Mac (right answers before speed); none on a Mac where only the small ones run. Kontor never changes
-the model in use by itself. Marks "geladen", "neuere Datei"; the dot chooses the model in use; "Laden", "Aktualisieren", "Löschen".
+the model in use by itself. Marks "geladen", "neuere Datei", "angefangen · … GB" (a download that did not arrive whole: what is on
+this Mac of it; "Weiter laden" goes on, "Verwerfen" removes it); the dot chooses the model in use; "Laden", "Aktualisieren", "Löschen".
 
 ### settings.assistant.dictation — Modell zum Diktieren
 A second, small model that only turns speech into text (accurate or smaller); the dot chooses it. "Diktiermodell starten": with the

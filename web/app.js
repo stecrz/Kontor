@@ -8963,10 +8963,10 @@ async function vEinstellungenAssistent() {
   const mrow = m => `<div class="as-item as-model${m.id === st.model ? ' on' : ''}${locked(m) ? ' dim' : ''}"><label class="chk"><input type="radio" name="as-model" value="${esc(m.id)}" ${m.id === st.model ? 'checked' : ''} ${m.installed ? '' : 'disabled'}>
       <span><b title="${esc(m.repo + (m.file ? ' · ' + m.file : ''))}">${esc(m.name)}</b>${m.id === a.recommended ? ` <span class="pill info" title="${esc(t('ki_empfohlen_tip'))}">${t('ki_empfohlen')}</span>` : ''}${m.note ? `<br><span class="as-m-note">${t(`ki_note_${m.note}`)}</span>` : ''}<br><span class="muted small">${[
         m.custom ? esc(m.repo + ' · ' + m.file) : esc(m.maker), m.licence ? `<span title="${esc(t(AS_LICENCES[m.licence] || 'ki_lizenz_eigen_tip'))}">${t('ki_lizenz', esc(m.licence))}</span>` : '',
-        m.installed ? asGB(m.size) : t('ki_gb_ca', m.gb), m.ram && m.fit !== 'big' ? t('ki_ab_ram', m.ram) : '', fitText(m)].filter(Boolean).join(' · ')}</span></span></label>
-    <span class="as-act">${m.newer ? `<span class="pill info">${t('ki_neuere_datei')}</span>` : m.installed ? `<span class="pill ok">${t('ki_geladen')}</span>` : ''}
-      ${m.newer || !m.installed && !locked(m) ? `<button class="small${m.installed || m.id !== a.recommended ? ' secondary' : ''} as-dl" data-id="${esc(m.id)}" data-name="${esc(m.name)}" data-fit="${m.fit || ''}" ${busy}>${t(m.installed ? 'ki_aktualisieren' : 'ki_laden')}</button>` : ''}
-      ${m.installed ? `<button class="small secondary as-del" data-id="${esc(m.id)}" data-name="${esc(m.name)}" ${busy}>${t('ki_loeschen')}</button>` : ''}</span></div>`;
+        m.installed || m.custom ? asGB(m.size) : t('ki_gb_ca', m.gb), m.ram && m.fit !== 'big' ? t('ki_ab_ram', m.ram) : '', fitText(m)].filter(Boolean).join(' · ')}</span></span></label>
+    <span class="as-act">${m.newer ? `<span class="pill info">${t('ki_neuere_datei')}</span>` : m.installed ? `<span class="pill ok">${t('ki_geladen')}</span>` : m.partial ? `<span class="pill info">${t('ki_angefangen', asGB(m.partial))}</span>` : ''}
+      ${m.newer || !m.installed && !locked(m) ? `<button class="small${m.installed || m.id !== a.recommended ? ' secondary' : ''} as-dl" data-id="${esc(m.id)}" data-name="${esc(m.name)}" data-fit="${m.fit || ''}" ${busy}>${t(m.installed ? 'ki_aktualisieren' : m.partial ? 'ki_weiter_laden' : 'ki_laden')}</button>` : ''}
+      ${m.installed || m.partial ? `<button class="small secondary as-del" data-id="${esc(m.id)}" data-name="${esc(m.name)}" data-part="${m.installed ? '' : 1}" ${busy}>${t(m.installed ? 'ki_loeschen' : 'ki_verwerfen')}</button>` : ''}</span></div>`;
   // ... in groups by what a model is for (the list's own order), models of your own last
   const others = `<div class="as-item as-group">${t('ki_eigenes_modell')}${hq('ki_eigenes')}</div>`;
   const mlist = models.map((m, i) => (i && (models[i - 1].kind || '') === (m.kind || '') ? '' : m.kind ? `<div class="as-item as-group">${t(`ki_gruppe_${m.kind}`)}</div>` : others) + mrow(m)).join('')
@@ -9233,7 +9233,7 @@ function bindAssistent(main) {
   on('#as-update-all', 'click', el => { el.disabled = true; post('/api/assistant/update-all'); });
   on('#as-check-mode', 'change', el => set({check_mode: el.value}));
   on('.as-dl', 'click', el => { if (el.dataset.fit !== 'big' || confirm(t('ki_zu_gross_frage', el.dataset.name, asRAM((AS.st.platform || {}).ram || 0)))) post('/api/assistant/model/download', {id: el.dataset.id}); });
-  on('.as-del', 'click', el => { if (confirm(t('ki_loeschen_frage', el.dataset.name))) post('/api/assistant/model/delete', {id: el.dataset.id}); });
+  on('.as-del', 'click', el => { if (confirm(t(el.dataset.part ? 'ki_verwerfen_frage' : 'ki_loeschen_frage', el.dataset.name))) post('/api/assistant/model/delete', {id: el.dataset.id}); });
   on('#as-cancel', 'click', () => post('/api/assistant/model/cancel'));
   on('#as-reveal', 'click', async () => { try { await api('/api/file/reveal', {path: AS.st.folder}); } catch (e) { toast(e.message, 5000); } });
   on('#as-start', 'click', () => post('/api/assistant/server', {action: 'start'}));
@@ -9243,7 +9243,7 @@ function bindAssistent(main) {
     box.innerHTML = `<div class="as-item muted small"><span><span class="spin"></span>${t('wird_geladen')}</span></div>`;
     try {
       const r = await api('/api/assistant/model/files', {repo});
-      box.innerHTML = (r.files || []).length ? r.files.map(f => `<div class="as-item sub"><span>${esc(f.file)}<br><span class="muted small">${asGB(f.size)}</span></span><span class="as-act"><button class="small secondary as-dlf" data-file="${esc(f.file)}">${t('ki_laden')}</button></span></div>`).join('')
+      box.innerHTML = (r.files || []).length ? r.files.map(f => `<div class="as-item sub"><span>${esc(f.file)}<br><span class="muted small">${asGB(f.size)}${(f.parts || []).length > 1 ? ' · ' + t('ki_dateien_n', f.parts.length) : ''}</span></span><span class="as-act"><button class="small secondary as-dlf" data-file="${esc(f.file)}">${t('ki_laden')}</button></span></div>`).join('')
         : `<div class="as-item muted small"><span>${t('ki_keine_dateien')}</span></div>`;
       $$('.as-dlf', box).forEach(b => b.addEventListener('click', () => post('/api/assistant/model/download', {repo, file: b.dataset.file})));
     } catch (e) { box.innerHTML = `<div class="banner err small">${esc(e.message)}</div>`; }

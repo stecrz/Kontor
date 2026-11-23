@@ -145,7 +145,7 @@ anhängen – nie löschen.
   gefiltert gegen eigene Daten; die Antwort gilt als Text aus dem Internet. (umgesetzt in 3.17.15)
 - **Modelle verständlich** (Nutzer, 2026-11-23): Die Modellauswahl erklärt jedes Modell in einfachen Worten (schnell oder
   gründlich, wofür gut, Speicherbedarf, ob es auf diesem Mac läuft) und führt auch größere Modelle für stärkere Rechner.
-  (teilweise umgesetzt in 3.17.9: die verständliche Auswahl; größere Modelle folgen)
+  (umgesetzt in 3.17.9 – die verständliche Auswahl – und 3.17.29 – größere Modelle, auch in mehreren Dateien)
 - **Abschirmung** (Nutzer, 2026-11-23): heißt wirklich kein Netz – auch nicht innerhalb des Macs – und möglichst keine
   Verbindung zu anderen Programmen; in der Oberfläche und Hilfe erklärt.
 - **Aktuelles Python** (Nutzer, 2026-11-23): Kontor läuft auf einer aktuellen, festen Python-Version in seinem eigenen Ordner statt
@@ -244,6 +244,9 @@ anhängen – nie löschen.
 - Umsatzsteuer-Voranmeldung direkt an ELSTER senden (ELSTERs Programmbibliothek ERiC, Anmeldung als Hersteller, Zertifikat und
   PIN bei jedem Senden, nie gespeichert; neue Verbindung) – oder Kontor rechnet nur und der Nutzer überträgt die Werte.
 - Unabhängig von MoneyMoney: woher dann die Bankdaten kommen.
+- KI-Dokumentmodell für Scans, Fotos und Tabellen ohne klare Spalten (z. B. GLM-OCR, PaddleOCR-VL, granite-docling) später prüfen
+  und nur aufnehmen, wenn es klar hilft – das Modell liefert nur das Raster, jede Zahl muss so in Textebene oder Texterkennung
+  stehen (Messung siehe 3.17.27). (Nutzer, 2026-11-23)
 - Zukunft: eine gemeinsame KI für Nutzer und Geschäftspartner (später Mitarbeiter) auf einem eigenen Rechner mit starker
   Grafikkarte, Zugang je Konto über einen sicheren Kanal, gemeinsames Gedächtnis; widerspricht heute „alles auf diesem Mac“ –
   erst nach ausdrücklicher Entscheidung. (Ein Gedächtnis über Finanzen hinaus, nur auf diesem Mac: entschieden, siehe Gedächtnis.)
@@ -437,6 +440,13 @@ Modelle und Rechner (Auftrag vom 23.11.2026: verständliche Auswahl, größere M
   passt, nennt, was es braucht, und lässt sich nicht laden. Gemma 4 und die kleinen Qwen stehen unter „nur für einfache Fragen“.
   Das Modell in Gebrauch wechselt nie von selbst.
   Am Mac prüfen: Tempo und Arbeitsspeicher von Qwen3.8 27B (genauere Datei, 22 GB) mit langem Kontext.
+- [x] 3.17.29 Größere Modelle: Modelle in mehreren Dateien (große kommen so, je Variante ein Ordner) – jede Datei per SHA-256 geprüft,
+  ein Fortschritt, Platz vorab für alle, abgebrochen weiterladen oder verwerfen („angefangen“), nur Geändertes neu, eingesetzt erst,
+  wenn alle da sind (nie alte und neue Dateien gemischt); Start mit der ersten Datei. In der Liste „Für einen stärkeren Rechner“: Qwen3.8 Flash Next (ca. 94 GB, eigene
+  Lizenz von Alibaba) – sichtbar mit „braucht einen Mac mit mindestens 128 GB“, ladbar erst dort; nie von selbst empfohlen.
+  Nicht aufgenommen: GLM-5.3 Flash (antwortet nie ohne Nachdenken – das brauchen die kurzen Schritte hier; llama.cpp kann es erst
+  seit Kurzem), DeepSeek V4.1 Flash (nur mit eigener Laufzeit), MiMo-V2.6 Flash und DeepSeek V4 Flash (lesen lange Dokumente bei
+  160–170 GB nicht zuverlässiger als Qwen3.8 27B). Auf einem Rechner mit 128 GB prüfen: Laden, Start und Tempo von Flash Next.
 
 ## 3. GbR-Entlastung: Immobilien, Steuer, Umsatzsteuer
 Ziel: Eine vermögensverwaltende GbR lässt sich mit Kontor führen – Objekte, Steuer, Voranmeldung, Nebenkosten, Ausschüttungen –

@@ -58,6 +58,13 @@ RUNTIME_REPO = "ggml-org/llama.cpp"
 RELEASES_URL = "https://api.github.com/repos/%s/releases?per_page=10" % RUNTIME_REPO
 REPO_RE = re.compile(r"[A-Za-z0-9][\w.\-]{0,95}/[A-Za-z0-9][\w.\-]{0,95}")
 FILE_RE = re.compile(r"[A-Za-z0-9][\w.\-]{0,180}\.gguf")
+# where a model file lies in its repository: at the top, or one folder down (large models: a folder for each variant)
+PATH_RE = re.compile(r"(?:[A-Za-z0-9][\w.\-]{0,95}/)?[A-Za-z0-9][\w.\-]{0,180}\.gguf")
+# a model in several files, as llama.cpp splits and loads them: name-00001-of-00003.gguf, ... -- started with the first
+SPLIT_RE = re.compile(r"(.+)-(\d{5})-of-(\d{5})\.gguf")
+MAX_PARTS = 99
+NOT_MODELS = ("mtp-", "imatrix", "dspark-")       # GGUF files beside the models (drafters for faster answers, measurements): no chat models
+STAGED = ".new"                     # a file of a model in several files that has arrived and is checked, until all of them are
 SHA_RE = re.compile(r"[0-9a-f]{64}")
 MAX_RUNTIME = 2 << 30               # an unpacked llama.cpp is far smaller: more than this is refused
 START_SECONDS = 420                 # a large model from a slow disk
@@ -70,7 +77,10 @@ TMP_PREFIX = "llm-run-"             # a model process's own temporary folder, a 
 #   thorough -- for figures, documents and research: answers that are right count more than speed. Kontor suggests the first
 #               of them that runs well on this Mac (recommended) -- and nothing where none does;
 #   fast     -- answers several times as fast (only a part of the model computes each word), less reliable with long documents;
-#   simple   -- small ones, for simple questions: they rather guess than say that they do not know.
+#   simple   -- small ones, for simple questions: they rather guess than say that they do not know;
+#   large    -- for a machine with far more memory: shown on every Mac with what they need, loaded only where they fit.
+#               Never suggested by Kontor (none of them was tried in Kontor yet). They come in several files, a folder for
+#               each variant -- names as Unsloth publishes them (looked up when you load: a variant that is not there is said so).
 # "pick": the variant wanted, then what to take if the repository names it differently (its file is looked up there when you
 # load it); "gb": about the size of that file; "ram": from how many GB of memory of the Mac it runs well beside macOS,
 # MoneyMoney and a browser; "maker", "licence": who made the model and under which licence it may be used (as its model card
@@ -94,8 +104,17 @@ CATALOG: List[Dict[str, Any]] = [
      "repo": "unsloth/Qwen3.5-9B-GGUF", "pick": ["Q4_K_M", "UD-Q4_K_XL"], "gb": 6, "ram": 16, "note": "small"},
     {"id": "qwen3.5-4b", "name": "Qwen3.5 4B", "kind": "simple", "maker": "Alibaba", "licence": "Apache 2.0",
      "repo": "bartowski/Qwen_Qwen3.5-4B-GGUF", "pick": ["Q4_K_M"], "gb": 3, "ram": 8, "note": "small"},
+    # 125 billion parameters, of which 6 billion compute each word (fast for its size); its maker's own licence, not a free one.
+    # Needs llama.cpp from about b12233 (Kontor loads the newest). In several files of up to 50 GB, in a folder of its
+    # variant (UD-IQ4_XS/Qwen3.8-Flash-Next-UD-IQ4_XS-0000N-of-0000M.gguf)
+    {"id": "qwen3.8-flash-next", "name": "Qwen3.8 Flash Next", "kind": "large", "maker": "Alibaba", "licence": "Qwen Community 1.0",
+     "repo": "unsloth/Qwen3.8-Flash-Next-GGUF", "pick": ["UD-IQ4_XS", "UD-Q3_K_XL"], "gb": 94, "ram": 192, "note": "large"},
 ]
-KINDS = ("thorough", "fast", "simple")       # the groups of the list, in this order
+# Not in the list, though larger still (looked at on 2026-11-23): GLM-5.3 Flash -- it cannot answer without thinking first,
+# which the quick steps here need (the look at what to remember), and llama.cpp runs it only since lately, its publisher's own
+# guide still by a fork; DeepSeek V4.1 Flash -- only with a runtime of its own; MiMo-V2.6 Flash and DeepSeek V4 Flash -- at
+# 160 to 170 GB they read long documents no more reliably than Qwen3.8 27B does at 22 GB.
+KINDS = ("thorough", "fast", "simple", "large")       # the groups of the list, in this order
 # For dictating: models that only write down what is said (speech recognition). llama.cpp runs them like any other model,
 # with their audio part (a second file, "mmproj-...") beside them -- on this Mac, without a network, in the same sandbox.
 SPEECH: List[Dict[str, Any]] = [
@@ -153,6 +172,14 @@ def recommended(ram: int) -> str:
     if not ram:
         return ""
     return next((c["id"] for c in CATALOG if c["kind"] == "thorough" and fit(c["gb"], c["ram"], ram) == "good"), "")
+
+
+def part_names(m: dict) -> List[str]:
+    """The files of a model kept in several files, in their order, as models.json names them ([]: not such a model, or a
+    name that is none -- nothing outside the model's folder is ever named)."""
+    parts = m.get("parts") if isinstance(m.get("parts"), list) else []
+    names = [str(x.get("file") or "") if isinstance(x, dict) else "" for x in parts]
+    return names if names and len(names) <= MAX_PARTS and len(set(names)) == len(names) and all(FILE_RE.fullmatch(n) for n in names) else []
 
 
 class Cancelled(Exception):
@@ -274,11 +301,39 @@ def pick_asset(release: dict) -> Optional[dict]:
     return None
 
 
+def plain_name(file: str) -> str:
+    """A model file's name without the count of a model in several files (x-Q4-00001-of-00003.gguf -> x-Q4.gguf)."""
+    m = SPLIT_RE.fullmatch(file)
+    return m.group(1) + ".gguf" if m else file
+
+
+def whole(files: List[dict]) -> List[dict]:
+    """Model files as models: a file alone as it is; the files of a model in several ("...-00001-of-00003.gguf", all in one
+    folder) as one entry -- "file": the first of them (the one llama.cpp is started with), "size": all together, "sha256":
+    one value over the SHA-256 of each in their order ("" if one of them has none: such a model is never loaded), "parts":
+    each file in its order. A model with a file missing is left out."""
+    out: List[dict] = []
+    sets: Dict[tuple, Dict[int, dict]] = {}
+    for f in files:
+        m = SPLIT_RE.fullmatch(f["file"])
+        if not m:
+            out.append(f)
+        elif 1 <= int(m.group(2)) <= int(m.group(3)) <= MAX_PARTS:
+            sets.setdefault((f["path"][:-len(f["file"])], m.group(1), int(m.group(3))), {}).setdefault(int(m.group(2)), f)
+    for (_folder, _name, count), found in sets.items():
+        if len(found) == count:
+            parts = [found[i] for i in range(1, count + 1)]
+            checked = all(x["sha256"] for x in parts)
+            out.append({"file": parts[0]["file"], "size": sum(x["size"] for x in parts), "parts": parts,
+                        "sha256": hashlib.sha256("\n".join(x["sha256"] for x in parts).encode("ascii")).hexdigest() if checked else ""})
+    return out
+
+
 def resolve_pick(files: List[dict], pick: Any) -> Optional[dict]:
     """The file of a variant (e.g. UD-Q4_K_M) among a repository's model files; of several variants the first there is."""
     for p in ([pick] if isinstance(pick, str) else list(pick)):
         p = p.lower()
-        hits = [f for f in files if re.search(r"[-.]%s\.gguf$" % re.escape(p), f["file"].lower())]
+        hits = [f for f in files if re.search(r"[-.]%s\.gguf$" % re.escape(p), plain_name(f["file"]).lower())]
         if hits:
             return min(hits, key=lambda f: len(f["file"]))        # "…-Q4_K_M.gguf" before "…-UD-Q4_K_M.gguf"
     return None
@@ -447,14 +502,19 @@ class LocalAI:
         return dict(r, path=b) if inside and os.path.isfile(b) and os.path.basename(b) == "llama-server" else {}
 
     def models(self) -> Dict[str, dict]:
-        """The model files on this Mac: id -> {"repo", "file", "size", "sha256", "name", "path"} (files that exist)."""
+        """The model files on this Mac: id -> {"repo", "file", "size", "sha256", "name", "path"} (files that exist). A model
+        in several files ("parts": their names in order, "file" the first of them) is there with every one of them only."""
         out = {}
         for mid, m in (self._load("models.json").get("models") or {}).items():
             if not isinstance(m, dict) or not REPO_RE.fullmatch(str(m.get("repo") or "")) or not FILE_RE.fullmatch(str(m.get("file") or "")):
                 continue
             path = self.model_path(m["repo"], m["file"])
-            if not os.path.isfile(path):
+            if not os.path.isfile(path) or m.get("replacing"):      # (replacing: its files were being exchanged and not all of them got there)
                 continue
+            if "parts" in m:
+                names = part_names(m)
+                if not names or names[0] != m["file"] or not all(os.path.isfile(self.model_path(m["repo"], n)) for n in names):
+                    continue
             pj = m.get("mmproj") if isinstance(m.get("mmproj"), dict) else None       # a speech model's audio part: a second file beside it
             if pj is not None:
                 if not FILE_RE.fullmatch(str(pj.get("file") or "")) or not os.path.isfile(self.model_path(m["repo"], pj["file"])):
@@ -482,28 +542,31 @@ class LocalAI:
         raise ValueError(tr("s_ki_kein_build") % asset_tag())
 
     def repo_files(self, repo: str, projectors: bool = False) -> List[dict]:
-        """The model files (GGUF, one file each) of a repository at Hugging Face: [{"file", "size", "sha256"}].
-        projectors: instead the audio/vision parts that belong to them ("mmproj-...")."""
+        """The models (GGUF) of a repository at Hugging Face: [{"file", "path", "size", "sha256"}] -- "path": where the file
+        lies there (at the top or one folder down), "file": its name, under which it is kept on this Mac. A model in several
+        files ("...-00001-of-00003.gguf") is one entry with its "parts" (see whole).
+        projectors: instead the audio/vision parts that belong to them ("mmproj-...", at the top)."""
         if not REPO_RE.fullmatch(repo or ""):
             raise ValueError(tr("s_ki_repo_ungueltig"))
-        out: List[dict] = []
-        url: Optional[str] = "https://huggingface.co/api/models/%s/tree/main" % quote(repo, safe="/")
+        out: Dict[str, dict] = {}
+        url: Optional[str] = "https://huggingface.co/api/models/%s/tree/main?recursive=true" % quote(repo, safe="/")
         for _ in range(6):                          # a few pages at most
             if not url:
                 break
             data, headers = _json_get(url, HF)
             for f in data if isinstance(data, list) else []:
-                name = str(f.get("path") or "")
-                if f.get("type") != "file" or not FILE_RE.fullmatch(name) or name.lower().startswith("mtp-") or re.search(r"-\d{5}-of-\d{5}\.gguf$", name):
+                path = str(f.get("path") or "")
+                name = path.rsplit("/", 1)[-1]
+                if f.get("type") != "file" or not PATH_RE.fullmatch(path) or name.lower().startswith(NOT_MODELS):
                     continue
-                if name.lower().startswith("mmproj") != projectors:
+                if name.lower().startswith("mmproj") != projectors or (projectors and name != path):
                     continue
                 lfs = f.get("lfs") if isinstance(f.get("lfs"), dict) else {}
                 sha = str(lfs.get("oid") or "").lower()
-                out.append({"file": name, "size": int(lfs.get("size") or f.get("size") or 0), "sha256": sha if SHA_RE.fullmatch(sha) else ""})
+                out.setdefault(name, {"file": name, "path": path, "size": int(lfs.get("size") or f.get("size") or 0), "sha256": sha if SHA_RE.fullmatch(sha) else ""})
             m = re.search(r'<([^>]+)>;\s*rel="next"', str(headers.get("Link") or ""))
             url = m.group(1) if m and host_allowed(m.group(1), HF) else None
-        return sorted(out, key=lambda f: f["size"])
+        return sorted(whole(list(out.values())), key=lambda f: f["size"])
 
     def check(self) -> dict:
         """Looks for a newer llama.cpp and newer files of the loaded models (network: GitHub and Hugging Face)."""
@@ -551,10 +614,13 @@ class LocalAI:
         j = self.job
         if not j:
             return None
+        j = dict(j)                                                # as it is at this moment (a download goes on beside this)
         rate, smp = 0, tuple(j.get("samples") or ())
         if j["state"] == "running" and len(smp) >= 2:
             span = max(time.time(), smp[-1][0]) - smp[0][0]        # up to now: when nothing arrives, the rate falls
             rate = int((smp[-1][1] - smp[0][1]) / span) if span >= 1 else 0
+        if j.get("whole"):                                         # a model in several files: one progress over all of them
+            j.update(done=min(j["whole"], j.get("before", 0) + j["done"]), total=j["whole"])
         return dict({k: j[k] for k in ("kind", "id", "label", "done", "total", "state", "text")}, seconds=round(time.time() - j["started"], 1), rate=max(0, rate))
 
     def cancel_job(self) -> None:
@@ -702,12 +768,13 @@ class LocalAI:
             pass
 
     def download_model(self, model_id: str = "", repo: str = "", file: str = "") -> dict:
-        """A model from the list (model_id) or any model file of a repository at Hugging Face (repo, file)."""
+        """A model from the list (model_id) or any model of a repository at Hugging Face (repo, file: its file, of a model in
+        several files the first one)."""
         entry = next((c for c in CATALOG + SPEECH + EMBED if c["id"] == model_id), None)
         if entry is None:
             if not REPO_RE.fullmatch(repo or "") or not FILE_RE.fullmatch(file or ""):
                 raise ValueError(tr("s_ki_repo_ungueltig"))
-            model_id, name = "%s/%s" % (repo, file), file[:-5]
+            model_id, name = "%s/%s" % (repo, file), plain_name(file)[:-5]
         else:
             repo, name = entry["repo"], entry["name"]
 
@@ -717,6 +784,8 @@ class LocalAI:
             if f is None:
                 raise ValueError(tr("s_ki_datei_fehlt"))
             address = lambda name_: "https://huggingface.co/%s/resolve/main/%s?download=true" % (quote(repo, safe="/"), quote(name_))
+            several = f.get("parts") or []                 # a model in several files: each checked, all put in place together
+            self._begun(model_id, {"repo": repo, "files": [x["file"] for x in several] or [f["file"]], "size": f["size"]})
             part = None
             if entry is not None and entry["id"] in SPEECH_IDS:     # a speech model: its audio part first (small), then the model
                 parts = self.repo_files(repo, projectors=True)
@@ -726,8 +795,12 @@ class LocalAI:
                     raise ValueError(tr("s_ki_datei_fehlt"))
                 part = dict(part, sha256=self._fetch(address(part["file"]), HF, self.model_path(repo, part["file"]), part["size"], part["sha256"], job))
             dest = self.model_path(repo, f["file"])
+            staged: List[str] = []
             try:
-                sha = self._fetch(address(f["file"]), HF, dest, f["size"], f["sha256"], job)
+                if several:
+                    sha, staged = f["sha256"], self._fetch_all(repo, f, address, job)
+                else:
+                    sha = self._fetch(address(f["path"]), HF, dest, f["size"], f["sha256"], job)
             except BaseException:
                 known = ((self._load("models.json").get("models") or {}).get(model_id) or {}).get("mmproj") or {}
                 if part and known.get("file") != part["file"]:      # the audio part alone is of no use: it goes again (the model's
@@ -737,15 +810,25 @@ class LocalAI:
                         pass
                 raise
             self._changing(model_id)                       # a newer file of a running model: loaded at the next question
+            if staged:                                     # every file is here and right: into their places, one after the other --
+                data = self._load("models.json")           # until the last one is there, the model does not count (never old and new files mixed)
+                if isinstance((data.get("models") or {}).get(model_id), dict):
+                    data["models"][model_id]["replacing"] = True
+                    self._save("models.json", data)
+                for final in staged:
+                    os.replace(final + STAGED, final)
             data = self._load("models.json")
             old = (data.get("models") or {}).get(model_id) or {}
             data.setdefault("models", {})[model_id] = dict({"repo": repo, "file": f["file"], "size": f["size"], "sha256": sha, "name": name,
                                                             "downloaded": datetime.now().strftime("%Y-%m-%d %H:%M")},
-                                                           **({"mmproj": {"file": part["file"], "size": part["size"], "sha256": part["sha256"]}} if part else {}))
+                                                           **({"mmproj": {"file": part["file"], "size": part["size"], "sha256": part["sha256"]}} if part else {}),
+                                                           **({"parts": [{k: x[k] for k in ("file", "size", "sha256")} for x in several]} if several else {}))
+            (data.get("begun") or {}).pop(model_id, None)
             self._save("models.json", data)
-            gone = [old.get("file") if old.get("file") != f["file"] else None,
-                    (old.get("mmproj") or {}).get("file") if part and (old.get("mmproj") or {}).get("file") != part["file"] else None]
-            for name_ in gone:                             # the variant got another file name: the old file goes
+            now = set(x["file"] for x in several) or {f["file"]}
+            gone = [n for n in (part_names(old) or [old.get("file")]) if n not in now]
+            gone.append((old.get("mmproj") or {}).get("file") if part and (old.get("mmproj") or {}).get("file") != part["file"] else None)
+            for name_ in gone:                             # the variant got other file names: the old files go
                 if name_ and FILE_RE.fullmatch(str(name_)):
                     try:
                         os.remove(self.model_path(repo, name_))
@@ -756,6 +839,89 @@ class LocalAI:
                 self.on_loaded(model_id)
         return self._start_job("model", model_id, name, work)
 
+    def _fetch_all(self, repo: str, f: dict, address: Callable[[str], str], job: dict) -> List[str]:
+        """Every file of a model in several files (f: its entry of repo_files), each through _fetch -- its size and SHA-256
+        must fit -- to a place beside its final one (name + STAGED). A file that is here already and right (in place, or
+        staged by an earlier try: read in full, nothing counts unchecked) is not loaded again; a partial one goes on where
+        it stopped. Before the first byte: each file has its SHA-256, and the disk has room for all that is missing. Nothing
+        is put in place here -- the caller does, once every file is right. Returns the places whose staged file is to go in."""
+        parts = f["parts"]
+        if not all(SHA_RE.fullmatch(x["sha256"] or "") for x in parts):       # nothing is installed or run that cannot be checked
+            raise ValueError(tr("s_ki_keine_pruefsumme"))
+        place = lambda x: self.model_path(repo, x["file"])
+        os.makedirs(os.path.dirname(place(parts[0])), exist_ok=True)
+        self._no_backup()
+        job.update(done=0, total=0, before=0, whole=f["size"])
+        staged, todo = [], []
+        for x in parts:
+            if self._is(place(x), x, job):
+                self._drop(place(x) + STAGED, place(x) + STAGED + ".part")       # (left by an earlier try, of no use any more)
+            elif self._is(place(x) + STAGED, x, job):
+                staged.append(place(x))
+            else:
+                todo.append(x)
+                continue
+            job.update(done=0, before=job["before"] + x["size"])
+        have = lambda x: min(x["size"], os.path.getsize(place(x) + STAGED + ".part")) if os.path.exists(place(x) + STAGED + ".part") else 0
+        missing = sum(x["size"] - have(x) for x in todo)
+        free = shutil.disk_usage(os.path.dirname(place(parts[0]))).free
+        if todo and free < missing + (1 << 30):
+            raise ValueError(tr("s_ki_platz_fehlt") % ("%.0f" % (missing / 1e9 + 1), "%.0f" % (free / 1e9)))
+        for x in todo:
+            self._fetch(address(x["path"]), HF, place(x) + STAGED, x["size"], x["sha256"], job)
+            staged.append(place(x))
+            job.update(done=0, before=job["before"] + x["size"])
+        return staged
+
+    def _is(self, path: str, x: dict, job: dict) -> bool:
+        """Is the file at path the one announced (x: its "size" and "sha256")? Read in full; what is read counts as done
+        while it is read."""
+        try:
+            if os.path.getsize(path) == x["size"]:
+                h = hashlib.sha256()
+                with open(path, "rb") as fh:
+                    for chunk in iter(lambda: fh.read(4 << 20), b""):
+                        if job["cancel"].is_set():
+                            raise Cancelled()
+                        h.update(chunk)
+                        job["done"] += len(chunk)
+                if h.hexdigest() == x["sha256"]:
+                    return True
+        except OSError:
+            pass
+        job["done"] = 0
+        return False
+
+    @staticmethod
+    def _drop(*paths: str) -> None:
+        for path in paths:
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+
+    def _begun(self, model_id: str, plan: dict) -> None:
+        """Notes which files a download is about to bring (models.json, "begun"): what a download that was cancelled or failed
+        left behind can be named and removed (delete_model) -- or gone on with."""
+        left = self.begun()
+        data = self._load("models.json")
+        data["begun"] = dict({k: v for k, v in (data.get("begun") or {}).items() if k in left}, **{model_id: plan})      # (what left nothing is forgotten)
+        self._save("models.json", data)
+
+    def begun(self) -> Dict[str, dict]:
+        """Downloads that did not arrive whole and left something on this Mac: id -> {"repo", "files", "bytes", "size"}
+        (bytes: what is there of them, partial or staged; size: the whole model's)."""
+        out = {}
+        for mid, b in (self._load("models.json").get("begun") or {}).items():
+            names = [str(n) for n in b.get("files") or []] if isinstance(b, dict) and isinstance(b.get("files"), list) else []
+            if not names or len(names) > MAX_PARTS or not REPO_RE.fullmatch(str(b.get("repo") or "")) or not all(FILE_RE.fullmatch(n) for n in names):
+                continue
+            left = [self.model_path(b["repo"], n) + end for n in names for end in (".part", STAGED, STAGED + ".part")]
+            size = sum(os.path.getsize(x) for x in left if os.path.isfile(x))
+            if size:
+                out[str(mid)] = {"repo": b["repo"], "files": names, "bytes": size, "size": b["size"] if isinstance(b.get("size"), int) else 0}
+        return out
+
     def _changing(self, model_id: str) -> None:
         """Files are about to be replaced or removed -- a model's, or the program's (""): whatever runs on them ends first,
         here and in the process beside this one (on_change)."""
@@ -765,22 +931,31 @@ class LocalAI:
             self.on_change(model_id)
 
     def delete_model(self, model_id: str) -> None:
+        """A model's files go -- all of them, and whatever a download of it left behind (also of one that never arrived)."""
+        job = self.job
+        if job and job.get("state") == "running" and job.get("kind") == "model" and job.get("id") == model_id:
+            raise ValueError(tr("s_ki_laedt_schon"))        # (not from under a download that is writing them)
         data = self._load("models.json")
         m = (data.get("models") or {}).pop(model_id, None)
-        if not m:
+        left = self.begun().get(model_id)
+        if (data.get("begun") or {}).pop(model_id, None) is None and not m:
             return
-        self._changing(model_id)
-        if REPO_RE.fullmatch(str(m.get("repo") or "")) and FILE_RE.fullmatch(str(m.get("file") or "")):
-            path = self.model_path(m["repo"], m["file"])
+        if m:
+            self._changing(model_id)
+        folders = set()
+        if m and REPO_RE.fullmatch(str(m.get("repo") or "")) and FILE_RE.fullmatch(str(m.get("file") or "")):
             pj = str((m.get("mmproj") or {}).get("file") or "") if isinstance(m.get("mmproj"), dict) else ""
-            more = [self.model_path(m["repo"], pj), self.model_path(m["repo"], pj) + ".part"] if FILE_RE.fullmatch(pj) else []
-            for p in [path, path + ".part"] + more:
-                try:
-                    os.remove(p)
-                except OSError:
-                    pass
+            for n in (part_names(m) or [m["file"]]) + ([pj] if FILE_RE.fullmatch(pj) else []):
+                path = self.model_path(m["repo"], n)
+                self._drop(path, path + ".part", path + STAGED, path + STAGED + ".part")
+                folders.add(os.path.dirname(path))
+        for n in (left or {}).get("files") or []:
+            path = self.model_path(left["repo"], n)
+            self._drop(path + ".part", path + STAGED, path + STAGED + ".part")
+            folders.add(os.path.dirname(path))
+        for folder in folders:
             try:
-                os.rmdir(os.path.dirname(path))
+                os.rmdir(folder)
             except OSError:
                 pass
         self._save("models.json", data)
@@ -1154,7 +1329,7 @@ class LocalAI:
             return {}
 
     def status(self) -> dict:
-        rt, have, news = self.runtime(), self.models(), self.news
+        rt, have, news, begun = self.runtime(), self.models(), self.news, self.begun()
         ram = physical_ram()
         models = []
         for c in CATALOG:
@@ -1162,6 +1337,7 @@ class LocalAI:
             models.append({"id": c["id"], "name": c["name"], "repo": c["repo"], "note": c["note"], "gb": c["gb"], "ram": c["ram"], "fit": fits,
                            "kind": c["kind"], "maker": c["maker"], "licence": c["licence"], "needs": least_ram(c["gb"]) if fits == "big" else 0,
                            "installed": bool(m), "size": m["size"] if m else 0, "file": m["file"] if m else "", "custom": False,
+                           "partial": (begun.get(c["id"]) or {}).get("bytes", 0),
                            "newer": bool(((news.get("models") or {}).get(c["id"]) or {}).get("newer"))})
         speech = [{"id": c["id"], "name": c["name"], "repo": c["repo"], "note": c["note"], "gb": c["gb"], "installed": c["id"] in have,
                    "size": (have[c["id"]]["size"] + int((have[c["id"]].get("mmproj") or {}).get("size") or 0)) if c["id"] in have else 0,
@@ -1175,7 +1351,13 @@ class LocalAI:
             if not any(c["id"] == mid for c in CATALOG):
                 models.append({"id": mid, "name": m.get("name") or m["file"], "repo": m["repo"], "note": "", "gb": 0, "ram": 0, "fit": fit(m["size"] / 1e9, None, ram),
                                "kind": "", "maker": "", "licence": "", "needs": 0, "installed": True, "size": m["size"], "file": m["file"], "custom": True,
+                               "partial": (begun.get(mid) or {}).get("bytes", 0),
                                "newer": bool(((news.get("models") or {}).get(mid) or {}).get("newer"))})
+        for mid, b in begun.items():                        # a model of your own whose download did not arrive whole: to go on with or to remove
+            if mid not in have and not any(c["id"] == mid for c in CATALOG + SPEECH + EMBED):
+                models.append({"id": mid, "name": plain_name(b["files"][0])[:-5], "repo": b["repo"], "note": "", "gb": 0, "ram": 0, "fit": fit(b["size"] / 1e9, None, ram),
+                               "kind": "", "maker": "", "licence": "", "needs": 0, "installed": False, "size": b["size"], "file": b["files"][0], "custom": True,
+                               "partial": b["bytes"], "newer": False})
         try:
             free = shutil.disk_usage(self.base if os.path.isdir(self.base) else self.data_dir).free
         except OSError:

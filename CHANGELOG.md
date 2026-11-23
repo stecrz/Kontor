@@ -1,5 +1,12 @@
 # Änderungen
 
+## 3.17.29 (2026-11-23 21:18)
+- KI-Assistent: größere Modelle in mehreren Dateien – jede Datei per SHA-256 geprüft, ein Fortschritt, Platz vorab für alle, eingesetzt erst, wenn alle stimmen
+- KI-Assistent: Gruppe „Für einen stärkeren Rechner“ mit Qwen3.8 Flash Next (ca. 94 GB) – sichtbar auf jedem Mac, ladbar erst ab 128 GB Arbeitsspeicher, nie empfohlen
+- KI-Assistent: abgebrochener Download steht als „angefangen“ in der Liste – „Weiter laden“ oder „Verwerfen“
+- KI-Assistent: „Dateien zeigen“ findet auch Modelle in Unterordnern; mehrere Dateien eines Modells als ein Eintrag
+- Entwicklung: Probe im macOS-Lauf erweitert – Links im eigenen Ordner, Dienste anderer Programme nach Liste (nur Bericht)
+
 ## 3.17.28 (2026-11-23 21:05)
 - Anmeldung: antwortet Tailscale nach einem Start nicht, wartet Touch ID bzw. Passwort am Mac höchstens 20 s (vorher bis ~2 min)
 - Anmeldung: Satz „Abgleich und Auto-Buchungen warten auf deine Anmeldung“ entfernt; Untertitel „Dein digitaler CFO.“

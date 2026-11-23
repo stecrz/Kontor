@@ -831,9 +831,12 @@ class Assistant:
         self.looked, self.ai.news = float(when), out
 
     def load_model(self, model_id: str = "", repo: str = "", file: str = "") -> dict:
-        """As LocalAI.download_model; a model of your own that is on this Mac can be named by its id alone (its newer file)."""
+        """As LocalAI.download_model; a model of your own that is on this Mac can be named by its id alone (its newer file) --
+        also one whose download did not arrive whole (to go on with it)."""
         if not repo and not file and all(c["id"] != model_id for c in CATALOG + SPEECH + EMBED):
             m = self.ai.models().get(model_id) or {}
+            if not m and model_id in self.ai.begun():
+                m = {"repo": self.ai.begun()[model_id]["repo"], "file": self.ai.begun()[model_id]["files"][0]}
             repo, file = str(m.get("repo") or ""), str(m.get("file") or "")
         return self.ai.download_model(model_id, repo, file)
 

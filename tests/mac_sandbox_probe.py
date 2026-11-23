@@ -12,8 +12,9 @@ does that, this probe asks macOS itself:
   2. the real thing: llama.cpp's newest release, loaded and tried by Kontor's own code (from GitHub, checked, --version and
      --help inside the sandbox), a tiny model through Kontor's own download (Hugging Face, checked), started as Kontor starts
      it today (127.0.0.1) and answering -- then started on a socket file inside the stricter profile, and asked over the file.
-  3. for later (services of other programs by a list instead of all of them): what the model process asks macOS for when it
-     may ask for nothing -- only printed.
+  3. for later, only printed: a link inside the model's own folder to a file it may not read -- does it open the file
+     (and does "(deny file-link*)" close that)? And services of other programs by a list instead of all of them: what the
+     model process asks macOS for when it may ask for nothing, with which list it runs again, and which of them it can do without.
 
 Needs the network (GitHub, Hugging Face) for 2 and 3; without it they say so and 1 still counts."""
 import http.client
@@ -43,9 +44,25 @@ PROBE_C = r"""
 
 static int fail(const char *what) { printf("%s: %s\n", what, strerror(errno)); fflush(stdout); return 1; }
 
-/* probe listen-unix PATH | listen-tcp PORT | connect-unix PATH | connect-tcp PORT */
+static int show(const char *what, const char *path) {
+    char got[24] = {0};
+    FILE *f = fopen(path, "r");
+    if (!f) return fail(what);
+    if (fread(got, 1, 17, f) == 0) { fclose(f); return fail("fread"); }
+    fclose(f);
+    printf("READ %s\n", got); fflush(stdout);
+    return 0;
+}
+
+/* probe listen-unix PATH | listen-tcp PORT | connect-unix PATH | connect-tcp PORT | read PATH | link FROM TO */
 int main(int argc, char **argv) {
     if (argc < 3) return 2;
+    if (strcmp(argv[1], "read") == 0) return show("open", argv[2]);
+    if (strcmp(argv[1], "link") == 0) {
+        if (argc < 4) return 2;
+        if (link(argv[2], argv[3]) < 0) return fail("link");
+        return show("linked, but open", argv[3]);
+    }
     int un = strstr(argv[1], "unix") != NULL, listening = strncmp(argv[1], "listen", 6) == 0;
     int s = socket(un ? AF_UNIX : AF_INET, SOCK_STREAM, 0);
     if (s < 0) return fail("socket");
@@ -246,7 +263,7 @@ def with_token():
     L._open = op
 
 
-def sock_start(ai, rt, m, prof, sock, own):
+def sock_start(ai, rt, m, prof, sock, own, seconds=90):
     """llama.cpp's server as Kontor starts it, but on a socket file inside the given profile. (process, key, answer of /health)"""
     key = "probe-" + os.urandom(8).hex()
     flags = rt.get("flags") or []
@@ -256,7 +273,7 @@ def sock_start(ai, rt, m, prof, sock, own):
     tail = []
     threading.Thread(target=lambda: [tail.append(x.decode("utf-8", "replace").rstrip()[:200]) for x in p.stdout], daemon=True).start()
     t0, status = time.time(), (0, "")
-    while time.time() - t0 < 90 and p.poll() is None:
+    while time.time() - t0 < seconds and p.poll() is None:
         status = http_ask(sock, "GET", "/health", seconds=3) if os.path.exists(sock) else (0, "no socket file yet")
         if status[0] == 200:
             break
@@ -339,30 +356,91 @@ def real(dirs, fits):
                 p.kill()
             print("socket file, %-6s %-13s %s" % (level, variant, "WORKS" if res.get("chat") == 200 and res.get("without key") == 401 and not res.get("network sockets") else "no   "),
                   json.dumps(res, ensure_ascii=False))
-    print("== 3. what it asks macOS for (only printed) ==")
-    if not fits:
-        return
+    services(dirs, ai, rt, m, fits, body)
+
+
+def links(dirs, probe):
+    """Part 3a: a file the model may not read, linked into its own folder -- is it read through the link?"""
+    print("== 3. for later (only printed) ==")
+    secret = os.path.join(dirs["data"], "secret.txt")
+    with open(secret, "w") as f:
+        f.write("NOT-FOR-THE-MODEL")
+    for level in ("strict", "basic"):
+        for name, more in (("as today", []), ("with (deny file-link*)", ["(deny file-link*)"])):
+            own = L.own_tmp()
+            prof = profile(dirs, level, "today", "", own, more)
+            res = {"read": end(sealed(prof, [probe, "read", secret])), "link into own folder": end(sealed(prof, [probe, "link", secret, os.path.join(own, "l")]))}
+            hole = "READ" in res["link into own folder"]
+            print("link, %-6s %-22s %s" % (level, name, "OPENS IT" if hole else "refused "), json.dumps(res, ensure_ascii=False))
+
+
+def refused(pid, since):
+    """The services of other programs the process asked macOS for and did not get (the system's log; a runner may read it)."""
+    time.sleep(2)
+    log = subprocess.run(["/usr/bin/sudo", "-n", "/usr/bin/log", "show", "--start", since, "--style", "compact", "--predicate",
+                          'eventMessage CONTAINS "deny" AND eventMessage CONTAINS "mach-lookup"'], capture_output=True, text=True, timeout=120).stdout
+    return {x.rsplit("mach-lookup", 1)[-1].strip() for x in log.split("\n") if "(%d)" % pid in x}
+
+
+def service_rule(name):
+    return '(allow mach-lookup (xpc-service-name "%s"))' % name[:-6] if name.endswith(" (xpc)") else '(allow mach-lookup (global-name "%s"))' % name
+
+
+def one_start(dirs, ai, rt, m, variant, more, body, log=True):
+    """The model on its socket file inside the strict profile with further rules: (does it answer, the services refused, its start)."""
     own = L.own_tmp()
     sock = os.path.join(own, "m.sock")
-    t0 = time.strftime("%Y-%m-%d %H:%M:%S")
-    p, key, status, tail = sock_start(ai, rt, m, profile(dirs, "strict", fits[0], sock, own, more=["(deny mach-lookup)"]), sock, own)
-    print("with every service of other programs denied: health", status[0], "| chat", http_ask(sock, "POST", "/v1/chat/completions", dict(body, stream=False), key)[0] if status[0] == 200 else "-",
-          "|", tail[-4:] if status[0] != 200 else "")
+    since = time.strftime("%Y-%m-%d %H:%M:%S")
+    p, key, status, tail = sock_start(ai, rt, m, profile(dirs, "strict", variant, sock, own, more=more), sock, own, seconds=25)
+    chat, rate = 0, ""
+    if status[0] == 200:
+        chat, text = http_ask(sock, "POST", "/v1/chat/completions", dict(body, stream=False, max_tokens=48), key)
+        try:
+            rate = "%.0f tokens/s" % json.loads(text)["timings"]["predicted_per_second"]
+        except (ValueError, KeyError, TypeError):
+            rate = "?"
     pid = p.pid
     p.terminate()
     try:
         p.wait(8)
     except subprocess.TimeoutExpired:
         p.kill()
-    if os.environ.get("GITHUB_ACTIONS") == "true":      # the system's log of what the sandbox refused (a runner may read it)
-        try:
-            time.sleep(2)
-            log = subprocess.run(["/usr/bin/sudo", "-n", "/usr/bin/log", "show", "--start", t0, "--style", "compact", "--predicate",
-                                  'eventMessage CONTAINS "deny" AND eventMessage CONTAINS "mach-lookup"'], capture_output=True, text=True, timeout=120).stdout
-            names = sorted({x.rsplit("mach-lookup", 1)[-1].strip() for x in log.split("\n") if "(%d)" % pid in x})
-            print("asked for (%d): %s" % (len(names), names))
-        except (OSError, subprocess.SubprocessError) as e:
-            print("the log could not be read:", type(e).__name__, e)
+    chip = [x[-110:] for x in tail if "MTL" in x or "Metal" in x or "offload" in x.lower()][:3]
+    try:
+        gone = refused(pid, since) if log else set()
+    except (OSError, subprocess.SubprocessError) as e:
+        gone = {"(the log could not be read: %s)" % type(e).__name__}
+    return chat == 200, gone, "%s | %s | %s" % (rate, chip, tail[-2:] if chat != 200 else "")
+
+
+def services(dirs, ai, rt, m, fits, body):
+    """Part 3b: the services of other programs. Nothing of it is a rule yet -- a runner's graphics chip is a stand-in, a real
+    Mac may ask for others."""
+    if not fits or os.environ.get("GITHUB_ACTIONS") != "true":
+        return
+    v = fits[0]
+    ok, _gone, how = one_start(dirs, ai, rt, m, v, ["(deny file-link*)"], body)
+    print("the model with (deny file-link*):", "RUNS" if ok else "no", how)
+    ok, names, how = one_start(dirs, ai, rt, m, v, ["(deny mach-lookup)"], body)
+    print("with every service of other programs denied:", "RUNS" if ok else "no", how)
+    print("asked for (%d): %s" % (len(names), sorted(names)))
+    for turn in range(6):                               # allowed what it asked for, and again: until it runs and asks for no more
+        ok, more, how = one_start(dirs, ai, rt, m, v, ["(deny mach-lookup)"] + [service_rule(n) for n in sorted(names)], body)
+        new = more - names
+        print("turn %d, %d services allowed: %s %s | asked for more: %s" % (turn + 1, len(names), "RUNS" if ok else "no", how, sorted(new)))
+        if not new:
+            break
+        names |= new
+    if not ok:
+        return
+    need = []
+    for n in sorted(names):                             # and each one left out in turn: which does it really need?
+        ok, _more, how = one_start(dirs, ai, rt, m, v, ["(deny mach-lookup)"] + [service_rule(x) for x in sorted(names) if x != n], body, log=False)
+        print("without %-48s %s %s" % (n, "RUNS" if ok else "no  ", how))
+        if not ok:
+            need.append(n)
+    ok, more, how = one_start(dirs, ai, rt, m, v, ["(deny mach-lookup)"] + [service_rule(n) for n in need], body)
+    print("with only those it does not run without (%d: %s): %s %s | refused then: %s" % (len(need), need, "RUNS" if ok else "no", how, sorted(more)))
 
 
 def main():
@@ -383,6 +461,10 @@ def main():
         print("the small program was not built:", built.stderr[:500])
         return 1
     fits = rules(dirs, probe)
+    try:
+        links(dirs, probe)
+    except Exception as e:
+        print("links: %s %s" % (type(e).__name__, str(e)[:400]))
     try:
         real(dirs, fits)
     except Exception as e:                              # (whatever part 2 runs into: part 1 stands)
