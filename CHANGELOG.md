@@ -1,5 +1,11 @@
 # Änderungen
 
+## 3.17.22 (2026-11-23 18:45)
+- KI-Assistent: Nachdenken lässt der Antwort immer Platz – auch bei kleinem Kontext und „Gründlich“ (keine abgeschnittene Antwort mehr)
+- KI-Assistent: vergessene Notiz verschwindet auch aus den Gedanken der Unterhaltung
+- KI-Assistent: Ursachen-Abfrage wird bei wenig Platz kleiner statt abgeschnitten
+- Entwicklung: Text am Ende des Nachdenkens in den Texten der Oberfläche; Stopp-Test wartet länger
+
 ## 3.17.21 (2026-11-23 18:40)
 - KI-Assistent: Modellliste ohne „Gründlich/Schnell/Klein“ – Gruppen nach Zweck, damit sie nicht wie die Wahl des Denkaufwands im Chat wirken
 - Hilfe: Suche springt zum ersten Fund, ↩/⌘G zum nächsten, ⇧↩/⇧⌘G zum vorigen; „3 von 12“

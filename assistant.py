@@ -72,9 +72,9 @@ log = logging.getLogger("kontor.assistant")
 FOLDER = "assistant"                               # in Kontor's data folder: llama.cpp and the model files
 EFFORTS = ("fast", "balanced", "thorough")
 THINK_BUDGET = 4000            # "balanced": at most this many tokens of thinking before each step of an answer (a lookup, the answer itself)
-# what the model's thinking ends with when it runs into that limit (llama.cpp puts it there): a thought that just breaks off
-# leaves the answer without its conclusion
-THINK_END = {"de": "\n\nGenug überlegt – ich antworte jetzt mit dem, was ich habe.", "en": "\n\nEnough thinking -- I answer now with what I have."}
+# (what the model's thinking ends with when it runs into that limit -- llama.cpp puts it there: a thought that just breaks off
+# leaves the answer without its conclusion -- is the text s_ki_denken_ende)
+ANSWER_ROOM = 2000             # tokens kept free for the answer itself in every step: thinking gets what is left beside them, at most
 CONTEXTS = (16384, 32768, 65536, 131072)           # tokens the model keeps in view (the tools' descriptions take about 5,000 -- 4,000 in a small one)
 COMPACT_BELOW = 32768                              # a smaller context gets the tools without the hints on their parameters (_specs)
 
@@ -1670,6 +1670,7 @@ class Assistant:
             j = self.job
             turn = j.turn if j is not None and not j.done and j.conv is conv and isinstance(getattr(j, "turn", None), list) else []
             for m in list(conv.get("messages") or []) + turn:
+                m.pop("reasoning_content", None)         # what it thought may quote the note word for word: its thoughts go (its answers stay, as said)
                 c = m.get("content")
                 if not isinstance(c, str):
                     continue
@@ -2500,10 +2501,17 @@ class Assistant:
         with_tx = bool(self.settings()["rights"].get("transactions"))
         room = ctx.get("room", MAX_RESULT) - 700
         out: Dict[str, Any] = {}
-        for n in (8, 6, 5, 4, 3, 2):                     # as much as fits: the result is never cut
-            out = self._drivers(ds, key, sel, n, with_tx, DRIVERS_DEPTH, frozenset((key,)))
-            if len(json.dumps(out, ensure_ascii=False, separators=(",", ":"))) <= room:
+        fits = lambda o: len(json.dumps(o, ensure_ascii=False, separators=(",", ":"))) <= room
+        for n, depth in [(n, DRIVERS_DEPTH) for n in (8, 6, 5, 4, 3, 2)] + [(2, d) for d in range(DRIVERS_DEPTH - 1, -1, -1)]:
+            out = self._drivers(ds, key, sel, n, with_tx, depth, frozenset((key,)))     # as much as fits: the result is never cut --
+            if fits(out):                                # fewer rows first, then fewer levels of linked areas
                 break
+        else:
+            out["left_out"] = "linked areas (too much for one result): ask for each area that an account 'follows' by itself"
+            for part in ("net_worth_month_ends_around", "largest_rows", "largest_transactions", "accounts"):
+                if fits(out):
+                    break
+                out.pop(part, None)
         out["note"] = ("before = the end of the month before the period, after = its end, change = after - before; by_cash_flow: the cash flow's lines over the period; "
                        "accounts: balances that changed, largest first (first_balance_in_period: new in these months); an account that 'follows' an area changes "
                        "with that area's net worth -- that area is under linked_areas, read the same way%s. These are facts, no reasons: conclude what happened, "
@@ -4896,7 +4904,7 @@ class Assistant:
         ev, done = j.after(max(0, after), wait=1.0)
         return {"events": ev, "done": done and not j.events[max(0, after) + len(ev):]}
 
-    def _effort(self, st: dict) -> dict:
+    def _effort(self, st: dict, room: Optional[int] = None) -> dict:
         """What the thinking effort means for llama.cpp -- with the sampling the model's maker recommends for it (llm_local.tuning;
         nothing for a model Kontor does not know: llama.cpp's own defaults then):
         fast -- no thinking;
@@ -4905,13 +4913,20 @@ class Assistant:
         model's chat template knows levels of thinking of its own (Qwen3.8: without one it takes its highest and thinks for
         minutes), the middle one -- never one the template refuses (LocalAI.caps);
         thorough -- no limit, the template's own level.
+        room: the tokens this step has left for thinking and answer together -- thinking never gets more than that less the
+        answer's own room (ANSWER_ROOM, in a small context an eighth of it): else a thought fills what is left and the answer
+        is cut off or the context runs over. So "thorough" has a limit too where the room is tight.
         Both names of the limit are sent (llama.cpp builds before b9982 read only thinking_budget_tokens)."""
         tune = model_tuning(str(st.get("model") or ""))
         if st["effort"] == "fast":
             return dict(tune["plain"], reasoning_effort="none", chat_template_kwargs={"enable_thinking": False})
         out = dict(tune["think"])
+        left = None if room is None else max(0, room - min(ANSWER_ROOM, int(st.get("context") or CONTEXTS[0]) // 8))
+        if st["effort"] != "balanced" and left is not None and left < int(st.get("context") or CONTEXTS[0]) // 4:      # (thorough: a limit only where it is tight)
+            out.update(reasoning_budget_tokens=left, thinking_budget_tokens=left, reasoning_budget_message="\n\n" + tr("s_ki_denken_ende"))
         if st["effort"] == "balanced":
-            out.update(reasoning_budget_tokens=THINK_BUDGET, thinking_budget_tokens=THINK_BUDGET, reasoning_budget_message=THINK_END["de" if i18n.lang() == "de" else "en"])
+            most = THINK_BUDGET if left is None else min(THINK_BUDGET, left)
+            out.update(reasoning_budget_tokens=most, thinking_budget_tokens=most, reasoning_budget_message="\n\n" + tr("s_ki_denken_ende"))
             caps = self.ai.caps or {}
             level = tune["levels"].get("balanced") or ("medium" if "medium" in (caps.get("levels") or []) else "")
             if level and level not in (caps.get("rejected") or []):
@@ -4941,7 +4956,8 @@ class Assistant:
     def _fit(self, turn: List[dict], st: dict, fixed: int = 0) -> None:
         """A question that needed many tools: when what was read and thought no longer fits, the earliest results of this
         question make room (the model is told and can read them again) -- then its earliest thoughts (what it concluded from a
-        result says more in less room than the result; the last two steps keep both). Its room: 60 % of the context, less
+        result says more in less room than the result; the last two steps keep both -- unless that alone is too much: then
+        their thoughts are shortened from the beginning or go too). Its room: 60 % of the context, less
         where the system text and the tools (fixed: their characters) leave less beside a sixth for the answer."""
         whole = int(st["context"] * 3.0)
         budget = min(int(whole * 0.6), max(whole // 5, whole - fixed - whole // 6))
@@ -4950,10 +4966,20 @@ class Assistant:
             if size() <= budget:
                 return
             m["content"] = '{"note":"dropped to save room -- call the tool again if you still need it"}'
-        for m in [m for m in turn if m.get("reasoning_content")][:-2]:
+        minds = [m for m in turn if m.get("reasoning_content")]
+        for m in minds[:-2]:
             if size() <= budget:
                 return
             del m["reasoning_content"]
+        for m in minds[-2:]:                             # still too much: the last thoughts too -- each keeps its end (where it concludes)
+            over = size() - budget
+            if over <= 0:
+                return
+            keep = len(m["reasoning_content"]) - over - 20
+            if keep < 200:
+                del m["reasoning_content"]
+            else:
+                m["reasoning_content"] = "[…] " + m["reasoning_content"][-keep:]
 
     def _give_way(self, history: List[dict], turn: List[dict], st: dict, fixed: int) -> List[dict]:
         """The earlier questions of the conversation beside what this one has read so far: when both no longer fit (with the
@@ -5035,7 +5061,7 @@ class Assistant:
                 history = self._give_way(history, turn, st, fixed)
                 msgs = [system] + history + turn
                 room = st["context"] - len(json.dumps(msgs, ensure_ascii=False)) // 3 - len(json.dumps(specs, ensure_ascii=False)) // 3 - 256
-                effort = self._effort(st)
+                effort = self._effort(st, room)
                 body = dict({"messages": msgs, "stream": True, "stream_options": {"include_usage": True},
                              "max_tokens": max(st["context"] // 4, min(st["context"] // 2, room)),     # thinking and answer together
                              "cache_prompt": True}, **effort)

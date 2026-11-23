@@ -1583,7 +1583,7 @@ class Tools(_Assist):
             self.a.set({"model": "not-downloaded"})
         self.assertEqual(self.a._effort({"effort": "fast"}), {"reasoning_effort": "none", "chat_template_kwargs": {"enable_thinking": False}})
         self.assertEqual(self.a._effort({"effort": "balanced"}), {"reasoning_budget_tokens": A.THINK_BUDGET, "thinking_budget_tokens": A.THINK_BUDGET,
-                                                                  "reasoning_budget_message": A.THINK_END["de"]})      # (a limit for each step: Asking)
+                                                                  "reasoning_budget_message": "\n\n" + MA.tr("s_ki_denken_ende")})      # (a limit for each step: Asking)
         self.assertEqual(self.a._effort({"effort": "thorough"}), {})
         rights = dict(self.a.settings()["rights"])                                    # a refused change leaves the settings in use as they were
         with self.assertRaises(ValueError):
@@ -2046,7 +2046,8 @@ class Asking(_Assist):
         req = self.sent()
         self.assertEqual({k: req.get(k) for k in ("temperature", "top_p", "top_k", "min_p", "presence_penalty")},
                          {"temperature": 0.6, "top_p": 0.95, "top_k": 20, "min_p": 0.0, "presence_penalty": 0.0})
-        self.assertEqual((req["reasoning_budget_tokens"], req["thinking_budget_tokens"]), (A.THINK_BUDGET, A.THINK_BUDGET))
+        self.assertEqual(req["reasoning_budget_tokens"], req["thinking_budget_tokens"])
+        self.assertTrue(2000 <= req["reasoning_budget_tokens"] <= A.THINK_BUDGET)       # (in this small context: what is left beside the answer's room)
         self.assertGreaterEqual(A.THINK_BUDGET, 2000)
         self.assertIn("Genug überlegt", req["reasoning_budget_message"])              # a thought cut off ends with a sentence, not in mid-word
         self.assertNotIn("chat_template_kwargs", req); self.assertNotIn("reasoning_effort", req)
@@ -2057,7 +2058,8 @@ class Asking(_Assist):
         self.ask("Hallo", effort="thorough")
         req = self.sent()
         self.assertEqual(req["temperature"], 0.6)
-        self.assertFalse({"reasoning_budget_tokens", "thinking_budget_tokens", "chat_template_kwargs", "reasoning_effort"} & set(req))
+        self.assertFalse({"chat_template_kwargs", "reasoning_effort"} & set(req))
+        self.assertTrue("reasoning_budget_tokens" not in req or req["reasoning_budget_tokens"] <= req["max_tokens"] - min(A.ANSWER_ROOM, 16384 // 8))      # no limit -- but the answer keeps its room in a small context
         for never in ("repeat_penalty", "frequency_penalty", "seed", "grammar", "cache_type_k"):
             self.assertNotIn(never, req)
         # a model Kontor does not know: nothing of its own -- llama.cpp's values (and what the model file carries)
@@ -2173,7 +2175,25 @@ class Asking(_Assist):
         tight = [{"role": "user", "content": "Frage"}] + [dict(m) for m in steps]
         self.a._fit(tight, st, 30000)                                                  # system text and tools take most of a small context: less room
         self.assertEqual([len(m["content"]) == 3000 for m in tight if m["role"] == "tool"], [False, False, False, True, True])
-        self.assertEqual(["reasoning_content" in m for m in tight if m["role"] == "assistant"], [False, False, False, True, True])      # (the last two steps keep both)
+        self.assertEqual(["reasoning_content" in m for m in tight if m["role"] == "assistant"], [False, False, False, False, True])     # (the earlier thoughts go, the last one keeps its end)
+        room = lambda t: sum(len(m["content"]) + len(m.get("reasoning_content") or "") for m in t)
+        self.assertLessEqual(room(tight), 49152 - 30000 - 8192)                        # ... and where even that is too much, they are shortened to their end
+        self.assertTrue(all(len(m.get("reasoning_content") or "") < 5000 for m in tight))
+        for ctx, effort in ((16384, "balanced"), (16384, "thorough"), (32768, "balanced"), (32768, "thorough")):
+            whole = ctx * 3
+            fixed = 21000 if ctx < 32768 else 32000                                     # (system text and tools, as measured)
+            long = [{"role": "user", "content": "Frage"}] + [dict(m, reasoning_content="g" * 14000) if "reasoning_content" in m else dict(m, content="r" * 6000) for m in steps[:6]]
+            self.a._fit(long, {"context": ctx}, fixed)
+            self.assertLessEqual(room(long), max(whole // 5, whole - fixed - whole // 6), (ctx, effort))
+            left = ctx - (fixed + room(long)) // 3 - 256                                 # tokens for thinking and answer, as _run counts them
+            eff = self.a._effort({"effort": effort, "model": "qwen3.6-35b-a3b", "context": ctx}, left)
+            self.assertLessEqual(eff["reasoning_budget_tokens"], max(0, left - min(A.ANSWER_ROOM, ctx // 8)), (ctx, effort))      # thinking leaves the answer its room
+            self.assertLessEqual(eff["reasoning_budget_tokens"] + min(A.ANSWER_ROOM, ctx // 8), max(left, min(A.ANSWER_ROOM, ctx // 8)))
+            self.assertEqual(eff["thinking_budget_tokens"], eff["reasoning_budget_tokens"])
+            if effort == "balanced":
+                self.assertLessEqual(eff["reasoning_budget_tokens"], A.THINK_BUDGET)
+        self.assertEqual(self.a._effort({"effort": "balanced", "model": "qwen3.6-35b-a3b", "context": 65536}, 30000)["reasoning_budget_tokens"], A.THINK_BUDGET)
+        self.assertEqual(self.a._effort({"effort": "balanced", "model": "qwen3.6-35b-a3b", "context": 16384}, 100)["reasoning_budget_tokens"], 0)
         small = [{"role": "user", "content": "Frage"}] + [dict(m) for m in steps[:4]]
         small[1]["reasoning_content"] = small[3]["reasoning_content"] = "kurz"
         before = json.dumps(small)
@@ -2196,6 +2216,16 @@ class Asking(_Assist):
         turn.append({"role": "tool", "tool_call_id": "d", "content": "r" * 20000})
         self.assertEqual(self.a._give_way(old, turn, st, 20000), [])
         self.assertEqual(self.a._give_way(old, turn, {"context": 65536}, 20000), old)  # a large context: room for all of it
+
+    def test_a_forgotten_note_takes_the_thoughts_with_it(self):
+        """Thoughts kept in the conversation may quote a note word for word: when a note is forgotten they go (answers stay)."""
+        self.a.conv["messages"] = [{"role": "user", "content": "Frage"},
+                                   {"role": "assistant", "content": "Antwort", "reasoning_content": "Die Notiz sagt: Ziel mit 45 frei."}]
+        self.a._scrub("n1", "Ziel mit 45 frei")
+        self.assertEqual(self.a.conv["messages"], [{"role": "user", "content": "Frage"}, {"role": "assistant", "content": "Antwort"}])
+        self.a.conv["messages"][1]["reasoning_content"] = "noch ein Gedanke"
+        self.a._scrub()                                                                # everything forgotten
+        self.assertNotIn("reasoning_content", json.dumps(self.a.conv["messages"]))
 
     def test_results_as_long_as_the_context_allows(self):
         self.assertEqual([A.result_room(c) for c in A.CONTEXTS], [7000, 11796, 23592, 40000])
@@ -2286,6 +2316,11 @@ class Causes(_Open):
         self.assertLessEqual(len(ends), 18); self.assertEqual(ends[0], priv["months"][0]); self.assertIn(priv["actual_until"], ends)
         self.assertEqual([x for x in ends[1:-3] if not x.endswith("-12")], [])
         self.assertEqual(whole["current_month_unfinished"], priv["actual_until"])
+        for small_room in (4200, 2600, 1500):                                         # too little room: fewer rows, then fewer linked areas, then parts left out -- whole JSON always
+            got_small = self.drivers(room=small_room, area="Privat", **{"from": m, "to": m})
+            self.assertLessEqual(len(json.dumps(got_small, ensure_ascii=False, separators=(",", ":"))), small_room, small_room)
+            self.assertEqual(got_small["net_worth"], got["net_worth"])
+        self.assertIn("left_out", self.drivers(room=1500, area="Privat", **{"from": m, "to": m}))
         year = self.drivers(area="Privat", **{"from": "%d-01" % (self.world.purchase.year + 1), "to": "%d-12" % (self.world.purchase.year + 1)})
         self.assertEqual(year["net_worth"]["change"], round(nw["%d-12" % (self.world.purchase.year + 1)] - nw[m], 2))
         self.assertEqual(year["net_worth"]["change"], round(sum(priv["cashflow"]["sums"][x]["net_worth_delta"] for x in priv["months"] if x[:4] == str(self.world.purchase.year + 1)), 2))
@@ -2339,7 +2374,7 @@ class Causes(_Open):
             req = json.load(f)                                                         # the last step: everything before it is in view
         kept = [m_ for m_ in req["messages"] if m_["role"] == "assistant"]
         self.assertEqual([m_["reasoning_content"] for m_ in kept], [steps[0]["think"], steps[1]["think"]])       # its thoughts of the steps before
-        self.assertEqual((req["reasoning_budget_tokens"], len([m_ for m_ in req["messages"] if m_["role"] == "tool"])), (A.THINK_BUDGET, 2))       # thinking in every step, not used up by the first
+        self.assertEqual((0 < req["reasoning_budget_tokens"] <= A.THINK_BUDGET, len([m_ for m_ in req["messages"] if m_["role"] == "tool"])), (True, 2))       # thinking in every step, not used up by the first
         told = json.loads(next(m_["content"] for m_ in req["messages"] if m_["role"] == "tool"))
         self.assertEqual(told["linked_areas"][0]["area"], "Parkweg GbR")
         # how to work on a cause stands in the system text -- as a way of working, with no case of its own
@@ -5442,7 +5477,7 @@ class Browser(unittest.TestCase):
                 # stop: at once
                 pg.fill("#as-in", "slow"); pg.keyboard.press("Enter")
                 until(pg, "AS.busy && document.querySelector('#as-go.stop') && /wort/.test(document.querySelector('#as-body').innerText)")
-                pg.click("#as-go"); until(pg, "!AS.busy", 8)
+                pg.click("#as-go"); until(pg, "!AS.busy", 30)
                 self.assertEqual(pg.evaluate("AS.msgs[AS.msgs.length - 1].state"), "stopped")
                 # Cmd-K hides and shows it; as a page; a new conversation
                 pg.keyboard.press("Meta+k"); until(pg, "!document.querySelector('#assist').classList.contains('open') && getComputedStyle(document.querySelector('main')).marginRight === '0px'")

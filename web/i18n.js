@@ -2728,6 +2728,7 @@ const I18N = {
 "ki_tool_get_tax":["Liest die Steuerübersicht", "Reads the tax overview"],
 "ki_tool_get_real_estate":["Liest die Immobilien", "Reads the properties"],
 "ki_tool_get_status":["Sieht nach, was offen ist", "Checks what is open"],
+"s_ki_denken_ende":["Genug überlegt – ich antworte jetzt mit dem, was ich habe.", "Enough thinking – I answer now with what I have."],
 "s_ki_keine_antwort":["Das Modell hat nichts geantwortet. Frag noch einmal, etwas genauer – mit mehr Denkaufwand (oben im Assistenten) oder einem größeren Modell (Einstellungen → KI-Assistent).", "The model gave no answer. Ask again, a little more precisely – with more thinking effort (at the top of the assistant) or a larger model (Settings → AI assistant)."],
 "ki_abgeschnitten":["Antwort abgeschnitten – frag nach dem Rest", "answer cut off – ask for the rest"],
 "ki_tool_get_changes":["Vergleicht mit früher", "Compares with before"],
