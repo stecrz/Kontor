@@ -1447,11 +1447,12 @@ class Assistant:
     # -- memory -------------------------------------------------------------------------------------------------------------
     # What the user told the assistant to remember (memory.py): notes in the user's own words. The model never writes there and
     # has no tool for it; every question is given the profile -- a fixed number of notes at most, however many there are.
-    def _memory_changed(self, what: str, note: dict, more: dict) -> None:
+    def _memory_changed(self, what: str, note: dict, more: dict, must: bool = False) -> None:
         """A note remembered, replaced, changed or forgotten, for the log of changes: when, what, and who asked for it (by:
         "settings" -- the user there, "chat" -- said in a conversation, "backup" -- notes that came back from a backup: how
-        many). What is forgotten leaves the log too: its text in earlier entries goes (forgotten means gone); the entry that
-        it was forgotten names no text."""
+        many; "import" and "export" -- notes read from a file or written into one: how many, never what they say). What
+        is forgotten leaves the log too: its text in earlier entries goes (forgotten means gone); the entry that it was
+        forgotten names no text. must: an entry that cannot be written raises (an export: none without its entry)."""
         nid, src = str(note.get("id") or ""), note.get("source") or {}
         gone = what in ("forget", "forget_all")
         if what == "forget_all":                         # nothing of it comes back: neither what was just forgotten nor what waited for a click
@@ -1466,7 +1467,7 @@ class Assistant:
                 log.warning("Assistant: a note brought back still listed as forgotten (%s)", type(e).__name__)
         rec = {"id": secrets.token_hex(6), "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "kind": "memory", "what": what,
                "title": "" if gone else str(note.get("text") or "")[:memory_mod.TEXT_MAX], "sub": "", "reason": "", "state": "done",
-               "chat": str(src.get("chat") or ""), "by": str(more.get("by") or ""), "note": nid, **({"count": int(more.get("count") or 0)} if what in ("forget_all", "backup") else {}),
+               "chat": str(src.get("chat") or ""), "by": str(more.get("by") or ""), "note": nid, **({"count": int(more.get("count") or 0)} if what in ("forget_all", "backup", "import", "export") else {}),
                "olds": [] if gone else [str(o) for o in more.get("old_ids") or []],
                "rows": [] if gone else [{"text": str(o)[:memory_mod.TEXT_MAX]} for o in more.get("old") or []]}
 
@@ -1481,6 +1482,8 @@ class Assistant:
         try:
             self._log_write(self, add)
         except Exception as e:
+            if must:
+                raise
             log.warning("Assistant: change of the memory not logged (%s)", type(e).__name__)
 
     def _note_gone(self, nid: str) -> bool:
@@ -1700,6 +1703,30 @@ class Assistant:
         if act in ("add", "edit"):
             self.index_notes()
         return dict(self.memory_list({"q": body.get("q"), "limit": body.get("limit"), "replaced": body.get("replaced")}), known=known)
+
+    def memory_export(self, version: str) -> dict:
+        """Einstellungen -> KI-Assistent -> Gedächtnis -> Exportieren (only at the Mac, see service.py): everything remembered
+        as one file in an open format, to read and to carry into another system (memory.export_file). The log of changes
+        says that it was exported and how many notes -- never what they say; without that entry nothing is handed out."""
+        out = self.memory.export_file(version)
+        self._memory_changed("export", {}, {"count": out["notes"], "by": "settings"}, must=True)
+        log.info("Assistant: memory exported (%d note(s))", out["notes"])          # never what a note says
+        return out
+
+    def memory_import(self, body: dict) -> dict:
+        """... -> Importieren (only at the Mac): the text of a file -- an exported memory or a plain list, a note per line --
+        checked as a whole first; with "check" only that, nothing is written. All of it comes in or nothing
+        (memory.import_file: each note checked like one typed there, marked as imported, never pinned, replacing nothing).
+        Written: the list comes back with it, as after any change there."""
+        if not isinstance(body.get("text"), str):
+            raise ValueError(tr("s_ki_g_x_leer"))
+        out = self.memory.import_file(body["text"], check=body.get("check") is True, by="settings")
+        if "added" not in out:                           # only looked at -- or refused: nothing changed
+            return out
+        log.info("Assistant: file read into the memory (%d note(s) new, %d known)", out["added"], out["known"])       # never what a note says
+        if out["added"]:
+            self.index_notes()
+        return dict(self.memory_list({"q": body.get("q"), "limit": body.get("limit")}), **out)
 
     # -- remembering in a conversation -------------------------------------------------------------------------------------------
     # A second, separate look decides what of the user's words is worth keeping (NOTICE_SYSTEM). It is given only what the user

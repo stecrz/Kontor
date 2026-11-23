@@ -1,5 +1,11 @@
 # Änderungen
 
+## 3.17.11 (2026-11-23 13:38)
+- KI-Assistent: Gedächtnis exportieren – eine Datei zum Lesen (Markdown) mit denselben Notizen als Daten für Programme (JSON); je Notiz Tag, Herkunft, angeheftet, was sie ersetzt hat
+- KI-Assistent: Gedächtnis importieren – so eine Datei oder eine Liste mit einer Notiz je Zeile aus einem anderen System; vorab geprüft, ganz oder gar nicht
+- KI-Assistent: Importiertes ist gekennzeichnet, nie angeheftet, ersetzt nichts; schon Gemerktes bleibt draußen, Zugangsdaten nie
+- KI-Assistent: beides unter Einstellungen → KI-Assistent → Gedächtnis, nur am Mac; im Änderungsprotokoll nur die Anzahl
+
 ## 3.17.10 (2026-11-23 10:12)
 - Zugang: iPhone mit eigenem Face-ID-Schlüssel (Passkey), am Mac per QR-Code hinzugefügt; Anmeldung mit Face ID
 - Zugang: jede Änderung vom iPhone mit Face ID bestätigt; sonst alles wie am Mac – nur Zugang, Updates, Einrichtung des Assistenten, Sicherung laden, Zurücksetzen, Passwort am Mac

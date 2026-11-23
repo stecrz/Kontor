@@ -2138,7 +2138,7 @@ DEMO_NEVER = frozenset(("/api/setup", "/api/login", "/api/touchid", "/api/touchi
                         "/api/assistant/settings", "/api/assistant/check", "/api/assistant/runtime/install", "/api/assistant/runtime/remove",
                         "/api/assistant/model/files", "/api/assistant/model/download", "/api/assistant/model/cancel", "/api/assistant/model/delete",
                         "/api/assistant/web", "/api/assistant/server", "/api/assistant/update-all",
-                        "/api/assistant/memory",
+                        "/api/assistant/memory", "/api/assistant/memory/export", "/api/assistant/memory/import",
                         # the iPhones added at the Mac and their passkeys: the demo knows none (a sign-in with one opens the demo in the real Kontor)
                         "/api/passkey/options", "/api/passkey/login", "/api/pair/begin", "/api/pair/finish", "/api/devices",
                         "/api/devices/pair", "/api/devices/set", "/api/devices/remove"))
@@ -3483,6 +3483,11 @@ def make_handler(app: App):
                 if not self._trusted(s) or not self._assistant_ok(s):
                     return self._json(403, {"error": tr("s_nur_von_diesem_mac_aus")})
                 return self._json(200, app.assistant.memory_list(q))
+            if path == "/api/assistant/memory/export":            # ... and all of it as one file in an open format, to read and to carry elsewhere: only at the Mac
+                if not self._at_mac(s):
+                    return self._json(403, {"error": tr("s_nur_von_diesem_mac_aus")})
+                out = app.assistant.memory_export(version())
+                return self._raw(200, out["text"].encode("utf-8"), "text/markdown; charset=utf-8", {"Content-Disposition": 'attachment; filename="%s"' % out["name"]})
             if path == "/api/assistant/poll":
                 if not self._assistant_ok(s):
                     return self._json(403, {"error": tr("s_nur_von_diesem_mac_aus")})
@@ -3648,7 +3653,7 @@ def make_handler(app: App):
             try:
                 body = {} if u.path == "/api/history/mm-import" else self._body(
                     65536 if before else MAX_UPLOAD if u.path == "/api/receipts/upload" else MAX_SPEECH if u.path in ("/api/assistant/transcribe", "/api/assistant/attach")
-                    else MAX_RESTORE if u.path == "/api/backup/restore" else MAX_BODY)
+                    else MAX_RESTORE if u.path in ("/api/backup/restore", "/api/assistant/memory/import") else MAX_BODY)
             except (ValueError, json.JSONDecodeError) as e:
                 return self._json(400, {"error": tr("s_ungueltige_anfrage_s") % e})
             remote = self._remote()
@@ -4141,6 +4146,8 @@ def make_handler(app: App):
                 return self._json(200, a.memory_do(body))
             if not mac:                                          # setting it up: at the Mac only (MAC_ONLY)
                 return self._json(403, {"error": tr("s_nur_von_diesem_mac_aus")})
+            if path == "/api/assistant/memory/import":           # an exported memory (or a plain list) read in: checked as a whole first, all of it or nothing
+                return self._json(200, a.memory_import(body))
             if path == "/api/assistant/settings":
                 a.set(body)
             elif path == "/api/assistant/check":
@@ -5311,7 +5318,7 @@ MAC_ONLY = frozenset(("/api/password", "/api/remote", "/api/devices/pair", "/api
                       "/api/history/mm-import", "/api/history/mm-reveal", "/api/file/choose", "/api/file/open", "/api/file/reveal", "/api/receipts/open",
                       "/api/assistant/settings", "/api/assistant/check", "/api/assistant/update-all", "/api/assistant/runtime/install",
                       "/api/assistant/runtime/remove", "/api/assistant/model/files", "/api/assistant/model/download", "/api/assistant/model/cancel",
-                      "/api/assistant/model/delete", "/api/assistant/web", "/api/assistant/server"))
+                      "/api/assistant/model/delete", "/api/assistant/web", "/api/assistant/server", "/api/assistant/memory/import"))
 # Requests that change nothing: from another device without Face ID (reading, computing what something would do, asking
 # the assistant, locking, the challenge for a confirmation). Every other request from another device changes something and
 # waits for Face ID on the iPhone it was signed in from (service: _remote_check) -- one not named here is a change.

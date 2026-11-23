@@ -23,6 +23,9 @@ the newer one away brings it back. Forgetting deletes: the note is gone from its
 Never remembered: passwords, PINs, TANs, keys, card numbers (secret_problem) -- Kontor stores no credentials.
 A backup is a file from outside: what comes back from one says so (how "backup"), is told to the log, is never pinned and can
 replace nothing that was there.
+Carried elsewhere: export_file writes everything remembered as one text in an open format ("kontor-memory": Markdown to read,
+the same as JSON for programs); import_file reads such a file -- or a plain list, a note per line -- checked as a whole first,
+all of it or nothing, every note checked like one typed by hand, marked (how "import"), never pinned, replacing nothing there.
 Forgotten holds: what was forgotten is kept in a list of its own (Forgotten: ids of notes and keys of turns of saved
 conversations, never a text), written before the note goes -- the search in saved conversations (Talks) follows it whatever
 happens to its own files.
@@ -31,6 +34,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import io
 import json
 import logging
 import math
@@ -42,10 +46,11 @@ import threading
 import unicodedata
 from array import array
 from collections import Counter
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Dict, Iterable, List, Optional, Set, Tuple
 
-from i18n import tr
+import i18n
+from i18n import tr, trn
 from storage import StoreLocked
 from web_search import GENERIC, LEGAL, _INVISIBLE, _fold
 
@@ -70,7 +75,11 @@ TALKS_PER_FILE = 10
 TALK_Q, TALK_A = 800, 900                          # characters of a question, of an answer kept for searching
 LIB_FILE = "memory-%s-%04d.json"                   # embeddings of other texts (Library: kind "help", "tx"), a few files each
 LIB_BUCKETS = 8
-HOWS = ("chat", "manual", "backup")                # where a note came from: said in a conversation, typed in the settings, restored
+HOWS = ("chat", "manual", "backup", "import")      # where a note came from: said in a conversation, typed in the settings, restored, read from a file
+EXPORT_FORMAT, EXPORT_VERSION = "kontor-memory", 1  # the open format the memory is exported in (export_file) and read from again (import_file)
+IMPORT_MAX = 100000                                # notes of one file at most
+REPLACED_MAX = 20                                  # earlier wordings told with a note at most (as many as a note can replace)
+PROBLEMS_SHOWN, PREVIEW_NOTES = 10, 200            # of what does not fit in a file / of the notes it would bring: as many are told to the page
 KINDS = ("", "fact", "preference", "plan", "decision", "person", "reason", "style")       # what it is about ("": not told)
 # words that say nothing about what a text is about (folded as _fold does: ae, oe, ue, ss): left out when texts are compared
 STOP = frozenset("""aber alle allem allen aller alles also andere anderen auch auf aus bei beim bin bis bist bitte dann das dass dein deine deinem deinen deiner dem den
@@ -525,6 +534,254 @@ def _valid(n: Any) -> Optional[dict]:
     if n.get("named") is True:                          # the model has named the names in it (with the note from a conversation, or later)
         out["named"] = True
     return out
+
+
+# -- carried elsewhere: one file in an open format (Memory.export_file, Memory.import_file) -----------------------------------
+class TransferError(ValueError):
+    """A file that cannot be read in as a memory at all (no text, damaged, something else, of a newer Kontor, too many notes)
+    -- its text is for the user."""
+
+
+_TIME = re.compile(r"([0-9]{4})-([0-9]{2})-([0-9]{2})(?:[T ]([0-9]{2}):([0-9]{2})(?::([0-9]{2})(?:[.,][0-9]{1,9})?)?[ ]?(?:([zZ])|([+-])([0-9]{2}):?([0-9]{2}))?)?")
+
+
+def _iso(stamp: str) -> str:
+    """A note's time (this Mac's clock, as kept) as other programs read it: ISO 8601 with the distance to UTC."""
+    try:
+        return datetime.strptime(stamp, "%Y-%m-%d %H:%M:%S").astimezone().isoformat(timespec="seconds")
+    except (ValueError, OverflowError, OSError):         # (a time this Mac's clock cannot place)
+        return stamp.replace(" ", "T")
+
+
+def _when(v: Any, fallback: str) -> str:
+    """A time read from a file, as a note keeps it: ISO 8601 (with a distance to UTC: turned to this Mac's clock; a day alone:
+    its beginning) or as Kontor writes it -- anything else, and a time that cannot be (the future): the fallback."""
+    m = _TIME.fullmatch(v.strip()) if isinstance(v, str) else None
+    if m is None:
+        return fallback
+    try:
+        when = datetime(*(int(x or 0) for x in m.groups()[:6]))
+        if m.group(7) or m.group(8):
+            off = timedelta(0) if m.group(7) else timedelta(hours=int(m.group(9)), minutes=int(m.group(10))) * (1 if m.group(8) == "+" else -1)
+            when = (when - off).replace(tzinfo=timezone.utc).astimezone().replace(tzinfo=None)
+        return _stamp(when.strftime("%Y-%m-%d %H:%M:%S"), fallback)
+    except (ValueError, OverflowError, OSError):
+        return fallback
+
+
+def _day(stamp: str) -> str:
+    """A note's day as the pages write it (23.11.2026; in English 23/11/2026)."""
+    return ("/" if i18n.lang() == "en" else ".").join((stamp[8:10], stamp[5:7], stamp[:4]))
+
+
+def _count(n: int) -> str:
+    """A number as the pages write it (100.000; in English 100,000)."""
+    return "{:,}".format(n) if i18n.lang() == "en" else "{:,}".format(n).replace(",", ".")
+
+
+_MD_SIGN = re.compile(r"[\\`*_\[\]<~]")
+_MD_ENTITY = re.compile(r"&(?=(?:#[0-9]{1,7}|#[xX][0-9a-fA-F]{1,6}|[A-Za-z][A-Za-z0-9]{1,31});)")
+_MD_START = re.compile(r"-(?=[ \t-]|$)|\+(?=[ \t]|$)|#(?=[ \t#]|$)|>|[0-9]{1,9}(?=[.)](?:[ \t]|$))")
+_MD_ESCAPED = re.compile(r"\\([!-/:-@\[-`{-~])")
+_MD_KEPT = re.compile("[\ue021-\ue07e]")
+_MD_MARKED = (re.compile(r"\*\*(?=\S)(.+?)(?<=\S)\*\*"), re.compile(r"(?<![\w*])\*(?=[^\s*])([^*]+?)(?<=[^\s*])\*(?![\w*])"), re.compile(r"`([^`]+)`"))
+
+
+def _md(text: str) -> str:
+    """A note's text for a Markdown list, so that a reader shows it letter for letter: nothing in it is taken for emphasis,
+    code, a link, a picture, HTML, a heading, a quote or a list of its own."""
+    t = _MD_ENTITY.sub(r"\\&", _MD_SIGN.sub(lambda m: "\\" + m.group(0), text))
+    m = _MD_START.match(t)
+    if m is None:
+        return t
+    return t[:m.end()] + "\\" + t[m.end():] if t[0].isdigit() else "\\" + t
+
+
+def _unmarked(s: str) -> str:
+    """A line of a list as a note's text: cleaned, a sign written with a backslash before it (\\*) as itself, and without the
+    marks of **bold**, *emphasis* and `code` around words. Links and everything else stay as written."""
+    if len(s) > 100 * TEXT_MAX:                          # (far too long for a note either way: said so, not worked through)
+        return s
+    t = clean(s)
+    if len(t) > 2 * TEXT_MAX:
+        return t
+    t = _MD_ESCAPED.sub(lambda m: chr(0xE000 + ord(m.group(1))), t)        # (clean leaves no character of that range: free to stand in)
+    for marked in _MD_MARKED:
+        t = marked.sub(r"\1", t)
+    return clean(_MD_KEPT.sub(lambda m: chr(ord(m.group(0)) - 0xE000), t))
+
+
+def _blocks(text: str) -> List[str]:
+    """What stands in the fenced blocks of a Markdown text that are marked as JSON (``` json ... ```); one that never ends is none."""
+    out: List[str] = []
+    fence, mine, buf = "", False, []
+    for line in io.StringIO(text):
+        s = line.strip()
+        if not fence:
+            m = re.fullmatch(r"(`{3,}|~{3,})[ \t]*([A-Za-z]*)[^`]*", s)
+            if m:
+                fence, mine, buf = m.group(1), m.group(2).lower() == "json", []
+        elif s.startswith(fence) and not s.strip(fence[0]):
+            if mine:
+                out.append("".join(buf))
+            fence = ""
+        elif mine:
+            buf.append(line)
+    return out
+
+
+def _wordings(olds: Any, room: List[int], depth: int = 0) -> List[dict]:
+    """The earlier wordings an exported note tells -- each may tell what it had replaced itself --, checked for their form
+    (ValueError: not built as an export is); at most REPLACED_MAX of them for one note (room: how many are left)."""
+    if not isinstance(olds, list):
+        raise ValueError("replaces")
+    out = []
+    for o in olds:
+        o = {"text": o} if isinstance(o, str) else o
+        if not isinstance(o, dict) or not isinstance(o.get("text"), str):
+            raise ValueError("replaces")
+        if room[0] <= 0:
+            break
+        room[0] -= 1
+        out.append({"text": o["text"], "created": o.get("created"), "replaces": _wordings(o.get("replaces", []), room, depth + 1) if depth < REPLACED_MAX else []})
+    return out
+
+
+def _export_notes(doc: dict) -> List[dict]:
+    """The notes of an exported memory (the JSON of format "kontor-memory") as import_file takes them -- TransferError when it
+    is of a newer format or not built as an export is."""
+    damaged = TransferError(tr("s_ki_g_x_beschaedigt"))
+    v, raw = doc.get("version"), doc.get("notes")
+    if not isinstance(v, int) or isinstance(v, bool) or v < 1 or not isinstance(raw, list):
+        raise damaged
+    if v > EXPORT_VERSION:
+        raise TransferError(tr("s_ki_g_x_neuer", v))
+    if len(raw) > IMPORT_MAX:
+        raise TransferError(tr("s_ki_g_x_zu_viele", _count(IMPORT_MAX)))
+    out, count = [], 0
+    for i, e in enumerate(raw, 1):
+        if not isinstance(e, dict) or not isinstance(e.get("text"), str):
+            raise damaged
+        room = [REPLACED_MAX]
+        try:
+            rep = _wordings(e.get("replaces", []), room)
+        except ValueError:
+            raise damaged from None
+        count += 1 + REPLACED_MAX - room[0]              # (earlier wordings are kept as notes too: they count)
+        if count > IMPORT_MAX:
+            raise TransferError(tr("s_ki_g_x_zu_viele", _count(IMPORT_MAX)))
+        out.append({"at": i, "text": e["text"], "created": e.get("created"), "changed": e.get("changed"), "kind": e.get("kind"),
+                    "names": e.get("names"), "replaces": rep})
+    return out
+
+
+_BULLET = re.compile(r"[-*+\u2022\u2023\u25e6\u2013\u2014][ \t]+(?=\S)")
+_SURE_BULLET = "\u2022\u2023\u25e6"                    # signs that are nothing but a list's (a hyphen, a plus, a star can be a note's own: "- 3 %")
+_NUMBER = re.compile(r"([0-9]{1,9})[.)][ \t]+(?=\S)")
+_BOX = re.compile(r"\[[ xX]\][ \t]+(?=\S)")
+_NO_NOTE = re.compile(r"#{1,6}(?:[ \t].*)?|(?:-[ \t]*){3,}|(?:\*[ \t]*){3,}|(?:_[ \t]*){3,}|={3,}|`{3,}[^`]*|~{3,}.*|<!--.*-->|(?=[^|]*\|)(?=[^-]*-)[|:\- \t]+")
+_QUOTED = re.compile(r"(?:>[ \t]?)+")
+_EXPORTED = re.compile(r"(?i)format[\"']?[ \t]*:?[ \t]*[\"']?" + re.escape(EXPORT_FORMAT))      # how an export names its format: in its head line and in its data
+
+
+def _list_lines(text: str) -> Iterable[Tuple[int, bool, str]]:
+    """The lines of a plain list that can be notes: (number of the line, whether it is indented, what it says) -- ("", for a
+    line that is none: empty, a heading, a rule, the fence of a block, a comment, the rule under a table's head)."""
+    for no, line in enumerate(io.StringIO(text), 1):
+        s = line.strip()
+        s = s[_QUOTED.match(s).end():].strip() if s.startswith(">") else s
+        yield (no, line[:1] == "\t" or line[:2] == "  ", "" if _NO_NOTE.fullmatch(s) else s)
+
+
+def _list_notes(text: str) -> List[dict]:
+    """A plain list read as notes, a note per line: empty lines, headings and rules are none; the sign or number before an
+    item goes -- a hyphen, plus or star only where the lines are a list (half of them and more begin so: "- 3 % Rendite" by
+    itself keeps its sign), numbers only where they count up from 1 (so "1. Januar: Miete steigt" keeps its day); an
+    indented line without a sign right under an item belongs to it. Marks of bold, emphasis and code go (_unmarked)."""
+    lines = bullets = 0
+    numbers: List[int] = []
+    for _, indented, s in _list_lines(text):
+        if not s:
+            continue
+        hit, num = _BULLET.match(s), _NUMBER.match(s)
+        if hit or num or not indented:
+            lines += 1
+        bullets += 1 if hit else 0
+        if num:
+            numbers.append(int(num.group(1)))
+        if lines > 4 * IMPORT_MAX:
+            break
+    listed = bullets * 2 >= lines
+    counted = len(numbers) >= 2 and numbers[0] == 1 and all(b == a + 1 or b == 1 for a, b in zip(numbers, numbers[1:]))
+    out: List[dict] = []
+    item = False                                         # the line before was an item of a list (or went on with it)
+    for no, indented, s in _list_lines(text):
+        if not s:
+            item = False
+            continue
+        hit = _BULLET.match(s) if listed or s[0] in _SURE_BULLET else None
+        hit = hit or (_NUMBER.match(s) if counted else None)
+        if hit:
+            s = s[hit.end():]
+            box = _BOX.match(s)
+            s = s[box.end():] if box else s
+        elif item and indented and out:                  # goes on with the item above
+            if len(out[-1]["text"]) <= 100 * TEXT_MAX:
+                out[-1]["text"] += " " + s
+            continue
+        item = bool(hit)
+        if len(out) >= IMPORT_MAX:
+            raise TransferError(tr("s_ki_g_x_zu_viele", _count(IMPORT_MAX)))
+        out.append({"at": no, "text": s})
+    for e in out:
+        e["text"] = _unmarked(e["text"])
+    return [e for e in out if any(c.isalnum() for c in e["text"][:4 * TEXT_MAX])]         # (a lone hyphen, dots: no note)
+
+
+def _some(notes: List[dict]) -> List[dict]:
+    if not notes:
+        raise TransferError(tr("s_ki_g_x_keine"))
+    return notes
+
+
+def read_file(text: Any) -> Tuple[str, List[dict]]:
+    """A file's text as the notes it would bring: ("kontor", ...) for an exported memory -- the JSON by itself or in the
+    Markdown file export_file writes -- or ("list", ...) for any other text, a note per line. Each note {"at": its number
+    in the file (a list: its line), "text"}, from an export also "created", "changed", "kind", "names", "replaces"
+    [{"text", "created"}] -- nothing of it checked yet (Memory.import_file does that). TransferError for what is no such
+    file: no text, another kind of file, an export that is damaged (its data cut off or missing) or of a newer format."""
+    if not isinstance(text, str) or not text.replace("\ufeff", "").strip():
+        raise TransferError(tr("s_ki_g_x_leer"))
+    if "\x00" in text or "\ufffd" in text:               # not a text (or not UTF-8): never a note with signs nobody wrote
+        raise TransferError(tr("s_ki_g_x_kein_text"))
+    text = text.lstrip("\ufeff").replace("\r\n", "\n").replace("\r", "\n")       # (its lines stay where they are: a place in it is named by its line)
+    start = text.lstrip()[:12]
+    if start.lower().startswith(("{\\rtf", "<?xml", "<!doctype", "<html", "%pdf", "pk\x03\x04")):
+        raise TransferError(tr("s_ki_g_x_kein_text"))
+    mine = _EXPORTED.search(text) is not None            # an export (or what is left of one): only its data count -- never read as a list
+    if start[0] in "{[":                                 # JSON: an export by itself -- or something else
+        try:
+            doc = json.loads(text)
+        except (ValueError, RecursionError):
+            doc = None
+            if mine or re.match(r"\{|\[\s*[\[{\"0-9]", start):     # (not "[ ] Aufgabe": a line of a list that begins with a bracket)
+                raise TransferError(tr("s_ki_g_x_beschaedigt" if mine else "s_ki_g_x_fremd")) from None
+        if isinstance(doc, dict) and doc.get("format") == EXPORT_FORMAT:
+            return "kontor", _some(_export_notes(doc))
+        if isinstance(doc, dict) and ("kontor_backup" in doc or "kontor_backup_encrypted" in doc):
+            raise TransferError(tr("s_ki_g_x_sicherung"))
+        if doc is not None:
+            raise TransferError(tr("s_ki_g_x_fremd"))
+    if mine:                                             # the Markdown file of an export: only its data count
+        for block in _blocks(text):
+            try:
+                doc = json.loads(block)
+            except (ValueError, RecursionError):
+                continue
+            if isinstance(doc, dict) and doc.get("format") == EXPORT_FORMAT:
+                return "kontor", _some(_export_notes(doc))
+        raise TransferError(tr("s_ki_g_x_beschaedigt"))
+    return "list", _some(_list_notes(text))
 
 
 class Memory:
@@ -1146,6 +1403,210 @@ class Memory:
         if failed is not None:
             raise failed
         return added
+
+    # -- carried elsewhere ---------------------------------------------------------------------------------------------------
+    def export_file(self, version: str) -> dict:
+        """Everything remembered as one text to keep, to read and to carry into another system (Einstellungen -> KI-Assistent
+        -> Gedächtnis -> Exportieren): Markdown -- a list a person reads, each note with its day, where it came from, whether
+        it is pinned and what it replaced -- and under it the same as JSON for programs (format "kontor-memory": the
+        format's version, when it was exported, Kontor's version; per note "text", "created" and "changed" as ISO 8601,
+        "origin" chat / pasted / manual / backup / import, "pinned", "replaces" -- the earlier wordings it took the place
+        of, the latest first, each with "text", "created" and its own "replaces" where it had replaced one itself --, "kind"
+        and "names" where known). The notes that count, pinned ones first, then the latest. Never a credential: a
+        note the check of today takes for one stays out, and the file says how many (left_out -- notes hold none anyway,
+        this is the second line). Returns {"name": a name for the file, "text", "notes": how many, "left_out"}."""
+        with self.lock:
+            notes = self._load()
+            pos = {nid: i for i, nid in enumerate(notes)}
+            act = sorted((n for n in notes.values() if n["id"] not in self._replaced), key=lambda n: (bool(n.get("pinned")), n["changed"], pos[n["id"]]), reverse=True)
+            by_new: Dict[str, List[str]] = {}
+            for old, new in self._replaced.items():
+                by_new.setdefault(new, []).append(old)
+
+            def earlier(nid: str, room: List[int], seen: Set[str]) -> List[dict]:
+                """What a note replaced -- each with what that had replaced in turn ("olds") --, the latest first; room: how many in all."""
+                out = []
+                for o in sorted(by_new.get(nid) or [], key=lambda i: (notes[i]["changed"], pos[i]), reverse=True):
+                    if o not in seen and room[0] > 0:
+                        seen.add(o)
+                        room[0] -= 1
+                        out.append(dict(notes[o], olds=earlier(o, room, seen)))
+                return out
+            rows = [dict(n, olds=earlier(n["id"], [REPLACED_MAX], {n["id"]})) for n in act]
+
+        def safe(olds: List[dict]) -> List[dict]:
+            """... without what today's check takes for a credential (what such a wording had replaced moves up)."""
+            out: List[dict] = []
+            for o in olds:
+                kept = safe(o["olds"])
+                out += kept if secret_problem(o["text"]) else [dict(o, olds=kept)]
+            return out
+        count = len(rows)
+        rows = [dict(n, olds=safe(n["olds"])) for n in rows if not secret_problem(n["text"])]
+        origin = lambda n: "pasted" if n["source"].get("pasted") else n["source"]["how"]
+        told = lambda olds: [dict({"text": o["text"], "created": _iso(o["created"])}, **({"replaces": told(o["olds"])} if o["olds"] else {})) for o in olds]
+        flat = lambda olds: [x for o in olds for x in [o] + flat(o["olds"])]
+        entries = []
+        for n in rows:
+            e: Dict[str, Any] = {"text": n["text"], "created": _iso(n["created"])}
+            if n["changed"] != n["created"]:
+                e["changed"] = _iso(n["changed"])
+            e.update(origin=origin(n), pinned=bool(n.get("pinned")), replaces=told(n["olds"]))
+            if n.get("kind"):
+                e["kind"] = n["kind"]
+            if n.get("names"):
+                e["names"] = list(n["names"])
+            entries.append(e)
+        now = datetime.now()
+        head = (("format", EXPORT_FORMAT), ("version", EXPORT_VERSION), ("exported", _iso(now.strftime("%Y-%m-%d %H:%M:%S"))), ("kontor", str(version)))
+        data = ["{"] + [" %s: %s," % (json.dumps(k), json.dumps(v, ensure_ascii=False)) for k, v in head] + [' "notes": [']
+        data += ["  " + json.dumps(e, ensure_ascii=False) + ("," if i + 1 < len(entries) else "") for i, e in enumerate(entries)] + [" ]", "}"]
+        said = {"pasted": "ki_g_eingefuegt", "chat": "ki_g_h_chat", "manual": "ki_g_h_manual", "backup": "ki_g_h_backup", "import": "ki_g_h_import"}
+        out = ["# " + tr("s_ki_g_x_titel"), "",
+               tr("s_ki_g_x_kopf", str(version), _day(now.strftime("%Y-%m-%d")), now.strftime("%H:%M"), trn("ki_g_n", len(entries), _count(len(entries))), EXPORT_FORMAT, EXPORT_VERSION),
+               "", "## " + tr("s_ki_g_x_notizen"), ""]
+        if count > len(rows):                            # (said in the file itself: whoever reads it knows that something is missing)
+            out[3:3] = ["", trn("s_ki_g_x_ohne", count - len(rows), _count(count - len(rows)))]
+        for n in rows:
+            out.append("- " + _md(n["text"]))
+            out.append("  - " + " · ".join([_day(n["created"]), tr(said[origin(n)])] + ([tr("s_ki_g_x_angeheftet")] if n.get("pinned") else [])))
+            out += ["  - %s (%s)" % (tr("ki_g_ersetzt", _md(o["text"])), _day(o["created"])) for o in flat(n["olds"])]
+        if not rows:
+            out.append(tr("ki_g_leer"))
+        # (a backtick is written as its number there, \u0060: the data never end their own block, whatever a note says)
+        out += ["", "## " + tr("s_ki_g_x_daten"), "", tr("s_ki_g_x_daten_text"), "", "```json", "\n".join(data).replace("`", "\\u0060"), "```", ""]
+        return {"name": "Kontor-%s-%s.md" % (tr("xf_memory"), now.strftime("%Y-%m-%d")), "text": "\n".join(out), "notes": len(entries), "left_out": count - len(rows)}
+
+    def import_file(self, text: Any, check: bool = False, by: str = "") -> dict:
+        """Notes of a file into the memory (Einstellungen -> KI-Assistent -> Gedächtnis -> Importieren): an exported memory
+        (export_file) or a plain list, a note per line (read_file). A file from outside, so: the whole of it is checked before
+        anything is written, and all of it comes in or nothing -- every note goes through what a note typed by hand goes
+        through (invisible characters out, not empty, not longer than a note may be, never a credential), and one that does
+        not pass refuses the file (problems: where and why). What comes in says so (how "import"), is never pinned, and
+        replaces nothing that was there (a note of the file can replace only earlier wordings the same file brings: they
+        come along as replaced, each by what the file says replaced it). A note there already -- the same text, counting or
+        replaced -- is left out (known; an earlier wording that is there is not made again: what it had replaced moves up), also
+        one the file holds twice. Names a file gives for a note count only where they stand in it, and the model still
+        looks at it (never "named" by a file). check: nothing is written -- what would happen is told. Told to the log (how
+        many). TransferError for what is no such file. Returns {"ok", "kind", "found": notes in the file, "new": those that
+        would come, "known", "problems": the first of them, "problem_count", "preview": the first of the new notes,
+        "text_max"} and, when it was to be written and nothing spoke against it, "added"."""
+        kind, entries = read_file(text)
+
+        def fits(raw: str) -> Tuple[str, str]:
+            """(a note's text as it would be kept, why it cannot: "empty", "long", "secret" -- "" when it can)."""
+            if len(raw) > 100 * TEXT_MAX:
+                return clean(raw[:200]), "long"
+            t = clean(raw)
+            return t, "empty" if not t else "long" if len(t) > TEXT_MAX else "secret" if secret_problem(t) else ""
+        problems: List[dict] = []
+        good: List[dict] = []
+        bad: List[Tuple[str, str]] = []
+
+        def wordings(olds: List[dict]) -> List[dict]:
+            """A note's earlier wordings, each checked as a note is (an empty one is none: what it had replaced moves up) --
+            the first that cannot be kept is told (bad)."""
+            out: List[dict] = []
+            for o in olds:
+                t, why = fits(o["text"])
+                kept = wordings(o["replaces"])
+                if why and why != "empty" and not bad:
+                    bad.append((why, t))
+                out += kept if why else [{"text": t, "created": o.get("created"), "replaces": kept}]
+            return out
+        for e in entries:                                # (outside the lock: thousands of notes take a moment)
+            t, why = fits(e["text"])
+            del bad[:]
+            olds = [] if why else wordings(e.get("replaces") or [])
+            why, t = bad[0] if bad else (why, t)
+            if why:
+                problems.append(dict({"at": e["at"], "why": why}, **({"text": t[:80]} if why == "long" else {})))
+            else:
+                good.append(dict(e, text=t, replaces=olds))
+        added: List[dict] = []
+        with self.lock:
+            notes = self._load()
+            have = {same_text(n["text"]) for n in notes.values()}
+            fresh, known = [], 0
+            for e in good:                               # first the notes that count: one of them is never lost to an earlier wording of another
+                key = same_text(e["text"])
+                if key in have:
+                    known += 1
+                    continue
+                have.add(key)
+                fresh.append(e)
+            out = {"ok": not problems, "kind": kind, "found": len(entries), "new": len(fresh), "known": known, "problems": problems[:PROBLEMS_SHOWN],
+                   "problem_count": len(problems), "preview": [e["text"] for e in fresh[:PREVIEW_NOTES]], "text_max": TEXT_MAX}
+            if problems or check:
+                return out
+            if not fresh:
+                return dict(out, added=0)
+            now = _now()
+            ids: Set[str] = set()
+
+            def note(text: str, created: Any, changed: Any = None, **more) -> dict:
+                made = _when(created, now)
+                nid = "n" + secrets.token_hex(5)
+                while nid in notes or nid in ids:  # pragma: no cover - 40 random bits
+                    nid = "n" + secrets.token_hex(5)
+                ids.add(nid)
+                n = _valid(dict(more, id=nid, text=text, created=made, changed=_when(changed, made), source={"how": "import"}))
+                assert n is not None
+                return n
+
+            def earlier(olds: List[dict]) -> List[str]:
+                """The notes made for a note's earlier wordings (their ids), each after what it had replaced itself. One
+                that is there -- or comes -- as a note of its own is not made: what it had replaced moves up."""
+                made: List[str] = []
+                for o in olds:
+                    before = earlier(o["replaces"])
+                    key = same_text(o["text"])
+                    if key in have:
+                        made += before
+                    else:
+                        have.add(key)
+                        added.append(note(o["text"], o.get("created"), replaces=before))
+                        made.append(added[-1]["id"])
+                return made
+            for e in reversed(fresh):                    # the last of the file first: so its first is the latest (as a file exported: the latest first)
+                olds = earlier(e["replaces"])
+                added.append(note(e["text"], e.get("created"), e.get("changed"), kind=e.get("kind"), names=e.get("names"), replaces=olds))
+            seg = self._free_segment()
+            room = SEGMENT - len(self._by_seg.get(seg) or [])
+            old_file = seg if self._by_seg.get(seg) else 0       # the file that was there and takes the first of them: written last
+            parts: List[int] = []
+            for n in added:
+                if room <= 0:
+                    seg, room = seg + 1, SEGMENT
+                if not parts or parts[-1] != seg:
+                    parts.append(seg)
+                notes[n["id"]] = n
+                self._put(n["id"], seg)
+                room -= 1
+            written: List[int] = []
+            try:                                         # the new files first: a write that fails then leaves nothing of it behind
+                for seg in [s for s in parts if s != old_file] + [s for s in parts if s == old_file]:
+                    self._write(seg)
+                    written.append(seg)
+            except Exception:
+                for n in added:
+                    notes.pop(n["id"], None)
+                    self._take(n["id"])
+                for seg in parts:
+                    if not self._by_seg.get(seg):
+                        self._by_seg.pop(seg, None)
+                for seg in written:                      # (never the file that was there: it is the last to be written)
+                    try:
+                        self.store.delete(self._file(seg))
+                    except Exception as e:
+                        log.warning("Memory: a file of an import that failed not removed (%s)", type(e).__name__)
+                self._rev += 1
+                raise
+            self._relink()
+            self.epoch += 1
+        log.info("Memory: %d note(s) imported from a file", len(fresh))
+        self._tell("import", {}, count=len(fresh), by=by)
+        return dict(out, added=len(fresh))
 
     def unnamed(self, limit: int) -> List[dict]:
         """Notes that count whose names nobody has named yet: typed in the settings or back from a backup (a note from a

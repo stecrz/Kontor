@@ -157,7 +157,7 @@ anhängen – nie löschen.
   benannt. Zahlen kommen dabei nie aus einem Modell, sondern aus der Datei (Textebene oder Texterkennung): ein Modell darf nur
   die Form einer Tabelle liefern. Der Kern (Dienst, Zugang, Schlüssel, Freigaben, Update-Prüfung) bleibt Standardbibliothek.
 - **Gedächtnis übertragbar** (Nutzer, 2026-11-23): Notizen lassen sich am Mac in einem offenen Format exportieren und wieder
-  einlesen, damit ein anderes System sie übernehmen kann.
+  einlesen, damit ein anderes System sie übernehmen kann. (umgesetzt in 3.17.11)
 - **Tailscale prüfen** (Nutzer, 2026-11-23): Kontor prüft (nur lesend), ob Tailnet Lock aktiv ist und Kontor nicht über Funnel/serve
   aus dem Internet erreichbar ist, und erklärt sonst, wie man es behebt. (umgesetzt in 3.17.10)
 - **Antworten vor Tempo** (Nutzer, 2026-11-23): Saubere, richtige Antworten sind wichtiger als Geschwindigkeit. Die Einbindung
@@ -262,6 +262,14 @@ Fertig, wenn
     Bedeutung gekennzeichnet), Einbettungen im Hintergrund; dazu benennt das Modell Namen in von Hand angelegten Notizen (Filter
     der Internetsuche). Offen: die Suchfelder der Hilfe- und der Umsatzseite suchen weiter nach Wörtern (nach Wunsch mit demselben
     Baustein). Am Mac prüfen: Schwelle für Umsätze (`memory.SEM_MIN`) mit echten Gegenparteien.
+  - [x] Gedächtnis mitnehmen (siehe Entschieden, „Gedächtnis übertragbar“). Unter der Liste **Exportieren** –
+    eine Datei, oben zum Lesen (Markdown: je Notiz Tag, Herkunft, angeheftet, was sie ersetzt hat), darunter dasselbe als JSON für
+    Programme (Format `kontor-memory`: Formatversion, Exportzeit, Kontor-Version), nie Zugangsdaten – und **Importieren …**: so eine
+    Datei oder eine Liste mit einer Notiz je Zeile aus einem anderen System; vorab ganz geprüft, ganz oder gar nicht, jede Notiz
+    geprüft wie eine von Hand, gekennzeichnet, nie angeheftet, ersetzt nichts, Doppelte bleiben draußen. Nur am Mac, nie in der
+    Demo; im Änderungsprotokoll nur die Anzahl. (umgesetzt in 3.17.11)
+    Offen: ein Import lässt sich nur Notiz für Notiz zurücknehmen (kein „Import zurücknehmen“ in einem Schritt). Am Mac prüfen:
+    in der Mac-App landet der Export unter „Downloads“, „Importieren …“ öffnet das Dateifenster.
 - **Hinweise von selbst:** nach jedem Abgleich prüft Kontor (fester Code) auf Auffälliges – gestiegene Ausgaben, ungewöhnliche
   Umsätze, Fristen (Voranmeldung, Zinsbindung), Liquidität, offene Kategorien, Sicherheitslage (Zugang, Freigaben, Updates) –
   und zeigt es unter Offenes; der Assistent erklärt und ordnet ein, Gemerktes zählt (bekannter Grund, kein Alarm);
