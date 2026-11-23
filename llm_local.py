@@ -45,7 +45,7 @@ import urllib.error
 import urllib.request
 import zipfile
 from collections import deque
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Callable, Dict, Iterator, List, Optional
 from urllib.parse import quote, urlparse
 
@@ -186,6 +186,16 @@ def part_names(m: dict) -> List[str]:
     return names if names and len(names) <= MAX_PARTS and len(set(names)) == len(names) and all(FILE_RE.fullmatch(n) for n in names) else []
 
 
+_RUNTIME_LOCKS: Dict[str, threading.Lock] = {}     # one per assistant folder: runtime.json and the builds beside it change one at a time
+_RUNTIME_LOCKS_GUARD = threading.Lock()
+
+
+def runtime_lock(base: str) -> threading.Lock:
+    """Shared by the processes of one folder (answers, dictation, meaning). Taken after a LocalAI's own lock, never before it."""
+    with _RUNTIME_LOCKS_GUARD:
+        return _RUNTIME_LOCKS.setdefault(os.path.realpath(base), threading.Lock())
+
+
 class Cancelled(Exception):
     pass
 
@@ -292,6 +302,24 @@ def asset_tag() -> str:
                 pass
         return "macos-arm64" if arm else "macos-x64"
     return "ubuntu-arm64" if arm else "ubuntu-x64"
+
+
+def _aged(published: Any, seconds: float) -> bool:
+    """A release out at least that long (GitHub's published_at, "2026-11-20T08:15:00Z"). Not named at all: counts as old
+    enough (GitHub names it for every published release); named but not readable or in the future: not."""
+    if published is None:
+        return True
+    try:
+        when = datetime.strptime(str(published)[:19], "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
+    except ValueError:
+        return False
+    return (datetime.now(timezone.utc) - when).total_seconds() >= seconds
+
+
+def older_build(tag: str, than: str) -> bool:
+    """llama.cpp's builds are numbered (b7123): an older one than the installed is never named newer nor installed in its place."""
+    a, b = re.fullmatch(r"b(\d{1,7})", tag or ""), re.fullmatch(r"b(\d{1,7})", than or "")
+    return bool(a and b and int(a.group(1)) < int(b.group(1)))
 
 
 def pick_asset(release: dict) -> Optional[dict]:
@@ -489,6 +517,7 @@ class LocalAI:
         self.lock = threading.RLock()
         self.job: Optional[dict] = None                # a download in progress (or its end)
         self.news: dict = {}                           # the last look for newer versions (by itself or on your click)
+        self.min_age = 0                               # updated by itself: only builds of llama.cpp out at least that long (seconds; AUTO_AGE)
         self.proc: Optional[subprocess.Popen] = None
         self.sock = ""                                 # the socket file the running model listens on (in its own temporary folder)
         self.key = ""
@@ -566,10 +595,15 @@ class LocalAI:
 
     # -- looking for newer versions (by itself, as set) and loading (on your click only) ----------------------------------------------
     def latest_runtime(self) -> dict:
-        """The newest published release (pre-releases included, drafts not) with a build for this machine."""
+        """The newest published release (pre-releases included, drafts not) with a build for this machine. With min_age
+        (updated by itself): only a build out at least that long -- a broken or planted build is usually found and taken
+        back within hours -- and never one that did not start here before (bad_builds)."""
         rels, _ = _json_get(RELEASES_URL, GITHUB)
+        bad = self.bad_builds()
         for rel in rels if isinstance(rels, list) else []:
             if not isinstance(rel, dict) or rel.get("draft"):
+                continue
+            if str(rel.get("tag_name") or "")[:40] in bad or (self.min_age and not _aged(rel.get("published_at"), self.min_age)):
                 continue
             a = pick_asset(rel)
             if a:                             # the newest build it is -- one from another address is refused, not swapped for an older one
@@ -610,7 +644,8 @@ class LocalAI:
         news: dict = {"at": datetime.now().strftime("%Y-%m-%d %H:%M"), "models": {}}
         try:
             lr = self.latest_runtime()
-            news["runtime"] = {"tag": lr["tag"], "newer": lr["tag"] != (self.runtime().get("tag") or "")}
+            cur = self.runtime().get("tag") or ""
+            news["runtime"] = {"tag": lr["tag"], "newer": lr["tag"] != cur and not older_build(lr["tag"], cur)}
         except Exception as e:
             news["error"] = str(e)[:300]
         cat = {c["id"]: c for c in CATALOG + SPEECH + EMBED}
@@ -732,6 +767,8 @@ class LocalAI:
         """llama.cpp's newest release for this machine: loaded, checked, unpacked, tried (--version inside the sandbox)."""
         def work(job: dict) -> None:
             a = self.latest_runtime()
+            if older_build(a["tag"], self.runtime().get("tag") or ""):
+                raise ValueError(tr("s_ki_nichts_neues"))
             job["label"] = a["tag"]
             tag = re.sub(r"[^\w.\-]", "_", a["tag"]) or "release"
             rdir = self._p("runtime")
@@ -761,16 +798,60 @@ class LocalAI:
                 raise
             self._changing("")
             final = os.path.join(rdir, tag)
-            shutil.rmtree(final, ignore_errors=True)
-            os.replace(tmp, final)
-            self._save("runtime.json", {"tag": a["tag"], "dir": tag, "bin": rel, "version": version, "flags": flags, "sock": sock, "sha256": sha,
-                                        "installed": datetime.now().strftime("%Y-%m-%d %H:%M")})
-            for name in os.listdir(rdir):                   # older versions go
-                if name != tag:
-                    full = os.path.join(rdir, name)
-                    shutil.rmtree(full, ignore_errors=True) if os.path.isdir(full) and not os.path.islink(full) else os.remove(full)
+            with runtime_lock(self.base):
+                cur = self._load("runtime.json")
+                old = {k: v for k, v in cur.items() if k != "previous"}
+                if old.get("dir") == tag:                   # the same build again: the one before it (if any) stays the one before
+                    old = cur.get("previous") if isinstance(cur.get("previous"), dict) else {}
+                elif not self.runtime():
+                    old = {}
+                keep = str(old.get("dir") or "") if old.get("dir") != tag else ""
+                shutil.rmtree(final, ignore_errors=True)
+                os.replace(tmp, final)
+                # the build before stays until the new one has started a model here once (proven): a new build that does not
+                # start gives way to it by itself (ensure)
+                self._save("runtime.json", dict({"tag": a["tag"], "dir": tag, "bin": rel, "version": version, "flags": flags, "sock": sock, "sha256": sha,
+                                                 "installed": datetime.now().strftime("%Y-%m-%d %H:%M")}, **({"previous": old} if keep else {})))
+                self._tidy_runtime(tag, keep)
             self.news.pop("runtime", None)
         return self._start_job("runtime", "llama.cpp", "llama.cpp", work)
+
+    def _tidy_runtime(self, *keep: str) -> None:
+        """Every build of llama.cpp in its folder but these (folder names) goes -- and anything else left there."""
+        rdir = self._p("runtime")
+        for name in os.listdir(rdir) if os.path.isdir(rdir) else []:
+            if name not in keep:
+                full = os.path.join(rdir, name)
+                shutil.rmtree(full, ignore_errors=True) if os.path.isdir(full) and not os.path.islink(full) else os.remove(full)
+
+    def bad_builds(self) -> List[str]:
+        """Builds of llama.cpp that did not start a model here while the one before did: never installed again."""
+        return [str(t)[:40] for t in (self._load("runtime-bad.json").get("tags") or [])][-50:]
+
+    def _proven(self, path: str) -> None:
+        """The installed build (path: its llama-server) has started a model here: the one before is not needed any more."""
+        with runtime_lock(self.base):
+            r = self._load("runtime.json")
+            if isinstance(r.get("previous"), dict) and self.runtime().get("path") == path:
+                self._save("runtime.json", {k: v for k, v in r.items() if k != "previous"})
+                self._tidy_runtime(str(r.get("dir") or ""))
+
+    def _give_way(self) -> Optional[dict]:
+        """The newly installed build did not start a model: back to the build before it (still in its folder). Returns the
+        runtime.json of the new one (to come back to), None when there is nothing to go back to."""
+        r = self._load("runtime.json")
+        prev = r.get("previous") if isinstance(r.get("previous"), dict) else None
+        if not prev or not prev.get("dir") or not prev.get("bin"):
+            return None
+        self._changing("")
+        with runtime_lock(self.base):
+            if self._load("runtime.json") != r:         # installed or proven meanwhile: as it is now
+                return None
+            self._save("runtime.json", prev)
+            if not self.runtime():                      # its folder is gone: the new build it stays
+                self._save("runtime.json", r)
+                return None
+        return r
 
     def _probe(self, binp: str, level: str = "strict") -> tuple:
         """Version and options of a llama-server (run inside the sandbox where there is one, with nothing of any network
@@ -1100,9 +1181,9 @@ class LocalAI:
         self._save("runtime.json", kept)
         return self.runtime()
 
-    def ensure(self, model_id: str, ctx: int, sandbox: str = "strict", cancel: Optional[threading.Event] = None) -> None:
+    def ensure(self, model_id: str, ctx: int, sandbox: str = "strict", cancel: Optional[threading.Event] = None, fallback: bool = True) -> None:
         """The model runs and is ready (started if needed; another model, context size or sandbox: started anew).
-        sandbox: "strict" | "basic" | "off" -- exactly that, or no start at all."""
+        sandbox: "strict" | "basic" | "off" -- exactly that, or no start at all. A new build that does not start it: _fall_back."""
         sandbox = sandbox if sandbox in SANDBOXES else "strict"
         with self.lock:
             seal = "" if sandbox == "off" or (not self._can_seal() and sys.platform != "darwin") else sandbox     # (not a Mac: there is no sandbox-exec)
@@ -1154,6 +1235,8 @@ class LocalAI:
                 if h:
                     self.state, self.since, self.last_used = "ready", time.time(), time.time()
                     log.info("Assistant: model %s ready after %.0f s (sandbox: %s)", model_id, time.time() - t0, self.sealed or "off")
+                    if self.role == "server":                     # the model that answers decides whether a new build holds
+                        self._proven(rt["path"])
                     return
                 reached = reached or h is False                  # it answers "still loading": Kontor reaches it
                 if time.time() - t0 > (START_SECONDS if reached else REACH_SECONDS):
@@ -1165,7 +1248,36 @@ class LocalAI:
             # never reached inside the sandbox: said so (the rules are yours to change, not tried weaker by itself)
             self.error = (tr("s_ki_sandbox_start") % why) if seal and not reached else why
             log.warning("Assistant: model did not start (sandbox: %s): %s", seal or "off", why[:300])
+            if fallback and self._fall_back(model_id, ctx, sandbox, cancel, self.error):
+                return
             raise ModelError(tr("s_ki_startet_nicht") % self.error)
+
+    def _fall_back(self, model_id: str, ctx: int, sandbox: str, cancel: Optional[threading.Event], why: str) -> bool:
+        """ensure: a newly installed build of llama.cpp did not start the model that answers -- the build before it tries (in
+        self.lock). True: it runs (the new build is never installed again); False: nothing to go back to, or the build before
+        does not start it either (then the new one stays: it is not the build)."""
+        new = self._give_way() if self.role == "server" else None
+        if new is None:
+            return False
+        prev = self._load("runtime.json")
+        try:
+            self.ensure(model_id, ctx, sandbox, cancel, fallback=False)
+        except (ModelError, Cancelled) as again:
+            self._changing("")
+            with runtime_lock(self.base):                # back to the new build, unless something was installed meanwhile
+                if self._load("runtime.json") == prev:
+                    self._save("runtime.json", new)
+            if isinstance(again, Cancelled):
+                raise
+            self.state, self.error = "error", why
+            return False
+        with runtime_lock(self.base):
+            if self._load("runtime.json") == prev:
+                tags = self.bad_builds() + [str(new.get("tag") or "")[:40]]
+                self._save("runtime-bad.json", {"tags": tags[-50:]})
+                self._tidy_runtime(str(prev.get("dir") or ""))
+        log.warning("Assistant: llama.cpp %s did not start the model -- back to %s", new.get("tag"), self.runtime().get("tag"))
+        return True
 
     @property
     def caps(self) -> Dict[str, Any]:

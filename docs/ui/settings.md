@@ -113,7 +113,9 @@ A third, small model that writes nothing but compares texts: notes, help and tra
 
 ### settings.assistant.updates — Aktualisierung und Ablage
 **Automatisch suchen**: how often Kontor asks GitHub and Hugging Face for a newer llama.cpp or newer files of the models loaded –
-täglich, wöchentlich, monatlich (default), nie; nothing of the user is sent, nothing loaded. "Zuletzt gesucht", "Nach Neuem suchen",
+täglich (default), wöchentlich, monatlich, nie; nothing of the user is sent. **Automatisch laden** (default on): what was found is
+loaded by itself once the assistant was not used for 10 minutes, only in the strict sandbox; of llama.cpp only a build out for two
+days, never an older one; a new build that does not start the model gives way to the one before. "Zuletzt gesucht", "Nach Neuem suchen",
 "Alles aktualisieren" (loads what was found, one after another). **Ablage**: the folder of program and models and "Frei auf dem
 Mac … · Arbeitsspeicher …".
 

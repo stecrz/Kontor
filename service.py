@@ -1684,8 +1684,11 @@ class App:
 
     def assistant_look(self) -> bool:
         """Asks for a newer llama.cpp and newer files of the loaded models when it is time (Assistant.look_due) -- in a thread
-        of its own, as the look for Kontor's updates. Nothing is ever loaded by it."""
-        if mm_history.AKTIV.is_set() or not self.assistant.look_due():
+        of its own, as the look for Kontor's updates. What it found is loaded later by auto_tick (when set, once idle)."""
+        if mm_history.AKTIV.is_set():
+            return False
+        self.assistant.auto_tick()                       # what the last look found newer: loaded by itself once the assistant is idle
+        if not self.assistant.look_due():
             return False
         self.assistant.looked = time.time()
         threading.Thread(target=lambda: self.assistant.look(auto=True), name="kontor-ai-look", daemon=True).start()

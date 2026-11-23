@@ -9048,6 +9048,7 @@ async function vEinstellungenAssistent() {
   </div><div data-ex="settings.assistant.updates"><h2>${t('ki_aktualisierung')}${hq('ki_auto_suchen')}</h2>
   <div class="form">
     <label>${t('ki_auto_suchen')}</label><label class="chk"><select id="as-check-mode">${[['daily', t('taeglich')], ['weekly', t('woechentlich')], ['monthly', t('monatlich')], ['aus', t('nie')]].map(([v, l]) => opt(v, l, st.check_mode)).join('')}</select></label>
+    <label for="as-auto-update">${t('ki_auto_laden')}</label><label class="chk"><input type="checkbox" id="as-auto-update" ${st.auto_update !== false ? 'checked' : ''} aria-label="${esc(t('ki_auto_laden'))}"></label>
     <label>${t('ki_zuletzt_gesucht')}</label><div class="row tight"><span class="muted small">${a.checked ? esc(FDT(a.checked)) : t('ki_noch_nie')}</span><button class="secondary small" id="as-check" ${busy}>${t('ki_nach_neuem_suchen')}</button>${((a.newer || {}).items || []).length ? `<button class="small" id="as-update-all" ${busy}>${t('ki_alles_aktualisieren')}</button>` : ''}</div>
     ${a.check_error ? `<div class="full banner err small">${esc(a.check_error)}</div>` : ''}
   </div>
@@ -9263,6 +9264,7 @@ function bindAssistent(main) {
   on('#as-check', 'click', async el => { el.classList.add('busy'); el.disabled = true; await post('/api/assistant/check'); });
   on('#as-update-all', 'click', el => { el.disabled = true; post('/api/assistant/update-all'); });
   on('#as-check-mode', 'change', el => set({check_mode: el.value}));
+  on('#as-auto-update', 'change', el => set({auto_update: el.checked}));
   on('.as-dl', 'click', el => { if (el.dataset.fit !== 'big' || confirm(t('ki_zu_gross_frage', el.dataset.name, asRAM((AS.st.platform || {}).ram || 0)))) post('/api/assistant/model/download', {id: el.dataset.id}); });
   on('.as-del', 'click', el => { if (confirm(t(el.dataset.part ? 'ki_verwerfen_frage' : 'ki_loeschen_frage', el.dataset.name))) post('/api/assistant/model/delete', {id: el.dataset.id}); });
   on('#as-cancel', 'click', () => post('/api/assistant/model/cancel'));

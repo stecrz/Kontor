@@ -21,7 +21,7 @@ import sys
 import tarfile
 import tempfile
 import threading
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 import time
 import unittest
 import unittest.mock
@@ -4868,7 +4868,12 @@ class Entries(_Assist):
 
 
 class Newer(_Assist):
-    """Looking for newer versions by itself, what the menu marks, and updating all of it in one go."""
+    """Looking for newer versions by itself, what the menu marks, and updating all of it in one go (here: not loaded by
+    itself -- that is AutoUpdate)."""
+
+    def setUp(self):
+        super().setUp()
+        self.a.set({"auto_update": False})
 
     def newer_runtime(self, tag="b4712"):
         arch = runtime_archive()
@@ -4896,16 +4901,17 @@ class Newer(_Assist):
 
     def test_when_it_looks(self):
         a, day = self.a, 86400
-        self.assertEqual(a.settings()["check_mode"], "monthly")  # one setting for llama.cpp and the models; from the factory once a month
+        self.assertEqual(a.settings()["check_mode"], "daily")    # one setting for llama.cpp and the models; from the factory daily
         self.assertTrue(a.look_due())
         a.looked = 1000.0
+        a.set({"check_mode": "monthly"})
         self.assertFalse(a.look_due(now=1000.0 + 29 * day)); self.assertTrue(a.look_due(now=1000.0 + 30 * day + 5))
         a.set({"check_mode": "daily"})
         self.assertFalse(a.look_due(now=1000.0 + day - 5)); self.assertTrue(a.look_due(now=1000.0 + day + 5))
         a.set({"check_mode": "weekly"})
         self.assertFalse(a.look_due(now=1000.0 + 6 * day)); self.assertTrue(a.look_due(now=1000.0 + 7 * day + 5))
         a.set({"check_mode": "sometimes"})                       # not a choice: as from the factory
-        self.assertEqual(a.settings()["check_mode"], "monthly")
+        self.assertEqual(a.settings()["check_mode"], "daily")
         a.set({"check_mode": "aus"}); a.looked = None
         self.assertFalse(a.look_due())
         self.assertFalse(self.app.assistant_look())
@@ -5098,6 +5104,156 @@ class Newer(_Assist):
         self.assertNotIn("qwen3.6-35b-a3b", self.a.ai.models())
         with open(self.a.ai.models()[own]["path"], "rb") as f:
             self.assertEqual(f.read(), b"abcdefghi")
+
+
+class AutoUpdate(_Assist):
+    """What a look finds newer is loaded by itself (user, 2026-11-23): only while the assistant is idle and in the strict
+    sandbox, of llama.cpp only a build out for two days, never backwards; a build that does not start the model gives way."""
+
+    def build(self, tag, age=3 * 86400, refuse=False):
+        """A newer build at GitHub, out for age seconds (refuse: it does not start a model)."""
+        arch = runtime_archive([("llama-%s/refuse" % TAG, b"")] if refuse else None)
+        name = "llama-%s-bin-%s.tar.gz" % (tag, L.asset_tag())
+        url = "https://github.com/ggml-org/llama.cpp/releases/download/%s/%s" % (tag, name)
+        self.net.files[url] = arch
+        out = (datetime.now(timezone.utc) - timedelta(seconds=age)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        self.net.release = {"tag_name": tag, "prerelease": True, "draft": False, "published_at": out,
+                            "assets": [{"name": name, "browser_download_url": url, "size": len(arch), "digest": "sha256:" + hashlib.sha256(arch).hexdigest()}]}
+
+    def idle_now(self):
+        for p in (self.a.ai, self.a.speech, self.a.embedder):
+            p.last_used = time.time() - A.AUTO_IDLE - 5
+
+    def settle(self):
+        t0 = time.time()
+        while self.a.updating() or (self.a.ai.job or {}).get("state") == "running" or any(t.name == "kontor-ai-update" for t in threading.enumerate()):
+            self.assertLess(time.time() - t0, 20, "not over in time")
+            time.sleep(0.02)
+
+    def test_settings_from_the_factory(self):
+        st = self.a.settings()
+        self.assertEqual((st["check_mode"], st["auto_update"]), ("daily", True))
+        for saved, want in (({"check_mode": "monthly"}, "daily"),                  # saved when monthly was the factory's: daily now
+                            ({"check_mode": "monthly", "auto_update": False}, "monthly"), ({"check_mode": "weekly"}, "weekly")):
+            self.assertEqual(A.settings({"assistant": saved})["check_mode"], want, saved)
+        self.assertIs(A.settings({"assistant": {"auto_update": "yes"}})["auto_update"], True)       # not a choice: as from the factory
+        self.assertIs(self.a.set({"auto_update": False})["auto_update"], False)
+        self.assertEqual(self.a.ai.min_age, 0)                                     # loaded on your click: the newest build
+        self.assertIs(self.a.set({"auto_update": True})["auto_update"], True)
+        self.assertEqual(self.a.ai.min_age, A.AUTO_AGE)
+
+    def test_loaded_by_itself_once_idle(self):
+        self.build("b4712"); new = self.net.model + b"v2"
+        self.net.tree[3] = {"type": "file", "path": QWEN, "size": len(new), "lfs": {"oid": hashlib.sha256(new).hexdigest(), "size": len(new)}}
+        self.net.files["https://huggingface.co/unsloth/Qwen3.6-35B-A3B-GGUF/resolve/main/" + QWEN] = new
+        self.a.look(auto=True)
+        self.assertTrue(self.a.auto_due)
+        for p in (self.a.ai, self.a.speech, self.a.embedder):
+            p.last_used = time.time()
+        self.assertFalse(self.a.auto_tick())                                       # just used: later
+        self.idle_now()
+        self.a.ai.busy = True; self.assertFalse(self.a.auto_tick()); self.a.ai.busy = False      # answering right now
+        for k, v in (("sandbox", "basic"), ("auto_update", False), ("enabled", False)):         # weaker sandbox, switched off: never
+            self.a.set({k: v}); self.assertFalse(self.a.auto_tick(), k); self.a.set({k: {"sandbox": "strict", "auto_update": True, "enabled": True}[k]})
+        self.idle_now()
+        self.assertTrue(self.a.auto_tick())
+        self.settle()
+        self.assertEqual(self.a.ai.runtime()["tag"], "b4712")
+        with open(self.a.ai.models()["qwen3.6-35b-a3b"]["path"], "rb") as f:
+            self.assertEqual(f.read(), new)
+        self.assertEqual(self.a.newer()["items"], [])
+        self.assertFalse(self.a.auto_tick())                                       # once per look
+        # from the service: the tick before each look
+        self.build("b4713"); self.a.look(auto=True); self.idle_now()
+        self.assertTrue(self.a.auto_due); self.a.looked = time.time()
+        self.app.assistant_look(); self.settle()
+        self.assertEqual(self.a.ai.runtime()["tag"], "b4713")
+
+    def test_only_a_build_out_for_two_days_never_backwards(self):
+        self.build("b4712", age=3600)                                             # out for an hour: not yet
+        self.assertFalse(self.a.look(auto=True).get("runtime", {}).get("newer"))
+        self.assertFalse(self.a.auto_due)
+        self.assertEqual(self.a.ai.latest_runtime()["tag"], "b4000")            # the newest out for two days is older than this Mac's:
+        self.assertFalse(self.a.look()["runtime"]["newer"])                       # never named newer, never installed in its place
+        self.a.ai.install_runtime(); self.assertEqual(wait_job(self.a.ai)["state"], "error")
+        self.assertEqual(self.a.ai.runtime()["tag"], TAG)
+        self.a.set({"auto_update": False})                                        # by your click: the newest, as before
+        self.assertEqual(self.a.ai.latest_runtime()["tag"], "b4712")
+        self.assertTrue(self.a.look()["runtime"]["newer"])
+        self.a.set({"auto_update": True})
+        self.build("b4712", age=3 * 86400)
+        self.assertTrue(self.a.look(auto=True)["runtime"]["newer"])
+        for bad in ("soon", "2999-01-01T00:00:00Z"):                              # a date that cannot be read or lies ahead: not old enough
+            self.net.release["published_at"] = bad
+            self.assertEqual(self.a.ai.latest_runtime()["tag"], "b4000", bad)
+
+    def test_a_build_that_does_not_start_gives_way(self):
+        ai = self.a.ai
+        ai.ensure("qwen3.6-35b-a3b", 8192, "off"); ai.stop()
+        self.build("b4712", refuse=True)
+        ai.install_runtime(); self.assertEqual(wait_job(ai)["state"], "done", ai.job)
+        self.assertEqual(ai.runtime()["tag"], "b4712")
+        self.assertEqual(ai._load("runtime.json")["previous"]["tag"], TAG)        # the one before stays until the new one has started a model
+        ai.ensure("qwen3.6-35b-a3b", 8192, "off")                                 # the new one refuses: the one before starts it
+        self.assertEqual((ai.state, ai.runtime()["tag"]), ("ready", TAG))
+        self.assertEqual(ai.bad_builds(), ["b4712"])
+        self.assertEqual(sorted(os.listdir(ai._p("runtime"))), [TAG])
+        ai.stop()
+        self.assertEqual(ai.latest_runtime()["tag"], "b4000")                    # never installed again
+        self.assertFalse(self.a.look(auto=True).get("runtime", {}).get("newer"))
+        # a build that starts it: the one before goes
+        self.build("b4713")
+        ai.install_runtime(); self.assertEqual(wait_job(ai)["state"], "done", ai.job)
+        self.assertEqual(sorted(os.listdir(ai._p("runtime"))), sorted([TAG, "b4713"]))
+        ai.ensure("qwen3.6-35b-a3b", 8192, "off")
+        self.assertEqual(ai.runtime()["tag"], "b4713"); self.assertNotIn("previous", ai._load("runtime.json"))
+        self.assertEqual(os.listdir(ai._p("runtime")), ["b4713"])
+        ai.stop()
+        # neither starts it (the model is the trouble, not the build): the new one stays, nothing is marked
+        self.build("b4714")
+        ai.install_runtime(); self.assertEqual(wait_job(ai)["state"], "done", ai.job)
+        model = ai.models()["qwen3.6-35b-a3b"]["path"]
+        os.rename(model, model + ".away")
+        try:
+            with self.assertRaises(L.ModelError):
+                ai.ensure("qwen3.6-35b-a3b", 8192, "off")
+        finally:
+            os.rename(model + ".away", model)
+        self.assertEqual((ai.runtime()["tag"], ai.bad_builds()), ("b4714", ["b4712"]))
+
+
+    def test_edge_cases_of_giving_way(self):
+        ai = self.a.ai
+        ai.ensure("qwen3.6-35b-a3b", 8192, "off"); ai.stop()
+        self.build("b4712", refuse=True)
+        ai.install_runtime(); self.assertEqual(wait_job(ai)["state"], "done", ai.job)
+        # the same build again: the one before stays the one before
+        ai.install_runtime(); self.assertEqual(wait_job(ai)["state"], "done", ai.job)
+        self.assertEqual(ai._load("runtime.json")["previous"]["tag"], TAG)
+        self.assertEqual(sorted(os.listdir(ai._p("runtime"))), sorted([TAG, "b4712"]))
+        # dictation or meaning does not decide: its failed start just fails, nothing is marked or switched
+        self.a.ai.download_model("qwen3-asr-1.7b"); self.assertEqual(wait_job(ai)["state"], "done", ai.job)
+        with self.assertRaises(L.ModelError):
+            self.a.speech.ensure("qwen3-asr-1.7b", 4096, "off")
+        self.assertEqual((ai.runtime()["tag"], ai.bad_builds()), ("b4712", []))
+        # a model starting is no idle assistant
+        self.idle_now(); self.assertTrue(self.a.idle())
+        self.a.speech.state = "starting"; self.assertFalse(self.a.idle()); self.a.speech.state = "stopped"
+
+    def test_no_build_old_enough_the_models_still(self):
+        """Found newer on a look before (a build out for an hour, say): no build out for two days is newer than this Mac's --
+        the update of everything goes on with the models."""
+        new = self.net.model + b"v2"
+        self.net.tree[3] = {"type": "file", "path": QWEN, "size": len(new), "lfs": {"oid": hashlib.sha256(new).hexdigest(), "size": len(new)}}
+        self.net.files["https://huggingface.co/unsloth/Qwen3.6-35B-A3B-GGUF/resolve/main/" + QWEN] = new
+        self.a.set({"auto_update": False}); self.build("b4712", age=3600)
+        self.a.look()
+        self.assertEqual(len(self.a.newer()["items"]), 2)
+        self.a.set({"auto_update": True}); self.a.auto_due = True; self.idle_now()
+        self.assertTrue(self.a.auto_tick()); self.settle()
+        self.assertEqual(self.a.ai.runtime()["tag"], TAG)
+        with open(self.a.ai.models()["qwen3.6-35b-a3b"]["path"], "rb") as f:
+            self.assertEqual(f.read(), new)
 
 
 class Http(_Assist):
@@ -6374,7 +6530,11 @@ class Browser(unittest.TestCase):
                 T.wait_shell(pg); pg.goto(url + "#settings/assistant"); pg.wait_for_selector("#as-check")
                 self.assertFalse(pg.evaluate("!!%s" % badge))                       # nothing known yet
                 self.assertFalse(pg.evaluate("!!document.querySelector('#as-update-all')"))
-                self.assertEqual(pg.evaluate("document.querySelector('#as-check-mode').value"), "monthly")
+                self.assertEqual(pg.evaluate("document.querySelector('#as-check-mode').value"), "daily")
+                self.assertTrue(pg.evaluate("document.querySelector('#as-auto-update').checked"))       # loaded by itself from the factory
+                pg.uncheck("#as-auto-update")                                       # here: by the click, to see the dot and the button
+                until(pg, "AS.st.settings.auto_update === false")
+                self.assertFalse(a.settings()["auto_update"])
                 self.assertTrue(app.assistant_look())                               # the service's daily look
                 until(pg, "!!document.querySelector('#as-update-all')")             # the page there shows it by itself
                 self.assertEqual(pg.evaluate("%s.className" % badge), "nbadge")     # the plain dot

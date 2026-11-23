@@ -118,6 +118,11 @@ anhängen – nie löschen.
   für llama.cpp – täglich, wöchentlich, monatlich oder nie, ab Werk monatlich (llama.cpp erscheint fast täglich neu: so kommt der
   Punkt etwa einmal im Monat); der Punkt gilt für llama.cpp und die Modelle in Gebrauch. Letzte Suche und Fund bleiben über
   Neustarts erhalten. (umgesetzt in 3.16.80)
+  Geändert (Nutzer, 2026-11-23): llama.cpp ist nur wenige MB groß – Programm und Modelle werden automatisch aktualisiert, gesucht
+  wird ab Werk täglich. Ausgestaltet: „Automatisch laden“ (abschaltbar) nur, wenn der Assistent ruht, nur in der strengen
+  Abschirmung; von llama.cpp nur eine Fassung, die seit zwei Tagen draußen ist, nie eine ältere; startet eine neue Fassung das
+  Modell nicht, nimmt Kontor von selbst die vorige. Kontor selbst bleibt Installation per Klick, ein anderes Modell wählt Kontor
+  nie von selbst. (umgesetzt in 3.17.35)
 - **Hilfe laufend:** Texte der Hilfe (de/en) und des README werden mit jeder Änderung gepflegt, die sie betrifft – auch in
   kleinen Versionen. Nur die Hilfe-Bilder entstehen weiter erst beim großen Versionssprung. (umgesetzt in 3.16.80)
 - **Planung nachvollziehbar und frei wählbar** (2026-11-23): Jede Planzahl zeigt, wie sie entsteht (Regel, Grundlage, Steigerung,

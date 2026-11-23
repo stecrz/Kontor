@@ -91,12 +91,17 @@ RIGHTS = ("figures", "transactions", "help", "page", "navigate", "enter_values",
 READ_RIGHTS = ("figures", "transactions", "page")    # one switch in the settings: reading your data
 SPEECH_STARTS = ("early", "click")                 # the speech model starts at once (with the model, when the assistant opens) or with the click on the microphone
 DEFAULTS: Dict[str, Any] = {"enabled": False, "model": "", "speech": "", "speech_start": "", "speech_filter": True, "context": auto_context(physical_ram()), "context_auto": True,
-                            "idle_minutes": 30, "sandbox": "strict", "save_chats": True, "check_mode": "monthly",
+                            "idle_minutes": 30, "sandbox": "strict", "save_chats": True, "check_mode": "daily", "auto_update": True,
                             "rights": {"figures": True, "transactions": True, "help": True, "page": True, "navigate": True,
                                        "enter_values": True, "categorize": True, "book": True, "rules": True, "receipts": True, "internet": False, "remote": False}}       # changes: each one only with your click on the card
 # looking for newer versions of llama.cpp and the models by itself -- one setting for all of them ("aus": only on your click).
-# From the factory once a month: llama.cpp gets a new build almost daily, so there is something new at every look
+# From the factory daily, and what is found is loaded by itself (auto_update; user, 2026-11-23): llama.cpp is a few MB, a
+# newer file of a model comes rarely. Each loaded and checked as by its button, only while the assistant is idle and in the
+# strict sandbox; of llama.cpp only a build out for AUTO_AGE (a broken or planted build is usually taken back within hours),
+# and a build that does not start the model gives way to the one before (LocalAI.ensure)
 CHECK_MODES = {"daily": 86400, "weekly": 7 * 86400, "monthly": 30 * 86400, "aus": 0}
+AUTO_AGE = 2 * 86400
+AUTO_IDLE = 10 * 60                                # updated by itself only when the assistant was not used for that long
 NEWS_FILE = "news.json"                            # the last look and what it found, in the assistant's folder: a restart neither looks again nor forgets
 DEFAULTS["web_trusted"] = web_search.trusted_default()      # lookups there need no card once a conversation allows the internet
 DEFAULTS["claude"] = web_search.claude_settings()           # questions to Claude (tier 4 of the internet search): the model, the most of them a day
@@ -332,6 +337,9 @@ def settings(config: dict) -> dict:
     out["sandbox"] = raw["sandbox"] if raw.get("sandbox") in SANDBOXES else DEFAULTS["sandbox"]
     out["save_chats"] = raw["save_chats"] if isinstance(raw.get("save_chats"), bool) else DEFAULTS["save_chats"]
     out["check_mode"] = raw["check_mode"] if raw.get("check_mode") in CHECK_MODES else DEFAULTS["check_mode"]
+    if "auto_update" not in raw and out["check_mode"] == "monthly":       # saved before 3.17.35, when monthly was the factory's: now daily
+        out["check_mode"] = "daily"
+    out["auto_update"] = raw["auto_update"] if isinstance(raw.get("auto_update"), bool) else DEFAULTS["auto_update"]
     out["memory"] = raw["memory"] if isinstance(raw.get("memory"), bool) else DEFAULTS["memory"]
     out["web_trusted"] = web_search.trusted(raw["web_trusted"]) if "web_trusted" in raw else web_search.trusted_default()
     out["claude"] = web_search.claude_settings(raw.get("claude"))
@@ -527,7 +535,9 @@ class Assistant:
             self.embedder = LocalAI(os.path.join(app.data_dir, FOLDER), app.data_dir, app.program_dir, role="embed")      # the model for finding by meaning
         self.queue: List[dict] = []                      # "update everything": what is still to come
         self.looked: Optional[float] = None              # the last look for newer versions (by itself or on your click)
+        self.auto_due = False                            # a look found something newer: loaded by itself once the assistant is idle (auto_tick)
         self._recall()
+        self._ages()
         self.speech_lock = threading.Lock()            # one recording at a time
         self.embed_lock = threading.Lock()             # one request to the model for finding by meaning at a time
         self._indexing = False                         # embeddings of notes being made (in the background)
@@ -702,7 +712,7 @@ class Assistant:
         claude{model, per_day} (the model asked and the most questions a day)."""
         cur = self.settings()
         new = json.loads(json.dumps(stored(cur)))        # a copy: nothing of the settings in use changes before all is checked
-        for k in ("enabled", "model", "speech", "speech_start", "speech_filter", "context", "idle_minutes", "sandbox", "save_chats", "check_mode"):
+        for k in ("enabled", "model", "speech", "speech_start", "speech_filter", "context", "idle_minutes", "sandbox", "save_chats", "check_mode", "auto_update"):
             if k in body:
                 new[k] = body[k]
         if "memory" in body:
@@ -749,6 +759,7 @@ class Assistant:
             self.speech_warm()                           # ready at once from now on: started now
         if not (new["enabled"] and new["rights"].get("transactions")):
             self._tx_forget()                            # reading transactions (or the assistant) off: the embeddings of their texts go
+        self._ages()
         return self.settings()
 
     def set_web(self, body: dict) -> dict:
@@ -786,6 +797,7 @@ class Assistant:
         ai = self.ai
         state = lambda: (ai.runtime().get("tag") or "", {mid: m.get("sha256") for mid, m in ai.models().items()})
         old, before = ai.news, state()
+        self._ages()
         news = ai.check()
         after = state()
         if after[0] != before[0]:
@@ -810,7 +822,36 @@ class Assistant:
             ai._save(NEWS_FILE, {"looked": self.looked, "news": news})
         except OSError as e:
             log.warning("Assistant: the look could not be kept (%s)", type(e).__name__)
+        self.auto_due = bool(self.newer()["items"])
         return news
+
+    def _ages(self) -> None:
+        """Updated by itself: of llama.cpp only builds out for AUTO_AGE -- named newer, and loaded (also on your click), alike."""
+        self.ai.min_age = AUTO_AGE if self.settings()["auto_update"] else 0
+
+    def idle(self, now: Optional[float] = None) -> bool:
+        """Nobody is using the assistant: no answer under way, no model busy, none used for AUTO_IDLE."""
+        j = self.job
+        if j is not None and (not j.done or j.noting):
+            return False
+        procs = (self.ai, self.speech, self.embedder)
+        return not any(p.busy or p.state == "starting" for p in procs) and (now or time.time()) - max(p.last_used for p in procs) >= AUTO_IDLE
+
+    def auto_tick(self, now: Optional[float] = None) -> bool:
+        """What the last look found newer is loaded by itself (auto_update), each step as by its own button -- once the
+        assistant is idle, only in the strict sandbox, and once per look (a step that fails waits for the next look)."""
+        st = self.settings()
+        if not self.auto_due or not st["auto_update"] or not st["enabled"] or st["sandbox"] != "strict":
+            return False
+        if self.updating() or (self.ai.job or {}).get("state") == "running" or not self.idle(now):
+            return False
+        self.auto_due = False
+        try:
+            self.update_all()
+        except ValueError:
+            return False
+        log.info("Assistant: newer versions are loaded by themselves")
+        return True
 
     def _recall(self) -> None:
         """The last look as kept (see look): when it was, and what of its finds still holds for what is on this Mac now."""
@@ -829,6 +870,7 @@ class Assistant:
         if news.get("retry") is True:
             out["retry"] = True
         self.looked, self.ai.news = float(when), out
+        self.auto_due = bool(out.get("runtime") or out["models"])
 
     def load_model(self, model_id: str = "", repo: str = "", file: str = "") -> dict:
         """As LocalAI.download_model; a model of your own that is on this Mac can be named by its id alone (its newer file) --
@@ -883,6 +925,7 @@ class Assistant:
                 raise ValueError(tr("s_ki_laedt_schon"))
             self.queue = list(steps)
         sandbox = self.settings()["sandbox"]
+        self._ages()
 
         def run() -> None:
             try:
@@ -903,7 +946,8 @@ class Assistant:
                         self.ai.cancel_job()
                     while job is not None and job.get("state") == "running":
                         time.sleep(0.2)
-                    if job is None or job.get("state") != "done" or not self.queue:
+                    skip = step["kind"] == "runtime" and job is not None and job.get("text") == tr("s_ki_nichts_neues")    # no build out long enough: the models still
+                    if job is None or (job.get("state") != "done" and not skip) or not self.queue:
                         break
                     self.queue = self.queue[1:]
             except Exception as e:

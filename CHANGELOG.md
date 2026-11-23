@@ -1,5 +1,12 @@
 # Änderungen
 
+## 3.17.35 (2026-11-23 23:14)
+- KI-Assistent: llama.cpp und Modelle aktualisieren sich von selbst („Automatisch laden“, abschaltbar) – nur wenn der Assistent ruht
+- KI-Assistent: Suche nach neuen Versionen ab Werk täglich statt monatlich
+- KI-Assistent: von llama.cpp nur Fassungen, die seit zwei Tagen draußen sind, nie eine ältere
+- KI-Assistent: startet eine neue llama.cpp-Fassung das Modell nicht, kommt die vorige von selbst zurück
+- Entwicklung: vor dem Push nur die betroffenen Tests lokal, die volle Prüfung macht GitHub; kein Warten per Schleife
+
 ## 3.17.34 (2026-11-23 23:25)
 - Cashflow: Auszahlung unter einer Tilgungs-Kategorie zählt als Darlehensaufnahme, gesondert von der Tilgung; Rücklastschrift bleibt Tilgung.
 - Cashflow: Darlehen ohne Konto in MoneyMoney – Abgleich mit der Bilanz geht auf (Zeile „Darlehen ohne Konto“ unter Wertänderungen).
