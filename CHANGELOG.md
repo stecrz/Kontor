@@ -1,5 +1,15 @@
 # Änderungen
 
+## 3.17.6 (2026-11-23 04:24)
+- Planung: Regeln je Bereich, Position und Kategorie – die tiefste gewinnt; Methode und Steigerung (Standard, keine, eigene %) je für sich
+- Planung: Kategorien werden geplant – Position = Summe ihrer Kategorien; eigene Werte je Zelle, auch je Kategorie
+- Planung: jede Planzahl zeigt im Tooltip, wie sie entsteht – auch für den Rechtsklick des Assistenten
+- Planung: Modelle mit einem Klick (Gleichmäßig, Vorsichtig, Wie Vorjahr, Budget); Kennzahlen Sparquote, Reichweite, Zinslast
+- Planung: Rückfrage mit Liste, bevor eigene Werte oder Regeln ersetzt würden – behalten oder ersetzen
+- Planung: Budget ohne Budget plant Ø 12 Monate statt 0; Kategorien ohne Budget in einer Position ebenso
+- Cashflow: Kategorien auch in Planmonaten – Tabelle, Grafiken, Excel
+- KI-Assistent: setzt Planregeln (Position, Kategorie, Bereich, Modell) – die Karte nennt, was ersetzt würde
+
 ## 3.17.5 (2026-11-23 03:20)
 - Updates: Freigabe nur bei echtem Risiko (neuer Weg nach außen, gelockerte Abschirmung, ungelesene Datei, Prüfung selbst geändert)
 - Updates: je Eintrag Erklärung in klaren Worten und aufklappbar die betroffenen Zeilen (− entfernt, + neu)

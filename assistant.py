@@ -60,7 +60,8 @@ import pdf_tables
 import receipt_text
 import table_text
 from decimal import ROUND_HALF_UP, Decimal
-from model import norm_cat
+from model import fmt_eur, norm_cat
+from report import PLAN_AREA_METHODS, PLAN_METHODS, PLAN_MODELS
 from llm_local import CATALOG, EMBED, EMBED_CONTEXT, EMBED_IDS, SANDBOXES, SPEECH, Cancelled, LocalAI, ModelError, SPEECH_IDS, SPEECH_CONTEXT, MAX_AUDIO, fit, physical_ram
 from storage import StoreError, StoreLocked, selftest
 
@@ -2169,10 +2170,11 @@ class Assistant:
                     if not any(v):
                         continue
                     row = {"row": _row_name(z), **({"group": _group_name(z)} if _group_name(z) else {}), "values": v}
-                    det = [d for d in z.get("details") or [] if any(vals(d.get("amounts") or {}))]
+                    dv = lambda d: vals(d.get("amounts") or {}, (d.get("plan") or {}).get("amounts"))          # a category: its plan in plan months too
+                    det = [d for d in z.get("details") or [] if any(dv(d))]
                     bud = lambda c: {"monthly_budget": budgets[c]} if c in budgets else {}           # MoneyMoney's budget of that category
                     if detail == "categories" and det and (len(det) > 1 or (det[0].get("category") or "") != row["row"]):
-                        row["categories"] = [dict({"category": d.get("category") or "(none)", "values": vals(d.get("amounts") or {})}, **bud(d.get("category"))) for d in det[:40]]
+                        row["categories"] = [dict({"category": d.get("category") or "(none)", "values": dv(d)}, **bud(d.get("category"))) for d in det[:40]]
                     elif detail == "categories" and len(det) == 1:
                         row.update(bud(det[0].get("category")))
                     rows.append(row)
@@ -2260,8 +2262,15 @@ class Assistant:
                 am = p.get("amounts") or {}
                 if not any(am.values()):
                     continue
+                r = p.get("rule") or {}
+                cats = [{"category": d.get("category") or "(estimated, without category)", "rule": {k: v for k, v in (d["plan"].get("rule") or {}).items() if v is not None},
+                         "per_year": {y: _num(sum(v for m, v in (d["plan"].get("amounts") or {}).items() if m.startswith(y) and v)) for y in years},
+                         **({"set_by_hand": sorted(d["plan"]["overwritten"])[:24]} if d["plan"].get("overwritten") else {})}
+                        for d in z.get("details") or [] if d.get("plan")]
                 rows.append({"row": "%s/%s" % (sek["name"], z["row"]), "name": _row_name(z), **({"group": _group_name(z)} if _group_name(z) else {}), "method": p.get("method"),
-                             "per_year": {y: _num(sum(v for m, v in am.items() if m.startswith(y) and v)) for y in years}, "set_by_hand": sorted(p.get("overwritten") or [])[:24]})
+                             "rule": {k: v for k, v in r.items() if v is not None},
+                             "per_year": {y: _num(sum(v for m, v in am.items() if m.startswith(y) and v)) for y in years}, "set_by_hand": sorted(p.get("overwritten") or [])[:24],
+                             **({"categories": cats[:12]} if cats else {})})
         proj = (b["balance"].get("projection") or {})
         ends = [m for m in pm if m.endswith("-12")] or pm[-1:]
         cur = b["actual_until"]
@@ -2280,10 +2289,13 @@ class Assistant:
                           **({"plan_setting": {k: setting[k] for k in ("interest_percent_pa", "model", "payment") if setting.get(k) not in (None, "")}} if setting else {})})
         return {"area": (ds.get("area_names") or {}).get(key), "plan_months": [pm[0], pm[-1]] if pm else [],
                 "parameters": {k: v for k, v in plan.items() if not isinstance(v, (dict, list))},
+                "model": plan.get("model") or "own", "defaults": plan.get("defaults") or {}, "key_figures_next_12_months": b.get("plan_figures") or {},
                 "events": [{k: e.get(k) for k in ("text", "month", "amount", "kind", "recurrence", "date_to", "active")} for e in (plan.get("events") or [])[:30]],
                 "rows": rows, "liabilities": loans, "planned_net_worth": {m: _num((proj.get("net_worth") or {}).get(m)) for m in ends},
                 "planned_bank_balance": {m: _num((proj.get("cash") or {}).get(m)) for m in ends},
-                "note": "row names as set_plan_values expects them (section/row); a longer horizon is set by the user on the planning page"}
+                "note": "row names as set_plan_values and set_plan_rule expect them (section/row); rule: method and increase with where each comes from "
+                        "(category, position, area = the area's default, standard = the area's rates, kind = one-offs not planned); a position with "
+                        "categories is their sum, each by its own rule or the position's"}
 
     # read: tax, real estate, what is open
     def t_get_tax(self, a: dict, ctx: dict) -> Any:
@@ -3421,7 +3433,7 @@ class Assistant:
                     if hit is None:
                         continue
                     # a month Kontor knows without an amount: nothing was paid (0); a planned month: the row's plan (none: 0, as the
-                    # cash flow adds it up) -- a category has no plan of its own: unknown
+                    # cash flow adds it up) -- a category: its plan (of a row planned elsewhere, a loan or a calculation: unknown)
                     if hit[0] == "row":
                         z = hit[1]
                         act, pl = z.get("amounts") or {}, (z.get("plan") or {}).get("amounts") or {}
@@ -3429,7 +3441,8 @@ class Assistant:
                     else:
                         d = hit[1]
                         act, nm, deep = d.get("amounts") or {}, str(d.get("category") or "").split(" / ")[-1], True
-                        am = {m: (act.get(m) or 0.0) if m in known else None for m in sel}
+                        pl = (d.get("plan") or {}).get("amounts") if d.get("plan") else None
+                        am = {m: (act.get(m) or 0.0) if m in known else None if pl is None else (pl.get(m) or 0.0) for m in sel}
                     series.append({"name": nm, "mark": nm, "am": am})
                 title = series[0]["name"] if len(series) == 1 else " · ".join(x["name"] for x in series) if len(series) <= 3 else tr("kapitalfluss")
                 link = {"route": "#cashflow", "detail": 3 if deep else 2}
@@ -4113,6 +4126,11 @@ class Assistant:
         ds = self._ds()
         key, b = self._area(ds, a.get("area"), ctx)
         rkey, z = self._plan_row(b, a.get("row"))
+        cat = None
+        if a.get("category") is not None:                # a category inside the position: its own values
+            cat = _plan_cat(z, a.get("category"))
+            if cat is None:
+                raise ToolError("No category %r with a plan in %s. Use get_planning for the categories of a row." % (str(a.get("category"))[:80], rkey))
         pm = b.get("plan_months") or []
         new: Dict[str, Optional[float]] = {}
         for v in (a.get("values") if isinstance(a.get("values"), list) else [])[:60]:
@@ -4124,8 +4142,16 @@ class Assistant:
             new[m] = amt
         if not new:
             raise ToolError("values is empty: [{month: 'YYYY-MM', amount: number}]")
-        p = z.get("plan") or {}
-        stored = lambda: {m: ((((self.app.plan_all().get("areas") or {}).get(key) or {}).get("rows") or {}).get(rkey, {}).get("amounts") or {}).get(m) for m in new}
+        cats = [d for d in z.get("details") or [] if d.get("plan")]
+        idle = sorted(m for m, v in new.items() if cat is None and v is not None and cats and all(m in (d["plan"].get("overwritten") or []) for d in cats))
+        if idle:                                         # every category has a value of its own there: a value of the position would not count
+            raise ToolError("No effect in %s: every category of %s has a value of its own there -- set the categories' values (category) instead." % (", ".join(idle), rkey))
+        p = (next(d for d in z.get("details") or [] if (d.get("category") or "") == cat).get("plan") if cat is not None else z.get("plan")) or {}
+
+        def where() -> dict:
+            r = (((self.app.plan_all().get("areas") or {}).get(key) or {}).get("rows") or {}).get(rkey) or {}
+            return (r.get("categories") or {}).get(cat) or {} if cat is not None else r
+        stored = lambda: {m: (where().get("amounts") or {}).get(m) for m in new}
         now = lambda: {m: _num(v) for m, v in stored().items()}
         before = stored()                                    # as stored (a value typed with more than cents comes back as it was)
         old = {m: _num(v) for m, v in before.items()}
@@ -4134,12 +4160,142 @@ class Assistant:
             with self.entry_lock:
                 if now() != expect:                      # changed since (by hand, by a later entry): nothing is overwritten
                     raise ValueError(tr("s_ki_inzwischen_geaendert"))
-                self.hooks["plan_update"]({"area": key, "row": rkey, "months": {m: ("" if v is None else v) for m, v in vals.items()}})      # all months in one save
+                self.hooks["plan_update"](dict({"area": key, "row": rkey, "months": {m: ("" if v is None else v) for m, v in vals.items()}},      # all months in one save
+                                               **({"category": cat} if cat is not None else {})))
 
-        card = {"kind": "plan", "title": _row_name(z), "sub": "%s · %s" % ((ds.get("area_names") or {}).get(key, ""), tr("planung")),
+        card = {"kind": "plan", "title": _row_name(z) + ((" › " + (cat.replace(" / ", " › ") if cat else tr("cf_geschaetzt"))) if cat is not None else ""),
+                "sub": "%s · %s" % ((ds.get("area_names") or {}).get(key, ""), tr("planung")),
                 "rows": [{"label": m, "old": old[m], "shown": _num((p.get("amounts") or {}).get(m)), "new": new[m]} for m in sorted(new)]}
         return self._propose(ctx["job"], card, lambda: (write(new, old), {"row": rkey})[1], lambda: write(before, new), reason=a.get("reason"),
-                             targets={"%s/%s %s" % (key, rkey, m) for m in new})
+                             targets={"%s/%s%s %s" % (key, rkey, "" if cat is None else "|" + cat, m) for m in new})
+
+    def t_set_plan_rule(self, a: dict, ctx: dict) -> Any:
+        """A rule of the planning (a position's, a category's, the area's default for one side) or a planning model: the card
+        shows the rule before and after and, beneath it, your own values and rules it would replace (replace_own) or that stay."""
+        ds = self._ds()
+        key, b = self._area(ds, a.get("area"), ctx)
+        area_name = (ds.get("area_names") or {}).get(key, "")
+        body: Dict[str, Any] = {"area": key}
+        rule: Dict[str, Any] = {}
+        if a.get("method") is not None:
+            m = "" if str(a["method"]) == "standard" else str(a["method"])
+            if m and m not in PLAN_METHODS:
+                raise ToolError("method: one of %s or standard." % ", ".join(PLAN_METHODS))
+            rule["method"] = m
+        if a.get("amount") is not None:
+            v = _amount(a.get("amount"))
+            if v is None:
+                raise ToolError("amount: a number per month (expenses negative); for annual_amount the year's amount.")
+            rule["amount"] = v
+        if a.get("increase") is not None:
+            inc = str(a["increase"]).strip().lower()
+            v = _amount(a.get("increase")) if inc not in ("standard", "none") else None
+            if inc not in ("standard", "none") and (v is None or not -20 <= v <= 50):
+                raise ToolError("increase: standard, none or per cent a year (-20 to 50).")
+            rule["increase"] = "" if inc == "standard" else 0 if inc == "none" else v
+        if rule.get("method") in ("fix", "yearly_amount") and "amount" not in rule:
+            raise ToolError("method %s needs amount (per month for fix, per year for yearly_amount; expenses negative)." % rule["method"])
+        old_rows: List[dict] = []
+        if a.get("model"):
+            if a["model"] not in PLAN_MODELS:
+                raise ToolError("model: one of %s." % ", ".join(PLAN_MODELS))
+            body["model"] = a["model"]
+            dflt = (b.get("plan") or {}).get("defaults") or {}
+            title = tr("ki_pr_modell", tr("pm_%s" % a["model"]))
+            old_rows = [{"label": tr("pp_einnahmen", "").strip() if side == "income" else tr("pp_ausgaben"), "old_text": _plan_rule_text(dflt.get(side)),
+                         "new_text": _plan_rule_text(PLAN_MODELS[a["model"]][side])} for side in ("income", "expenses")]
+        elif not rule:
+            raise ToolError("Give method, amount or increase -- or a model.")
+        elif a.get("row"):
+            rkey, z = self._plan_row(b, a.get("row"))
+            if ((z.get("plan") or {}).get("rule") or {}).get("from") == "fixed":
+                raise ToolError("%s is planned by the loan schedule, an event or a property calculation -- it has no rule of its own." % rkey)
+            body.update(row=rkey, **rule)
+            title = _row_name(z)
+            if a.get("category") is not None:
+                cat = _plan_cat(z, a.get("category"))
+                if cat is None:
+                    raise ToolError("No category %r with a plan in %s. Use get_planning for the categories of a row." % (str(a.get("category"))[:80], rkey))
+                body["category"] = cat
+                title += " › " + (cat.replace(" / ", " › ") if cat else tr("cf_geschaetzt"))
+            cfg = ((b.get("plan") or {}).get("rows") or {}).get(rkey) or {}
+            cfg = ((cfg.get("categories") or {}).get(body["category"]) or {}) if "category" in body else cfg
+            old = {k: cfg[k] for k in ("method", "amount", "increase_percent_pa") if cfg.get(k) is not None}      # the own rule of this level
+            if old.get("method") not in ("fix", "yearly_amount"):
+                old.pop("amount", None)
+            new = dict(old)
+            if rule.get("method") == "":
+                new.pop("method", None); new.pop("amount", None)
+            elif rule.get("method"):
+                new["method"] = rule["method"]
+            if "amount" in rule and new.get("method") in ("fix", "yearly_amount"):
+                new["amount"] = rule["amount"]
+            if new.get("method") in ("fix", "yearly_amount"):
+                new.setdefault("amount", 0.0)
+            else:
+                new.pop("amount", None)
+            if rule.get("increase") == "":
+                new.pop("increase_percent_pa", None)
+            elif "increase" in rule:
+                new["increase_percent_pa"] = rule["increase"]
+            old_rows = [{"label": tr("ki_pr_regel"), "old_text": _plan_rule_text(old), "new_text": _plan_rule_text(new)}]
+        else:
+            side = a.get("side")
+            if side not in ("income", "expenses"):
+                raise ToolError("The area's default needs side: income or expenses (or give row for a position).")
+            if rule.get("method") not in (None, "") and rule["method"] not in PLAN_AREA_METHODS:
+                raise ToolError("The area's default takes no amount: %s." % ", ".join(PLAN_AREA_METHODS))
+            if rule.get("increase") not in (None, "", 0):
+                raise ToolError("The area's default increase is standard or none (the rates themselves: set_plan_parameters).")
+            rule.pop("amount", None)
+            body["defaults"] = {side: rule}
+            cur = ((b.get("plan") or {}).get("defaults") or {}).get(side) or {}
+            title = tr("ki_pr_standard", tr("pp_einnahmen", "").strip() if side == "income" else tr("pp_ausgaben"))
+            nxt = dict(cur, **({"method": rule["method"]} if rule.get("method") else {}))
+            if "increase" in rule:
+                nxt.pop("increase_percent_pa", None)
+                if rule["increase"] == 0:
+                    nxt["increase_percent_pa"] = 0.0
+            old_rows = [{"label": tr("ki_pr_regel"), "old_text": _plan_rule_text(cur), "new_text": _plan_rule_text(nxt)}]
+        replace = a.get("replace_own") is True
+        with self.entry_lock:
+            check = self.hooks["plan_update"](dict(body, conflicts="check"))
+        if not check.get("changed"):
+            raise ToolError("That is the rule already -- nothing would change.")
+        if not body.get("row") and not a.get("model") and isinstance((check.get("defaults") or {}).get(a.get("side")), dict):
+            old_rows[0]["new_text"] = _plan_rule_text(check["defaults"][a["side"]])        # the area's default as it will be (also "standard")
+        found = check.get("conflicts") or {"values": [], "rules": []}
+        rows_of = {s["name"] + "/" + z["row"]: z for s in b["cashflow"].get("sections") or [] for z in s.get("rows") or []}
+
+        def place(k: str, c: Optional[str]) -> str:
+            z = rows_of.get(k)
+            n = _row_name(z) if z else k.split("/", 1)[-1]
+            return c.replace(" / ", " › ") if c else n if c is None else n + " › " + tr("cf_geschaetzt")
+        mine = [{"label": "%s · %s" % (place(v["row"], v.get("category")), v["month"]), "old_text": fmt_eur(v["own"]), "new_text": fmt_eur(v["new"])} for v in found["values"][:500]] \
+            + [{"label": place(r["row"], r.get("category")), "old_text": _plan_rule_text(r["own"]), "new_text": _plan_rule_text(r.get("new"))} for r in found["rules"][:500]]
+        card = {"kind": "planrule", "title": title, "sub": "%s · %s" % (area_name, tr("planung")), "rows": old_rows}
+        if mine:
+            card["replace" if replace else "keep"] = mine
+            card["count"] = len(found["values"]) + len(found["rules"])
+        snap = lambda: {k: copy.deepcopy(((self.app.plan_all().get("areas") or {}).get(key) or {}).get(k)) for k in ("rows", "defaults", "default_method")}
+        before = snap()
+        after: Dict[str, Any] = {}
+
+        def apply() -> dict:
+            with self.entry_lock:
+                if snap() != before:                     # changed on the planning page since: the card is not what would happen
+                    raise ValueError(tr("s_ki_inzwischen_geaendert"))
+                self.hooks["plan_update"](dict(body, conflicts="replace" if replace else "keep", confirmed=found))      # refused when it is no longer the card's list
+                after.update(snap())
+            return {"rule": title, "replaced": card.get("count", 0) if replace else 0,
+                    "log": {"rows": old_rows + [dict(r, label=tr("ki_e_ersetzt") + ": " + r["label"]) for r in (mine if replace else [])]}}
+
+        def undo() -> None:
+            with self.entry_lock:
+                if snap() != after:                      # changed since: nothing is overwritten
+                    raise ValueError(tr("s_ki_inzwischen_geaendert"))
+                self.hooks["plan_restore"](key, before)
+        return self._propose(ctx["job"], card, apply, undo, reason=a.get("reason"), targets={"%s rule %s|%s|%s" % (key, body.get("row") or a.get("side") or "model", body.get("category") or "", a.get("model") or "")})
 
     def t_set_plan_parameters(self, a: dict, ctx: dict) -> Any:
         ds = self._ds()
@@ -4247,7 +4403,7 @@ class Assistant:
                 if can_cat or can_book else ""),
         ]
         if r["enter_values"]:
-            lines.append("- Changes (enter_balances, set_plan_values, set_plan_parameters, add_plan_event): call the tool directly with all values of one account or row, "
+            lines.append("- Changes (enter_balances, set_plan_values, set_plan_rule, set_plan_parameters, add_plan_event): call the tool directly with all values of one account or row, "
                          "with a short reason; several changes in one answer are fine. Nothing is changed while you answer: at its end the user sees all your proposed "
                          "changes on one card and approves them with one click (or leaves some out) -- do not ask for confirmation in text. Only propose what the user "
                          "asked for or agreed to, with the numbers the user gave or your tools returned.")
@@ -5167,6 +5323,31 @@ def _group_name(z: dict) -> str:
     return name if name and name != _row_name(z) and name != z.get("row") else ""
 
 
+_PLAN_METH = {"rolling12": "12_monate", "rolling6": "6_monate", "prev_year": "vorjahresmonat", "fix": "fester_betrag_monat",
+              "yearly_amount": "meth_jahresbetrag", "budget": "meth_budget", "none": "keine"}
+
+
+def _plan_rule_text(r: Optional[dict]) -> str:
+    """A planning rule as the page names it: the method (with its amount), the increase."""
+    if not r:
+        return tr("standard")
+    parts = []
+    if r.get("method"):
+        parts.append(tr(_PLAN_METH.get(r["method"], r["method"])) + (" " + fmt_eur(float(r.get("amount") or 0.0)) if r["method"] in ("fix", "yearly_amount") else ""))
+    inc = r.get("increase_percent_pa", r.get("increase"))
+    if inc is not None:
+        parts.append(tr("pk_steig", tr("keine") if float(inc) == 0 else tr("pw_pct_pa", ("%.1f" % float(inc)).replace(".", ","))))
+    return " · ".join(parts) or tr("standard")
+
+
+def _plan_cat(z: dict, name: Any) -> Optional[str]:
+    """A category inside a position, by its path or its last part ("" : without a category, estimated)."""
+    want = str(name if name is not None else "").strip().lower()
+    cats = [d.get("category") or "" for d in z.get("details") or [] if d.get("plan")]
+    hits = [c for c in cats if c.lower() == want] or [c for c in cats if c and c.split(" / ")[-1].lower() == want]
+    return hits[0] if len(hits) == 1 else None
+
+
 def _account_names(accounts: List[dict], refname) -> Callable[[Any], Tuple[str, str]]:
     """For a rule card: an account a rule names ("id | name", or its path or name) -> (which account it is, how the card names
     it): its name -- or, where another account has the same name, its whole path (area / position / account), so that a
@@ -5440,8 +5621,17 @@ TOOLS: List[dict] = [
     _tool("web_read", "internet", "web", "Reads results of web_search of this conversation in full (urls exactly as given, at most 3; news only where free to read). A page on another website than the trusted ones is approved on a card first.",
           {"urls": {"type": "array", "items": {"type": "string"}}}, ["urls"]),
     _tool("enter_balances", "enter_values", "enter", "Enters month-end balances of one account by hand (for months Kontor does not know or shows wrongly). amount null removes an entered balance.", {"account": {"type": "string"}, "values": _VALUES}, ["account", "values"]),
-    _tool("set_plan_values", "enter_values", "enter", "Sets planning values of one row for future months (amount null: Kontor's own value again).",
-          {"area": _AREA, "row": {"type": "string", "description": "section/row as get_planning names it"}, "values": _VALUES}, ["row", "values"]),
+    _tool("set_plan_values", "enter_values", "enter", "Sets planning values of one row (or of one category inside it) for future months (amount null: Kontor's own value again).",
+          {"area": _AREA, "row": {"type": "string", "description": "section/row as get_planning names it"}, "category": {"type": "string", "description": "a category of that row"},
+           "values": _VALUES}, ["row", "values"]),
+    _tool("set_plan_rule", "enter_values", "enter", "Changes a planning rule: of a row (row), of a category inside it (row and category), the area's default for income or expenses (side), or picks a planning model for the area (model). The deepest rule counts. Own values and rules beneath stay unless replace_own is true -- the card lists them.",
+          {"area": _AREA, "row": {"type": "string", "description": "section/row as get_planning names it; left out: the area's default"},
+           "category": {"type": "string", "description": "a category of that row"}, "side": {"type": "string", "enum": ["income", "expenses"], "description": "for the area's default"},
+           "model": {"type": "string", "enum": list(PLAN_MODELS), "description": "even: Ø 12 months; careful: expenses Ø 12 with increase, income as last year without; prev_year: month by month as last year without increase; budget: MoneyMoney budgets (else Ø 12)"},
+           "method": {"type": "string", "enum": list(PLAN_METHODS) + ["standard"], "description": "standard: as the level above"},
+           "amount": {"type": "number", "description": "fix: per month; yearly_amount: per year (expenses negative)"},
+           "increase": {"type": "string", "description": "standard, none, or per cent a year"},
+           "replace_own": {"type": "boolean", "description": "replace own values and rules beneath (default false: they stay)"}}),
     _tool("set_plan_parameters", "enter_values", "enter", "Changes assumptions of the planning: how far it looks ahead and the yearly rates (inflation, rise of income and of expenses, return on investments).",
           {"area": _AREA, "horizon_months": {"type": "integer", "description": "1 to 240"}, "inflation_percent_pa": {"type": "number"}, "income_increase_percent_pa": {"type": "number"},
            "expense_increase_percent_pa": {"type": "number"}, "return_percent_pa": {"type": "number"}}),

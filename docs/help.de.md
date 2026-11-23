@@ -320,7 +320,7 @@ Der Cashflow hat eine feste Gliederung; deine Kategorien aus MoneyMoney zählen 
 - **Sparen & Anlegen** zählt nicht als Ausgabe; unter **Zielkonto** wählst du daneben das Konto, in das das Geld fließt (nur bei dieser Position; genauer je Empfänger, siehe unten). **Umbuchung** – Geld zwischen deinen Konten oder Bereichen, weder Einnahme noch Ausgabe – sucht die Gegenbuchung. **Nicht berücksichtigen** nimmt die Kategorie ganz heraus: Ihr Betrag zählt in keiner Zeile und steht als Abweichung im Abgleich mit der Bilanz (mit diesem Grund) – nur für Ausnahmen wie eine Fehlbuchung, die sich später aufhebt.
 - Kategorien einer Immobilie (Immobilien → Kategorie) haben im Cashflow eigene Zeilen „Miete“ und „Kosten“.
 
-Die Planung arbeitet auf den Positionen; ein Budget aus MoneyMoney zählt für die Position seiner Kategorie. In MoneyMoney ändert sich nichts. Die Spaltenköpfe bleiben beim Blättern stehen.
+Die Planung plant jede Position und die Kategorien darin; ein Budget aus MoneyMoney zählt für seine Kategorie. In MoneyMoney ändert sich nichts. Die Spaltenköpfe bleiben beim Blättern stehen.
 
 <a id="categories-tree"></a>
 ### Empfohlene Kategorien
@@ -354,7 +354,15 @@ Wo es eindeutig ist, schlägt Kontor ein Depot vor (gleiche Bank wie die IBAN de
 <a id="planning"></a>
 ## Planung
 
-Die Planung schreibt die Vergangenheit fort: je Zeile eine Methode (Ø 12 oder 6 Monate, Vorjahresmonat, fester Betrag, Jahresbetrag/12, MoneyMoney-Budget, keine), ein Betrag und eine Steigerung in % p.a. Ausgaben folgen standardmäßig der Inflation, Einnahmen der eingestellten Rate. Einzelne Monate überschreibst du per Doppelklick; der Vorschlag bleibt sichtbar und lässt sich wiederherstellen.
+Die Planung schreibt die Vergangenheit fort – nach Regeln auf drei Ebenen: dem **Standard des Bereichs** (je eine Regel für Einnahmen und Ausgaben, unter Parameter), der **Position** und der **Kategorie** darin. Es gilt die tiefste Ebene, die etwas festlegt – Methode und Steigerung jede für sich. Eine Position mit Kategorien ist die Summe ihrer Kategorien; jede Kategorie folgt der Position, bis sie eine eigene Regel bekommt (Ebene „Details“).
+
+- **Methode**: Ø der letzten 12 oder 6 abgeschlossenen Monate, Vorjahresmonat, fester Betrag je Monat, Jahresbetrag (÷ 12), MoneyMoney-Budget (ohne Budget: Ø 12 Monate), keine. Einen festen Betrag oder ein Budget der Position teilen sich ihre Kategorien nach ihrem Anteil der letzten 12 Monate (Erstattungen bekommen nichts davon).
+- **Steigerung**: Standard (Einnahmen: „Steigerung Einnahmen“, Ausgaben: „Steigerung Ausgaben“ bzw. die Inflation), ohne oder eigene % p.a.
+- **Planungsmodell**: Gleichmäßig, Vorsichtig, Wie Vorjahr oder Budget setzt mit einem Klick den Standard des Bereichs (was jedes tut, steht in seinem Tooltip).
+- **Eigene Werte**: Doppelklick auf eine Planzelle, auch bei einer Kategorie; die Regel gilt für die übrigen Monate weiter, ↺ holt den Vorschlag zurück. Ein eigener Wert einer Position verteilt sich auf ihre Kategorien ohne eigenen Wert.
+- **Nachfragen**: Änderst du eine Regel, unter der eigene Werte oder Regeln stehen, listet Kontor sie mit dem neuen Wert – **Behalten** oder **Ersetzen**. Ohne deine Wahl wird nichts ersetzt; dasselbe gilt für Vorschläge des Assistenten.
+- **Nachvollziehbar**: Jede Planzelle zeigt beim Darüberfahren, wie sie entsteht – Grundlage, Steigerung, Ergebnis und woher die Regel kommt; ein Rechtsklick gibt dem Assistenten dasselbe.
+- **Kennzahlen** über die nächsten 12 Planmonate: Sparquote (Überschuss ÷ Einnahmen), Reichweite (Bankguthaben ÷ geplanter Rückgang je Monat), Zinslast (Darlehenszinsen ÷ Einnahmen).
 
 ![Planung](img/de/planning.png)
 
@@ -503,7 +511,7 @@ Einstellungen → KI-Assistent → „Was der KI-Assistent darf“, nur am Mac �
 
 - **Lesen** (ein Schalter; die Hilfe liest er immer) – deine Zahlen: Übersicht, Bilanz und ihr Verlauf, Cashflow mit Kategorien und Budgets, Vergleiche (ein Zeitraum gegen das Vorjahr oder den Durchschnitt), Planung, Steuer, Immobilienkalkulation, Wertpapiere, Konten, Bereiche, Buchungsregeln, Auto-Buchungen und was offen ist; deine Umsätze: suchen und zusammenzählen, nach Text, Kategorie, Konto, Zeitraum oder Beleg, dazu, was noch keine Kategorie hat; und die Seite, die du gerade ansiehst – ihren Text, wie er auf dem Bildschirm steht; so weiß er, was du mit „das hier“ meinst. Nie: Einstellungen, Protokoll, Einrichtung.
 - **Zeigen** – Seiten öffnen, Umsätze filtern, Stellen hervorheben und Diagramme zeigen.
-- **Ändern: Kontostände und Planwerte eintragen** – Monatsstände eines Kontos (wie unter Kontostände) sowie Planwerte, Annahmen und Ereignisse der Planung.
+- **Ändern: Kontostände und Planwerte eintragen** – Monatsstände eines Kontos (wie unter Kontostände) sowie Planwerte, Planregeln (auch das Planungsmodell), Annahmen und Ereignisse der Planung.
 - **Ändern: Kategorien in MoneyMoney zuordnen** – nur Umsätze ohne Kategorie, nur Kategorien, die es dort gibt, nie über eine inzwischen gesetzte; derselbe Weg wie unter [Kategorisieren](#categories-write-back) (vom iPhone erst beim nächsten Abgleich am Mac; zurücknehmen nur am Mac).
 - **Ändern: Auto-Buchungen freigeben oder zurückhalten** – nur, was auf Freigabe wartet, und nur genau so, wie die Karte es zeigt (Betrag, Tag, Konto, Gegenpartei, Text) – nie aus einer Regel, die du noch nicht bestätigt hast. Die Karte zeigt jede Buchung und sagt, welche nicht gebucht wurde und warum. Gebucht wird nur am Mac und in MoneyMoney endgültig (die Karte sagt es vorher); Zurückhalten lässt sich zurücknehmen. Was Kontor erst geprüft haben will („prüfen“), gibst du weiter selbst unter Auto-Buchungen frei.
 - **Ändern: Buchungsregeln anlegen und ändern** – Darlehen, Beteiligungen, Kontenspiegel, geprüft wie unter Konten & Regeln; die Buchungen einer solchen Regel warten auf deine Freigabe, bis du die Regel dort bestätigst ([Buchungsregeln](#rules)).

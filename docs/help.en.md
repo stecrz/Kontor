@@ -320,7 +320,7 @@ The cash flow has a fixed outline; your MoneyMoney categories count in it. Accou
 - **Saving & investing** is no expense; under **Target account** next to it you choose the account the money goes into (for this position only; more precisely per recipient, see below). **Transfer** – money between your accounts or areas, neither income nor expense – looks for the counter-booking. **Leave out** takes the category out altogether: its amount counts in no row and shows as a difference in the check against the balance sheet (with this reason) – only for exceptions such as a wrong booking that is reversed later.
 - A property's categories (Real estate → category) have rows of their own in cash flow, “rent” and “costs”.
 
-Planning works on the positions; a MoneyMoney budget counts for the position of its category. Nothing changes in MoneyMoney. The column headers stay in place as you scroll.
+Planning plans every position and the categories in it; a MoneyMoney budget counts for its category. Nothing changes in MoneyMoney. The column headers stay in place as you scroll.
 
 <a id="categories-tree"></a>
 ### Recommended categories
@@ -354,7 +354,15 @@ Where it is clear, Kontor proposes a portfolio (the same bank as the recipient's
 <a id="planning"></a>
 ## Planning
 
-Planning continues the past: per row a method (Ø 12 or 6 months, same month last year, fixed amount, annual amount/12, MoneyMoney budget, none), an amount and an increase in % p.a. Expenses follow inflation by default, income the set rate. Double-click to override single months; the suggestion stays visible and can be restored.
+Planning continues the past – by rules on three levels: the **area's default** (one rule for income, one for expenses, under Parameters), the **position** and the **category** in it. The deepest level that sets something counts – method and increase each on its own. A position with categories is the sum of its categories; each category follows the position until it gets a rule of its own (level “Details”).
+
+- **Method**: Ø of the last 12 or 6 completed months, same month last year, fixed amount per month, annual amount (÷ 12), MoneyMoney budget (without a budget: Ø 12 months), none. A fixed amount or a budget of the position is shared by its categories by their share of the last 12 months (refunds get none of it).
+- **Increase**: default (income: “Income increase”, expenses: “Expense increase” or else the inflation), none or own % p.a.
+- **Planning model**: Even, Careful, As last year or Budget sets the area's default with one click (what each does is in its tooltip).
+- **Own values**: double-click a plan cell, a category's too; the rule goes on for the other months, ↺ brings back the suggestion. An own value of a position is shared by its categories without a value of their own.
+- **Asked first**: when you change a rule with values or rules of your own beneath it, Kontor lists them with the new value – **Keep** or **Replace**. Without your choice nothing is replaced; the same goes for the assistant's proposals.
+- **Traceable**: every plan cell shows on hover how it comes about – base, increase, result and where the rule comes from; a right click gives the assistant the same.
+- **Key figures** over the next 12 plan months: savings rate (surplus ÷ income), runway (bank balance ÷ planned fall per month), interest burden (loan interest ÷ income).
 
 ![Planning](img/en/planning.png)
 
@@ -503,7 +511,7 @@ Settings → AI assistant → “What the AI assistant may do”, at the Mac onl
 
 - **Read** (one switch; the help it always reads) – your figures: overview, balance sheet and its history, cash flow with categories and budgets, comparisons (a period against the year before or the average), planning, tax, property calculation, securities, accounts, areas, booking rules, auto bookings and what is open; your transactions: search and add up, by text, category, account, period or receipt, also what has no category yet; and the page you are looking at – its text as it stands on screen; that is how it knows what you mean by “this here”. Never: settings, log, setup.
 - **Show** – open pages, filter transactions, highlight places and show charts.
-- **Change: enter balances and planning values** – month-end balances of an account (as under Balances) and planning values, assumptions and events.
+- **Change: enter balances and planning values** – month-end balances of an account (as under Balances) and planning values, planning rules (the planning model too), assumptions and events.
 - **Change: assign categories in MoneyMoney** – only transactions without a category, only categories that exist there, never over one set meanwhile; the same way as under [Categorise](#categories-write-back) (from the iPhone only at the next sync at the Mac; taking back at the Mac only).
 - **Change: approve or hold back auto bookings** – only what waits for approval, and only exactly as the card shows it (amount, day, account, counterparty, text) – never from a rule you have not confirmed yet. The card shows every booking and says which was not booked and why. Booking happens at the Mac only and is final in MoneyMoney (the card says so beforehand); holding back can be taken back. What Kontor wants checked first (“check”) you still approve yourself under Auto bookings.
 - **Change: add and change booking rules** – loans, participations, account mirrors, checked as under Accounts & rules; the bookings of such a rule wait for your approval until you confirm the rule there ([Booking rules](#rules)).

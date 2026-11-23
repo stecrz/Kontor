@@ -127,7 +127,7 @@ anhängen – nie löschen.
   MoneyMoney; keine. Steigerung je Regel: Standard (Inflation bzw. Einnahmen-Steigerung des Bereichs), keine oder eigene % p.a.;
   typische Planungsmodelle für den ganzen Bereich mit einem Klick wählbar. Jede Zelle einzeln überschreibbar – die Regel gilt für
   die übrigen weiter. Ändert sich eine Regel, unter der eigene Werte oder Regeln weiter unten stehen, fragt Kontor nach und listet
-  sie (Zeile, Monat, eigener Wert, neuer Wert): behalten oder ersetzen.
+  sie (Zeile, Monat, eigener Wert, neuer Wert): behalten oder ersetzen. (umgesetzt in 3.17.6)
 - **Zugang vom iPhone** (2026-11-23): Vom iPhone soll alles gehen wie am Mac; nur sehr Kritisches lässt sich in den
   Einstellungen untersagen. Einzelne Geräte lassen sich am Mac entfernen – danach haben sie keinen Zugriff mehr. Verändernde
   Aktionen müssen am iPhone besonders sicher sein. Der Weg zum Mac (Tailscale oder anders) wird beim Überarbeiten neu bewertet.
@@ -375,6 +375,5 @@ Gedächtnis, Internet, Daten erst nach Anmeldung, Netzverbindungen), Hilfe-Bilde
 - Suchfelder der Hilfe- und der Umsatzseite suchen nach Wörtern (nach Bedeutung nur im Assistenten).
 - Nach der Prüfung 3.17.1 offen: Depot mit Lücke zwischen zwei bekannten Ständen – die Änderung landet im Monat des nächsten Stands
   (gekennzeichnet ist nur die Zeit vor dem ersten); Heatmap höchstens zehn Streifen ohne „Übrige“, Ring-Scheiben ohne Gegenposten
-  (Hilfe sagt es nicht); Kennzahlen der Planung (Sparquote, Reichweite, Zinslast) gerechnet, aber nirgends gezeigt – zeigen oder
-  streichen?; von unterwegs „nur ansehen“ gekennzeichnet, Felder aber nicht gesperrt (der Dienst lehnt ab); Jahrestabelle der
+  (Hilfe sagt es nicht); ~~Kennzahlen der Planung (Sparquote, Reichweite, Zinslast) gerechnet, aber nirgends gezeigt~~ (gezeigt seit 3.17.6); von unterwegs „nur ansehen“ gekennzeichnet, Felder aber nicht gesperrt (der Dienst lehnt ab); Jahrestabelle der
   Immobilie färbt nur nach Vorzeichen.

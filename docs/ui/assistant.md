@@ -28,8 +28,9 @@ Jahr", each series' value; in an Aufteilung also "Anteil" = share of all bars of
 
 ## assistant.change — Karte für Änderungen
 A change the assistant proposes (it never changes anything itself). Each card: kind (Kontostände eintragen, Planwerte setzen,
-Ereignis in die Planung, Annahmen der Planung ändern, Kategorie zuordnen, Auto-Buchungen freigeben/zurückhalten, Buchungsregel,
-Beleg ablegen), title, its reason and a table **Bisher → Neu** per month or setting ("entfernen" = the value is removed); bookings
+Planregel ändern, Ereignis in die Planung, Annahmen der Planung ändern, Kategorie zuordnen, Auto-Buchungen freigeben/zurückhalten,
+Buchungsregel, Beleg ablegen), title, its reason and a table **Bisher → Neu** per month or setting ("entfernen" = the value is
+removed); a planning rule also lists the user's own values and rules beneath it – "Ersetzt werden …" (they go) or "Es bleiben …"; bookings
 and categories list each transaction (date, account · counterparty, text, amount; "und N weitere"); a receipt names the transaction
 and differences (amount, days apart). At the end of the answer one card for all: "Ausführen" / "N ausgewählte ausführen" carries
 out the ticked ones, "Nichts ändern" none; a card warns before what cannot be taken back (bookings: only at the Mac, final in

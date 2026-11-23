@@ -214,7 +214,7 @@ const H = {
   h_l_name: t('h_l_name'), h_l_aktiv: t('h_l_aktiv'), h_l_art: t('h_l_art'), h_l_text: t('h_l_text'), h_l_excl: t('h_l_excl'), h_l_zinstag: t('h_l_zinstag'),
   h_l_ab: t('h_l_ab'), h_l_gp: t('h_l_gp'), h_l_kt: t('h_l_kt'), h_l_kz: t('h_l_kz'),
   h_co_anteil: t('h_co_anteil'), h_co_bet: t('h_co_bet'), h_co_gk: t('h_co_gk'), h_co_rueck: t('h_co_rueck'), h_co_takt: t('h_co_takt'), h_gk_rueck: t('h_gk_rueck'), h_co_schwelle: t('h_co_schwelle'), h_co_gp: t('h_co_gp'),
-  method: t('12_6_monate_durchschnitt_der'),
+  method: t('12_6_monate_durchschnitt_der'), plan_modell: t('h_plan_modell'),
   inflation: t('ausgaben_steigen_standardmaessig_mit_d'),
   steig_ein: t('jaehrliche_steigerung_der_einnahmen_z'),
   rendite: t('jaehrliche_wertentwicklung_fuer_wertpa'),
@@ -259,7 +259,7 @@ const HELP_AT = {als_app: 'app', berechtigung: 'setup', immo_abrechnung: 'proper
   darlehen_iban: 'rules-loans', darlehen_konto: 'rules-loans', darlehen_quelle: 'rules-loans', zinsmodell: 'rules-loans', rate_list: 'rules-loans', base_override: 'rules-loans',
   h_l_name: 'rules-loans', h_l_aktiv: 'rules-loans', h_l_art: 'rules-loans', h_l_text: 'rules-loans', h_l_excl: 'rules-loans', h_l_zinstag: 'rules-loans', h_l_ab: 'rules-loans',
   h_l_gp: 'rules-loans', h_l_kt: 'rules-loans', h_l_kz: 'rules-loans', h_co_anteil: 'areas', h_co_bet: 'rules-companies', h_co_gk: 'rules-mirrors', h_gk_rueck: 'rules-mirrors',
-  h_co_rueck: 'rules-back', h_co_takt: 'rules-companies', h_co_schwelle: 'rules-companies', h_co_gp: 'rules-companies', method: 'planning', inflation: 'planning', steig_ein: 'planning',
+  h_co_rueck: 'rules-back', h_co_takt: 'rules-companies', h_co_schwelle: 'rules-companies', h_co_gp: 'rules-companies', method: 'planning', plan_modell: 'planning', inflation: 'planning', steig_ein: 'planning',
   rendite: 'planning', event: 'planning', wert_bereich: 'planning', fern: 'iphone', fern_was: 'iphone', offline: 'iphone', bind: 'iphone', tls: 'iphone',
   port: 'iphone', touchid: 'security', package: 'backup', timemachine: 'backup', datenschluessel: 'security', diagnose: 'troubleshooting', einrichtung_knoepfe: 'setup', updates: 'updates',
   update_quelle: 'updates', belege_ordner: 'receipts', belege_sub: 'receipts', documents: 'properties', assistent: 'assistant', ki_diktat: 'assistant-dictation', ki_bedeutung: 'assistant-memory', ki_sp_start: 'assistant-dictation', ki_mikrofilter: 'assistant-dictation', ki_abschirmung: 'assistant-safety', ki_kontext: 'assistant-setup', ki_leerlauf: 'assistant-setup', ki_auto_suchen: 'assistant-setup', ki_eintragen: 'assistant-rights', ki_eigenes: 'assistant-setup', ki_speichern: 'assistant', ki_programm: 'assistant-setup', ki_modelle: 'assistant-setup', ki_ablage: 'assistant-setup', ki_internet: 'assistant-internet', ki_tavily: 'assistant-internet', ki_vertraut: 'assistant-internet', ki_websites: 'assistant-internet'};
@@ -317,9 +317,11 @@ document.addEventListener('click', e => {
   e.preventDefault(); e.stopPropagation(); go('#help/' + q.dataset.help);
 }, true);
 // Tooltip als eigenes Element: unterhalb, wenn oben kein Platz ist; nie ueber den Fensterrand hinaus (for "?" and other .tipped elements)
+const TIP = {hide: () => {}};
 (function tooltips() {
-  let tip = null, cur = null, shownAt = 0;
-  const hide = () => { if (tip) tip.remove(); tip = null; cur = null; };
+  let tip = null, cur = null, shownAt = 0, wait = null, next = null;
+  const hide = () => { clearTimeout(wait); next = null; if (tip) tip.remove(); tip = null; cur = null; };
+  TIP.hide = hide;
   const show = el => {
     hide(); cur = el; shownAt = Date.now();
     tip = document.createElement('div'); tip.className = 'tip'; tip.textContent = el.dataset.tip; document.body.appendChild(tip);
@@ -332,8 +334,10 @@ document.addEventListener('click', e => {
   };
   let touch = false;                        // after a tap the browser also sends mouse events; those must not hide the tip again
   document.addEventListener('pointerdown', e => { touch = e.pointerType === 'touch'; }, true);
-  document.addEventListener('mouseover', e => { if (touch) return; const el = e.target.closest && e.target.closest('.hq, .tipped'); if (el && el !== cur) show(el); });
-  document.addEventListener('mouseout', e => { if (touch) return; const el = e.target.closest && e.target.closest('.hq, .tipped'); if (el && el === cur && !(e.relatedTarget && el.contains(e.relatedTarget))) hide(); });
+  // a figure in a table: after a moment (moving over the table does not flash a tip at every cell)
+  const later = el => { clearTimeout(wait); next = el; wait = setTimeout(() => { if (next === el && el.isConnected && el.matches(':hover')) show(el); }, 450); };
+  document.addEventListener('mouseover', e => { if (touch) return; const el = e.target.closest && e.target.closest('.hq, .tipped'); if (el && el !== cur && el !== next) { if (el.tagName === 'TD') later(el); else show(el); } });
+  document.addEventListener('mouseout', e => { if (touch) return; const el = e.target.closest && e.target.closest('.hq, .tipped'); if (el && (el === cur || el === next) && !(e.relatedTarget && el.contains(e.relatedTarget))) hide(); });
   document.addEventListener('focusin', e => { const el = e.target.closest && e.target.closest('.hq, .tipped'); if (el) show(el); });
   document.addEventListener('focusout', e => { if (e.target.closest && e.target.closest('.hq, .tipped')) hide(); });
   document.addEventListener('click', e => {
@@ -342,7 +346,7 @@ document.addEventListener('click', e => {
     if (cur === el && tip && Date.now() - shownAt > 400) { hide(); if (el.dataset.help) go('#help/' + el.dataset.help); }   // second tap
     else if (cur !== el || !tip) show(el);
   });
-  window.addEventListener('scroll', hide, true); window.addEventListener('resize', hide);
+  window.addEventListener('scroll', () => { if (tip) hide(); }, true); window.addEventListener('resize', hide);          // (a tip about to show waits: it shows only where the pointer still is)
 })();
 
 const DEMO_OFF = new Set(['setup', 'settings', 'log']);          // pages the demo does not have (about this Mac and the real Kontor)
@@ -3241,6 +3245,7 @@ const colHeads = w => $$('thead th', w).slice(1).filter(th => !th.classList.cont
 // the names come after. So the names of a long table are a table of their own, pinned to the left as one piece and lying over
 // the table's first column, which keeps its heading (the corner) and empty cells -- the same columns, the same handlers.
 // Both get the same widths and row heights.
+const syncNamesOf = el => { const p = el && el.closest('.cf-pair'), a = p && $(':scope > table:not(.cf-names)', p), b = p && $(':scope > .cf-names', p); if (a && b) syncRows(a, b); };          // a row grew (fields shown): both sides as high again
 function freezeNames(t) {
   if (!t || t.dataset.frozen || !t.closest('.wrap') || !t.tBodies.length) return;
   const left = document.createElement('table'), pair = document.createElement('div');
@@ -3342,6 +3347,122 @@ const SEC_HELP = {operating: 'cf_operativ', investing: 'cf_invest', financing: '
 const SEC_ABBR = {operating: 'CFO', investing: 'CFI', financing: 'CFF'};     // the official short names (cash flow from operations, investing, financing)
 const SEC_KEY = {operating: 'op', investing: 'inv', financing: 'fin', income: 'ein', expenses: 'aus', valuation: 'value'};          // the colour of the activity in the charts
 const METH = {rolling12: t('12_monate'), rolling6: t('6_monate'), prev_year: t('vorjahresmonat'), fix: t('fester_betrag_monat'), yearly_amount: t('meth_jahresbetrag'), budget: t('meth_budget'), none: t('keine')};
+// Planning: rules on three levels (the area's default, a position, a category -- the deepest one that sets a field counts) and
+// how each plan cell came about, said in its tooltip (and given to the assistant with a right click on it)
+const PLAN_AREA_METH = ['rolling12', 'rolling6', 'prev_year', 'budget', 'none'];
+const PLAN_MODELS = ['even', 'careful', 'prev_year', 'budget'];
+const PLAN_FIXED = {loans: 'darlehensplan_zins_auf_restsaldo', event: 'plan_aus_ereignis', property: 'plan_aus_kalkulation'};
+const planPct = g => +g === 0 ? t('keine') : t('pw_pct_pa', FN(g, 1));
+const planShare = s => FN(s * 100, s * 100 % 1 ? 1 : 0) + ' %';
+function planSrc(from, isCat, P) {          // where a rule's field comes from
+  if (from === 'category') return t('pw_von_eigen');
+  if (from === 'position') return t(isCat ? 'pw_von_position' : 'pw_von_eigen');
+  if (from === 'area') return P.model ? t('pw_von_modell', t(`pm_${P.model}`)) : t('pw_von_bereich');
+  return from === 'kind' ? t('pw_von_art') : '';
+}
+function planIncSrc(r, isCat, sec, P) {
+  if (r.inc_from !== 'standard') return planSrc(r.inc_from, isCat, P);
+  return t(sec === 'income' ? 'pw_std_einnahmen' : sec === 'expenses' ? (P.expense_rate_own ? 'pw_std_ausgaben' : 'pw_std_inflation') : 'pw_std_sonst');
+}
+const planMethText = r => (METH[r.method] || r.method || '') + ((r.method === 'fix' || r.method === 'yearly_amount') && r.amount != null ? ' ' + F(r.amount) : '');
+function planRuleLines(r, isCat, sec, P) {          // the rule in effect: method and increase, each with where it comes from
+  if (!r || !r.method) return [];
+  if (r.from === 'fixed') return [t(PLAN_FIXED[r.method] || 'plan')];
+  return [t('pw_regel', planMethText(r), planSrc(r.from, isCat, P))].concat(r.method === 'none' ? [] : [t('pw_steig_regel', planPct(r.increase || 0), planIncSrc(r, isCat, sec, P))]);
+}
+// one plan month of a position (d: null) or of a category inside it: own value, the base, the increase, the rule
+function planWhy(D, sec, z, d, m) {
+  const P = D.plan || {}, x = d || z, p = x.plan || {}, r = p.rule || {}, b = p.base || {}, L = [];
+  const v = (p.amounts || {})[m], s = (p.proposal || {})[m], own = (p.overwritten || []).includes(m) && !(p.ignored || []).includes(m);
+  if (own) L.push(t('pw_eigener_wert', F(v), F(s)));
+  if (r.from === 'fixed') return L.concat([t(PLAN_FIXED[r.method] || 'plan')]).join('\n');
+  if (!d && p.cats) {          // a position with categories: their sum
+    L.push(tn('pw_summe_kat', p.cats, F(s)));
+    if (p.own_cats) L.push(tn('pw_kat_eigen', p.own_cats));
+    if ((p.ignored || []).includes(m)) L.push(t('pw_ignoriert', F(((((D.plan || {}).rows || {})[sec + '/' + z.row] || {}).amounts || {})[m])));
+    else if (own) L.push(t('pw_verteilt'));
+    return L.concat(planRuleLines(r, false, sec, P)).join('\n');
+  }
+  if (d && (p.from_position || []).includes(m)) return L.concat([t('pw_aus_position', F((z.plan.amounts || {})[m]), F(v)), t('vorschlag_0', F(s))], planRuleLines(r, true, sec, P)).join('\n');
+  const n = (D.plan_months || []).indexOf(m) + 1, g = +(r.increase || 0);
+  if (r.method === 'none') L.push(t('pw_keine'));
+  else if (r.method === 'prev_year') {
+    const ly = (+m.slice(0, 4) - 1) + m.slice(4), act = !!x.amounts && ly in x.amounts;
+    L.push(t('pw_vorjahr', ML(ly), F(act ? x.amounts[ly] : (p.amounts || {})[ly] ?? 0)) + (act ? '' : ' ' + t('pw_plan_kl')));
+  } else if (b.share != null && b.budget_of) L.push(t('pw_anteil_budget', planShare(b.share), CP(b.budget_of), F(b.budget), F(b.value)));
+  else if (b.share != null) L.push(t(b.of_kind === 'yearly_amount' ? 'pw_anteil_jahr' : 'pw_anteil', planShare(b.share), F(b.of), F(b.value)));
+  else if (b.budget != null) L.push(t('pw_budget', F(b.budget)));
+  else if (r.method === 'fix') L.push(t('pw_fest', F(b.amount)));
+  else if (r.method === 'yearly_amount') L.push(t('pw_jahr', F(b.amount), F(b.value)));
+  else { if (b.fallback) L.push(t('pw_kein_budget')); L.push(b.n ? tn('pw_avg', b.n, ML(b.months[0]), ML(b.months[1]), F(b.value)) : t('pw_avg_leer')); }
+  if (r.method !== 'none') {
+    if (g) L.push(r.method === 'prev_year' ? t('pw_faktor_vj', FN(1 + g / 100, 4), FN(g, 1)) : t('pw_faktor', FN(Math.pow(1 + g / 100, n / 12), 4), FN(g, 1), tn('pw_monate', n)));
+    L.push(t('pw_ergebnis', F(s)));
+  }
+  return L.concat(planRuleLines(r, !!d, sec, P)).join('\n');
+}
+// a column of several months (a year): how many plan months it adds up, how many of them are your own, the rule
+function planWhyCol(D, sec, z, d, c) {
+  const p = (d || z).plan || {}, pm = new Set(D.plan_months || []), k = c.months.filter(m => pm.has(m)), own = k.filter(m => (p.overwritten || []).includes(m)).length;
+  return [tn('pw_summe_monate', k.length)].concat(own ? [tn('pw_eigene_n', own)] : [], !d && p.cats ? [tn('pw_summe_kat_kurz', p.cats)] : [], planRuleLines(p.rule, !!d, sec, D.plan || {})).join('\n');
+}
+// the rule of a row as a tag beside its name (own: marked), its tooltip saying where each part comes from
+function planTag(D, sec, z, d) {
+  const p = (d || z).plan || {}, r = p.rule || {}; if (!r.method || r.from === 'fixed') return '';
+  const own = r.from === (d ? 'category' : 'position') || r.inc_from === (d ? 'category' : 'position');
+  const tip = planRuleLines(r, !!d, sec, D.plan || {}).concat(!d && p.own_cats ? [tn('pw_kat_eigen', p.own_cats)] : [], p.budget ? [t('pw_budget_mm', F0(p.budget))] : []).join('\n');
+  return `<span class="tag tipped${own ? ' own' : ''}" tabindex="0" data-tip="${esc(tip)}">${esc(METH[r.method] || r.method)}${p.budget ? esc(t('budget') + F0(p.budget)) : ''}${!d && p.own_cats ? ' · ' + esc(tn('pw_kat_eigen_kurz', p.own_cats)) : ''}</span>`;
+}
+// the fields of a row's own rule: method (Standard / as the position), amount (fixed or annual amount only), increase (Standard / none / own)
+function planEdit(key, cat, own, nOv) {
+  const isCat = cat != null, m = own.method || '', g = own.increase_percent_pa, gs = g == null ? '' : +g === 0 ? '0' : 'own';
+  return `<div class="edit" data-key="${esc(key)}"${isCat ? ` data-cat="${esc(cat)}"` : ''}>`
+    + `<select class="meth" title="${esc(t('pr_methode_tip'))}"><option value="">${t(isCat ? 'pr_wie_position' : 'standard')}</option>${Object.entries(METH).map(([mm, ml]) => `<option value="${mm}" ${m === mm ? 'selected' : ''}>${ml}</option>`).join('')}</select>`
+    + `<input class="amount${m === 'fix' || m === 'yearly_amount' ? '' : ' hidden'}" type="number" step="0.01" placeholder="${t('betrag')}" value="${own.amount ?? ''}" title="${esc(t('betrag_fuer_fester_betrag_jahresbetrag'))}">`
+    + `<select class="steig-art" title="${esc(t('pr_steig_tip'))}"><option value="">${t(isCat ? 'pr_steig_wie_position' : 'pr_steig_standard')}</option><option value="0" ${gs === '0' ? 'selected' : ''}>${t('pr_steig_keine')}</option><option value="own" ${gs === 'own' ? 'selected' : ''}>${t('pr_steig_eigene')}</option></select>`
+    + `<input class="pct steig${gs === 'own' ? '' : ' hidden'}" type="number" step="0.1" placeholder="% p.a." value="${gs === 'own' ? g : ''}" title="${esc(t('pr_steig_tip'))}">`
+    + `<button class="save small" title="${t('uebernehmen')}">✓</button>${nOv ? `<button class="small secondary reset-row" data-key="${esc(key)}"${isCat ? ` data-cat="${esc(cat)}"` : ''} title="${t('alle_ueberschreibungen_loeschen')}">↺</button>` : ''}</div>`;
+}
+// the plan's key figures over its next 12 months, each with how it is computed in its tooltip
+function vPlanFigures(D) {
+  const f = D.plan_figures; if (!f || !f.n) return '';
+  const span = `${ML(f.months[0])} – ${ML(f.months[1])}`, pc = x => x == null ? '–' : FN(x * 100, 1) + ' %';
+  const k = (l, v, tip) => `<div class="k tipped" tabindex="0" data-tip="${esc(tip)}"><div class="l">${l}</div><div class="v">${v}</div></div>`;
+  return `<div class="kpis plan-kpis" data-ex="planning.figures">`
+    + k(t('pf_sparquote'), pc(f.saving_rate), t(f.saving_rate == null ? 'pf_ohne_einnahmen' : 'pf_sparquote_tip', F0(f.surplus), F0(f.income), span))
+    + k(t('pf_reichweite'), f.runway_months == null ? '–' : tn('pf_monate', f.runway_months, FN(f.runway_months, 1)),
+      t(f.runway_months == null ? 'pf_reichweite_waechst' : 'pf_reichweite_tip', F0(f.cash), ML(f.cash_month), F0(Math.abs(f.cash_change_month)), span))
+    + k(t('pf_zinslast'), pc(f.interest_rate), t(f.interest_rate == null ? 'pf_ohne_einnahmen' : 'pf_zinslast_tip', F0(f.interest), F0(f.income), span))
+    + '</div>';
+}
+// the area's settings: its planning model (the default rule with one click), the default rule per side, the rates and the horizon
+function vPlanParams(D) {
+  const P = D.plan || {}, d = P.defaults || {}, di = d.income || {}, de = d.expenses || {};
+  const msel = (id, cur) => `<select id="${id}">${PLAN_AREA_METH.map(x => `<option value="${x}" ${cur === x ? 'selected' : ''}>${METH[x]}</option>`).join('')}</select>`;
+  const gsel = (id, cur) => `<select id="${id}" title="${esc(t('pp_steig_tip'))}"><option value="">${t('pp_mit_steig')}</option><option value="0" ${cur != null && +cur === 0 ? 'selected' : ''}>${t('pp_ohne_steig')}</option></select>`;
+  return `<div class="card" data-ex="planning.params" style="margin-bottom:12px"><h3>${t('parameter')}</h3>`
+    + `<div class="row tight" data-ex="planning.params.model"><span>${t('pp_modell', hq('plan_modell'))}</span><div class="seg small" id="p_model" role="group" aria-label="${esc(t('pp_modell', ''))}">${PLAN_MODELS.map(k => `<button data-m="${k}" class="${P.model === k ? 'on' : ''}" title="${esc(t(`pm_${k}_tip`))}">${t(`pm_${k}`)}</button>`).join('')}</div>${P.model ? '' : `<span class="tag">${t('pm_eigenes')}</span>`}</div>`
+    + `<div class="row tight"><label>${t('pp_einnahmen', hq('method'))} ${msel('p_m_in', di.method)}</label>${gsel('p_g_in', di.increase_percent_pa)}<span class="tb-sep"></span><label>${t('pp_ausgaben')} ${msel('p_m_out', de.method)}</label>${gsel('p_g_out', de.increase_percent_pa)}</div>`
+    + `<div class="row tight"><label>${t('horizont')} <input id="p_horizont" type="number" min="1" max="240" value="${P.horizon_months ?? 24}" style="width:70px"> ${t('monate')}</label>
+      <label>${t('inflation_0', hq('inflation'))} <input id="p_infl" type="number" step="0.1" value="${P.inflation_percent_pa ?? 2}" style="width:64px"> % p.a.</label>
+      <label>${t('steigerung_einnahmen_0', hq('steig_ein'))} <input id="p_se" type="number" step="0.1" value="${P.income_increase_percent_pa ?? 0}" style="width:64px"> %</label>
+      <label>${t('pp_steig_ausgaben')} <input id="p_sa" type="number" step="0.1" value="${P.expense_rate_own ? P.expense_increase_percent_pa ?? '' : ''}" placeholder="${t('inflation')}" style="width:112px"> %</label>
+      <label>${t('rendite_wertpapiere_anlagen_0', hq('rendite'))} <input id="p_rendite" type="number" step="0.1" value="${P.return_percent_pa ?? 0}" style="width:64px"> %</label>
+      <button id="p_save" class="small">${t('uebernehmen')}</button><button id="p_reset" class="small secondary" title="${t('alle_planeinstellungen_dieses_bereichs')}">${t('plan_zuruecksetzen')}</button></div></div>`;
+}
+// what a changed rule sits above (your own values and rules further down), for the question: keep them or replace them
+function planConflictHtml(c) {
+  const D = B(), zs = new Map(D.cashflow.sections.flatMap(x => x.rows.map(z => [x.name + '/' + z.row, z])));
+  const name = (key, cat) => { const z = zs.get(key), n = z ? zLabel(z) : CP(key.split('/').slice(1).join('/')); return cat ? CP(cat) : cat == null ? n : n + ' › ' + t('cf_geschaetzt'); };          // a category by its own path
+  const rule = r => { const inc = r.increase_percent_pa ?? r.increase; return [r.method ? planMethText(r) : '', inc != null ? t('pk_steig', planPct(inc)) : ''].filter(Boolean).join(' · ') || t('standard'); };
+  const more = (n, k) => n > k ? `<div class="muted small">${t('pk_weitere', n - k)}</div>` : '';
+  let h = `<b>${t('pk_frage')}</b>`;
+  if (c.values.length) h += `<div class="pk-h">${tn('pk_werte', c.values.length)}</div><div class="pk-list"><table class="plain"><thead><tr><th>${t('pk_zeile')}</th><th>${t('monat_2')}</th><th class="num">${t('pk_eigener')}</th><th class="num">${t('pk_neu')}</th></tr></thead><tbody>`
+    + c.values.slice(0, 500).map(v => `<tr><td>${esc(name(v.row, v.category))}</td><td>${ML(v.month)}</td><td class="num">${F(v.own)}</td><td class="num">${F(v.new)}</td></tr>`).join('') + `</tbody></table>${more(c.values.length, 500)}</div>`;
+  if (c.rules.length) h += `<div class="pk-h">${tn('pk_regeln', c.rules.length)}</div><div class="pk-list"><table class="plain"><thead><tr><th>${t('pk_zeile')}</th><th>${t('pk_eigene_regel')}</th><th>${t('pk_neue_regel')}</th></tr></thead><tbody>`
+    + c.rules.slice(0, 500).map(r => `<tr><td>${esc(name(r.row, r.category))}</td><td>${esc(rule(r.own))}</td><td>${esc(rule(r.new || {}))}</td></tr>`).join('') + `</tbody></table>${more(c.rules.length, 500)}</div>`;
+  return h;
+}
 // How far the table is opened: 0 overview (activities with income, expenses and the kinds of investing and financing: one
 // page), 1 positions (and the accounts and loans), 2 everything (MoneyMoney's categories). A row you open or close yourself
 // keeps that until you choose a level again. depth: 0 activity, 1 income/expenses or a kind, 2 a position or account, 3 more.
@@ -3378,23 +3499,13 @@ function vKapitalfluss(editable) {
   let h = `<div class="toolbar">${viewCtl()}${yearCtl()}<span class="tb-sep"></span>${alleCtl(0)}${editable ? swCtl('realan', S.real, t('inflationsbereinigt'), t('inflationsbereinigt_tip')) : planCtl()}<span class="sp"></span>`
     + `${xlsxBtn(editable ? 'planning' : 'cashflow')}</div>`;
   // hatched = plan, faded = the running month: plain to see (it lies ahead), so no legend for it; planning names what you overrode
-  if (editable) h += `<div class="legend"><span class="o">${t('ueberschrieben')}</span><label class="chk"><input type="checkbox" id="vorschlag-an" ` + (S.proposal ? 'checked' : '') + `${t('vorschlagswerte_zeigen')}</label><em>${t('doppelklick_auf_eine_planzelle_eigener')}</em>` + (S.real ? `<em class="pill info">${t('planwerte_in_heutiger_kaufkraft')}</em>` : '') + '</div>';
-  if (editable) {
-    h += `<div class="card" data-ex="planning.params" style="margin-bottom:12px"><h3>${t('parameter')}</h3><div class="row tight">
-      <label>${t('horizont')} <input id="p_horizont" type="number" min="1" max="240" value="${P.horizon_months ?? 24}" style="width:70px"> ${t('monate')}</label>
-      <label>${t('standardmethode_0', hq('method'))} <select id="p_methode">${['rolling12', 'rolling6', 'prev_year', 'budget', 'none'].map(x => `<option value="${x}" ${P.default_method === x ? 'selected' : ''}>${METH[x]}</option>`).join('')}</select></label>
-      <label>${t('inflation_0', hq('inflation'))} <input id="p_infl" type="number" step="0.1" value="${P.inflation_percent_pa ?? 2}" style="width:64px"> % p.a.</label>
-      <label>${t('steigerung_einnahmen_0', hq('steig_ein'))} <input id="p_se" type="number" step="0.1" value="${P.income_increase_percent_pa ?? 0}" style="width:64px"> %</label>
-      <label>${t('ausgaben')} <input id="p_sa" type="number" step="0.1" value="${P.expense_increase_percent_pa ?? ''}" placeholder="${t('inflation')}" style="width:64px"> %</label>
-      <label>${t('rendite_wertpapiere_anlagen_0', hq('rendite'))} <input id="p_rendite" type="number" step="0.1" value="${P.return_percent_pa ?? 0}" style="width:64px"> %</label>
-      <button id="p_save" class="small">${t('uebernehmen')}</button><button id="p_reset" class="small secondary" title="${t('alle_planeinstellungen_dieses_bereichs')}">${t('plan_zuruecksetzen')}</button></div>
-      <div class="note" style="margin:6px 0 0">${t('ausgaben_steigen_standardmaessig_mit_d_2')}</div></div>`;
-  }
+  if (editable) h += `<div class="legend"><span class="o">${t('ueberschrieben')}</span><label class="chk"><input type="checkbox" id="vorschlag-an" ` + (S.proposal ? 'checked' : '') + `${t('vorschlagswerte_zeigen')}</label>` + (S.real ? `<em class="pill info">${t('planwerte_in_heutiger_kaufkraft')}</em>` : '') + '</div>';
+  if (editable) h += vPlanParams(D) + vPlanFigures(D);
   h += (editable ? '<div class="wrap" data-ex="planning.table">' : '<div class="wrap" data-ex="cashflow.table">') + '<table class="cf-tbl' + (editable ? ' ptable' : '') + '">' + thead(lvCtl, C) + '<tbody>';
   // what each kind of row is, for the assistant (docs/ui): the cash flow by its kinds of rows; planning by its rows with a method
   const EXS = editable ? {} : {income: ' data-ex="cashflow.table.operating"', expenses: ' data-ex="cashflow.table.operating"', investing: ' data-ex="cashflow.table.investing"',
     financing: ' data-ex="cashflow.table.financing"', valuation: ' data-ex="cashflow.table.valuation"', unclear: ' data-ex="cashflow.table.unclear"'};
-  const exOf = name => EXS[name] || '', EXROW = editable ? ' data-ex="planning.table.row"' : '', EXDET = editable ? '' : ' data-ex="cashflow.table.category"';
+  const exOf = name => EXS[name] || '', EXROW = editable ? ' data-ex="planning.table.row"' : '', EXDET = editable ? ' data-ex="planning.table.category"' : ' data-ex="cashflow.table.category"';
   const EXT = k => editable ? '' : {op: ' data-ex="cashflow.table.operating"', fcf: ' data-ex="cashflow.table.fcf"', cash: ' data-ex="cashflow.table.cash"', check: ' data-ex="cashflow.table.check"',
     moves: ' data-ex="cashflow.table.moves"', nw: ' data-ex="cashflow.table.networth"'}[k];
   const secTotal = name => C.map(c => c.months.reduce((a, m) => a + (sums[m]?.[name] ?? 0) * defl(m), 0));
@@ -3436,31 +3547,31 @@ function vKapitalfluss(editable) {
         const key = name + '/' + z.row, did = 'd:' + key, depth = single ? gd : gd + 1;
         const full = zLabel(z), label = single ? full : full.startsWith(g.label + ' › ') ? full.slice(g.label.length + 3) : full;
         let e = '';
-        const p = z.plan || {}, ov = new Set(p.overwritten || []);
+        const p = z.plan || {}, ov = new Set((p.overwritten || []).filter(m => !(p.ignored || []).includes(m)));          // (a value of the position that does not count: no bar)
         if (editable) {
-          // rows the plan takes from elsewhere -- the loan plan, a planned event, a property calculation: no method of their own
-          const FIXED = {loans: 'darlehensplan_zins_auf_restsaldo', event: 'plan_aus_ereignis', property: 'plan_aus_kalkulation'}, isLoan = !!FIXED[p.method];
-          e = isLoan ? `<div class="edit"><span class="tag">${t(FIXED[p.method])}</span>${ov.size ? ` <button class="small secondary reset-row" data-key="${esc(key)}" title="${t('alle_ueberschreibungen_loeschen')}">↺</button>` : ''}</div>`
-            : `<div class="edit" data-key="${esc(key)}">
-              <select class="meth"><option value="">${t('standard')}</option>${Object.entries(METH).map(([mm, ml]) => `<option value="${mm}" ${p.method === mm && (D.plan.rows || {})[key]?.method ? 'selected' : ''}>${ml}</option>`).join('')}</select>
-              <input class="amount" type="number" step="0.01" placeholder="${t('betrag')}" value="${p.amount ?? ''}" title="${t('betrag_fuer_fester_betrag_jahresbetrag')}">
-              <input class="pct steig" type="number" step="0.1" placeholder="% p.a." value="${(D.plan.rows || {})[key]?.increase_percent_pa ?? ''}" title="${t('steigerung_p_a_leer_standard')}">
-              <button class="save small" title="${t('uebernehmen')}">✓</button>${ov.size ? `<button class="small secondary reset-row" data-key="${esc(key)}" title="${t('alle_ueberschreibungen_loeschen')}">↺</button>` : ''}</div>`;
+          // rows the plan takes from elsewhere -- the loan plan, a planned event, a property calculation: no rule of their own
+          e = PLAN_FIXED[p.method] ? `<div class="edit"><span class="tag">${t(PLAN_FIXED[p.method])}</span>${ov.size ? ` <button class="small secondary reset-row" data-key="${esc(key)}" title="${t('alle_ueberschreibungen_loeschen')}">↺</button>` : ''}</div>`
+            : planEdit(key, null, (D.plan.rows || {})[key] || {}, (p.overwritten || []).length);
         }
         const zu = editable || !z.lbl ? '' : z.lbl[0] === 'cf_ohne_kategorie' ? ` <a href="#categories" class="small">${t('zuordnen')}</a>`
           : z.lbl[0] === 'cf_anlage_ohne_ziel' ? ` <a href="#accounts/positions" class="small">${t('cf_ziel_festlegen')}</a>` : '';
         const det = (z.details || []).length, open = det && cfOpen(did, depth);
-        o += `<tr class="${ind(depth).trim()}${det ? ' has-det' : ''}"${EXROW || exOf(name)} data-key="${esc(key)}"${zsOf([z], zLabel(z))}${det ? ` data-tog="${esc(did)}" data-depth="${depth}"` : ''}><td title="${esc(full)}">${det ? caret(did, depth, open) : NOCARET}${esc(label)}${zu}${editable && p.method && !['loans', 'event', 'property'].includes(p.method) ? `<span class="tag">${METH[p.method] || p.method}${p.budget ? t('budget') + F0(p.budget) : ''}</span>` : ''}${e}</td>`
+        const tipOf = (zz, d, c) => !c.plan && !c.mixed || !(d || zz).plan || !editable && !c.plan ? '' : c.months.length === 1 ? planWhy(D, name, zz, d, c.key) : planWhyCol(D, name, zz, d, c);
+        o += `<tr class="${ind(depth).trim()}${det ? ' has-det' : ''}"${EXROW || exOf(name)} data-key="${esc(key)}"${zsOf([z], zLabel(z))}${det ? ` data-tog="${esc(did)}" data-depth="${depth}"` : ''}><td title="${esc(full)}">${det ? caret(did, depth, open) : NOCARET}${esc(label)}${zu}${editable ? planTag(D, name, z, null) : ''}${e}</td>`
           + vals.map((v, i) => {
-              const c = C[i], isOv = c.plan && c.months.some(mm => ov.has(mm));
+              const c = C[i], isOv = c.plan && c.months.some(mm => ov.has(mm)), tip = editable ? tipOf(z, null, c) : '';
               const sug = (S.proposal && c.plan) ? `<div class="small muted">${F(sOf(z, c))}</div>` : '';
-              return `<td class="${cls(v, c)}${editable && c.plan && !c.year ? ' editable' : ''}${isOv ? ' ov' : ''}${hasTx([z], c) ? ' tx' : ''}" data-month="${c.key}" ${isOv ? `title="${t('vorschlag_0', F(sOf(z, c)))}"` : ''}>${FV(v)}${sug}</td>`; }).join('') + '</tr>';
-        // MoneyMoney's categories inside the position: actual figures only (planning works on the position)
+              return `<td class="${cls(v, c)}${editable && c.plan && !c.year ? ' editable' : ''}${isOv ? ' ov' : ''}${hasTx([z], c) ? ' tx' : ''}${tip ? ' tipped' : ''}" data-month="${c.key}"${tip ? ` data-tip="${esc(tip + (editable && c.plan && !c.year ? '\n' + t('pw_doppelklick') : ''))}"` : ''}>${FV(v)}${sug}</td>`; }).join('') + '</tr>';
+        // MoneyMoney's categories inside the position: actual figures, and in plan months their plan (each by its own rule or the position's)
         if (open) for (const d of z.details) {
-          const dv = C.map(c => c.plan || c.months.some(m => m > D.actual_until) ? null : sumOver(d.amounts, c.months));     // actual months only
+          const dp = d.plan || null, dov = new Set((dp && dp.overwritten) || []), dvAll = Object.assign({}, d.amounts, (dp && dp.amounts) || {});
+          const dv = C.map(c => (c.plan || c.months.some(m => m > D.actual_until)) && !dp ? null : sumOver(dvAll, c.months));
           if (!S.all && dv.every(v => v == null || Math.abs(v) < 0.005)) continue;
-          const nm = d.category ? esc(CP(d.category)) : `<span class="tipped" data-tip="${esc(t('cf_geschaetzt_tip'))}" tabindex="0">${t('cf_geschaetzt')}</span>${editable ? '' : ` <a href="#categories" class="small">${t('zuordnen')}</a>`}`;
-          o += `<tr class="det${ind(depth + 1)}"${EXDET}${d.category && !editable ? ` data-kat="${esc(d.category)}"` : ''}><td title="${esc(CP(d.category))}">${NOCARET}${nm}</td>${dv.map((v, i) => `<td class="${cls(v ?? null, C[i])}">${v == null ? '' : FV(v)}</td>`).join('')}</tr>`;
+          const cat = d.category || '', nm = d.category ? esc(CP(d.category)) : `<span class="tipped" data-tip="${esc(t('cf_geschaetzt_tip'))}" tabindex="0">${t('cf_geschaetzt')}</span>${editable ? '' : ` <a href="#categories" class="small">${t('zuordnen')}</a>`}`;
+          const de = editable && dp ? planTag(D, name, z, d) + planEdit(key, cat, ((((D.plan.rows || {})[key] || {}).categories) || {})[cat] || {}, dov.size) : '';
+          o += `<tr class="det${ind(depth + 1)}"${EXDET}${editable ? ` data-key="${esc(key)}" data-cat="${esc(cat)}"` : ''}${d.category && !editable ? ` data-kat="${esc(d.category)}"` : ''}><td title="${esc(CP(d.category))}">${NOCARET}${nm}${de}</td>${dv.map((v, i) => {
+            const c = C[i], tip = editable && dp ? tipOf(z, d, c) : '', isOv = c.plan && c.months.some(mm => dov.has(mm)), ed = editable && dp && c.plan && !c.year;
+            return `<td class="${cls(v ?? null, c)}${ed ? ' editable' : ''}${isOv ? ' ov' : ''}${tip ? ' tipped' : ''}" data-month="${c.key}"${tip ? ` data-tip="${esc(tip + (ed ? '\n' + t('pw_doppelklick') : ''))}"` : ''}>${v == null ? '' : FV(v)}</td>`; }).join('')}</tr>`;
         }
       }
     }
@@ -3530,7 +3641,7 @@ function vKapitalfluss(editable) {
     + (anyOff('unexplained') ? check('cf_abgleich_nv', 'unexplained', 'reasons') : '') + nvbal(t('cf_nv_ende_z'), c => c.months[c.months.length - 1]);
   h = h.slice(0, h0) + h.slice(h0).split('<tr class="').join('<tr class="nwp ');          // from cash to net worth: a little lighter, the focus on the cash flow
   h += '</tbody></table></div>';
-  if (editable) h += vPlanExtras(D) + `<div class="note">${t('methoden_12_6_monate_der').trim()}</div>`;
+  if (editable) h += vPlanExtras(D);
   else h += vCfCharts(D);
   return h;
 }
@@ -3607,12 +3718,13 @@ const cfSum = (D, name, months) => months.reduce((a, m) => a + ((D.cashflow.sums
 // a row's values: actual figures, for plan months the plan (as in the table)
 const cfVals = z => { const w = CF.vals || (CF.vals = new WeakMap()); let v = w.get(z); if (!v) w.set(z, v = Object.assign({}, z.amounts, (z.plan && z.plan.amounts) || {})); return v; };
 const cfRowSum = (z, months) => { const v = cfVals(z); return months.reduce((a, m) => a + (v[m] ?? 0), 0); };
-// a row's categories; in plan months the plan is per position, so it stands as a part of its own ("as planned") -- the parts add up
+// a row's categories (in plan months their plan); where a row's plan is not by its categories (a property calculation) it stands
+// as a part of its own ("as planned") -- the parts add up
 const cfDet = z => { const w = CF.dets || (CF.dets = new WeakMap()); let r = w.get(z); if (r) return r;
   const ds = z.details || [], pv = (z.plan && z.plan.amounts) || {}, rest = {};
-  for (const m of Object.keys(pv)) { const x = (cfVals(z)[m] ?? 0) - ds.reduce((a, d) => a + ((d.amounts || {})[m] ?? 0), 0); if (Math.abs(x) >= 0.005) rest[m] = x; }
-  r = Object.keys(rest).length && ds.length ? [...ds, {category: null, plan: true, amounts: rest}] : ds; w.set(z, r); return r; };
-const cfDetName = d => d.plan ? t('cf_laut_plan') : d.category ? d.category.split(' / ').slice(-2).join(' › ') : t('cf_geschaetzt');
+  for (const m of Object.keys(pv)) { const x = (cfVals(z)[m] ?? 0) - ds.reduce((a, d) => a + (cfVals(d)[m] ?? 0), 0); if (Math.abs(x) >= 0.005) rest[m] = x; }
+  r = Object.keys(rest).length && ds.length ? [...ds, {category: null, rest: true, amounts: rest}] : ds; w.set(z, r); return r; };
+const cfDetName = d => d.rest ? t('cf_laut_plan') : d.category ? d.category.split(' / ').slice(-2).join(' › ') : t('cf_geschaetzt');
 const cfPct = (part, whole) => whole ? Math.round(part / whole * 100) : null;
 // change against the period before as a short text ("+12 %"), and whether that is good
 function cfChange(cur, prev, upGood) {
@@ -3810,7 +3922,7 @@ function cfBridgeTree(D, months, prev) {
     return kids.slice(0, 7).concat([{id: id + '|~', label: t('cf_uebrige', rest.length), v: sum(rest, k => k.v), p: cfRestP(rest, has), kids: null}]);
   };
   const cats = (id, zs) => { const m = new Map();
-    for (const z of zs) for (const d of cfDet(z)) { const k = d.plan ? '~plan' : d.category || '~', c = m.get(k) || {id: id + '|' + k, label: cfDetName(d), v: 0, p: has ? 0 : null, kids: null};
+    for (const z of zs) for (const d of cfDet(z)) { const k = d.rest ? '~plan' : d.category || '~', c = m.get(k) || {id: id + '|' + k, label: cfDetName(d), v: 0, p: has ? 0 : null, kids: null};
       c.v += cfRowSum(d, months); if (has) c.p += cfRowSum(d, prev); m.set(k, c); }
     return limit(id, [...m.values()]); };
   const rows = (id, zs) => { const m = new Map();
@@ -3854,7 +3966,7 @@ function cfWealthTree(D, months, prev) {
     return kids.slice(0, 7).concat([{id: id + '|~', label: t('cf_uebrige', rest.length), v: sum(rest, k => k.v), p: cfRestP(rest, has), kids: null}]);
   };
   const cats = (id, zs) => { const m = new Map();
-    for (const z of zs) for (const d of cfDet(z)) { const k = d.plan ? '~plan' : d.category || '~', c = m.get(k) || {id: id + '|' + k, label: cfDetName(d), v: 0, p: has ? 0 : null, kids: null};
+    for (const z of zs) for (const d of cfDet(z)) { const k = d.rest ? '~plan' : d.category || '~', c = m.get(k) || {id: id + '|' + k, label: cfDetName(d), v: 0, p: has ? 0 : null, kids: null};
       c.v += cfRowSum(d, months); if (has) c.p += cfRowSum(d, prev); m.set(k, c); }
     return limit(id, [...m.values()]); };
   const node = (id, label, zs, by) => {          // a step and its parts: rows grouped by their name (or by the account, for values)
@@ -4093,7 +4205,7 @@ function cfDrawMonths() {
 function cfPieItems(D, sec, months, prev) {
   const sek = D.cashflow.sections.find(s => s.name === sec) || {rows: []}, has = prev.length > 0, sg = sec === 'expenses' ? -1 : 1;
   let items = sek.rows.map(z => ({label: zLabel(z), v: sg * cfRowSum(z, months), p: has ? sg * cfRowSum(z, prev) : null,
-    parts: cfDet(z).map(d => ({label: cfDetName(d), kat: d.category || null, plan: !!d.plan, v: sg * cfRowSum(d, months), p: has ? sg * cfRowSum(d, prev) : null})).filter(d => d.v >= 0.5)}))
+    parts: cfDet(z).map(d => ({label: cfDetName(d), kat: d.category || null, plan: !!d.rest, v: sg * cfRowSum(d, months), p: has ? sg * cfRowSum(d, prev) : null})).filter(d => d.v >= 0.5)}))
     .filter(e => e.v >= 0.5).sort((a, b) => b.v - a.v);
   if (items.length > 7) { const rest = items.slice(6); items = items.slice(0, 6).concat([{label: t('cf_uebrige', rest.length), v: rest.reduce((a, e) => a + e.v, 0), p: cfRestP(rest, has), parts: rest.map(e => ({label: e.label, v: e.v, p: e.p, kats: e.parts.map(d => d.kat).filter(Boolean)})), rest: true}]); }
   return items;
@@ -4244,7 +4356,7 @@ function cfDrawHeat() {
     const k = zLabel(z), r = by.get(k) || {label: k, v: {}, cats: new Map(), paths: new Set(), est: false, none: !!(z.lbl && z.lbl[0] === 'cf_ohne_kategorie'), zs: []}; r.zs.push(z);
     for (const d of z.details || []) { if (d.category) r.paths.add(d.category); else r.est = true; }
     ms.forEach(m => { r.v[m] = r.v[m] || 0; }); all.forEach(m => { r.v[bk(m)] += sg * (cfVals(z)[m] || 0); });
-    for (const d of cfDet(z)) { const n = catName(d), c = r.cats.get(n) || {}; all.forEach(m => { c[bk(m)] = (c[bk(m)] || 0) + sg * ((d.amounts || {})[m] || 0); }); r.cats.set(n, c); }
+    for (const d of cfDet(z)) { const n = catName(d), c = r.cats.get(n) || {}; all.forEach(m => { c[bk(m)] = (c[bk(m)] || 0) + sg * (cfVals(d)[m] || 0); }); r.cats.set(n, c); }          // (plan months: the category's plan)
     by.set(k, r);
   }
   const all2 = [...by.values()].map(r => ({...r, sum: ms.reduce((a, m) => a + r.v[m], 0)})).filter(r => r.sum >= 0.5).sort((a, b) => b.sum - a.sum);
@@ -6675,23 +6787,30 @@ function bind(main) {
     const k = td.closest('table').querySelector('thead tr').children[td.cellIndex]?.dataset.key || '', D = B();
     const m = k.length === 7 ? k : k.length === 4 ? ((D.actual_until || '').startsWith(k) ? D.actual_until : k + '-12') : null; if (m) openTransitDrawer(m); }));
 
-  // Planung
-  $$('.edit .save', main).forEach(b => b.addEventListener('click', async e => { const box = e.target.closest('.edit'); await plan({row: box.dataset.key, method: $('.meth', box).value, amount: $('.amount', box).value, increase: $('.steig', box).value}); }));
-  $$('.reset-row', main).forEach(b => b.addEventListener('click', async e => { await plan({row: e.target.dataset.key, clear_all_overrides: true}); }));
+  // Planung: a rule (the area's default, a position, a category) -- asked first where your own values or rules lie beneath it
+  $$('.edit .meth', main).forEach(sel => sel.addEventListener('change', () => { const box = sel.closest('.edit'); $('.amount', box).classList.toggle('hidden', !['fix', 'yearly_amount'].includes(sel.value)); syncNamesOf(box); }));
+  $$('.edit .steig-art', main).forEach(sel => sel.addEventListener('change', () => { const box = sel.closest('.edit'), inp = $('.steig', box); inp.classList.toggle('hidden', sel.value !== 'own'); if (sel.value === 'own') inp.focus(); syncNamesOf(box); }));
+  $$('.edit .save', main).forEach(b => b.addEventListener('click', e => { const box = e.target.closest('.edit'), ga = $('.steig-art', box).value;
+    planRule(Object.assign({row: box.dataset.key, method: $('.meth', box).value, amount: $('.amount', box).value, increase: ga === 'own' ? $('.steig', box).value : ga}, box.dataset.cat != null ? {category: box.dataset.cat} : {})); }));
+  $$('.reset-row', main).forEach(b => b.addEventListener('click', async e => { const x = e.target.closest('.reset-row'); await plan(Object.assign({row: x.dataset.key, clear_all_overrides: true}, x.dataset.cat != null ? {category: x.dataset.cat} : {})); }));
   $$('td.plan.editable', main).forEach(td => td.addEventListener('dblclick', () => {
     if ($('input', td)) return;
-    const key = td.closest('tr').dataset.key, m = td.dataset.month, old = [...td.childNodes].filter(n => n.nodeName !== 'DIV').map(n => n.textContent).join('').split(GRP).join('').trim();
+    TIP.hide();
+    const tr = td.closest('tr'), key = tr.dataset.key, cat = tr.dataset.cat, m = td.dataset.month, old = [...td.childNodes].filter(n => n.nodeName !== 'DIV').map(n => n.textContent).join('').split(GRP).join('').trim();
+    td.classList.remove('tipped');
     td.innerHTML = `<input type="text" value="${esc(old === '–' ? '' : old)}" style="width:90px;text-align:right;padding:1px 4px" title="${t('leer_vorschlag_verwenden')}">`;
     const inp = $('input', td); inp.focus(); inp.select();
     let done = false; const fin = async save => {
       if (done) return;
       const v = save ? numIn(inp.value) : null;
       if (save && Number.isNaN(v)) { toast(t('zahl_unlesbar', inp.value.trim()), 6000); inp.focus(); inp.select(); return; }          // stays open: not saved, not thrown away
-      done = true; if (save) await plan({row: key, month: m, value: v == null ? '' : v}); else route();
+      done = true; if (save) await plan(Object.assign({row: key, month: m, value: v == null ? '' : v}, cat != null ? {category: cat} : {})); else route();
     };
     inp.addEventListener('keydown', e => { if (e.key === 'Enter') fin(true); if (e.key === 'Escape') fin(false); }); inp.addEventListener('blur', () => fin(true));
   }));
-  const ps = $('#p_save', main); if (ps) ps.addEventListener('click', () => plan({parameter: {horizon_months: +$('#p_horizont').value, default_method: $('#p_methode').value, inflation_percent_pa: +$('#p_infl').value, income_increase_percent_pa: +$('#p_se').value, expense_increase_percent_pa: $('#p_sa').value === '' ? '' : +$('#p_sa').value, return_percent_pa: +$('#p_rendite').value}}));
+  $$('#p_model button', main).forEach(b => b.addEventListener('click', () => planRule({model: b.dataset.m})));
+  const ps = $('#p_save', main); if (ps) ps.addEventListener('click', () => planRule({parameter: {horizon_months: +$('#p_horizont').value, inflation_percent_pa: +$('#p_infl').value, income_increase_percent_pa: +$('#p_se').value, expense_increase_percent_pa: $('#p_sa').value === '' ? '' : +$('#p_sa').value, return_percent_pa: +$('#p_rendite').value},
+    defaults: {income: {method: $('#p_m_in').value, increase: $('#p_g_in').value}, expenses: {method: $('#p_m_out').value, increase: $('#p_g_out').value}}}));
   const pr = $('#p_reset', main); if (pr) pr.addEventListener('click', () => { if (confirm(t('alle_planeinstellungen_und_ueberschrei') + BN() + t('loeschen_2'))) plan({reset_flag: true}); });
   $$('.save-loan', main).forEach(b => b.addEventListener('click', e => { const tr = e.target.closest('tr'); plan({loans: {[tr.dataset.loan]: {interest_percent_pa: $('.lz', tr).value, model: $('.lm', tr).value, payment: $('.lp', tr).value}}}); }));
   $$('.save-wert', main).forEach(b => b.addEventListener('click', e => { const tr = e.target.closest('tr'); const p = $('.wp', tr).value, bs = $('.wb', tr).value, br = $('.wbr', tr).value, an = $('.wa', tr).value; plan({appreciation: {[tr.dataset.acct]: (p === '' && bs === '' && !br) ? null : {percent_pa: p, base: bs, area: br, share: an}}}); }));
@@ -6967,6 +7086,18 @@ async function plan(body) {
   try { await api('/api/plan', Object.assign({area: S.area}, body)); S.DATA = await api('/api/dataset'); route(); toast(t('plan_gespeichert')); }
   catch (e) { toast(t('fehler_3') + e.message, 4000); }
 }
+// a changed rule of the planning: where your own values or rules lie beneath it, Kontor lists them first -- keep or replace
+async function planRule(body) {
+  try {
+    const r = await api('/api/plan', Object.assign({area: S.area, conflicts: 'ask'}, body));
+    if (r && r.conflicts) {
+      const how = await choose(planConflictHtml(r.conflicts), [['keep', t('pk_behalten')], ['replace', t('pk_ersetzen'), 'danger']]);
+      if (!how) return;
+      await api('/api/plan', Object.assign({area: S.area}, body, {conflicts: how, confirmed: r.conflicts}));          // exactly what the dialog listed (else refused)
+    }
+    S.DATA = await api('/api/dataset'); route(); toast(t('plan_gespeichert'));
+  } catch (e) { toast(t('fehler_3') + e.message, 4000); }
+}
 async function syncNow(voll, page) {
   // page: asked for by you (the Sync button): the open page is drawn again when something changed
   // Wie der automatische Abgleich, nur sofort: MoneyMoney lesen, Regeln anwenden (Testmodus laut Einstellung), Auswertung bauen.
@@ -7143,6 +7274,12 @@ function asEntry(p, ask) {
     return asCard(p, ask, kind, `${why}<table class="as-e-t"><thead><tr><th></th><th>${t('ki_e_bisher')}</th><th>${t('ki_e_neu_wert')}</th></tr></thead><tbody>${trs}</tbody></table>
       <div class="muted small">${[p.count ? tn('ki_e_rule_vorschau', p.count, p.count) : '', p.dropped ? tn('ki_e_rule_weg', p.dropped, p.dropped) : '', t('ki_e_rule_freigabe')].filter(Boolean).join(' · ')}</div>`, fin, st);
   }
+  if (p.kind === 'planrule') {          // a rule of the planning: before and after, and your own values and rules beneath it -- replaced or kept
+    const trs = rs => rs.map(r => `<tr><td>${esc(String(r.label || '').replace(/ · (\d{4}-\d{2})$/, (_, m) => ' · ' + ML(m)))}</td><td class="muted">${esc(r.old_text || '–')}</td><td><b>${esc(r.new_text || '–')}</b></td></tr>`).join('');
+    const own = p.replace || p.keep, more = (p.count || 0) - (own || []).length;
+    return asCard(p, ask, kind, `${why}<table class="as-e-t"><thead><tr><th></th><th>${t('ki_e_bisher')}</th><th>${t('ki_e_neu_wert')}</th></tr></thead><tbody>${trs(p.rows || [])}</tbody></table>`
+      + (own ? `<div class="${p.replace ? 'as-e-fin' : 'muted small'}">${tn(p.replace ? 'ki_e_pr_ersetzt' : 'ki_e_pr_bleibt', p.count || own.length)}</div><table class="as-e-t as-e-tc"><tbody>${trs(own)}${more > 0 ? `<tr><td colspan="3" class="muted">${t('ki_e_weitere', more)}</td></tr>` : ''}</tbody></table>` : ''), fin, st);
+  }
   if (p.kind === 'book' || p.kind === 'hold') {          // waiting auto bookings to book (final in MoneyMoney) or to hold back: how many, how much, each of them
     // every booking stands on the card: the first ones at once, a long list unfolds (all can be read before the click); a card
     // saved before 3.17 has only its first rows
@@ -7168,7 +7305,7 @@ function asEntry(p, ask) {
   return asCard(p, ask, kind, `${ev}${why}
     <table class="as-e-t"><thead><tr><th>${t(p.kind === 'params' ? 'ki_e_annahme' : 'ki_e_monat')}</th><th class="num">${t('ki_e_bisher')}</th><th class="num">${t('ki_e_neu_wert')}</th></tr></thead><tbody>${rows}</tbody></table>`, fin, st);
 }
-const asKind = k => ({balances: t('ki_e_balances'), plan: t('ki_e_plan'), event: t('ki_e_event'), params: t('ki_e_params'), category: t('ki_e_category'), book: t('ki_e_book'), hold: t('ki_e_hold'), rule: t('ki_e_rule'), receipt: t('ki_e_receipt'), web: t('ki_a_web')}[k] || '');
+const asKind = k => ({balances: t('ki_e_balances'), plan: t('ki_e_plan'), planrule: t('ki_e_planrule'), event: t('ki_e_event'), params: t('ki_e_params'), category: t('ki_e_category'), book: t('ki_e_book'), hold: t('ki_e_hold'), rule: t('ki_e_rule'), receipt: t('ki_e_receipt'), web: t('ki_a_web')}[k] || '');
 function asCard(p, ask, kind, body, fin, st) {
   // the frame of a proposed change: the tick while the card of changes waits, its kind, title and where, what it changes, its state
   const tick = p.state === 'queued' && ask ? `<label class="as-e-pick" title="${esc(t('ki_e_auswahl_tip'))}"><input type="checkbox" class="as-pick" data-id="${esc(p.id)}" ${p.off ? '' : 'checked'}></label>` : '';
@@ -8101,7 +8238,8 @@ function refCell(cell) {
       {copy: ['\t' + pairs.map(p => p[2]).join('\t'), row + '\t' + pairs.map(p => refNum(p[1])).join('\t')].join('\n'), copyKey: 'zeile_kopieren'});
   }
   const h = headOf(cell), col = h ? colName(h, cell) : '', val = refVal(cell);          // one figure: its row and column (a narrow table: the whole row too, as a transaction)
-  return Object.assign(refMake(row + (h ? ' · ' + refLabel(h) : '') + (val ? ': ' + val : ''), [`${t('ref_zeile')}: ${row}`].concat(pathLine, markOf(name), col ? [`${t('ref_spalte')}: ${col}`] : [], [`${t('ref_wert')}: ${val || '–'}`],
+  const why = cell.matches('td.plan[data-tip]') ? [`${t('ref_berechnung')}: ${cell.dataset.tip.split('\n').filter(l => l !== t('pw_doppelklick')).join(' · ')}`] : [];          // a plan figure: how it came about, as its tooltip says
+  return Object.assign(refMake(row + (h ? ' · ' + refLabel(h) : '') + (val ? ': ' + val : ''), [`${t('ref_zeile')}: ${row}`].concat(pathLine, markOf(name), col ? [`${t('ref_spalte')}: ${col}`] : [], [`${t('ref_wert')}: ${val || '–'}`], why,
     pairs.length && pairs.length <= 10 ? [`${t('ref_ganze_zeile')}: ` + pairs.map(([hh, v]) => `${hh}: ${v}`).join(' · ')] : []), where, refGo(Object.assign({mark: {text: row, column: h ? refLabel(h) : ''}}, depth))),
     val ? {copy: refNum(val), copyKey: 'wert_kopieren'} : {});
 }

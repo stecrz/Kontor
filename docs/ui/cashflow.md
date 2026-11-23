@@ -41,8 +41,8 @@ Which MoneyMoney category counts in which position is set under Konten & Regeln 
 
 ### cashflow.table.category — Kategorie aus MoneyMoney
 The deepest rows (level Details): one row per MoneyMoney category inside the position above it, named by its path ("Wohnen ›
-Strom"); together they make up the position. Actual months only: plan columns and year columns with plan months stay empty (the plan
-works on whole positions). "ohne Kategorie, geschätzt": transactions without a category in MoneyMoney whose position Kontor
+Strom"); together they make up the position. Plan columns (switch "Plan"): the category's plan from the page Planung (each category
+by its own rule or the position's; they add up to the position) – empty only under a row planned by a property calculation. "ohne Kategorie, geschätzt": transactions without a category in MoneyMoney whose position Kontor
 estimated (from the user's earlier categories for the same counterparty or purpose, else from words in name and purpose) – an
 estimate, nothing is written into MoneyMoney; link "Zuordnen" to assign them.
 
@@ -210,7 +210,7 @@ change against the comparison period. Around the ring stand its categories inste
 like the outer ring) and "Übrige (n)" for the rest, each with its amount over the period and its change against the same months of
 the comparison period – its hover box: "<Position> › <Kategorie>", Betrag, "Anteil an <Position>" (share of the position, not of
 all expenses), Vorperiode, Veränderung. Category names are the last two levels of the MoneyMoney path; "ohne Kategorie, geschätzt" = transactions
-without a category whose position Kontor estimated; "laut Plan" = the planned part of plan months (the plan has no categories). For
+without a category whose position Kontor estimated; "laut Plan" = the part of plan months planned without categories (a property calculation). For
 the slice "Übrige" its positions stand there instead.
 
 ## cashflow.heatmap — Ausgaben je Monat

@@ -1475,9 +1475,9 @@ class Tools(_Assist):
         kind = {t["name"]: t["kind"] for t in A.TOOLS}
         self.assertFalse([n for n in names if any(w in n for w in ("setting", "config", "rule_set", "install", "download", "model", "right", "password", "transfer"))])
         self.assertEqual(sorted(n for n in names if kind[n] != "read" and any(w in n for w in ("book", "categor", "rule", "sync", "account"))),
-                         ["assign_categories", "decide_bookings", "propose_rule"])       # categories for transactions without one, waiting bookings, rules: proposed, after the click
-        self.assertEqual({n for n in names if kind[n] == "enter"}, {"enter_balances", "set_plan_values", "set_plan_parameters", "add_plan_event", "assign_categories", "decide_bookings", "propose_rule",
-                                                                   "file_receipt"})
+                         ["assign_categories", "decide_bookings", "propose_rule", "set_plan_rule"])       # categories for transactions without one, waiting bookings, rules: proposed, after the click
+        self.assertEqual({n for n in names if kind[n] == "enter"}, {"enter_balances", "set_plan_values", "set_plan_rule", "set_plan_parameters", "add_plan_event", "assign_categories", "decide_bookings",
+                                                                   "propose_rule", "file_receipt"})
         self.assertEqual({n for n in names if kind[n] == "show"}, {"open_page", "highlight", "show_transactions", "show_chart"})
         self.assertEqual({t["kind"] for t in A.TOOLS}, {"read", "show", "enter", "web"})
         self.assertEqual({t["right"] for t in A.TOOLS if t["kind"] == "enter"}, {"enter_values", "categorize", "book", "rules", "receipts"})
@@ -2009,7 +2009,7 @@ class Charts(_Assist):
         self.assertEqual((c["title"], c["link"]["detail"]), (name, 2))
         self.assertEqual(c["series"][0]["values"], [round(row["amounts"].get(m) or 0, 2) for m in closed])          # a month without an amount: 0
         self.assertIn("items:", self.chart({"what": "cashflow_rows"})[1]["error"])
-        # with the plan: the running month too; a category has no plan of its own -- its planned months (and years with them) unknown
+        # with the plan: the running month too; a category: its own plan (the position is the sum of its categories)
         cur, pm = main["actual_until"], main["plan_months"]
         c, _ = self.chart({"what": "cashflow", "items": ["income"], "with_plan": True, "step": "month"})
         self.assertEqual(c["x"], closed + [cur] + pm); self.assertEqual(c["flags"][len(closed)], "open")
@@ -2017,11 +2017,9 @@ class Charts(_Assist):
         cat = next((d, z) for z in exp["rows"] for d in z.get("details") or [] if d.get("category") and d["category"] != z["row"] and any(d["amounts"].get(m) for m in closed))
         c, _ = self.chart({"what": "cashflow_rows", "items": [cat[0]["category"]], "with_plan": True, "step": "year", "from": closed[0]})
         self.assertEqual(c["link"]["detail"], 3)
-        self.assertIsNone(c["series"][0]["values"][-1])                                  # a planned year: unknown, never 0
+        last = pm[-1][:4]
+        self.assertEqual(c["series"][0]["values"][-1], round(sum(v for m, v in cat[0]["plan"]["amounts"].items() if m.startswith(last)), 2))      # a planned year: the category's plan
         self.assertEqual(c["flags"][-1], "plan")
-        mixed = c["flags"].index("mixed") if "mixed" in c["flags"] else None
-        if mixed is not None:
-            self.assertIsNone(c["series"][0]["values"][mixed])
 
     def test_breakdown(self):
         ds = self.app.dataset()
@@ -3841,6 +3839,84 @@ class Entries(_Assist):
                        ('call add_plan_event {"text": "x", "month": "%s", "amount": 5, "kind": "gift"}' % pm[0], "Needs text")):
             evs = self.ask(q)
             self.assertFalse(any(e["type"] == "entry" for e in evs), q); self.assertIn(why, text_of(evs), q)
+
+    def test_planning_rules(self):
+        """A rule of the planning from the assistant (a model for the area, a position's rule) and a category's own values: the
+        card shows the rule before and after and the values of your own beneath it -- they stay unless replace_own, and then the
+        card says they go; nothing before the click; taken back to exactly what was there."""
+        ds = self.app.dataset()
+        aid = ds["main_area"]
+        pm = ds["areas"][aid]["plan_months"]
+        stored = lambda: self.app.plan_all()["areas"].get(aid) or {}
+        z = next(z for s in ds["areas"][aid]["cashflow"]["sections"] for z in s["rows"] if z["row"] == "Wohnen")
+        cat = z["details"][0]["category"]
+        job, c = self.propose('call set_plan_values {"row": "Wohnen", "category": "%s", "values": [{"month": "%s", "amount": -1600}]}' % (cat.split(" / ")[-1], pm[1]))
+        self.assertEqual(c["title"], "Wohnen › " + cat.replace(" / ", " › "))
+        self.a.confirm(job, c["batch"], True); events(self.a, job)
+        self.assertEqual(stored()["rows"], {"expenses/Wohnen": {"categories": {cat: {"amounts": {pm[1]: -1600.0}}}}})
+        # a planning model: your value stays, the card says so
+        job, c = self.propose('call set_plan_rule {"model": "prev_year"}')
+        self.assertEqual((c["kind"], c["title"], [r["label"] for r in c["rows"]]), ("planrule", "Planungsmodell: Wie Vorjahr", ["Einnahmen", "Ausgaben"]))
+        self.assertEqual([(r["label"], r["old_text"]) for r in c["keep"]], [("%s · %s" % (cat.replace(" / ", " › "), pm[1]), "-1.600,00 €")])
+        self.assertNotIn("replace", c); self.assertNotIn("defaults", stored())
+        self.a.confirm(job, c["batch"], True); events(self.a, job)
+        self.assertEqual((stored()["defaults"], stored()["rows"]["expenses/Wohnen"]["categories"][cat]["amounts"]), (A.PLAN_MODELS["prev_year"], {pm[1]: -1600.0}))
+        self.a.take_back(c["id"])
+        self.assertNotIn("defaults", stored()); self.assertIn("expenses/Wohnen", stored()["rows"])
+        # replace_own: the card names what goes; taken back, it is there again
+        job, c = self.propose('call set_plan_rule {"model": "prev_year", "replace_own": true}')
+        self.assertEqual(len(c["replace"]), 1); self.assertNotIn("keep", c)
+        self.a.confirm(job, c["batch"], True); events(self.a, job)
+        self.assertNotIn("rows", stored())
+        self.a.take_back(c["id"])
+        self.assertEqual(stored()["rows"]["expenses/Wohnen"]["categories"][cat]["amounts"], {pm[1]: -1600.0}); self.assertNotIn("defaults", stored())
+        # a position's rule: its own rule before and after
+        job, c = self.propose('call set_plan_rule {"row": "Wohnen", "method": "fix", "amount": -1500, "increase": "none"}')
+        self.assertEqual([(r["old_text"], r["new_text"]) for r in c["rows"]], [("Standard", "fester Betrag/Monat -1.500,00 € · Steigerung keine")])
+        self.a.confirm(job, c["batch"], True); events(self.a, job)
+        self.assertEqual({k: v for k, v in stored()["rows"]["expenses/Wohnen"].items() if k != "categories"}, {"method": "fix", "amount": -1500.0, "increase_percent_pa": 0.0})
+        MA.plan_update(self.app, {"area": aid, "row": "expenses/Wohnen", "amount": "-1400"})           # changed on the page since
+        with self.assertRaises(ValueError):
+            self.a.take_back(c["id"])
+        # the card is what happens: a fixed amount is the one proposed (never an old one left in the settings); a method that needs
+        # an amount without one is asked again
+        MA.plan_update(self.app, {"area": aid, "row": "expenses/Wohnen", "method": "", "amount": "", "increase": ""})
+        rows = dict(stored()["rows"]); rows["expenses/Wohnen"] = dict(rows["expenses/Wohnen"], method="rolling12", amount=-300.0)        # as older pages left it
+        MA.plan_restore(self.app, aid, {"rows": rows, "defaults": None})
+        job, c = self.propose('call set_plan_rule {"row": "Wohnen", "method": "fix", "amount": -500}')
+        self.assertEqual(c["rows"][0]["new_text"], "fester Betrag/Monat -500,00 €")
+        self.a.confirm(job, c["batch"], True); events(self.a, job)
+        self.assertEqual((stored()["rows"]["expenses/Wohnen"]["method"], stored()["rows"]["expenses/Wohnen"]["amount"]), ("fix", -500.0))
+        self.a.take_back(c["id"])
+        evs = self.ask('call set_plan_rule {"row": "Wohnen", "method": "fix"}')
+        self.assertFalse(any(e["type"] == "entry" for e in evs)); self.assertIn("needs amount", text_of(evs))
+        # replaced is exactly what the card listed: changed meanwhile (a longer horizon brings another value under the rule), nothing done
+        MA.plan_update(self.app, {"area": aid, "parameter": {"horizon_months": 6}})
+        pm6 = self.app.dataset()["areas"][aid]["plan_months"]
+        far = "%d-07" % (int(pm6[-1][:4]) + 1)
+        MA.plan_update(self.app, {"area": aid, "row": "expenses/Wohnen", "category": cat, "month": far, "value": -1700})
+        before = copy.deepcopy(stored())
+        job, c = self.propose('call set_plan_rule {"model": "prev_year", "replace_own": true}')
+        self.assertEqual([r["label"].rsplit(" · ", 1)[-1] for r in c["replace"] if " · " in r["label"]], [pm[1]])         # (and Wohnen's own Ø 12)
+        MA.plan_update(self.app, {"area": aid, "parameter": {"horizon_months": 30}})
+        self.a.confirm(job, c["batch"], True)
+        st = [e for e in events(self.a, job) if e["type"] == "entry_state"]
+        self.assertEqual(st[0]["state"], "failed"); self.assertIn("nichts geändert", st[0]["text"])
+        self.assertEqual({k: v for k, v in stored().items() if k != "horizon_months"}, {k: v for k, v in before.items() if k != "horizon_months"})
+        # a value of the position where every category has its own: it would not count -- refused
+        evs = self.ask('call set_plan_values {"row": "Wohnen", "values": [{"month": "%s", "amount": -2000}]}' % pm[1])
+        self.assertFalse(any(e["type"] == "entry" for e in evs)); self.assertIn("No effect", text_of(evs))
+        self.assertNotIn("default_method", self.a.t_get_planning({}, {"job": job})["parameters"])
+        # the area's default back to standard: the card shows the rule as it will be (not the one it had)
+        MA.plan_update(self.app, {"area": aid, "defaults": {"expenses": {"method": "budget"}}, "conflicts": "keep"})
+        job, c = self.propose('call set_plan_rule {"side": "expenses", "method": "standard"}')
+        self.assertEqual((c["rows"][0]["old_text"], c["rows"][0]["new_text"]), ("MoneyMoney-Budget", "Ø 12 Monate"))
+        self.a.confirm(job, c["batch"], True); events(self.a, job)
+        self.assertEqual(__import__("report").plan_defaults(stored())["expenses"]["method"], "rolling12")
+        for bad, why in (('{"row": "Wohnen"}', "Give method"), ('{"side": "income", "method": "fix", "amount": 5}', "no amount"), ('{"model": "lucky"}', "model: one of"),
+                         ('{"side": "income", "method": "rolling12"}', "nothing would change"), ('{"row": "Wohnen", "category": "Gibtsnicht", "method": "none"}', "No category")):
+            evs = self.ask("call set_plan_rule " + bad)
+            self.assertFalse(any(e["type"] == "entry" for e in evs), bad); self.assertIn(why, text_of(evs), bad)
 
 
 class Newer(_Assist):

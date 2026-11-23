@@ -2060,21 +2060,254 @@ def _rate_at(rates: List[dict], day: date) -> Optional[float]:
     return best
 
 
-def _plan_value(method: str, hist_vals: List[float], same_month_last_year: Optional[float], betrag: Optional[float],
-                budget: Optional[float] = None) -> float:
+# Planning rules on three levels -- the area's default, a position (a row of the cash flow), a category inside it: the deepest
+# level that sets a field counts, each field on its own (the method with its amount; the increase). An increase of 0: none.
+PLAN_METHODS = ("rolling12", "rolling6", "prev_year", "fix", "yearly_amount", "budget", "none")
+PLAN_AREA_METHODS = ("rolling12", "rolling6", "prev_year", "budget", "none")     # the area's default: methods without an amount
+# Planning models: the area's default with one click -- for income, and for expenses (with the other rows a method plans:
+# investing, financing). Without an increase: the area's rates (Steigerung Einnahmen; Ausgaben, else the inflation).
+PLAN_MODELS = {
+    "even": {"income": {"method": "rolling12"}, "expenses": {"method": "rolling12"}},
+    "careful": {"income": {"method": "prev_year", "increase_percent_pa": 0.0}, "expenses": {"method": "rolling12"}},
+    "prev_year": {"income": {"method": "prev_year", "increase_percent_pa": 0.0}, "expenses": {"method": "prev_year", "increase_percent_pa": 0.0}},
+    "budget": {"income": {"method": "rolling12"}, "expenses": {"method": "budget"}},
+}
+PLAN_SIDES = {"income": ("income",), "expenses": ("expenses", "investing", "financing")}     # the sections each side's default plans
+
+
+def plan_side(section: str) -> str:
+    return "income" if section == "income" else "expenses"
+
+
+def plan_one_off(section: str, z: dict) -> bool:
+    """Rows not planned unless you give them a rule (the area's default does not reach them): contributions and withdrawals,
+    loans taken up, transfers into or out of accounts, changes in value, what is unclear."""
+    return section in ("valuation", "unclear") or z.get("kind") in ("external", "drawdown") or (section == "investing" and z.get("kind") in ("external", "account"))
+
+
+def _plan_num(v: Any) -> Optional[float]:
+    if v is None or isinstance(v, bool) or (isinstance(v, str) and not v.strip()):
+        return None
+    try:
+        f = float(v.replace(",", ".")) if isinstance(v, str) else float(v)
+    except (TypeError, ValueError):
+        return None
+    return f if f == f and abs(f) != float("inf") else None
+
+
+def plan_rule(cfg: Any, area: bool = False) -> dict:
+    """The own rule of a position, a category or a side of the area's default -- only what it sets: the method (fixed amount and
+    annual amount with their amount) and the increase in % p.a. (0: none)."""
+    out: Dict[str, Any] = {}
+    if not isinstance(cfg, dict):
+        return out
+    m = cfg.get("method")
+    if m in (PLAN_AREA_METHODS if area else PLAN_METHODS):
+        out["method"] = m
+        if m in ("fix", "yearly_amount"):
+            out["amount"] = _plan_num(cfg.get("amount")) or 0.0
+    g = _plan_num(cfg.get("increase_percent_pa"))
+    if g is not None:
+        out["increase_percent_pa"] = g
+    return out
+
+
+def plan_defaults(plan: dict) -> Dict[str, dict]:
+    """The area's default rule for each side (income; expenses with investing and financing): its method and, where set, its
+    increase. Settings from before the rules per side: "default_method" for both."""
+    dm = plan.get("default_method") if plan.get("default_method") in PLAN_AREA_METHODS else "rolling12"
+    d = plan.get("defaults") if isinstance(plan.get("defaults"), dict) else {}
+    out = {}
+    for side in ("income", "expenses"):
+        r = plan_rule(d.get(side), area=True)
+        r.setdefault("method", dm)
+        out[side] = r
+    return out
+
+
+def plan_model(plan: dict) -> Optional[str]:
+    """The planning model the area's default is (None: an own choice)."""
+    d = plan_defaults(plan)
+    for k, m in PLAN_MODELS.items():
+        if all(d[s]["method"] == m[s]["method"] and d[s].get("increase_percent_pa") == m[s].get("increase_percent_pa") for s in ("income", "expenses")):
+            return k
+    return None
+
+
+def _year_before(mk: str) -> str:
+    return "%04d-%s" % (int(mk[:4]) - 1, mk[5:])
+
+
+def _round_group(raws: List[float]) -> List[float]:
+    """Each value to cents so that they add up to their rounded sum exactly (the cents left over go where rounding cut most)."""
+    r = [round(x, 2) for x in raws]
+    k = int(round((round(sum(raws), 2) - sum(r)) * 100))
+    if k:
+        up = k > 0
+        for i in sorted(range(len(raws)), key=lambda j: (raws[j] - r[j]) * (1 if up else -1), reverse=True)[:abs(k)]:
+            r[i] = round(r[i] + (0.01 if up else -0.01), 2)
+    return r
+
+
+def _shares(weights: List[float], direction: float = 0.0) -> List[float]:
+    """Parts of one by the weights. With a direction (the sign of what is shared): only weights in that direction count -- a
+    category against it (refunds in an expense position) gets no part; none in it: equal parts. Without one: by their size."""
+    ws = [max(w * (1 if direction > 0 else -1), 0.0) for w in weights] if direction else [abs(w) for w in weights]
+    tw = sum(ws)
+    if tw > 1e-9:
+        return [w / tw for w in ws]
+    side = [w * direction >= 0 for w in weights] if direction else [True] * len(weights)      # nothing in its direction lately:
+    n = sum(side) or len(weights)                                                             # equal parts -- of those not against it
+    return [(1.0 / n if (ok or not any(side)) else 0.0) for ok in side] if weights else []
+
+
+def _plan_basis(method: str, hist: List[float], months: List[str], amount: Optional[float], budget: Optional[float]) -> Tuple[float, dict]:
+    """The monthly base of a plan before its increase (every method but prev_year) and what it rests on, for the explanation:
+    the months averaged, the budget, the amount. A budget method without a budget in MoneyMoney: the average of 12 months."""
     if method == "none":
-        return 0.0
-    if method == "budget":
-        return float(budget or 0.0)
+        return 0.0, {}
     if method == "fix":
-        return float(betrag or 0.0)
+        a = round(float(amount or 0.0), 2)
+        return a, {"amount": a, "value": a}
     if method == "yearly_amount":
-        return round(float(betrag or 0.0) / 12.0, 2)
-    if method == "prev_year":
-        return float(same_month_last_year or 0.0)
+        a = round(float(amount or 0.0), 2)
+        return round(a / 12.0, 2), {"amount": a, "value": round(a / 12.0, 2)}
+    info: Dict[str, Any] = {}
+    if method == "budget":
+        if budget is not None:
+            return round(budget, 2), {"budget": round(budget, 2), "value": round(budget, 2)}
+        info["fallback"] = True
     n = 6 if method == "rolling6" else 12
-    vals = hist_vals[-n:]                    # fewer closed months known (a new area): their average, not a twelfth of their sum
-    return round(sum(vals) / len(vals), 2) if vals else 0.0
+    vals = hist[-n:]                    # fewer closed months known (a new area): their average, not a twelfth of their sum
+    if not vals:
+        return 0.0, dict(info, n=0, value=0.0)
+    v = round(sum(vals) / len(vals), 2)
+    return v, dict(info, n=len(vals), months=[months[-len(vals)], months[-1]], value=v)
+
+
+def _plan_factor(method: str, growth: float, i: int) -> float:
+    """The increase of the i-th plan month (0: the first): month by month; prev_year: one year on the month a year before."""
+    return 1 + growth / 100.0 if method == "prev_year" else (1 + growth / 100.0) ** ((i + 1) / 12.0)
+
+
+def _overrides(cfg: dict, future: List[str]) -> Dict[str, float]:
+    return {mk: float(v) for mk, v in (cfg.get("amounts") or {}).items() if mk in future and _plan_num(v) is not None}
+
+
+def plan_position(z: dict, sec: str, cfg: dict, rule: dict, future: List[str], full_months: List[str],
+                  budgets: Dict[str, float], row_of_cat: Dict[str, str]) -> None:
+    """The plan of one position (z["plan"]) and, where it has categories, of each of them (their "plan"): the position is the
+    sum of its categories -- each planned by its own rule, else the position's. rule: the position's own rule resolved
+    (method, from, amount, increase, inc_from). A fixed amount, an annual amount or a budget of the position goes to its
+    categories that follow it by their share of the last 12 closed months; a budget in MoneyMoney counts for the categories
+    beneath it (a budget above several categories when all of them are in this row and planned by budget); a category without
+    a budget: the average of 12 months. A value of your own for the position goes to its categories without a value of their
+    own by their suggestion."""
+    key = sec + "/" + z["row"]
+    sign = (lambda v: v) if sec == "income" else (lambda v: -abs(v))
+    ov = _overrides(cfg, future)
+    method, amount, g = rule["method"], rule.get("amount"), rule["increase"]
+    head = {"method": method, "from": rule["from"], "increase": g, "inc_from": rule["inc_from"]}
+    if method in ("fix", "yearly_amount"):
+        head["amount"] = amount
+    dets = [d for d in z.get("details") or [] if isinstance(d, dict)]
+    if not dets:                                         # a row of its own (no categories): planned as a whole
+        bud = budgets.get(z["row"])
+        bud = round(sign(bud), 2) if bud is not None else None
+        basis, info = _plan_basis(method, [z["amounts"].get(mk, 0.0) for mk in full_months], full_months, amount, bud)
+        p = z["plan"] = {"method": method, "amount": amount, "increase_percent_pa": g, "budget": bud,
+                         "amounts": {}, "proposal": {}, "overwritten": sorted(ov), "rule": head, "base": info}
+        for i, mk in enumerate(future):
+            if method == "prev_year":
+                ly = _year_before(mk)
+                v = (z["amounts"][ly] if ly in z["amounts"] else p["amounts"].get(ly, 0.0)) * _plan_factor(method, g, i)
+            else:
+                v = basis * _plan_factor(method, g, i)
+            p["proposal"][mk] = round(v, 2)
+            p["amounts"][mk] = ov.get(mk, round(v, 2))
+        return
+    ccfg = cfg.get("categories") if isinstance(cfg.get("categories"), dict) else {}
+    cats = []
+    for d in dets:
+        c = d.get("category") or ""
+        own_cfg = ccfg.get(c) if isinstance(ccfg.get(c), dict) else {}
+        own = plan_rule(own_cfg)
+        r = {"method": own["method"], "from": "category", "amount": own.get("amount")} if "method" in own else {"method": method, "from": rule["from"], "amount": amount}
+        r["increase"], r["inc_from"] = (own["increase_percent_pa"], "category") if "increase_percent_pa" in own else (g, rule["inc_from"])
+        hist = [d["amounts"].get(mk, 0.0) for mk in full_months]
+        cats.append({"d": d, "cat": c, "r": r, "own": own, "ov": _overrides(own_cfg, future), "hist": hist, "w": sum(hist[-12:]),
+                     "base": 0.0, "info": {}, "group": None})
+    # a fixed or annual amount of the position: shared by the categories following it
+    follow = [c for c in cats if c["r"]["from"] != "category" and c["r"]["method"] in ("fix", "yearly_amount")]
+    if follow:
+        p0 = _plan_basis(method, [], [], amount, None)[0]
+        for c, s in zip(follow, _shares([c["w"] for c in follow], p0)):
+            c.update(base=p0 * s + 0.0, group="amount", info={"share": round(s, 4), "of": p0, "of_kind": method, "value": round(p0 * s, 2) + 0.0})      # (+ 0.0: never −0,00)
+    # budgets: those of MoneyMoney above or at the categories planned by budget, each shared by the categories beneath it
+    users = [c for c in cats if c["r"]["method"] == "budget"]
+    row_names = {c["cat"] for c in cats if c["cat"]}
+    under = lambda n, b: n == b or n.startswith(b + " / ")
+
+    def own_budgets(names: Set[str]) -> Dict[str, float]:
+        """The budgets for these categories of the row: at or above them, all of their categories in this row and among them."""
+        o = {b: v for b, v in budgets.items() if any(under(n, b) for n in names)
+             and all(r == key for n, r in row_of_cat.items() if under(n, b)) and all(n in names for n in row_names if under(n, b))}
+        return {b: v for b, v in o.items() if not any(a != b and under(b, a) for a in o)}
+    own_b = own_budgets({c["cat"] for c in users if c["cat"]})
+    all_b = own_budgets(row_names)
+    pos_budget = round(sum(sign(v) for v in all_b.values()), 2) if all_b else None       # the position's budget (shown beside its method)
+    for b, v in own_b.items():
+        mine = [c for c in users if c["cat"] and under(c["cat"], b)]
+        for c, s in zip(mine, _shares([c["w"] for c in mine], sign(v))):
+            c.update(base=sign(v) * s + 0.0, group="budget:" + b, info={"budget": round(sign(v), 2), "share": round(s, 4), "budget_of": b, "value": round(sign(v) * s, 2) + 0.0})
+    for c in cats:                                       # the rest: by its own history (a budget method without a budget: Ø 12)
+        if c["group"] is None:
+            c["base"], c["info"] = _plan_basis(c["r"]["method"], c["hist"], full_months, c["r"]["amount"], None)
+    groups: Dict[str, List[dict]] = defaultdict(list)
+    for c in cats:
+        if c["group"]:
+            groups[c["group"]].append(c)
+        c["d"]["plan"] = {"method": c["r"]["method"], "amount": c["r"]["amount"], "increase_percent_pa": c["r"]["increase"],
+                          "amounts": {}, "proposal": {}, "overwritten": sorted(c["ov"]), "from_position": [],
+                          "rule": dict({k: c["r"][k] for k in ("method", "from", "increase", "inc_from")},
+                                       **({"amount": c["r"]["amount"]} if c["r"]["method"] in ("fix", "yearly_amount") else {})),
+                          "base": c["info"]}
+    p = z["plan"] = {"method": method, "amount": amount, "increase_percent_pa": g, "budget": pos_budget, "amounts": {}, "proposal": {},
+                     "overwritten": sorted(ov), "rule": head, "cats": len(cats), "own_cats": sum(1 for c in cats if c["own"]), "ignored": []}
+    for i, mk in enumerate(future):
+        raw: Dict[int, float] = {}
+        for k, c in enumerate(cats):
+            m, gr = c["r"]["method"], c["r"]["increase"]
+            if c["group"]:
+                raw[k] = c["base"] * _plan_factor("", gr, i)
+            elif m == "prev_year":
+                ly, dp = _year_before(mk), c["d"]["plan"]
+                raw[k] = (c["d"]["amounts"][ly] if ly in c["d"]["amounts"] else dp["amounts"].get(ly, 0.0)) * _plan_factor(m, gr, i)
+            else:
+                raw[k] = c["base"] * _plan_factor(m, gr, i)
+        prop = {k: round(v, 2) for k, v in raw.items()}
+        for members in groups.values():                   # a shared amount: its parts add up to it to the cent
+            ks = [cats.index(c) for c in members]
+            for k, v in zip(ks, _round_group([raw[k] for k in ks])):
+                prop[k] = v
+        val = {k: cats[k]["ov"].get(mk, prop[k]) for k in prop}
+        if mk in ov:                                     # your value of the position: shared by the categories without a value of their own
+            free = [k for k in prop if mk not in cats[k]["ov"]]
+            if free:
+                rest = ov[mk] - sum(val[k] for k in prop if k not in free)
+                ws = [prop[k] for k in free]                 # by their suggestion in the direction of the rest, else their last 12 months
+                if not any(w * rest > 0 for w in ws):
+                    ws = [cats[k]["w"] for k in free]
+                for k, v in zip(free, _round_group([rest * s + 0.0 for s in _shares(ws, rest)])):
+                    val[k] = v
+                    cats[k]["d"]["plan"]["from_position"].append(mk)
+            else:
+                p["ignored"].append(mk)                  # every category has a value of its own: theirs count
+        for k, c in enumerate(cats):
+            c["d"]["plan"]["proposal"][mk] = prop[k]
+            c["d"]["plan"]["amounts"][mk] = val[k]
+        p["proposal"][mk] = round(sum(prop.values()), 2)
+        p["amounts"][mk] = round(sum(val.values()), 2)
 
 
 def _event_months(ev: dict, future: List[str]) -> List[str]:
@@ -2103,31 +2336,19 @@ def apply_plan(dataset: dict, plan: dict, config: dict, fremd_nw: Optional[Dict[
     fremd_nw: Nettovermoegensplan anderer Bereiche (id -> {mk: nw}) fuer Beteiligungskonten.
     immo: Immobilienkalkulationen dieses Bereichs mit Planreihen (siehe realestate.planreihen) und Zuordnungen."""
     horizon = max(1, min(240, int(plan.get("horizon_months", 24))))
-    default_method = plan.get("default_method", "rolling12")
+    defaults = plan_defaults(plan)
     inflation = float(plan.get("inflation_percent_pa", 2.0) or 0.0)
     growth_default = {"expenses": float(plan.get("expense_increase_percent_pa", inflation) if plan.get("expense_increase_percent_pa") is not None else inflation),
                       "income": float(plan.get("income_increase_percent_pa") or 0.0)}
     rendite = float(plan.get("return_percent_pa") or 0.0)
     budgets: Dict[str, float] = dataset.get("budgets") or {}
-    rows_cfg: Dict[str, dict] = dict(plan.get("rows", {}) or {})
+    rows_cfg: Dict[str, dict] = {k: v for k, v in (plan.get("rows", {}) or {}).items() if isinstance(v, dict)}
     row_of_cat: Dict[str, str] = {}               # category -> the row it counts in (budgets of a category above several rows)
     for sek in dataset.get("cashflow", {}).get("sections", []):
         for z in sek["rows"]:
             for d in z.get("details") or []:
                 if d["category"]:
                     row_of_cat[d["category"]] = sek["name"] + "/" + z["row"]
-
-    def position_budget(key: str, z: dict) -> Optional[float]:
-        """A position's budget: the budgets in MoneyMoney of its categories -- a budget on a category above them counts when
-        all of its categories are in this row (then those below it do not count again)."""
-        cats = [d["category"] for d in z.get("details") or [] if d["category"]]
-        if not cats:
-            return budgets.get(z["row"])
-        own = {b: v for b, v in budgets.items()
-               if any(c == b or c.startswith(b + " / ") for c in cats)
-               and all(r == key for c, r in row_of_cat.items() if c == b or c.startswith(b + " / "))}
-        own = {b: v for b, v in own.items() if not any(a != b and b.startswith(a + " / ") for a in own)}
-        return round(sum(own.values()), 2) if own else None
     loans_plan: Dict[str, dict] = plan.get("loans", {}) or {}
     wert_cfg: Dict[str, dict] = plan.get("appreciation", {}) or {}
     events: List[dict] = [e for e in (plan.get("events") or []) if isinstance(e, dict) and e.get("active", True)]
@@ -2255,47 +2476,36 @@ def apply_plan(dataset: dict, plan: dict, config: dict, fremd_nw: Optional[Dict[
                               "nw": sec in ("income", "expenses"), "amounts": {mk: 0.0 for mk in ist}, "synthetic": True})
         fixed_rows[(sec, zeile)] = (vals, "event")
 
-    # 1. Planwerte je Zeile
+    # 1. Planwerte je Zeile: the deepest rule counts, field by field -- the category's, the position's, the area's default
     for sek in sektionen:
+        side = plan_side(sek["name"])
         for z in sek["rows"]:
             key = sek["name"] + "/" + z["row"]
             cfg = rows_cfg.get(key, {})
+            own = plan_rule(cfg)
             fx = fixed_rows.get((sek["name"], z["row"]))
-            fixed = fx[0] if fx else None
-            if fx:
-                method = fx[1]
-            elif cfg.get("method"):
-                method = cfg["method"]
-            elif sek["name"] in ("valuation", "unclear") or z.get("kind") in ("external", "drawdown"):     # contributions/withdrawals, loans taken up: one-offs
-                method = "none"
-            elif sek["name"] == "investing" and z.get("kind") in ("external", "account", "payback", "interest"):
-                method = "none" if z.get("kind") in ("external", "account") else default_method
-            else:
-                method = default_method
-            growth = float(cfg.get("increase_percent_pa", growth_default.get(sek["name"], 0.0)))
-            hist_vals = [z["amounts"][mk] for mk in full_months]
-            overrides = cfg.get("amounts", {}) or {}
-            # a position's budget: the sum of the budgets of its categories in MoneyMoney
-            budget = position_budget(sek["name"] + "/" + z["row"], z)
-            if budget is not None and sek["name"] == "expenses":
-                budget = -abs(budget)
-            z["plan"] = {"method": method, "amount": cfg.get("amount"), "increase_percent_pa": growth, "budget": budget,
-                         "amounts": {}, "proposal": {}, "overwritten": sorted(k for k in overrides if k in future)}
-            if fixed is not None:
+            if fx:                                       # the loan schedule, an event, a property calculation: theirs
+                ov = _overrides(cfg, future)
+                z["plan"] = {"method": fx[1], "amount": None, "increase_percent_pa": 0.0, "budget": None, "amounts": {}, "proposal": {},
+                             "overwritten": sorted(ov), "rule": {"method": fx[1], "from": "fixed"}}
                 for mk in future:
-                    v = round(float(fixed.get(mk, 0.0)), 2)
+                    v = round(float(fx[0].get(mk, 0.0)), 2)
                     z["plan"]["proposal"][mk] = v
-                    z["plan"]["amounts"][mk] = float(overrides[mk]) if mk in overrides else v
+                    z["plan"]["amounts"][mk] = ov.get(mk, v)
                 continue
-            base_val = _plan_value(method, hist_vals, None, cfg.get("amount"), budget)
-            for i, mk in enumerate(future):
-                if method == "prev_year":
-                    ly = "%04d-%02d" % (int(mk[:4]) - 1, int(mk[5:]))
-                    v = z["amounts"].get(ly, z["plan"]["amounts"].get(ly, 0.0)) * (1 + growth / 100.0)
-                else:
-                    v = base_val * ((1 + growth / 100.0) ** ((i + 1) / 12.0))
-                z["plan"]["proposal"][mk] = round(v, 2)
-                z["plan"]["amounts"][mk] = float(overrides[mk]) if mk in overrides else round(v, 2)
+            if "method" in own:
+                rule = {"method": own["method"], "from": "position", "amount": own.get("amount")}
+            elif plan_one_off(sek["name"], z):           # contributions/withdrawals, loans taken up: one-offs
+                rule = {"method": "none", "from": "kind"}
+            else:
+                rule = {"method": defaults[side]["method"], "from": "area"}
+            if "increase_percent_pa" in own:
+                rule["increase"], rule["inc_from"] = own["increase_percent_pa"], "position"
+            elif sek["name"] in ("income", "expenses") and "increase_percent_pa" in defaults[side]:
+                rule["increase"], rule["inc_from"] = defaults[side]["increase_percent_pa"], "area"
+            else:
+                rule["increase"], rule["inc_from"] = growth_default.get(sek["name"], 0.0), "standard"
+            plan_position(z, sek["name"], cfg, rule, future, full_months, budgets, row_of_cat)
 
     # 2. Darlehensplan
     fin = sec_by_name["financing"]
@@ -2320,6 +2530,7 @@ def apply_plan(dataset: dict, plan: dict, config: dict, fremd_nw: Optional[Dict[
                         if mk not in (rows_cfg.get("financing/" + z["row"], {}).get("amounts") or {}):
                             z["plan"]["amounts"][mk] = v
                     z["plan"]["method"] = "property"
+                    z["plan"]["rule"] = {"method": "property", "from": "fixed"}
             continue
         lp = dict(loans_cfg.get(uuid, {}))
         lp.update(loans_plan.get(name, {}))
@@ -2398,12 +2609,14 @@ def apply_plan(dataset: dict, plan: dict, config: dict, fremd_nw: Optional[Dict[
                     interest = abs(float(st["ov_z"][mk]))
                 st["interest"]["plan"]["amounts"][mk] = round(sign * interest, 2)
                 st["interest"]["plan"]["method"] = "loans"
+                st["interest"]["plan"]["rule"] = {"method": "loans", "from": "fixed"}
             if st["repay"]:
                 st["repay"]["plan"]["proposal"][mk] = round(sign * principal, 2)
                 if mk in st["ov_t"]:
                     principal = min(abs(float(st["ov_t"][mk])), abs(b))
                 st["repay"]["plan"]["amounts"][mk] = round(sign * principal, 2)
                 st["repay"]["plan"]["method"] = "loans"
+                st["repay"]["plan"]["rule"] = {"method": "loans", "from": "fixed"}
             bal[uuid] = round(b - sign * principal, 2)
             if mo == 12:
                 year_base[uuid][yr + 1] = bal[uuid]
@@ -2512,11 +2725,32 @@ def apply_plan(dataset: dict, plan: dict, config: dict, fremd_nw: Optional[Dict[
 
     dataset["balance"]["projection"] = {"rows": proj_rows, "cash": liq_plan, "net_worth": nw_plan}
     dataset["figures"] = kennzahlen(dataset, plan, liq_total, full_months)
-    dataset["plan"] = {"horizon_months": horizon, "default_method": default_method, "inflation_percent_pa": inflation,
+    dataset["plan_figures"] = plan_figures(dataset, future, liq_total[ist[-1]], ist[-1])
+    dataset["plan"] = {"horizon_months": horizon, "inflation_percent_pa": inflation,
                        "income_increase_percent_pa": growth_default["income"], "expense_increase_percent_pa": growth_default["expenses"],
+                       "expense_rate_own": plan.get("expense_increase_percent_pa") is not None,
                        "return_percent_pa": rendite, "fi_real_return_percent": float(plan.get("fi_real_return_percent") or 3.0),
+                       "defaults": defaults, "model": plan_model(plan), "models": PLAN_MODELS,
                        "rows": rows_cfg, "loans": loans_plan, "appreciation": wert_cfg, "events": plan.get("events") or []}
     return dataset
+
+
+def plan_figures(dataset: dict, future: List[str], cash: float, cash_month: str) -> dict:
+    """The plan's key figures over its next 12 months: savings rate = surplus ÷ income; interest burden = interest paid on loans
+    (financing) ÷ income; runway = the bank balance at the end of the running month ÷ the planned average fall of the bank
+    balance per month (None: it does not fall)."""
+    sums = dataset["cashflow"]["sums"]
+    nxt = future[:12]
+    fin = [z for sek in dataset["cashflow"]["sections"] if sek["name"] == "financing" for z in sek["rows"] if z["kind"] == "interest"]
+    inc = round(sum(sums[mk]["income"] for mk in nxt), 2)
+    surplus = round(sum(sums[mk]["operating"] for mk in nxt), 2)
+    interest = round(-sum((z.get("plan") or {}).get("amounts", {}).get(mk, 0.0) for z in fin for mk in nxt), 2)
+    change = round(sum(sums[mk]["cash_change"] for mk in nxt) / len(nxt), 2) if nxt else 0.0
+    runway = None if change > -0.005 else 0.0 if cash <= 0 else round(cash / -change, 1)
+    return {"months": [nxt[0], nxt[-1]] if nxt else [], "n": len(nxt), "income": inc, "surplus": surplus,
+            "saving_rate": round(surplus / inc, 4) if inc > 0.005 else None, "interest": interest,
+            "interest_rate": round(interest / inc, 4) if inc > 0.005 else None,
+            "cash": round(cash, 2), "cash_month": cash_month, "cash_change_month": change, "runway_months": runway}
 
 
 def prev_mk_of(future: List[str], mk: str) -> str:

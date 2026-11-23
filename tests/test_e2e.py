@@ -2989,6 +2989,105 @@ class FeatureTests(_AppBase):
         gbr_nw = ds["areas"][F.uid("ga")]["balance"]["projection"]["net_worth"]
         self.assertAlmostEqual(pr[F.uid("priv.bet.ga")]["amounts"][fm[5]], round(gbr_nw[fm[5]] * 0.4, 2), 0)
 
+    def test_plan_rules_ask_before_replacing(self):
+        """A changed rule of the planning asks before it replaces what is yours beneath it: your values whose suggestion it changes
+        (with the value that would come instead) and your rules further down that set what it changes -- kept, nothing of yours
+        goes; replaced, they go. A planning model is the area's default for both sides; a category has its own rules and values;
+        a rule saved again unchanged asks nothing; settings of an older Kontor are read as they were."""
+        import report
+        self.login(); self.run_and_wait()
+        code, ds = self.call("/api/dataset"); P = ds["main_area"]; fm = ds["areas"][P]["plan_months"]
+        plan = lambda: self.app.plan_all()["areas"].get(P) or {}
+        rows = lambda b: {s["name"] + "/" + z["row"]: z for s in b["cashflow"]["sections"] for z in s["rows"]}
+        cat = rows(ds["areas"][P])["expenses/Lebenshaltung"]["details"][0]["category"]
+        self.assertEqual(self.call("/api/plan", {"area": P, "row": "expenses/Wohnen", "method": "fix", "amount": "-1500"})[0], 200)
+        self.assertEqual(self.call("/api/plan", {"area": P, "row": "expenses/Lebenshaltung", "category": cat, "month": fm[1], "value": "-650"})[0], 200)
+        code, ds = self.call("/api/dataset")
+        z = rows(ds["areas"][P])["expenses/Lebenshaltung"]
+        self.assertEqual((z["details"][0]["plan"]["amounts"][fm[1]], z["details"][0]["plan"]["overwritten"]), (-650.0, [fm[1]]))
+        self.assertEqual(z["plan"]["amounts"][fm[1]], round(sum(d["plan"]["amounts"][fm[1]] for d in z["details"]), 2))
+        # a planning model above both: asked first, nothing saved
+        code, r = self.call("/api/plan", {"area": P, "model": "prev_year", "conflicts": "ask"})
+        self.assertEqual((code, r["ok"]), (200, False))
+        self.assertEqual([(x["row"], x["category"], x["own"]) for x in r["conflicts"]["rules"]], [("expenses/Wohnen", None, {"method": "fix", "amount": -1500.0})])
+        self.assertEqual({k: r["conflicts"]["rules"][0]["new"][k] for k in ("method", "from", "increase")}, {"method": "prev_year", "from": "area", "increase": 0.0})
+        v = r["conflicts"]["values"]
+        self.assertEqual([(x["row"], x["category"], x["month"], x["own"]) for x in v], [("expenses/Lebenshaltung", cat, fm[1], -650.0)])
+        self.assertNotIn(v[0]["new"], (-650.0, None))
+        self.assertNotIn("defaults", plan())
+        # kept: the model counts, your rule and your value stay
+        self.assertTrue(self.call("/api/plan", {"area": P, "model": "prev_year", "conflicts": "keep"})[1]["ok"])
+        self.assertEqual(plan()["defaults"], report.PLAN_MODELS["prev_year"])
+        self.assertEqual((plan()["rows"]["expenses/Wohnen"]["method"], plan()["rows"]["expenses/Lebenshaltung"]["categories"][cat]["amounts"]), ("fix", {fm[1]: -650.0}))
+        self.assertEqual(self.call("/api/dataset")[1]["areas"][P]["plan"]["model"], "prev_year")
+        # replaced: both go -- only with the list you were shown (without it: nothing)
+        code, r = self.call("/api/plan", {"area": P, "model": "even", "conflicts": "replace"})
+        self.assertEqual(code, 400, r); self.assertEqual(plan()["defaults"], report.PLAN_MODELS["prev_year"])
+        shown = self.call("/api/plan", {"area": P, "model": "even", "conflicts": "ask"})[1]["conflicts"]
+        self.assertTrue(self.call("/api/plan", {"area": P, "model": "even", "conflicts": "replace", "confirmed": shown})[1]["ok"])
+        self.assertNotIn("rows", plan()); self.assertEqual(self.call("/api/dataset")[1]["areas"][P]["plan"]["model"], "even")
+        # the same model again: nothing changes, nothing asked
+        self.assertTrue(self.call("/api/plan", {"area": P, "model": "even", "conflicts": "ask"})[1]["ok"])
+        # a position's rule above a category's rule
+        self.call("/api/plan", {"area": P, "row": "expenses/Lebenshaltung", "category": cat, "increase": "0"})
+        code, r = self.call("/api/plan", {"area": P, "row": "expenses/Lebenshaltung", "increase": "5", "conflicts": "ask"})
+        self.assertEqual([(x["row"], x["category"], x["own"], x["new"]["increase"]) for x in r["conflicts"]["rules"]], [("expenses/Lebenshaltung", cat, {"increase_percent_pa": 0.0}, 5.0)])
+        self.call("/api/plan", {"area": P, "row": "expenses/Lebenshaltung", "increase": "5", "conflicts": "keep"})
+        self.assertEqual(plan()["rows"]["expenses/Lebenshaltung"], {"increase_percent_pa": 5.0, "categories": {cat: {"increase_percent_pa": 0.0}}})
+        self.assertTrue(self.call("/api/plan", {"area": P, "row": "expenses/Lebenshaltung", "increase": "5", "conflicts": "ask"})[1]["ok"])
+        # the area's default from the parameters: what it already is asks nothing; another method asks about the rules beneath
+        same = {"income": {"method": "rolling12", "increase": ""}, "expenses": {"method": "rolling12", "increase": ""}}
+        self.assertTrue(self.call("/api/plan", {"area": P, "defaults": same, "parameter": {"horizon_months": 30}, "conflicts": "ask"})[1]["ok"])
+        self.assertEqual(plan()["horizon_months"], 30)
+        code, r = self.call("/api/plan", {"area": P, "defaults": {"expenses": {"increase": "0"}}, "conflicts": "ask"})
+        # (the category's own 0 % is what the new default sets anyway: no conflict, it stays)
+        self.assertEqual([(x["row"], x["category"]) for x in r["conflicts"]["rules"]], [("expenses/Lebenshaltung", None)])
+        self.call("/api/plan", {"area": P, "defaults": {"expenses": {"increase": "0"}}, "conflicts": "replace", "confirmed": r["conflicts"]})
+        self.assertEqual(plan()["rows"], {"expenses/Lebenshaltung": {"categories": {cat: {"increase_percent_pa": 0.0}}}})
+        self.assertEqual(plan()["defaults"]["expenses"], {"method": "rolling12", "increase_percent_pa": 0.0})
+        for bad in ({"row": "expenses/Wohnen", "method": "magic"}, {"model": "magic"}, {"defaults": {"income": {"method": "fix"}}}):
+            self.assertEqual(self.call("/api/plan", dict(bad, area=P))[0], 400, bad)
+        # settings of an older Kontor: one default method for both sides, a position's rule and value -- as they were
+        self.app.store.save("plan.json", {"areas": {P: {"default_method": "prev_year", "rows": {"expenses/Wohnen": {"method": "fix", "amount": -1000, "amounts": {fm[0]: -1100}}}}}})
+        b = self.call("/api/dataset")[1]["areas"][P]
+        self.assertEqual(b["plan"]["defaults"], {"income": {"method": "prev_year"}, "expenses": {"method": "prev_year"}})
+        w = rows(b)["expenses/Wohnen"]["plan"]
+        self.assertEqual((w["amounts"][fm[0]], w["rule"]["method"], w["rule"]["from"]), (-1100.0, "fix", "position"))
+        self.assertEqual(rows(b)["income/Arbeitseinkommen"]["plan"]["rule"]["method"], "prev_year")
+
+    def test_plan_keeps_or_replaces_exactly_what_was_shown(self):
+        """Behalten/Ersetzen act on exactly the list that was shown: changed meanwhile (here: a longer horizon brings another value of
+        yours under the rule), nothing is done. An amount lives only with a method that uses it; a rule the change would set
+        anyway is no conflict."""
+        self.login(); self.run_and_wait()
+        code, ds = self.call("/api/dataset"); P = ds["main_area"]
+        plan = lambda: self.app.plan_all()["areas"].get(P) or {}
+        cat = next(z for s in ds["areas"][P]["cashflow"]["sections"] for z in s["rows"] if z["row"] == "Wohnen")["details"][0]["category"]
+        self.call("/api/plan", {"area": P, "parameter": {"horizon_months": 6}})
+        pm = self.call("/api/dataset")[1]["areas"][P]["plan_months"]
+        far = "%d-07" % (int(pm[-1][:4]) + 1)
+        for m in (pm[1], far):
+            self.call("/api/plan", {"area": P, "row": "expenses/Wohnen", "category": cat, "month": m, "value": "-1600"})
+        code, r = self.call("/api/plan", {"area": P, "model": "prev_year", "conflicts": "ask"})
+        shown = r["conflicts"]
+        self.assertEqual([v["month"] for v in shown["values"]], [pm[1]])            # the far month lies beyond the plan: not under the rule
+        self.call("/api/plan", {"area": P, "parameter": {"horizon_months": 30}})
+        code, r = self.call("/api/plan", {"area": P, "model": "prev_year", "conflicts": "replace", "confirmed": shown})
+        self.assertEqual(code, 400); self.assertIn("nichts geändert", r.get("error", "") + r.get("text", "") + json.dumps(r, ensure_ascii=False))
+        self.assertEqual(plan()["rows"]["expenses/Wohnen"]["categories"][cat]["amounts"], {pm[1]: -1600.0, far: -1600.0}); self.assertNotIn("defaults", plan())
+        code, r = self.call("/api/plan", {"area": P, "model": "prev_year", "conflicts": "ask"})
+        self.assertEqual(sorted(v["month"] for v in r["conflicts"]["values"]), [pm[1], far])
+        self.assertTrue(self.call("/api/plan", {"area": P, "model": "prev_year", "conflicts": "replace", "confirmed": r["conflicts"]})[1]["ok"])
+        self.assertNotIn("rows", plan())
+        # an amount only with a method that uses it: from fixed back to Ø 12 the page still sends the field -- it does not stay
+        self.call("/api/plan", {"area": P, "row": "expenses/Wohnen", "method": "fix", "amount": "-300", "increase": ""})
+        self.call("/api/plan", {"area": P, "row": "expenses/Wohnen", "method": "rolling12", "amount": "-300", "increase": ""})
+        self.assertEqual(plan()["rows"]["expenses/Wohnen"], {"method": "rolling12"})
+        # the area's default changes to what a row already has: that row's rule is no conflict, nothing asked
+        self.call("/api/plan", {"area": P, "row": "expenses/Wohnen", "method": "rolling6"})
+        code, r = self.call("/api/plan", {"area": P, "defaults": {"expenses": {"method": "rolling6"}}, "conflicts": "ask"})
+        self.assertTrue(r["ok"]); self.assertEqual(plan()["rows"]["expenses/Wohnen"], {"method": "rolling6"})
+
     def test_equity_ratio(self):
         """Equity ratio looking through the companies: own debts plus the share of each linked company's debts; the partners'
         capital accounts are equity, never debts; nothing estimated."""
@@ -6297,6 +6396,102 @@ class KeysFindBrowserTest(unittest.TestCase):
                 # locked: what needs Kontor open goes off in the menu
                 pg3.click("#lock-btn"); pg3.wait_for_selector("#login:not(.hidden)")
                 until(pg3, "(window.__shell.filter(m => m.commands).pop().commands.find(c => c.id === 'sync') || {}).on === false")
+                self.assertEqual(errors, [])
+                b.close()
+        finally:
+            srv.shutdown(); srv.server_close()
+            app.stop.set()
+            shutil.rmtree(d, ignore_errors=True)
+
+
+class PlanningBrowserTest(unittest.TestCase):
+    """Planning in the browser: a plan figure says how it came about (its tooltip -- the right click gives the assistant the same);
+    a planning model asks before it replaces values or rules of your own (kept, then replaced); a category is planned and set on its
+    own row, its own rule asks nothing more, the position stays the sum of its categories."""
+
+    def test_planning(self):
+        try:
+            from playwright.sync_api import sync_playwright
+        except ImportError:
+            self.skipTest("playwright fehlt")
+        d = tempfile.mkdtemp(prefix="kontor-plan-")
+        store = new_store(d); store.save("config.json", config_for_test(os.path.join(d, "Belege"))); store.save("state.json", dict(ALL_NEW))
+        reset_mock(); patch_today()
+        app = App(store, d, bridge_factory=MockBridge)
+        app.do_run(False, True)
+        srv = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(app)); port = srv.server_address[1]
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        try:
+            with sync_playwright() as p:
+                b = p.chromium.launch()
+                errors = []
+                pg = b.new_page(viewport={"width": 1440, "height": 900}); pg.on("pageerror", lambda e: errors.append(str(e)))
+                pg.goto("http://127.0.0.1:%d/" % port)
+                pg.fill("#login-pw", "sehr-geheimes-passwort"); pg.fill("#login-pw2", "sehr-geheimes-passwort"); pg.click("#login-btn")
+                wait_shell(pg)
+                pg.evaluate("location.hash = '#planning'"); pg.wait_for_selector("#p_model")
+                P, pm = pg.evaluate("[S.area || S.DATA.main_area, B().plan_months]")
+                stored = lambda: (app.plan_all()["areas"].get(P) or {})
+                # the tooltip of a plan cell: base, increase, result, where the rule comes from -- the right click says the same
+                cell = 'tr[data-key="expenses/Wohnen"]:not([data-cat]) td[data-month="%s"]' % pm[1]
+                pg.hover(cell); until(pg, "!!document.querySelector('.tip')")
+                tip, shown = pg.inner_text(".tip"), pg.inner_text(cell)
+                self.assertIn("Summe der Kategorie", tip); self.assertIn("Standard des Bereichs (Planungsmodell Gleichmäßig)", tip); self.assertIn("Standard: Inflation", tip)
+                ref = pg.evaluate("refCell(document.querySelector('%s')).text" % cell.replace("'", "\\'"))
+                self.assertIn("So berechnet: " + tip.split("\n")[0], ref); self.assertNotIn("Doppelklick", ref)
+                pg.click("#cf-ebene button[data-e='3']")
+                cat = pg.evaluate("B().cashflow.sections.find(s => s.name === 'expenses').rows.find(z => z.row === 'Wohnen').details[0].category")
+                ccell = 'tr[data-key="expenses/Wohnen"][data-cat="%s"] td[data-month="%s"]' % (cat, pm[1])
+                pg.wait_for_selector(ccell)
+                pg.mouse.move(0, 0); until(pg, "!document.querySelector('.tip')")
+                pg.hover(ccell); until(pg, "!!document.querySelector('.tip') && document.querySelector('.tip').textContent.includes('Ø der letzten 12')")
+                ctip = pg.inner_text(".tip")
+                self.assertIn("× 1,0033", ctip); self.assertIn("= " + shown.strip(), ctip)          # 2 % a year over 2 months; the one category = the position
+                # a value of your own in the category: the position follows (the sum of its categories)
+                pg.dblclick(ccell); pg.wait_for_selector(ccell + " input")
+                pg.fill(ccell + " input", "-1600"); pg.press(ccell + " input", "Enter")
+                until(pg, "document.querySelector('%s') && document.querySelector('%s').classList.contains('ov')" % (ccell.replace("'", "\\'"), ccell.replace("'", "\\'")))
+                self.assertEqual(stored()["rows"]["expenses/Wohnen"]["categories"][cat]["amounts"], {pm[1]: -1600.0})
+                self.assertIn("1.600,00", pg.inner_text(cell))
+                pg.hover(ccell); until(pg, "!!document.querySelector('.tip') && document.querySelector('.tip').textContent.includes('Dein Wert')")
+                # a value of the position where its only category has its own: it does not count -- no bar, the tooltip says why
+                pg.mouse.move(0, 0)
+                pg.evaluate("plan({row: 'expenses/Wohnen', month: '%s', value: -2000})" % pm[1])
+                until(pg, "(((B().plan.rows || {})['expenses/Wohnen'] || {}).amounts || {})['%s'] === -2000 && !!document.querySelector('%s')" % (pm[1], cell.replace("'", "\\'")))
+                self.assertNotIn("ov", pg.get_attribute(cell, "class").split())
+                self.assertIn("-2.000,00", pg.get_attribute(cell, "data-tip")); self.assertIn("zählt nicht", pg.get_attribute(cell, "data-tip"))
+                pg.evaluate("plan({row: 'expenses/Wohnen', month: '%s', value: ''})" % pm[1])
+                until(pg, "!((B().plan.rows || {})['expenses/Wohnen'] || {}).amounts")
+                # a planning model above it: asked first -- kept
+                pg.mouse.move(0, 0)
+                pg.click("#p_model button[data-m='prev_year']"); pg.wait_for_selector(".dlg .pk-list")
+                self.assertIn("-1.600,00", pg.inner_text(".dlg")); self.assertNotIn("defaults", stored())
+                pg.click(".dlg button[data-v='keep']")
+                until(pg, "B().plan.model === 'prev_year' && document.querySelector('#p_model button.on').dataset.m === 'prev_year'")
+                self.assertEqual(stored()["rows"]["expenses/Wohnen"]["categories"][cat]["amounts"], {pm[1]: -1600.0})
+                # ... then replaced
+                pg.click("#p_model button[data-m='even']"); pg.wait_for_selector(".dlg .pk-list")
+                pg.click(".dlg button[data-v='replace']")
+                until(pg, "B().plan.model === 'even' && !(B().plan.rows || {})['expenses/Wohnen']")
+                self.assertNotIn("rows", stored())
+                # the category's own rule: a fixed amount; the tag framed, the position the sum
+                box = 'tr[data-key="expenses/Wohnen"][data-cat="%s"] .edit' % cat
+                pg.wait_for_selector(box)
+                pg.select_option(box + " .meth", "fix"); pg.fill(box + " .amount", "-1234"); pg.click(box + " .save")
+                until(pg, "(((B().plan.rows || {})['expenses/Wohnen'] || {}).categories || {})['%s'] && document.querySelector('tr[data-key=\"expenses/Wohnen\"][data-cat=\"%s\"] .tag.own')" % (cat, cat))
+                self.assertEqual(stored()["rows"]["expenses/Wohnen"]["categories"][cat], {"method": "fix", "amount": -1234.0})
+                z = pg.evaluate("B().cashflow.sections.find(s => s.name === 'expenses').rows.find(z => z.row === 'Wohnen')")
+                self.assertEqual(z["plan"]["amounts"][pm[0]], round(sum(dd["plan"]["amounts"][pm[0]] for dd in z["details"]), 2))
+                self.assertEqual(z["details"][0]["plan"]["proposal"][pm[0]], round(-1234 * 1.02 ** (1 / 12), 2))
+                # a position's rule above it: asked, the dialog names the category's rule; cancelled, nothing changes
+                pbox = 'tr[data-key="expenses/Wohnen"]:not([data-cat]) .edit'
+                pg.select_option(pbox + " .meth", "rolling6"); pg.click(pbox + " .save"); pg.wait_for_selector(".dlg .pk-list")
+                self.assertIn("Deine Regel", pg.inner_text(".dlg"))
+                pg.keyboard.press("Escape"); until(pg, "!document.querySelector('.dlg')")
+                self.assertNotIn("method", stored()["rows"]["expenses/Wohnen"])
+                # the key figures, each with how it is computed
+                self.assertEqual(pg.eval_on_selector_all(".plan-kpis .k", "e => e.length"), 3)
+                self.assertIn("Überschuss ÷ Einnahmen", pg.get_attribute(".plan-kpis .k", "data-tip"))
                 self.assertEqual(errors, [])
                 b.close()
         finally:

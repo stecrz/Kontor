@@ -1086,3 +1086,11 @@ input.invalid { border-color:var(--neg) !important; }
 #help-body a.app-jump { font-weight:600; white-space:nowrap; }
 #help-body a.app-jump::after { content:"\2009\2197"; font-weight:400; opacity:.7; }
 #help-body a.app-jump:hover, #help-body a[href^="#help/"]:hover { text-decoration:underline; text-decoration-color:currentColor; }
+/* Planung: the plan's key figures (three, not stretched over the page), a rule of a row's own (marked), the question before replacing */
+.plan-kpis { max-width:660px; margin:0 0 12px; } .plan-kpis .k.tipped { text-decoration:none; } .plan-kpis .k.tipped .l { text-decoration:underline dotted var(--faint); text-underline-offset:3px; }
+@media (min-width:701px) { .ptable td:first-child { max-width:540px; } }          /* a row's rule beside its name: method, amount, increase, ✓, ↺ never cut off */
+.ptable td.tipped { text-decoration:none; cursor:default; } .ptable td.tipped.editable { cursor:cell; }          /* every plan figure explains itself: not underlined each */
+.tag.own { color:var(--fg); box-shadow:inset 0 0 0 1px var(--line-2); }
+.pk-h { font-weight:600; margin:12px 0 4px; } .pk-list { max-height:30vh; overflow:auto; border:1px solid var(--line); border-radius:var(--radius-s); }
+.pk-list table { width:100%; font-size:12.5px; } .pk-list th, .pk-list td { padding:3px 8px; } .pk-list .muted { padding:4px 8px; }
+@media (max-width:700px) { .ptable .edit { flex-wrap:wrap; max-width:200px; } .ptable .edit select { max-width:100%; padding-left:5px; padding-right:2px; font-size:11px; } }          /* iPhone: a row's rule in two lines, nothing cut off */

@@ -34,7 +34,7 @@ import threading
 import time
 from datetime import date, datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 from urllib.parse import parse_qs, urlparse
 
 import access
@@ -58,6 +58,7 @@ from core import (REPORT_LOCK, assign_skipped, check_file_version, positions_ove
                      immo_results, import_package, ledger_fp, merge_holdings, merged_config, not_booked_entry, plan_pending, refresh_accounts, rule_accounts, run_once, unavailable_text, version, version_on_disk, MM_HISTORY_FILE)
 from model import Ledger, Tx, accounts_from_export, ledger_from_bytes, ledger_to_bytes
 from report import ROLES, account_balance_series, account_months, account_roles, apply_plan, role_label
+from report import PLAN_AREA_METHODS, PLAN_METHODS, PLAN_MODELS, PLAN_SIDES, plan_defaults, plan_one_off, plan_rule
 from model import marks_in
 from rules import Seen, TAG_RE, bkey as rules_bkey, plan_all as plan_rules
 from storage import DAMAGED as storage_damaged, Store, StoreDamaged, StoreError, StoreLocked, _names as storage_names, _remove as _remove_quietly
@@ -811,6 +812,7 @@ class App:
                     "history": lambda uuid: account_history(self, uuid),
                     "history_set": lambda body: account_history_set(self, body),
                     "plan_update": lambda body: plan_update(self, body),
+                    "plan_restore": lambda area, parts: plan_restore(self, area, parts),
                     "lock": ENTRY_LOCK,
                     "transactions": lambda q: filter_transactions(self, q)[0],
                     "status": lambda: self.status(True),
@@ -2335,6 +2337,172 @@ def plan_update(app: "App", body: dict) -> dict:
         return _plan_update(app, body)
 
 
+def _plan_rule_set(rule: dict, body: dict, area: bool = False) -> Set[str]:
+    """Writes the fields of a planning rule the request names (method, amount, increase) into rule; empty: the level above
+    counts again. The fields that changed: "method" (with its amount), "increase"."""
+    was = plan_rule(rule, area)
+    if "method" in body:
+        m = body.get("method") or ""
+        if m and m not in (PLAN_AREA_METHODS if area else PLAN_METHODS):
+            raise ValueError(tr("s_plan_methode"))
+        if m:
+            rule["method"] = str(m)
+        else:
+            rule.pop("method", None)
+    for fld, dst in ((() if area else (("amount", "amount"),)) + (("increase", "increase_percent_pa"),)):
+        if fld in body:
+            v = body.get(fld)
+            if v is None or str(v).strip() == "":
+                rule.pop(dst, None)
+            else:
+                rule[dst] = number_in(v)
+    if rule.get("method") in ("fix", "yearly_amount"):     # the amount is the method's: kept only where the method uses it
+        rule.setdefault("amount", 0.0)
+    else:
+        rule.pop("amount", None)
+    now = plan_rule(rule, area)
+    return {f for f, ks in (("method", ("method", "amount")), ("increase", ("increase_percent_pa",))) if any(was.get(k) != now.get(k) for k in ks)}
+
+
+def _plan_tidy(plan: dict) -> None:
+    """Empty rules, categories and rows go (nothing of yours is in them)."""
+    rows = plan.get("rows") if isinstance(plan.get("rows"), dict) else {}
+    for key in list(rows):
+        cfg = rows[key]
+        if isinstance(cfg, dict):
+            cats = cfg.get("categories") if isinstance(cfg.get("categories"), dict) else None
+            for c in list(cats or {}):
+                if isinstance(cats[c], dict) and not cats[c].get("amounts"):
+                    cats[c].pop("amounts", None)
+                if not cats[c]:
+                    cats.pop(c)
+            if cats is not None and not cats:
+                cfg.pop("categories", None)
+            if not cfg.get("amounts"):
+                cfg.pop("amounts", None)
+        if not cfg:
+            rows.pop(key)
+    if "rows" in plan and not rows:
+        plan.pop("rows", None)
+    d = plan.get("defaults")
+    if isinstance(d, dict):
+        for side in list(d):
+            if not d[side]:
+                d.pop(side)
+        if not d:
+            plan.pop("defaults", None)
+
+
+def _plan_run(app: "App", bereich: str, plan: dict) -> Optional[dict]:
+    """The planning of an area with these settings (as the pages would show it), to see what a change does."""
+    raw = (app.store.load_shared("dataset.json", None) or {}).get("areas") or {}
+    if bereich not in raw or "error" in raw[bereich]:
+        return None
+    b = copy.deepcopy(raw[bereich])
+    apply_plan(b, plan, app.config, immo=immo_for_plan(app.config, bereich, immo_results(app.config, date.today())),
+               ledger_resolve=app.ledger.resolve if app.ledger is not None else None)
+    return b
+
+
+def _plan_conflicts(app: "App", bereich: str, before: dict, after: dict, change: dict) -> Tuple[dict, dict]:
+    """What a changed rule sits above: your own rules further down that set what it changes, and your own values whose
+    suggestion it changes -- each with what would come instead. And the settings with all of them replaced by the change."""
+    repl = copy.deepcopy(after)
+    rows = repl.get("rows") if isinstance(repl.get("rows"), dict) else {}
+    ds_old = _plan_run(app, bereich, before)
+    zs = {s["name"] + "/" + z["row"]: (s["name"], z) for s in (ds_old or {}).get("cashflow", {}).get("sections", []) for z in s["rows"]}
+    found_rules: List[dict] = []
+    taken: List[Tuple[dict, dict, dict]] = []           # (a rule found, where it stood, what was taken out of it)
+
+    def lower(cfg: Any, fields: Set[str], key: str, cat: Optional[str]) -> None:
+        own = plan_rule(cfg)
+        hit = {f for f in fields if ("method" if f == "method" else "increase_percent_pa") in own}
+        if hit:
+            out = {k: cfg.pop(k) for k in ((("method", "amount") if "method" in hit else ()) + (("increase_percent_pa",) if "increase" in hit else ())) if k in cfg}
+            found_rules.append({"row": key, "category": cat, "own": own})
+            taken.append((found_rules[-1], cfg, out))
+
+    def reaches(key: str) -> bool:                       # a position the area's default plans (not a fixed row, not a one-off)
+        sec, z = zs.get(key, (key.split("/", 1)[0], {}))
+        return ((z.get("plan") or {}).get("rule") or {}).get("from") != "fixed" and not plan_one_off(sec, z)
+    if change["level"] == "area":
+        for side, fields in change["sides"].items():
+            for key, cfg in rows.items():
+                sec = key.split("/", 1)[0]
+                here = {f for f in fields if sec in (PLAN_SIDES[side] if f == "method" else (side,))}
+                if not here or not isinstance(cfg, dict) or not reaches(key):
+                    continue
+                lower(cfg, here, key, None)
+                for cat, cc in (cfg.get("categories") or {}).items():
+                    lower(cc, here, key, cat)
+    elif change["level"] == "position" and isinstance(rows.get(change["key"]), dict):
+        for cat, cc in (rows[change["key"]].get("categories") or {}).items():
+            lower(cc, change["fields"], change["key"], cat)
+    ds_new = _plan_run(app, bereich, repl)
+    if ds_old is None or ds_new is None:
+        return {"values": [], "rules": found_rules}, repl
+    new_rows = {s["name"] + "/" + z["row"]: z for s in ds_new["cashflow"]["sections"] for z in s["rows"]}
+    old_rows = {s["name"] + "/" + z["row"]: z for s in ds_old["cashflow"]["sections"] for z in s["rows"]}
+
+    def plan_of(z: Optional[dict], cat: Optional[str]) -> dict:
+        if z is None:
+            return {}
+        if cat is None:
+            return z.get("plan") or {}
+        return next(((d.get("plan") or {}) for d in z.get("details") or [] if (d.get("category") or "") == cat), {})
+    for r in found_rules:                                # what comes instead: the rule in effect after the change
+        r["new"] = {k: v for k, v in (plan_of(new_rows.get(r["row"]), r["category"]).get("rule") or {}).items() if k in ("method", "amount", "increase", "from", "inc_from")}
+    for r, cfg, out in taken:                            # what the change would set anyway is no conflict: it stays (the figures are the same)
+        same = (out.get("method") is None or (out["method"] == r["new"].get("method") and out["method"] not in ("fix", "yearly_amount"))) \
+            and (out.get("increase_percent_pa") is None or abs(float(out["increase_percent_pa"]) - float(r["new"].get("increase") or 0.0)) < 1e-9)
+        if same:
+            cfg.update(out)
+            found_rules.remove(r)
+    found_values: List[dict] = []
+    for key, cfg in rows.items():
+        if not isinstance(cfg, dict) or (change["level"] != "area" and key != change["key"]):
+            continue
+        places = [(None, cfg)] if change["level"] != "category" else []
+        places += [(c, cc) for c, cc in (cfg.get("categories") or {}).items() if isinstance(cc, dict) and (change["level"] != "category" or c == change["cat"])]
+        for cat, where in places:
+            old_p, new_p = plan_of(old_rows.get(key), cat).get("proposal") or {}, plan_of(new_rows.get(key), cat).get("proposal") or {}
+            for mk, v in sorted((where.get("amounts") or {}).items()):
+                if mk in new_p and abs((old_p.get(mk) or 0.0) - new_p[mk]) >= 0.005:
+                    found_values.append({"row": key, "category": cat, "month": mk, "own": v, "new": new_p[mk]})
+                    where["amounts"].pop(mk)
+    _plan_tidy(repl)
+    return {"values": found_values, "rules": found_rules}, repl
+
+
+def _conflict_key(found: Any) -> list:
+    """What a change would keep or replace, comparable however it travelled (JSON from the page: 2 for 2.0)."""
+    num = lambda v: round(float(v), 2) if isinstance(v, (int, float)) and not isinstance(v, bool) else v
+    rule = lambda r: sorted((k, num(v)) for k, v in (r or {}).items()) if isinstance(r, dict) else []
+    f = found if isinstance(found, dict) else {}
+    return [sorted((str(v.get("row")), str(v.get("category")), str(v.get("month")), num(v.get("own")), num(v.get("new"))) for v in f.get("values") or [] if isinstance(v, dict)),
+            sorted((str(r.get("row")), str(r.get("category")), rule(r.get("own")), rule(r.get("new"))) for r in f.get("rules") or [] if isinstance(r, dict))]
+
+
+def plan_restore(app: "App", bereich: str, parts: dict) -> None:
+    """Puts back what the planning's rules and values were (the assistant taking back a change of its own) -- checked as a backup is."""
+    with ENTRY_LOCK:
+        _plan_restore(app, bereich, parts)
+
+
+def _plan_restore(app: "App", bereich: str, parts: dict) -> None:
+    plan_all = app.plan_all()
+    cand = copy.deepcopy(plan_all["areas"].get(bereich) or {})
+    for k in ("rows", "defaults"):
+        if parts.get(k) is None:
+            cand.pop(k, None)
+        else:
+            cand[k] = copy.deepcopy(parts[k])
+    if not _plan_form({"areas": {bereich: cand}}):
+        raise ValueError(tr("s_ki_inzwischen_geaendert"))
+    plan_all["areas"][bereich] = cand
+    app.store.save("plan.json", plan_all)
+
+
 def _plan_update(app: "App", body: dict) -> dict:
     plan_all = app.plan_all()
     bereich = str(body.get("area") or (app.store.load_shared("dataset.json", {}) or {}).get("main_area") or "")
@@ -2345,6 +2513,7 @@ def _plan_update(app: "App", body: dict) -> dict:
         plan_all["areas"][bereich] = {}
         app.store.save("plan.json", plan_all)
         return {"ok": True, "plan": {}}
+    change: Optional[dict] = None
     if "parameter" in body:
         for k, v in (body["parameter"] or {}).items():
             if k in PLAN_PARAMS:
@@ -2395,37 +2564,63 @@ def _plan_update(app: "App", body: dict) -> dict:
                 lst[idx] = clean
         if not plan.get("events"):
             plan.pop("events", None)
+    before = copy.deepcopy(plan)                         # (after the rates: what a rule beneath it sits under is its own change only)
     key = str(body.get("row") or "")
     if key:
         zeilen = plan.setdefault("rows", {})
         row = zeilen.setdefault(key, {})
+        cat = body.get("category")                       # a category inside the position ("": without a category, estimated)
+        if cat is not None:
+            row.setdefault("categories", {})
+            target = row["categories"].setdefault(str(cat), {})
+        else:
+            target = row
         if "month" in body or isinstance(body.get("months"), dict):          # one month -- or several at once ("months": month -> value), saved together
-            werte = row.setdefault("amounts", {})
+            werte = target.setdefault("amounts", {})
             for mk, val in ([(body["month"], body.get("value", ""))] if "month" in body else list(body["months"].items())):
                 if val is None or str(val).strip() == "":
                     werte.pop(mk, None)
                 else:
                     werte[mk] = number_in(val)
-            if not werte:
-                row.pop("amounts", None)
         if body.get("clear_all_overrides"):
-            row.pop("amounts", None)
-        if "method" in body:
-            if body["method"]:
-                row["method"] = str(body["method"])
-            else:
-                row.pop("method", None)
-        for fld, dst in (("amount", "amount"), ("increase", "increase_percent_pa")):
-            if fld in body:
-                v = body.get(fld)
-                if v is None or str(v).strip() == "":
-                    row.pop(dst, None)
-                else:
-                    row[dst] = number_in(v)
-        if not row:
-            zeilen.pop(key, None)
-        if not zeilen:
-            plan.pop("rows", None)
+            target.pop("amounts", None)
+        fields = _plan_rule_set(target, body)
+        if fields:
+            change = {"level": "position" if cat is None else "category", "key": key, "cat": None if cat is None else str(cat), "fields": fields}
+    was = plan_defaults(plan)
+    if isinstance(body.get("defaults"), dict):           # the area's default rule, per side
+        d = plan.setdefault("defaults", {})
+        for side in ("income", "expenses"):
+            if isinstance(body["defaults"].get(side), dict):
+                _plan_rule_set(d.setdefault(side, {}), body["defaults"][side], area=True)
+    if body.get("model"):                                # a planning model: the area's default for both sides at once
+        m = PLAN_MODELS.get(str(body["model"]))
+        if m is None:
+            raise ValueError(tr("s_plan_modell"))
+        plan["defaults"] = copy.deepcopy(m)
+    now = plan_defaults(plan)                            # what the area's default does now against before (not how it is written)
+    sides = {side: {f for f, k in (("method", "method"), ("increase", "increase_percent_pa")) if was[side].get(k) != now[side].get(k)} for side in now}
+    if any(sides.values()):
+        change = {"level": "area", "sides": {k: v for k, v in sides.items() if v}}
+    _plan_tidy(plan)
+    mode = body.get("conflicts") or "keep"               # never anything of yours replaced unless you say so
+    confirmed = body.get("confirmed") if isinstance(body.get("confirmed"), dict) else None      # the list you were shown (page, assistant's card)
+    if mode == "replace" and confirmed is None:
+        raise ValueError(tr("s_plan_anders"))            # replacing only ever what you were shown: without that list, nothing
+    found, replaced = {"values": [], "rules": []}, plan
+    if change and (mode in ("ask", "replace", "check") or confirmed is not None):
+        found, replaced = _plan_conflicts(app, bereich, before, plan, change)
+    if confirmed is not None and _conflict_key(found) != _conflict_key(confirmed):
+        raise ValueError(tr("s_plan_anders"))            # what it would keep or replace is no longer what you were shown: nothing done
+    if change and mode in ("ask", "replace", "check"):
+        if mode == "check":                              # only what it would do (the assistant's card): nothing saved
+            return {"ok": True, "changed": True, "conflicts": found, "defaults": plan_defaults(plan)}
+        if mode == "ask" and (found["values"] or found["rules"]):
+            return {"ok": False, "conflicts": found}     # nothing saved: the page asks you first
+        if mode == "replace":
+            plan_all["areas"][bereich] = replaced
+    if mode == "check":
+        return {"ok": True, "changed": bool(change), "conflicts": {"values": [], "rules": []}, "defaults": plan_defaults(plan)}
     app.store.save("plan.json", plan_all)
     return {"ok": True, "plan": plan_all["areas"].get(bereich, {})}
 
@@ -2593,8 +2788,9 @@ def export_sheets(app: App, was: str, bereich: Optional[str], modus: str, view: 
                     depth += 1
                 for z in zs:
                     line(["    " * depth + (tr(*z["lbl"]) if z.get("lbl") else z["row"])] + val(z), depth, not single and depth > level + 2)
-                    for d in z.get("details") or []:             # the categories inside a position (collapsed; actual figures only)
-                        line(["    " * (depth + 1) + (d["category"] or tr("cf_geschaetzt"))] + [None if p_ else round(sum(d["amounts"].get(m, 0.0) for m in ms), 2) for _, ms, p_ in cols], depth + 1, True)
+                    for d in z.get("details") or []:             # the categories inside a position (collapsed; plan columns: their plan, where they have one)
+                        dv = dict(d["amounts"], **((d.get("plan") or {}).get("amounts") or {}))
+                        line(["    " * (depth + 1) + (d["category"] or tr("cf_geschaetzt"))] + [None if p_ and not d.get("plan") else round(sum(dv.get(m, 0.0) for m in ms), 2) for _, ms, p_ in cols], depth + 1, True)
         line([tr("cf_operativ")] + total("operating")); bold.append(len(rows) - 1)
         section("income", tr("einnahmen"), 1)
         section("expenses", tr("ausgaben"), 1)
@@ -2649,7 +2845,7 @@ def export_sheets(app: App, was: str, bereich: Optional[str], modus: str, view: 
             prow.append([tr("x_liq_plan")] + [_last(pr.get("cash", {}), ms) for _, ms, _p in pcols])
             sheets.append(Sheet(tr("x_fortschreibung"), [tr("x_position")] + [c[0] for c in pcols], prow, bold_rows=pbold))
             P = b.get("plan", {})
-            prm = [[k, P.get(k)] for k in PLAN_PARAMS]
+            prm = [[k, P.get(k)] for k in PLAN_PARAMS if k != "default_method"] + [["defaults", json.dumps(P.get("defaults") or {}, ensure_ascii=False)]]
             for zn, zc in (P.get("rows") or {}).items():
                 prm.append([tr("x_zeile") % zn, json.dumps(zc, ensure_ascii=False)])
             sheets.append(Sheet(tr("x_parameter"), [tr("x_parameter"), tr("x_wert")], prm, widths=[40, 60], freeze="A2"))
@@ -4379,14 +4575,17 @@ def _plan_form(plan: Any) -> bool:
             return False
         if any(a.get(k) is not None and not _reads_as_num(a[k]) for k in PLAN_PARAMS if k not in ("horizon_months", "default_method")):
             return False
-        rows, loans, appr, events = (a.get(k) for k in ("rows", "loans", "appreciation", "events"))
-        if not (_opt(rows, dict) and _opt(loans, dict) and _opt(appr, dict) and _opt(events, list)):
+        rows, loans, appr, events, dflt = (a.get(k) for k in ("rows", "loans", "appreciation", "events", "defaults"))
+        if not (_opt(rows, dict) and _opt(loans, dict) and _opt(appr, dict) and _opt(events, list) and _opt(dflt, dict)):
             return False
-        for r in (rows or {}).values():
-            if not isinstance(r, dict) or not _opt(r.get("method"), str) or (r.get("amount") is not None and not _is_num(r["amount"])) \
-                    or ("increase_percent_pa" in r and not _is_num(r["increase_percent_pa"])) \
-                    or not (r.get("amounts") is None or (isinstance(r["amounts"], dict) and all(_is_num(x) for x in r["amounts"].values()))):
+        rule = lambda r: isinstance(r, dict) and _opt(r.get("method"), str) and (r.get("amount") is None or _is_num(r["amount"])) \
+            and ("increase_percent_pa" not in r or _is_num(r["increase_percent_pa"])) \
+            and (r.get("amounts") is None or (isinstance(r["amounts"], dict) and all(_is_num(x) for x in r["amounts"].values())))
+        for r in (rows or {}).values():                  # a position, with the rules and values of its categories
+            if not rule(r) or not _opt(r.get("categories"), dict) or not all(rule(c) and "categories" not in c for c in (r.get("categories") or {}).values()):
                 return False
+        if not all(k in ("income", "expenses") and rule(v) and "amounts" not in v for k, v in (dflt or {}).items()):
+            return False
         for d in (loans or {}).values():
             if not isinstance(d, dict) or not _opt(d.get("model"), str) or "rate_list" in d \
                     or any(d.get(k) not in (None, "") and not _reads_as_num(d[k]) for k in ("interest_percent_pa", "payment")):

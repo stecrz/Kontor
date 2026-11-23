@@ -1,6 +1,7 @@
 """Cash flow: every booking counts once, transfers within an area leave the net worth unchanged, and every month adds up --
 the rows that change the net worth to its change in the balance sheet, the cash rows to the change of the liquid accounts.
 All accounts, names and amounts are made up."""
+import copy
 import os
 import random
 import sys
@@ -930,6 +931,226 @@ class Positions(Reconciles):
         self.assertEqual((r["Wohnen"]["plan"]["budget"], r["Lebenshaltung"]["plan"]["budget"]), (-1000.0, -400.0))
 
 
+def plan_txs():
+    """18 months of a household (made up): salary, groceries at two shops, rent and power -- some of them changing month by month."""
+    out, n = [], 0
+    for k in range(18):
+        y, m = 2025 + (k // 12), 1 + k % 12
+        for key, day, amount, cat in (("giro", 1, 3000.0 + 10 * k, "Gehalt"), ("giro", 5, -300.0 - 5 * k, "Lebensmittel\\Supermarkt"),
+                                      ("giro", 6, -100.0, "Lebensmittel\\Markt"), ("giro", 3, -900.0, "Wohnen\\Miete"), ("giro", 8, -60.0 - k, "Wohnen\\Strom")):
+            n += 1
+            out.append((n, key, date(y, m, day), amount, {"cat": cat}))
+    return out
+
+
+def plan_ds(plan=None, budgets=None, txs=None, cfg=None):
+    led = make_ledger(txs or plan_txs())
+    config = core.merged_config(dict({"balance": {"roles": {k: v[2] for k, v in ACCOUNTS.items()}}}, **(cfg or {})))
+    ds = report.build_dataset(led, config, {}, TODAY, next(x for x in core.bereiche_for(led, config) if x["name"] == "Privat"), {k: v[2] for k, v in ACCOUNTS.items()})
+    if budgets:
+        ds["budgets"] = core.budgets_from_categories(budgets)
+    report.apply_plan(ds, plan or {}, config)
+    return ds
+
+
+def cats_of(z):
+    return {d["category"]: d for d in z.get("details") or []}
+
+
+class PlanAddsUp(unittest.TestCase):
+    def assertPlanAddsUp(self, ds):
+        """Every plan month: a position is the sum of its categories (suggestion and value, to the cent), each section the sum of
+        its rows, the bank balance the month before plus the change, the net worth the month before plus its change."""
+        sums, pm = ds["cashflow"]["sums"], ds["plan_months"]
+        for sek in ds["cashflow"]["sections"]:
+            for z in sek["rows"]:
+                ds_ = [d for d in z.get("details") or [] if d.get("plan")]
+                for mk in pm:
+                    if ds_:
+                        for f in ("amounts", "proposal"):
+                            self.assertAlmostEqual(z["plan"][f][mk], round(sum(d["plan"][f][mk] for d in ds_), 2), 2, (z["row"], f, mk))
+            for mk in pm if sek["name"] != "valuation" else ():      # (changes in value: with the rest the projection finds, by design)
+                self.assertAlmostEqual(sums[mk][sek["name"]], round(sum(z["plan"]["amounts"].get(mk, 0.0) for z in sek["rows"]), 2), 2, (sek["name"], mk))
+        prev = ds["actual_until"]
+        for mk in pm:
+            self.assertAlmostEqual(sums[mk]["bank"] - sums[prev]["bank"], sums[mk]["cash_change"], 2, mk)
+            nw0 = ds["balance"]["net_worth"].get(prev, ds["balance"]["projection"]["net_worth"].get(prev))
+            self.assertAlmostEqual(ds["balance"]["projection"]["net_worth"][mk] - nw0, sums[mk]["net_worth_delta"], 2, mk)
+            prev = mk
+
+
+class PlanRules(PlanAddsUp):
+    """Planning rules on three levels -- the area's default, a position, a category: the deepest level that sets a field counts,
+    each field on its own; a position is the sum of its categories; each plan figure keeps what it rests on (for its tooltip)."""
+
+    def test_position_is_the_sum_of_its_categories(self):
+        ds = plan_ds()
+        self.assertPlanAddsUp(ds)
+        pm = ds["plan_months"]
+        self.assertEqual((pm[0], pm[-1]), ("2026-07", "2028-12"))
+        z = rows(ds)["Lebenshaltung"]
+        self.assertEqual((z["plan"]["cats"], z["plan"]["own_cats"]), (2, 0))
+        self.assertEqual(z["plan"]["rule"], {"method": "rolling12", "from": "area", "increase": 2.0, "inc_from": "standard"})
+        sm = cats_of(z)["Lebensmittel / Supermarkt"]["plan"]
+        avg = round(sum(-300.0 - 5 * k for k in range(5, 17)) / 12, 2)            # June 2025 .. May 2026: the last 12 closed months
+        self.assertEqual(sm["base"], {"n": 12, "months": ["2025-06", "2026-05"], "value": avg})
+        self.assertEqual(sm["proposal"]["2026-07"], round(avg * 1.02 ** (1 / 12), 2))
+        self.assertEqual(sm["rule"], {"method": "rolling12", "from": "area", "increase": 2.0, "inc_from": "standard"})
+        inc = rows(ds)["Arbeitseinkommen"]["plan"]
+        self.assertEqual((inc["rule"]["increase"], inc["rule"]["inc_from"]), (0.0, "standard"))
+        self.assertEqual(ds["plan"]["model"], "even")
+
+    def test_the_deepest_rule_counts_field_by_field(self):
+        plan = {"defaults": {"expenses": {"method": "rolling6"}},
+                "rows": {"expenses/Lebenshaltung": {"increase_percent_pa": 5, "categories": {"Lebensmittel / Markt": {"method": "fix", "amount": -120},
+                                                                                              "Lebensmittel / Supermarkt": {"increase_percent_pa": 0}}}}}
+        ds = plan_ds(plan)
+        self.assertPlanAddsUp(ds)
+        z = rows(ds)["Lebenshaltung"]
+        c = {k: d["plan"] for k, d in cats_of(z).items()}
+        self.assertEqual(z["plan"]["rule"], {"method": "rolling6", "from": "area", "increase": 5.0, "inc_from": "position"})
+        self.assertEqual(c["Lebensmittel / Supermarkt"]["rule"], {"method": "rolling6", "from": "area", "increase": 0.0, "inc_from": "category"})
+        self.assertEqual(c["Lebensmittel / Markt"]["rule"], {"method": "fix", "from": "category", "amount": -120.0, "increase": 5.0, "inc_from": "position"})
+        self.assertEqual(c["Lebensmittel / Markt"]["proposal"]["2026-08"], round(-120 * 1.05 ** (2 / 12), 2))
+        avg6 = round(sum(-300.0 - 5 * k for k in range(11, 17)) / 6, 2)
+        self.assertEqual([c["Lebensmittel / Supermarkt"]["proposal"][m] for m in ("2026-07", "2027-07")], [avg6, avg6])        # no increase
+        self.assertEqual(z["plan"]["own_cats"], 2)
+        w = rows(ds)["Wohnen"]["plan"]["rule"]                                  # nothing of its own: the area's
+        self.assertEqual(w, {"method": "rolling6", "from": "area", "increase": 2.0, "inc_from": "standard"})
+
+    def test_increase_standard_none_and_own(self):
+        ds = plan_ds({"income_increase_percent_pa": 3, "expense_increase_percent_pa": 1.5, "inflation_percent_pa": 4,
+                      "rows": {"expenses/Wohnen": {"increase_percent_pa": 0}, "income/Arbeitseinkommen": {"increase_percent_pa": 6}}})
+        r = rows(ds)
+        self.assertEqual((r["Arbeitseinkommen"]["plan"]["rule"]["increase"], r["Wohnen"]["plan"]["rule"]["increase"]), (6.0, 0.0))
+        self.assertEqual((r["Lebenshaltung"]["plan"]["rule"]["increase"], r["Lebenshaltung"]["plan"]["rule"]["inc_from"]), (1.5, "standard"))   # the expense rate, not the inflation
+        self.assertEqual(ds["plan"]["expense_rate_own"], True)
+        miete = cats_of(r["Wohnen"])["Wohnen / Miete"]["plan"]["proposal"]
+        self.assertEqual((miete["2026-07"], miete["2028-12"]), (-900.0, -900.0))
+        # the careful model: income as last year, without increase -- whatever the income rate
+        ds = plan_ds({"income_increase_percent_pa": 3, "defaults": report.PLAN_MODELS["careful"]})
+        a = rows(ds)["Arbeitseinkommen"]
+        self.assertEqual(a["plan"]["rule"], {"method": "prev_year", "from": "area", "increase": 0.0, "inc_from": "area"})
+        g = cats_of(a)["Gehalt"]["plan"]["proposal"]
+        self.assertEqual((g["2026-07"], g["2027-02"]), (3060.0, 3130.0))       # July 2025 (k=6); February 2026 (k=13)
+        self.assertEqual(g["2027-07"], g["2026-07"])                            # a year on: the plan of the year before
+        self.assertEqual(ds["plan"]["model"], "careful")
+
+    def test_an_amount_of_the_position_is_shared_by_its_categories(self):
+        ds = plan_ds({"rows": {"expenses/Lebenshaltung": {"method": "fix", "amount": -500}}})
+        self.assertPlanAddsUp(ds)
+        z = rows(ds)["Lebenshaltung"]
+        for i, mk in enumerate(ds["plan_months"]):
+            self.assertEqual(z["plan"]["proposal"][mk], round(-500 * 1.02 ** ((i + 1) / 12), 2), mk)       # the amount, to the cent
+        c = cats_of(z)
+        w_sm, w_mk = abs(sum(-300.0 - 5 * k for k in range(5, 17))), 1200.0
+        self.assertAlmostEqual(c["Lebensmittel / Supermarkt"]["plan"]["base"]["share"], round(w_sm / (w_sm + w_mk), 4), 4)
+        self.assertEqual(c["Lebensmittel / Markt"]["plan"]["base"]["of"], -500.0)
+        # an annual amount: a twelfth a month; a category with its own amount takes its part out
+        ds = plan_ds({"rows": {"expenses/Lebenshaltung": {"method": "yearly_amount", "amount": -6000, "increase_percent_pa": 0,
+                                                            "categories": {"Lebensmittel / Markt": {"method": "fix", "amount": -50}}}}})
+        z = rows(ds)["Lebenshaltung"]; c = cats_of(z)
+        self.assertEqual((z["plan"]["proposal"]["2026-07"], c["Lebensmittel / Supermarkt"]["plan"]["proposal"]["2026-07"]), (-550.0, -500.0))
+        self.assertEqual(c["Lebensmittel / Supermarkt"]["plan"]["base"]["share"], 1.0)
+
+    def test_budgets_per_category(self):
+        budgets = [{"path": "Wohnen\\Miete", "budget": {"amount": 950, "period": "monthly"}}, {"path": "Lebensmittel", "budget": {"amount": 5400, "period": "yearly"}}]
+        ds = plan_ds({"defaults": report.PLAN_MODELS["budget"], "expense_increase_percent_pa": 0}, budgets)
+        self.assertPlanAddsUp(ds)
+        r = rows(ds)
+        w = cats_of(r["Wohnen"])
+        self.assertEqual(w["Wohnen / Miete"]["plan"]["base"]["budget"], -950.0)
+        self.assertTrue(w["Wohnen / Strom"]["plan"]["base"]["fallback"])          # no budget: the average of 12 months
+        self.assertEqual(w["Wohnen / Strom"]["plan"]["proposal"]["2026-07"], round(sum(-60.0 - k for k in range(5, 17)) / 12, 2))
+        self.assertEqual(r["Lebenshaltung"]["plan"]["proposal"]["2026-07"], -450.0)          # a budget above both categories: shared by them
+        self.assertEqual({d["plan"]["base"]["budget_of"] for d in cats_of(r["Lebenshaltung"]).values()}, {"Lebensmittel"})
+        self.assertEqual((r["Wohnen"]["plan"]["budget"], r["Lebenshaltung"]["plan"]["budget"]), (-950.0, -450.0))
+        # one of them by another method: the budget above them no longer counts (it covers both) -- the other: Ø 12
+        ds = plan_ds({"defaults": report.PLAN_MODELS["budget"], "rows": {"expenses/Lebenshaltung": {"categories": {"Lebensmittel / Markt": {"method": "rolling12"}}}}}, budgets)
+        sm = cats_of(rows(ds)["Lebenshaltung"])["Lebensmittel / Supermarkt"]["plan"]["base"]
+        self.assertTrue(sm["fallback"]); self.assertNotIn("budget_of", sm)
+
+    def test_values_of_your_own(self):
+        pm0, pm1 = "2026-07", "2026-08"
+        plan = {"rows": {"expenses/Lebenshaltung": {"amounts": {pm0: -1000.0, pm1: -800.0},
+                                                    "categories": {"Lebensmittel / Markt": {"amounts": {pm0: -200.0}}, "Lebensmittel / Supermarkt": {"amounts": {pm1: -300.0}}}}}}
+        ds = plan_ds(plan)
+        self.assertPlanAddsUp(ds)
+        z = rows(ds)["Lebenshaltung"]; c = {k: d["plan"] for k, d in cats_of(z).items()}
+        self.assertEqual(z["plan"]["amounts"][pm0], -1000.0)                    # your value of the position ...
+        self.assertEqual((c["Lebensmittel / Markt"]["amounts"][pm0], c["Lebensmittel / Supermarkt"]["amounts"][pm0]), (-200.0, -800.0))   # ... the rest to the one without its own
+        self.assertEqual((c["Lebensmittel / Supermarkt"]["from_position"], c["Lebensmittel / Markt"]["from_position"]), ([pm0], [pm1]))
+        self.assertEqual(c["Lebensmittel / Markt"]["amounts"][pm1], -500.0)
+        self.assertEqual((z["plan"]["overwritten"], c["Lebensmittel / Markt"]["overwritten"]), ([pm0, pm1], [pm0]))
+        self.assertEqual(z["plan"]["ignored"], [])
+        # every category with a value of its own in a month: theirs count, the position's does not
+        plan["rows"]["expenses/Lebenshaltung"]["categories"]["Lebensmittel / Markt"]["amounts"][pm1] = -100.0
+        z = rows(plan_ds(plan))["Lebenshaltung"]
+        self.assertEqual((z["plan"]["amounts"][pm1], z["plan"]["ignored"]), (-400.0, [pm1]))
+        # a row without categories keeps its own value as before
+        ds = plan_ds({"rows": {"income/Arbeitseinkommen": {"amounts": {pm0: 9999.0}}}})
+        a = rows(ds)["Arbeitseinkommen"]
+        self.assertEqual((a["plan"]["amounts"][pm0], cats_of(a)["Gehalt"]["plan"]["amounts"][pm0]), (9999.0, 9999.0))
+
+    def test_refunds_get_no_part_of_the_positions_amount(self):
+        """A category against the position's direction (refunds in an expense position) gets no part of what the position shares --
+        its fixed amount, its budget, your own value; the rest of the position takes it all, the sums still add up."""
+        txs, n = [], 0
+        for k in range(18):
+            y, m = 2025 + (k // 12), 1 + k % 12
+            for amount, cat in ((-100.0, "Lebensmittel\\Supermarkt"), (20.0, "Lebensmittel\\Markt")):
+                n += 1
+                txs.append((n, "giro", date(y, m, 5), amount, {"cat": cat}))
+        pm0 = "2026-07"
+        here = {"cashflow": {"positions": {"Lebensmittel / Markt": "living"}}}           # refunds kept in the expense position
+        ds = plan_ds({"inflation_percent_pa": 0, "rows": {"expenses/Lebenshaltung": {"method": "fix", "amount": -1000, "amounts": {"2026-08": -600.0}}}}, txs=txs, cfg=here)
+        self.assertPlanAddsUp(ds)
+        c = {k: d["plan"] for k, d in cats_of(rows(ds)["Lebenshaltung"]).items()}
+        self.assertEqual((c["Lebensmittel / Markt"]["proposal"][pm0], c["Lebensmittel / Supermarkt"]["proposal"][pm0]), (0.0, -1000.0))
+        self.assertEqual(c["Lebensmittel / Markt"]["base"]["share"], 0.0)
+        self.assertEqual((c["Lebensmittel / Markt"]["amounts"]["2026-08"], c["Lebensmittel / Supermarkt"]["amounts"]["2026-08"]), (0.0, -600.0))
+        ds = plan_ds({"defaults": report.PLAN_MODELS["budget"], "expense_increase_percent_pa": 0}, [{"path": "Lebensmittel", "budget": {"amount": 300, "period": "monthly"}}], txs=txs, cfg=here)
+        c = {k: d["plan"] for k, d in cats_of(rows(ds)["Lebenshaltung"]).items()}
+        self.assertEqual((c["Lebensmittel / Markt"]["proposal"][pm0], c["Lebensmittel / Supermarkt"]["proposal"][pm0]), (0.0, -300.0))
+        self.assertEqual(report._shares([-5.0, 2.0, 0.0], -1), [1.0, 0.0, 0.0])
+        self.assertEqual(report._shares([2.0, 3.0], -1), [0.5, 0.5])               # none in the direction: equal parts
+
+    def test_settings_from_before_still_count(self):
+        """Settings of an older Kontor: the default method for both sides, rules and values per position ("section/row")."""
+        old = {"default_method": "prev_year", "inflation_percent_pa": 0,
+               "rows": {"expenses/Wohnen": {"method": "fix", "amount": -1000, "amounts": {"2026-09": -1100.0}}, "income/Arbeitseinkommen": {"increase_percent_pa": 2}}}
+        ds = plan_ds(old)
+        self.assertPlanAddsUp(ds)
+        self.assertEqual(report.plan_defaults(old), {"income": {"method": "prev_year"}, "expenses": {"method": "prev_year"}})
+        self.assertIsNone(ds["plan"]["model"])
+        self.assertNotIn("default_method", ds["plan"])                         # one truth: the area's default per side
+        r = rows(ds)
+        self.assertEqual((r["Wohnen"]["plan"]["proposal"]["2026-07"], r["Wohnen"]["plan"]["amounts"]["2026-09"]), (-1000.0, -1100.0))
+        self.assertEqual(r["Lebenshaltung"]["plan"]["rule"]["method"], "prev_year")
+        self.assertEqual(cats_of(r["Arbeitseinkommen"])["Gehalt"]["plan"]["proposal"]["2026-07"], round(3060 * 1.02, 2))
+
+    def test_models(self):
+        self.assertEqual(report.plan_model({}), "even")
+        for k, m in report.PLAN_MODELS.items():
+            self.assertEqual(report.plan_model({"defaults": m, "default_method": "none"}), k)
+        self.assertIsNone(report.plan_model({"defaults": {"income": {"method": "rolling6"}}}))
+        self.assertEqual(report.plan_rule({"method": "nonsense", "increase_percent_pa": "x"}), {})
+        self.assertEqual(report.plan_rule({"method": "fix"}), {"method": "fix", "amount": 0.0})
+
+    def test_key_figures(self):
+        ds = plan_ds({"inflation_percent_pa": 0})
+        f, s = ds["plan_figures"], ds["cashflow"]["sums"]
+        nxt = ds["plan_months"][:12]
+        self.assertEqual((f["months"], f["n"], f["cash_month"]), (["2026-07", "2027-06"], 12, "2026-06"))
+        inc = round(sum(s[m]["income"] for m in nxt), 2)
+        self.assertEqual((f["income"], f["saving_rate"]), (inc, round(round(sum(s[m]["operating"] for m in nxt), 2) / inc, 4)))
+        self.assertIsNone(f["runway_months"])                                    # the bank balance grows: no runway
+        self.assertEqual((f["interest"], f["interest_rate"]), (0.0, 0.0))
+        poor = plan_ds({"rows": {"income/Arbeitseinkommen": {"method": "none"}}})["plan_figures"]
+        self.assertIsNone(poor["saving_rate"])
+        self.assertEqual(poor["runway_months"], round(poor["cash"] / -poor["cash_change_month"], 1))
+
+
 class StatementGroups(Reconciles):
     def test_loan_taken_up_repaid_and_interest(self):
         """Financing by kind: a loan paid out is "taken up" (its own row, never a negative repayment), repayment and interest
@@ -1235,7 +1456,7 @@ class MockData(Reconciles):
             self.assertFalse([z["row"] for z in rows(ds, "unclear").values()], ds["area"]["name"])
 
 
-class CashflowFuzz(Reconciles):
+class CashflowFuzz(Reconciles, PlanAddsUp):
     """Random months of bookings across every kind of account: both checks add up -- with only the reasons that name
     themselves (money in transit over a month end, the category "Ignore").
 
@@ -1397,6 +1618,57 @@ class CashflowFuzz(Reconciles):
                 out = round(sum(p["Einlage/Entnahme Kinder"]["amounts"].values()), 2) if "Einlage/Entnahme Kinder" in p else 0.0
                 inn = round(sum(k["Einlage/Entnahme Privat"]["amounts"].values()), 2) if "Einlage/Entnahme Privat" in k else 0.0
                 self.assertAlmostEqual(out, -inn, 2, "seed %d (%s)" % (seed, how))
+
+    def test_shares_never_to_refunds(self):
+        """A position's amount shared among its categories: by their last months in its direction; none in it lately -- equal
+        parts of those not against it (refunds get nothing either way); never −0,00."""
+        self.assertEqual(report._shares([-1200.0, 240.0], -1000.0), [1.0, 0.0])
+        self.assertEqual(report._shares([0.0, 240.0], -1000.0), [1.0, 0.0])
+        self.assertEqual(report._shares([0.0, 0.0, 240.0], -1000.0), [0.5, 0.5, 0.0])
+        self.assertEqual(report._shares([10.0, 20.0], -1000.0), [0.5, 0.5])                 # (all against it: equal parts of all)
+        self.assertEqual(report._shares([-1.0, -3.0]), [0.25, 0.75])
+
+    def test_random_plans_add_up(self):
+        """Random rules on every level (a planning model, positions, categories), values of your own on positions and categories,
+        budgets: every plan month still adds up -- positions as the sums of their categories, sections, bank balance, net worth."""
+        cfg = {"companies": [{"area": "Muster GbR", "participation": "Beteiligung an Muster GbR"}],
+               "cashflow": {"positions": {"Privatentnahme": "ignore"}}}
+        config = core.merged_config(dict({"balance": {"roles": {k: v[2] for k, v in ACCOUNTS.items()}}}, **cfg))
+        methods = list(report.PLAN_METHODS)
+        for seed in F.fuzz_seeds("Planung"):
+            with self.subTest(seed=seed), F.case(seed):
+                rnd = random.Random(seed)
+                txs, today, _how = self.world(rnd, seed)          # (the diverse worlds: empty years, bursts, volatile, constant ...)
+                data = build(txs, cfg, today=today)
+                for name, ds in data.items():
+                    rule = lambda: dict(({"method": rnd.choice(methods), "amount": rnd.choice([-500, -12.34, 0, 800])} if rnd.random() < 0.6 else {}),
+                                        **({"increase_percent_pa": rnd.choice([0, 1.5, -3, 10])} if rnd.random() < 0.4 else {}))
+                    plan = {"horizon_months": rnd.choice([1, 12, 30]), "inflation_percent_pa": rnd.choice([0, 2, 7.5]), "rows": {}}
+                    if rnd.random() < 0.7:
+                        plan["defaults"] = dict(report.PLAN_MODELS[rnd.choice(list(report.PLAN_MODELS))])
+                    probe = copy.deepcopy(ds)
+                    report.apply_plan(probe, {"horizon_months": plan["horizon_months"]}, config)
+                    pm = probe["plan_months"]
+                    for sek in ds["cashflow"]["sections"]:
+                        for z in sek["rows"]:
+                            if rnd.random() < 0.5:
+                                continue
+                            r = rule()
+                            if rnd.random() < 0.4:
+                                r["amounts"] = {m: rnd.choice([-250.0, 0.0, 99.99]) for m in rnd.sample(pm, min(len(pm), rnd.randint(1, 4)))}
+                            cats = {}
+                            for d in z.get("details") or []:
+                                if rnd.random() < 0.5:
+                                    c = rule()
+                                    if rnd.random() < 0.5:
+                                        c["amounts"] = {m: rnd.choice([-75.5, 0.0, 10.0]) for m in rnd.sample(pm, min(len(pm), rnd.randint(1, 4)))}
+                                    cats[d["category"]] = c
+                            if cats:
+                                r["categories"] = cats
+                            plan["rows"][sek["name"] + "/" + z["row"]] = r
+                    ds["budgets"] = {c: rnd.choice([40.0, 400.0]) for c in ("Lebensmittel", "Wohnen", "Wohnen / Miete", "Gehalt") if rnd.random() < 0.5}
+                    report.apply_plan(ds, plan, config)
+                    self.assertPlanAddsUp(ds)
 
 
 if __name__ == "__main__":
