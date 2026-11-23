@@ -6,7 +6,8 @@
 * Fehlversuche: nach 5 Fehlern 5 Minuten Sperre je Adresse.
 * Touch ID: kleiner Helfer (touchid.swift, bei der Installation uebersetzt),
   der den macOS-Dialog zeigt. Nur fuer Anfragen von diesem Mac (127.0.0.1) --
-  von einem anderen Geraet aus zaehlt nur das Passwort. Derselbe Helfer haelt einen
+  von einem anderen Geraet aus zaehlt das Passwort oder Face ID eines hinzugefuegten
+  iPhone (devices.py, webauthn.py; die Sitzung traegt dann ihr Geraet). Derselbe Helfer haelt einen
   Schluessel in der Secure Enclave, den nur Touch ID (oder das Mac-Passwort) nutzbar
   macht: damit oeffnet Touch ID auch nach einem Neustart die Daten (access.py).
 """
@@ -94,10 +95,13 @@ class Sessions:
         self._check = threading.Lock()
 
     # Sitzungen
-    def create(self, remote: str, via: str) -> dict:
+    def create(self, remote: str, via: str, device: Optional[str] = None, opened_by: Optional[str] = None) -> dict:
+        """A new session. device: the iPhone it was signed in from with its passkey (devices.py) -- the session ends with it;
+        opened_by: the same for a session of the demo opened with an iPhone's passkey (the demo knows no devices)."""
         token = secrets.token_urlsafe(32)
         now = time.time()
-        s = {"token": token, "csrf": secrets.token_urlsafe(32), "created": now, "last": now, "remote": remote, "via": via}
+        s = {"token": token, "csrf": secrets.token_urlsafe(32), "sid": secrets.token_urlsafe(16), "created": now, "last": now,
+             "remote": remote, "via": via, "device": device, "opened_by": opened_by, "at_mac": is_loopback(remote)}
         with self._lock:
             self._s[token] = s
         return s
@@ -119,6 +123,12 @@ class Sessions:
                 s["last"] = now
             return s
 
+    def alive(self, sid: str) -> bool:
+        """Is the session with this sid still valid (not locked, idle or over its maximum)?"""
+        now = time.time()
+        with self._lock:
+            return bool(sid) and any(s.get("sid") == sid and now - s["last"] <= self.idle and now - s["created"] <= self.max for s in self._s.values())
+
     def drop_all(self) -> None:
         with self._lock:
             self._s.clear()
@@ -138,6 +148,23 @@ class Sessions:
             s["token"] = secrets.token_urlsafe(32)
             self._s[s["token"]] = s
             return s["token"]
+
+    def drop_device(self, device: str) -> int:
+        """Ends every session of this device at once -- also those of the demo it opened (it was removed at the Mac)."""
+        with self._lock:
+            gone = [k for k, s in self._s.items() if device and device in (s.get("device"), s.get("opened_by"))]
+            for k in gone:
+                self._s.pop(k, None)
+            return len(gone)
+
+    def drop_loopback(self) -> int:
+        """Ends every session signed in at this Mac's own address ("tailscale serve"/Funnel was found passing Kontor's port
+        on: such a session may have come from elsewhere)."""
+        with self._lock:
+            gone = [k for k, s in self._s.items() if s.get("at_mac") is not False]      # (made at the Mac: is_loopback at its sign-in)
+            for k in gone:
+                self._s.pop(k, None)
+            return len(gone)
 
     def drop_others(self, token: Optional[str]) -> int:
         """Ends every session but this one (after a password change: a stolen session stops working at once)."""

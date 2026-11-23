@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import base64
 import http.client
+import ipaddress
 import json
 import logging
 import os
@@ -19,7 +20,7 @@ import ssl
 import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
-from typing import Optional, Tuple
+from typing import Iterable, Optional, Tuple, Union
 from urllib.parse import quote
 from i18n import tr
 
@@ -130,6 +131,123 @@ def access_check(port: int) -> dict:
     if not kontor:
         return dict(info, state="locked")
     return dict(info, state="open" if other else "secured")
+
+
+# -- How this Mac is reachable beyond your devices: read only, Kontor changes nothing in Tailscale ------------------------
+# Two fixed questions, each first to the app's local interface, then to Tailscale's own program: is Tailnet Lock on (new
+# devices only with a signature of one of yours -- Tailscale itself cannot add one), and does "tailscale serve" (or Funnel,
+# the same into the internet) pass something on to Kontor's port?
+_ASK = {"lock": ("/localapi/v0/tka/status", ("lock", "status", "--json")),
+        "serve": ("/localapi/v0/serve-config", ("serve", "status", "--json"))}
+
+
+OFF = "off"                 # ask(): Tailscale is not on this Mac, or its service does not run -- nothing it could pass on
+# what Tailscale's own program says when its service does not run (it could not reach it at all) -- never a refused access
+_NOT_RUNNING = re.compile(r"(?i)failed to connect to local tailscale|doesn'?t appear to be running")
+
+
+def ask(what: str) -> Union[dict, str, None]:
+    """One of the fixed questions of _ASK, read only: Tailscale's answer as a dict; OFF when Tailscale is not on this Mac or
+    its service does not run (then it passes nothing on); None when it runs but gives no answer (the last known state holds)."""
+    if what not in _ASK:
+        return None
+    path, args = _ASK[what]
+    reached = True
+    try:
+        got = json.loads(localapi(path, 10).decode("utf-8") or "{}")
+        if got is None and what == "serve":
+            return {}                                     # nothing served (or signed out): Tailscale answers null
+        if isinstance(got, dict):
+            return got
+    except RuntimeError as e:
+        reached = "not found" not in str(e)              # its app's local interface is not there (the app does not run)
+    except ValueError:
+        pass
+    binary = find_tailscale()
+    if not binary:
+        return None if reached else OFF                 # neither its app nor its program on this Mac
+    try:
+        r = run(binary, list(args), 15)
+        got = json.loads(r.stdout or "") if r.returncode == 0 else None
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    except ValueError:
+        got = None
+    out = (r.stdout or "") + " " + (r.stderr or "")
+    if r.returncode != 0:
+        return OFF if _NOT_RUNNING.search(out) and "denied" not in out.lower() else None
+    if what == "serve" and got is None:
+        return {}                                         # nothing served: "null" (or an empty answer)
+    return got if isinstance(got, dict) else None
+
+
+# a target that is this Mac itself: its own addresses (127.0.0.1, ::1, localhost, every address of the Mac) -- and the names
+# and addresses of this Mac given by the caller (its address in the Tailscale network, its name there, its host name)
+_HERE = re.compile(r"127(?:\.\d{1,3}){3}|::1|::ffff:127(?:\.\d{1,3}){3}|0\.0\.0\.0|::|localhost|[a-z0-9-]+\.localhost")
+
+
+def _target(target: object) -> Optional[Tuple[str, int]]:
+    """(host, port) a serve handler passes on to ("http://127.0.0.1:8765", "localhost:8765", "[::1]:8765"); a port alone
+    ("8765") is this Mac: host ""; None without a port."""
+    t = re.sub(r"^[a-z][a-z0-9+.-]*://", "", str(target or "").strip().lower()).split("/", 1)[0]
+    m = re.fullmatch(r"(\[[0-9a-f:.]+\]|[a-z0-9._-]+):(\d{1,5})|(\d{1,5})", t)
+    if not m:
+        return None
+    return ("", int(m.group(3))) if m.group(3) else (m.group(1).strip("[]").rstrip("."), int(m.group(2)))
+
+
+def _this_mac(host: str, own: frozenset) -> bool:
+    if host == "" or _HERE.fullmatch(host) or host in own:
+        return True
+    try:                                                   # any spelling of 127.x, ::1, 0.0.0.0/:: -- also IPv4 written in IPv6
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    inner = getattr(ip, "ipv4_mapped", None) or ip
+    return bool(ip.is_loopback or ip.is_unspecified or inner.is_loopback or inner.is_unspecified)
+
+
+def _targets(node: object, depth: int = 0) -> list:
+    """Every place a serve configuration passes connections on to (Proxy of a web handler, TCPForward), however nested."""
+    out: list = []
+    if depth > 8:
+        return out
+    if isinstance(node, dict):
+        for k, v in node.items():
+            if k in ("Proxy", "TCPForward") and isinstance(v, str):
+                out.append(v)
+            else:
+                out += _targets(v, depth + 1)
+    elif isinstance(node, list):
+        for v in node:
+            out += _targets(v, depth + 1)
+    return out
+
+
+def _funnel(node: object, depth: int = 0) -> bool:
+    if depth > 8:
+        return False
+    if isinstance(node, dict):
+        return any((k == "AllowFunnel" and isinstance(v, dict) and any(x is True for x in v.values())) or _funnel(v, depth + 1) for k, v in node.items())
+    return isinstance(node, list) and any(_funnel(v, depth + 1) for v in node)
+
+
+def exposure(port: int, own: Iterable[str] = ()) -> dict:
+    """lock: True/False/None (unknown); serve: "funnel" (Kontor's port on this Mac reachable from the internet), "serve" (passed
+    on within your network -- each request then seems to come from this Mac itself), "none", "off" (Tailscale is not on this
+    Mac or does not run) or "unknown" (it runs but gave no answer). Only targets on this Mac count: own are its names and
+    addresses beyond 127.0.0.1/localhost (another device's address with the same port is not Kontor)."""
+    serve = ask("serve")
+    lock = ask("lock") if serve != OFF else None
+    out = {"lock": (lock.get("Enabled") is True) if isinstance(lock, dict) and isinstance(lock.get("Enabled"), bool) else None, "port": port}
+    if serve == OFF:
+        return dict(out, serve="off")
+    if not isinstance(serve, dict):
+        return dict(out, serve="unknown")
+    mine = frozenset(str(x).strip().strip("[]").rstrip(".").lower() for x in own if x)
+    if not any(t is not None and t[1] == port and _this_mac(t[0], mine) for t in map(_target, _targets(serve))):
+        return dict(out, serve="none")
+    return dict(out, serve="funnel" if _funnel(serve) else "serve")
 
 
 def status_json(binary: Optional[str], timeout: int = 15) -> dict:

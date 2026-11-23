@@ -1251,16 +1251,17 @@ class AppTests(_AppBase):
         code, r = self.call("/api/categories/assign", {"ids": [sid], "category": "Haushalt / Werkzeug", "mode": "overwrite",
                                                          "confirmed": {str(sid): "Haushalt / Garten"}, "wait": True})
         self.assertEqual(r["mm"]["written"], 1)
-        # von unterwegs: Umsatz mit Kategorie in MoneyMoney wird nicht gemerkt (aendern nur am Mac); Einschalten nur am Mac
+        # von unterwegs ohne hinzugefuegtes iPhone (Anmeldung mit Passwort): nichts davon -- auch mit "Aenderungen vom iPhone" an
+        # (ein hinzugefuegtes iPhone mit Face ID: tests/test_passkeys.py)
         MA.auth.is_loopback = lambda remote: False
         try:
             cfgr = copy.deepcopy(self.app.config); cfgr.setdefault("ui", {})["remote_read_only"] = False; self.app.save_config(cfgr)
             code, r = self.call("/api/categories/assign", {"ids": [sid], "category": "Haushalt / Garten", "wait": True})
-            self.assertEqual((r["mm"]["mac_only"], r["mm"]["later"]), (1, 0)); self.assertFalse(categorize.load(self.store)["assignment"])
-            self.assertEqual(self.call("/api/categories/undo", {"ids": [sid]})[0], 403)          # taking back: only at the Mac
+            self.assertEqual((code, r.get("read_only")), (403, True)); self.assertFalse(categorize.load(self.store)["assignment"])
+            self.assertEqual(self.call("/api/categories/undo", {"ids": [sid]})[0], 403)
             self.assertEqual(self.call("/api/categories/written")[1]["local"], False)
             code, r = self.call("/api/package/import", {"package": {"name": "x", "config": {"dry_run": False}}, "anyway": True})
-            self.assertEqual(self.app.config.get("dry_run", True), cfgr.get("dry_run", True))
+            self.assertEqual(code, 403); self.assertEqual(self.app.config.get("dry_run", True), cfgr.get("dry_run", True))
         finally:
             MA.auth.is_loopback = orig_loop
         # nur Bankkonten brauchen eine Kategorie: das Verkaeuferdarlehen (Offline-Konto) erscheint nicht unter Zuordnen
@@ -1382,31 +1383,22 @@ class AppTests(_AppBase):
         self.assertTrue(r["ok"]); self.assertFalse(r["info"]["read_only"])
         MA.auth.is_loopback = lambda remote: False
         try:
+            # changes allowed -- but this session was signed in with the password, not from an added iPhone: still only looking
+            # (an added iPhone, Face ID for each change, what stays at the Mac: tests/test_passkeys.py)
             code, r = self.call("/api/plan", {"area": F.uid("priv"), "row": "income/Arbeitseinkommen", "method": "fix", "amount": "1"})
-            self.assertEqual(code, 200)                                                    # bearbeiten erlaubt
+            self.assertEqual((code, r.get("read_only")), (403, True))
+            st = self.call("/api/status")[1]
+            self.assertEqual((st["read_only"], st["read_only_why"], st["trusted"]), (True, "http", False))     # (no https here: no passkeys)
             self.assertIsNone(self.call("/api/offline/verifier")[1]["offline"])            # keine Offline-Kopie
             self.assertFalse(self.call("/api/session")[1]["offline_copy"])
-            # even with editing allowed: no receipts folder, no file questions, no live run from elsewhere
-            cfg = copy.deepcopy(self.app.config); cfg.setdefault("receipts", {})["folder"] = "/"
+            cfg = copy.deepcopy(self.app.config); cfg.setdefault("schedule", {})["interval_minutes"] = 45
             self.assertEqual(self.call("/api/config", {"config": cfg}, method="PUT")[0], 403)
-            cfg["receipts"] = dict(self.app.config.get("receipts") or {}, subfolder="../../{year}")
-            self.assertEqual(self.call("/api/config", {"config": cfg}, method="PUT")[0], 403)
-            # who gets in and how stay as set at the Mac -- whatever a page elsewhere sends (also one loaded before the Mac
-            # changed them: it is not refused for it, the rest is saved)
-            want = {k: self.app.config["ui"].get(k) for k in ("lock_minutes", "touchid", "offline_copy", "remote_read_only")}
-            for change in ({"ui": {"lock_minutes": 100000}}, {"ui": {"touchid": False}}, {"ui": {"offline_copy": True}}, {"ui": {"remote_read_only": True}}):
-                cfg = copy.deepcopy(self.app.config)
-                for k, v in change.items():
-                    cfg[k] = dict(cfg.get(k) or {}, **v)
-                cfg.setdefault("schedule", {})["interval_minutes"] = 45
-                self.assertEqual(self.call("/api/config", {"config": cfg}, method="PUT")[0], 200, change)
-                self.assertEqual({k: self.app.config["ui"].get(k) for k in want}, want, change)
-                self.assertEqual(self.app.config["schedule"]["interval_minutes"], 45)
             runs = []; orig_run = self.app.do_run
             self.app.do_run = lambda dry, force, **kw: runs.append(dry)
             try:
-                self.assertEqual(self.call("/api/run", {})[0], 202); time.sleep(0.2)
+                self.assertEqual(self.call("/api/run", {})[0], 202); time.sleep(0.2)            # a sync changes nothing: a test run
                 self.assertEqual(self.call("/api/run", {"dry_run": False})[0], 403)
+                self.assertEqual(self.call("/api/rules/preview", {"config": self.app.config})[0], 200)
             finally:
                 self.app.do_run = orig_run
             self.assertEqual(runs, [True])                                                  # a dry run, whatever the test mode says

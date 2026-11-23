@@ -33,7 +33,7 @@ Buchungsregel, Beleg ablegen), title, its reason and a table **Bisher → Neu** 
 removed); a planning rule also lists the user's own values and rules beneath it – "Ersetzt werden …" (they go) or "Es bleiben …"; bookings
 and categories list each transaction (date, account · counterparty, text, amount; "und N weitere"); a receipt names the transaction
 and differences (amount, days apart). At the end of the answer one card for all: "Ausführen" / "N ausgewählte ausführen" carries
-out the ticked ones, "Nichts ändern" none; a card warns before what cannot be taken back (bookings: only at the Mac, final in
+out the ticked ones, "Nichts ändern" none; a card warns before what cannot be taken back (bookings: at the Mac or from an added iPhone with Face ID, final in
 MoneyMoney). Afterwards each shows "Ausgeführt" with "Zurücknehmen", "Zurückgenommen", "Nicht ausgeführt" or the error; the end
 card counts done, not done, failed. A booking rule from the assistant waits for confirmation under Konten & Regeln.
 

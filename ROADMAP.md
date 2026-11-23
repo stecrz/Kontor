@@ -131,6 +131,7 @@ anhängen – nie löschen.
 - **Zugang vom iPhone** (2026-11-23): Vom iPhone soll alles gehen wie am Mac; nur sehr Kritisches lässt sich in den
   Einstellungen untersagen. Einzelne Geräte lassen sich am Mac entfernen – danach haben sie keinen Zugriff mehr. Verändernde
   Aktionen müssen am iPhone besonders sicher sein. Der Weg zum Mac (Tailscale oder anders) wird beim Überarbeiten neu bewertet.
+  (umgesetzt in 3.17.10)
 - **Belege nur in Kontor** (2026-11-22): Der Pfad eines Belegs wird nie in einen Umsatz in MoneyMoney geschrieben (auch nicht in
   den Kommentar); Belege werden nur in Kontor verknüpft und gepflegt. Die Einstellung „Verweis in MoneyMoney“ entfällt.
   (umgesetzt in 3.16.89)
@@ -158,7 +159,7 @@ anhängen – nie löschen.
 - **Gedächtnis übertragbar** (Nutzer, 2026-11-23): Notizen lassen sich am Mac in einem offenen Format exportieren und wieder
   einlesen, damit ein anderes System sie übernehmen kann.
 - **Tailscale prüfen** (Nutzer, 2026-11-23): Kontor prüft (nur lesend), ob Tailnet Lock aktiv ist und Kontor nicht über Funnel/serve
-  aus dem Internet erreichbar ist, und erklärt sonst, wie man es behebt.
+  aus dem Internet erreichbar ist, und erklärt sonst, wie man es behebt. (umgesetzt in 3.17.10)
 - **Antworten vor Tempo** (Nutzer, 2026-11-23): Saubere, richtige Antworten sind wichtiger als Geschwindigkeit. Die Einbindung
   der Modelle (Startparameter, Denken, Systemtext, Werkzeuge, Gedächtnis, Verlauf, Recherche) wird geprüft und so eingestellt,
   dass sie ihr Potenzial ausschöpfen; empfohlen wird nur, was dem Nutzer wirklich etwas bringt.
@@ -179,6 +180,7 @@ anhängen – nie löschen.
   verändernde Aktionen vom iPhone bestätigt Face ID. Rechte wie am Mac; nur am Mac bleiben Zugang, Updates, Einrichtung des
   Assistenten, Sicherung laden/Zurücksetzen, Passwort. Mac schläft: die Offline-Kopie am iPhone zum Lesen; Änderungen erst, wenn
   der Mac erreichbar ist (MoneyMoney läuft dort). Eine eigene iPhone-App mit iCloud-Abgleich wäre die Alternative – großer Aufwand.
+  (umgesetzt in 3.17.10)
 - **Darlehen überzahlt** (Nutzer, 2026-11-23): Steht ein Darlehen über null hinaus auf der anderen Seite, rechnet Kontor auf die
   Überzahlung keine Zinsen (Buchungsregeln und Planung) und nennt es in einem Hinweis. (umgesetzt in 3.17.8)
 - **GitHub ist das einzige Gedächtnis** (Nutzer, 2026-11-23): Was künftige Chats wissen müssen – Entscheidungen, Regeln, Abläufe,
@@ -401,13 +403,16 @@ Vier Grafiken aus Bilanz und Cashflow auf einer Bildschirmseite, jede verlinkt a
   markiert dabei das Wort unter der Maus – 3.17.2), Menü und Tastenkürzel, Scrollen, Einfügen aus der Zwischenablage, Diktieren
   ohne Nachfrage. Playwright mit der Safari-Engine unter Linux bildet das nicht nach.
   Erster Schritt in 3.17.3: jede Hauptseite ohne Skriptfehler, echter Rechtsklick auf eine Zelle des Cashflows (`tests/test_mac_webview.py`,
-  `tests/mac_webview.swift`; einige Versionen beobachtet, dann zählt der Schritt wie jeder). Weiter: Menü, Tastenkürzel, Scrollen, Einfügen.
+  `tests/mac_webview.swift`; seit 3.17.10 zählt der Schritt wie jeder). Weiter: Menü, Tastenkürzel, Scrollen, Einfügen.
 
 ## ~~Beim nächsten großen Versionssprung~~ (erledigt in 3.17.0)
 Hilfe und README als Ganzes auf den Stand gebracht (Ziel „dein digitaler CFO“, Mac-App, Rechtsklick, Sammelkarte des Assistenten,
 Gedächtnis, Internet, Daten erst nach Anmeldung, Netzverbindungen), Hilfe-Bilder neu.
 
 ## Offen nach der Gesamtprüfung 3.17.0
+- Zugang vom iPhone (Passkey je iPhone, Face ID für jede Änderung, Tailscale-Prüfung; Stand der Umsetzung): am echten iPhone prüfen –
+  Passkey sichern, Anmelden, Bestätigen (verlangt Safari vorher einen eigenen Tipp, fragt Kontor „Mit Face ID bestätigen?“) – und mit
+  echter Tailscale-App, was `lock status`/`serve status` (App Store und Standalone) liefern; getestet bisher mit Software-Passkey und Chromium.
 - Am Mac mit echter Hardware prüfen: Touch ID nach Neustart (Secure Enclave), Diktieren mit echtem Mikrofon, Sandbox-Profile der
   Modelle und des Lesers, echte Modelle (was das Gedächtnis merkt, Wartezeit), echte Auswertungen (BWA, SuSa) als PDF.
 - Prüfung vor dem Update: engt untergeschobene Änderungen ein, schließt sie nicht aus; nächster Schritt wäre der Dienst selbst in

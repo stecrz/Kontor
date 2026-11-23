@@ -10,7 +10,7 @@ user's bank transactions are never changed here.
 Heading "Wartet auf Freigabe N": N bookings from the last check wait for approval – not in MoneyMoney yet. Otherwise "Zuletzt
 geprüft <date, time> · N gebucht": when the rules were last checked and how many bookings that check wrote; the table then lists
 what it booked ("Keine Buchungen nötig." when nothing). A red pill beside the heading: writing stopped with this error.
-Columns: checkbox (only while waiting, only at the Mac: ticked = booked on approval, unticked = left out this time and keeps
+Columns: checkbox (only while waiting, at the Mac or on an added iPhone: ticked = booked on approval, unticked = left out this time and keeps
 waiting); Datum = the booking date it gets (for loans editable); Konto = the offline account booked into, its area small below;
 Art: "Rate (Tilgung)" = a loan payment found on the source account, booked onto the loan account as repayment (the payment with
 reversed sign); "Zinsen" = one month's interest on the loan account (negative for a debt: it grows; positive for a receivable);

@@ -1,5 +1,14 @@
 # Änderungen
 
+## 3.17.10 (2026-11-23 10:12)
+- Zugang: iPhone mit eigenem Face-ID-Schlüssel (Passkey), am Mac per QR-Code hinzugefügt; Anmeldung mit Face ID
+- Zugang: jede Änderung vom iPhone mit Face ID bestätigt; sonst alles wie am Mac – nur Zugang, Updates, Einrichtung des Assistenten, Sicherung laden, Zurücksetzen, Passwort am Mac
+- Zugang: Geräteliste am Mac – „Ändern“ je Gerät, „Entfernen“ meldet sofort ab
+- Zugang: Kategorien vom iPhone gleich in MoneyMoney; wartende Buchungen vom iPhone freigeben
+- Zugang: Tailscale-Prüfung (Tailnet Lock, serve/Funnel) mit Anleitung; gibt serve/Funnel Kontor weiter, ist die Anmeldung am Mac gesperrt
+- Sicherheit: über einen Proxy weitergereichte Anfragen abgelehnt – galten vorher als „am Mac“
+- Entwicklung: Rundgang in macOS' WebKit zählt jetzt wie jeder Schritt
+
 ## 3.17.9 (2026-11-23 06:58)
 - KI-Assistent: Modellliste verständlich – Gruppen „Gründlich“, „Schnell“, „Klein“; je Modell wofür es taugt, Hersteller, Lizenz, Größe, Speicherbedarf
 - KI-Assistent: je Modell, ob es auf diesem Mac gut, knapp oder nicht läuft – was nicht passt, nennt den nötigen Arbeitsspeicher und lässt sich nicht laden

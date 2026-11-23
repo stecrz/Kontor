@@ -40,19 +40,37 @@ network – never the open network. Data opens only after signing in.
 
 ### settings.access.mac — Am Mac
 - **Automatische Sperre**: after N minutes without activity (default 15) Kontor locks; signing in again opens it.
-- **Touch ID**: sign in at the Mac with Touch ID (or Apple Watch) instead of the password; on the iPhone always the password.
+- **Touch ID**: sign in at the Mac with Touch ID (or Apple Watch) instead of the password; on an added iPhone Face ID instead.
 - **Erweitert: Adresse, Port, Zertifikat**: address (127.0.0.1 or a Tailscale address 100.x.y.z), port (default 8765), TLS
   certificate and key for https. Saving restarts Kontor under the new address.
 - **Passwort**: change Kontor's password (old and new; with Touch ID the old field may stay empty).
 
 ### settings.access.iphone — Zugriff vom iPhone
-Off: reachable only at this Mac. On: reachable on the user's devices in the Tailscale network at the address shown (with Kontor's
-password), with "Wer" (Tailscale account and devices), "Wo" (from anywhere, no open port), "Was" (only view, or view and edit),
-"Verschlüsselung" (certificate valid until …). Setting up: five steps (Tailscale on Mac and iPhone, MagicDNS and HTTPS
-certificates, "Zugriff einschalten", open and add to the Home screen). "Absichern (empfohlen)": a Tailscale access rule so that
-only Kontor's port is reachable on this Mac, with a check of the current state. **Von unterwegs**: "Nur ansehen" (default) or
-"Ansehen und bearbeiten" – writing into MoneyMoney, Touch ID, updates, backup, reset and the assistant's setup stay Mac-only
-anyway. **Offline-Ansicht**: the iPhone app may keep the data last loaded and show it read-only when the Mac is not reachable.
+Off: reachable only at this Mac. On: reachable on the user's devices in the Tailscale network at the address shown, with "Wer"
+(who may sign in: added iPhones with Face ID, or also Kontor's password; Tailscale account and devices), "Wo" (from anywhere,
+no open port), "Was" (only view, or changes with Face ID), "Verschlüsselung" (certificate valid until …). Setting up: five
+steps (Tailscale on Mac and iPhone, MagicDNS and HTTPS certificates, "Zugriff einschalten", open and add to the Home screen).
+"Absichern (empfohlen)": a Tailscale access rule so that only Kontor's port is reachable on this Mac, with a check of the
+current state; below it, read from Tailscale (Kontor changes nothing there): whether Tailnet Lock is on (new devices only
+with the user's signature). In red at the top of this part while "tailscale serve" or Funnel passes Kontor's port on (requests
+would seem to come from the Mac itself, or from the internet): sign-in and what stays at the Mac are locked on the Mac until
+it is switched off – the command is named; every session signed in at the Mac ended when it was found. Only forwarding to
+this Mac counts; Tailscale not running passes nothing on. **Änderungen vom iPhone**: "Nur ansehen" or "Mit Face
+ID ändern" – then an added iPhone may do what the Mac can, each change confirmed with Face ID; access and devices, updates,
+setting up the assistant, loading a backup, reset, password and data key stay Mac-only. **Anmeldung unterwegs**: "Nur mit
+Face ID hinzugefügter iPhones" (default once one is added; the password then opens the data from the iPhone only once after
+the Mac restarted). **Offline-Ansicht**: the iPhone app may keep the data last loaded and show it read-only when the Mac is
+not reachable.
+
+### settings.access.devices — Geräte
+Only at the Mac. The iPhones added, each with its own passkey (Face ID): name typed when it was added, "Hinzugefügt" (date and
+time), "Zuletzt" (last sign-in or confirmed change; "–" never), "Ändern" (ticked: this iPhone may change things with Face ID,
+while "Änderungen vom iPhone" is on), a mark "andere Adresse" when it was added for an earlier address of the Mac (its Face
+ID no longer works there), "Entfernen" (signed out at once, also a demo it opened; its passkey no longer works). A red note
+when the list was damaged and set aside (file name; until iPhones are added again nobody signs in remotely).
+"Gerät hinzufügen" (only with https) shows a QR code of a one-time link (valid 10 minutes, the minutes left shown; a new link
+or locking Kontor at the Mac ends it) and "Änderungen vom iPhone erlauben (mit Face ID)" for this iPhone (the very first
+iPhone added with it ticked also switches "Änderungen vom iPhone" on).
 
 ## settings.receipts — Belege
 - **Belegordner**: where receipt files are stored as ordinary files (default ~/Documents/Kontor-Belege; may be in iCloud Drive);

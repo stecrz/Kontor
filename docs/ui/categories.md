@@ -50,7 +50,7 @@ transaction of another category, the category exists in MoneyMoney, and MoneyMon
 
 ## categories.written — Eingetragen
 Every category Kontor wrote into MoneyMoney, newest first (at most 2,000 rows; "N Einträge" = all). Columns: checkbox (only for
-rows that can be taken back, only at the Mac), "Eingetragen am" (date and time Kontor wrote it), Datum (booking date of the
+rows that can be taken back, at the Mac or on an added iPhone), "Eingetragen am" (date and time Kontor wrote it), Datum (booking date of the
 transaction; "–" if it is outside what Kontor reads), Konto, Name (counterparty), Betrag (€, signed), Vorher (the category before
 Kontor's – "ohne Kategorie" if none), Eingetragen (the category Kontor wrote). A pale row with a tag cannot be taken back: "in
 MoneyMoney geändert" = MoneyMoney now shows another category (it stays); "nicht im Abgleich" = the transaction is outside what

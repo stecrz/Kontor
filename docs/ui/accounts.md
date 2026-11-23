@@ -136,7 +136,7 @@ the rules as edited, before saving. A rule made or changed by the assistant carr
 Freigabe" and a button "Bestätigen": until confirmed and saved, each of its bookings waits for approval.
 
 ### accounts.rules.auto — Vollautomatisch buchen
-A switch (changeable only at the Mac). On: at every sync Kontor books by itself what is new since the last check (only offline
+A switch (changeable at the Mac or from an added iPhone with Face ID). On: at every sync Kontor books by itself what is new since the last check (only offline
 accounts) and reports it; older bookings still wait for approval. Off (default): bookings are proposals waiting under
 Auto-Buchungen for the user's approval.
 

@@ -180,7 +180,6 @@ jobs:
           test -s Kontor.app/Contents/Resources/AppIcon.icns
           python3 -c "import mac_app; assert mac_app.build() == 'ok' and mac_app.ready()"     # built once: not again (macOS would ask again)
       - name: Pages in macOS's WebKit, the Mac app's engine (a real right click selects the word under the pointer there)
-        continue-on-error: true           # new (3.17.3): watched for a few versions, then it counts like every step
         run: python3 tests/test_mac_webview.py -v
       - name: Receipt reader (text of a PDF and a picture, in its sandbox)
         run: |

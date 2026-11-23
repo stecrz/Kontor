@@ -91,7 +91,7 @@ async function syncLang() {
   // nach der Anmeldung: Auswahl auf der Anmeldeseite an den Dienst geben, sonst die gespeicherte Sprache uebernehmen
   let pending = false; try { pending = LS.get('kontor.lang.pending') === '1'; LS.del('kontor.lang.pending'); } catch (e) {}
   const cfg = ((S.CFG || {}).ui || {}).language || 'de';
-  if (pending && cfg !== LANG && !OFFLINE.mode) { try { const r = await api('/api/language', {language: LANG}); S.CFG.ui = Object.assign(S.CFG.ui || {}, {language: r.language}); } catch (e) {} return; }
+  if (pending && cfg !== LANG && !OFFLINE.mode) { if (!IS_LOCAL) return; try { const r = await api('/api/language', {language: LANG}); S.CFG.ui = Object.assign(S.CFG.ui || {}, {language: r.language}); } catch (e) {} return; }
   if (cfg !== LANG) setLang(cfg);
 }
 function tn(k, n, ...a) { const f = t(k, n, ...a).split('|'); return f.length > 1 ? f[n === 1 ? 0 : 1] : f[0]; }   // Einzahl|Mehrzahl
@@ -179,6 +179,8 @@ const H = {
   abgleich: t('datenstand_in_zwei_stufen_banken'),
   fern: t('fern_tip'),
   fern_was: t('fern_was_tip'),
+  geraete: t('h_geraete'),
+  pk_nur: t('h_pk_nur'),
   timemachine: t('timemachine_tip'),
   datenschluessel: t('datenschluessel_tip'),
   diagnose: t('diagnose_tip'),
@@ -310,6 +312,7 @@ document.addEventListener('click', e => {
   e.preventDefault(); if (a.getAttribute('href') !== location.hash) go(a.getAttribute('href'));
 });
 HELP_AT.ki_gedaechtnis = 'assistant-memory';
+HELP_AT.geraete = HELP_AT.pk_nur = 'iphone-devices';
 const hq = k => H[k] ? `<span class="hq" tabindex="0" data-tip="${esc(H[k])}"${HELP_AT[k] ? ` data-help="${HELP_AT[k]}"` : ''}>?</span>` : '';
 document.addEventListener('click', e => {
   // with a mouse a click on "?" opens the matching help section; on touch devices the first tap shows the tip, the second opens the help
@@ -400,10 +403,14 @@ try { if (LS.get('kontor.testRemote') === '1') IS_LOCAL = false; } catch (e) {}
 // session open -- the idle lock comes after the set minutes even with the window open
 let USER_ACT = Date.now();
 for (const ev of ['pointerdown', 'pointermove', 'keydown', 'touchstart', 'wheel', 'dragover', 'drop']) document.addEventListener(ev, () => { USER_ACT = Date.now(); }, {passive: true, capture: true});
-async function api(path, body, method, netMode, renewed) {
+// confirm: 'force' -- with Face ID whatever the list says (the service asked for it); 'done' -- never again for this request
+async function api(path, body, method, netMode, renewed, confirm) {
   const opts = { method: method || (body === undefined ? 'GET' : 'POST'), headers: {}, credentials: 'same-origin' };
   if (body !== undefined) { opts.headers['Content-Type'] = 'application/json'; opts.body = JSON.stringify(body); }
   if (S.csrf) opts.headers['X-CSRF-Token'] = S.csrf;
+  // a change from an added iPhone: Face ID first, for exactly this request (what changes nothing goes without, see NO_CONFIRM)
+  const faceId = opts.method !== 'GET' && !IS_LOCAL && !OFFLINE.mode && !!S.csrf && confirm !== 'done' && !SIGN_IN.includes(path) && (confirm === 'force' || (!!(S.STATUS && S.STATUS.confirm) && !NO_CONFIRM.includes(path)));
+  if (faceId) opts.headers['X-Kontor-Confirm'] = await faceConfirm(opts.method, path, opts.body || '');
   if (Date.now() - USER_ACT > 60000) opts.headers['X-Kontor-Background'] = '1';      // not touched for a minute: no activity (idle lock)
   const mode = netMode || (IS_LOCAL ? 'direct' : (OFFLINE.mode && opts.method === 'GET' ? 'cache' : ''));
   if (mode) opts.headers['X-Kontor-Net'] = mode;
@@ -429,15 +436,59 @@ async function api(path, body, method, netMode, renewed) {
     history.replaceState(null, '', location.pathname); location.reload();          // the demo began or ended in another window: this page anew
     throw new Error(t('seite_wird_neu_geladen').trim());
   }
-  if (r.status === 401 && ['/api/login', '/api/touchid'].includes(path)) { const e = new Error(data.error || t('nicht_angemeldet')); e.status = 401; throw e; }      // a sign-in that failed: why (wrong password)
+  if (r.status === 401 && ['/api/login', '/api/touchid', '/api/passkey/login', '/api/pair/begin'].includes(path)) { const e = new Error(data.error || t('nicht_angemeldet')); e.status = 401; e.data = data; throw e; }      // a sign-in that failed: why (wrong password)
   if (r.status === 401 && path !== '/api/session') { S.csrf = null; if (OFFLINE.mode) { OFFLINE.mode = false; OFFLINE.as_of = null; checkSession(); } else showLogin(); const e = new Error(t('nicht_angemeldet')); e.status = 401; throw e; }
   if (r.status === 403 && data.csrf === 'invalid' && !renewed) {
     // signed in again meanwhile (e.g. in another window): the token of this page is old -- take the current one, try once more
-    try { const s = await fetch('/api/session', {credentials: 'same-origin'}).then(x => x.json()); if (s.signed_in && s.csrf) { S.csrf = s.csrf; return await api(path, body, method, netMode, true); } } catch (e) {}
+    try { const s = await fetch('/api/session', {credentials: 'same-origin'}).then(x => x.json()); if (s.signed_in && s.csrf) { S.csrf = s.csrf; return await api(path, body, method, netMode, true, confirm); } } catch (e) {}
   }
+  if (r.status === 403 && data.confirm === 'needed' && !faceId && !IS_LOCAL) return await api(path, body, method, netMode, renewed, 'force');      // the service wants Face ID for this one
   if (!r.ok) { const e = new Error(data.error || (t('fehler') + r.status)); e.data = data; e.status = r.status; throw e; }
   if (opts.method !== 'GET' && data && data.report === 'requested') afterRebuild(data);
   return data;
+}
+// ---------------------------------------------------------------- Passkeys: an iPhone added at the Mac, Face ID
+// Kontor keeps only the public key; the iPhone signs Kontor's challenge after Face ID (its private key never leaves it).
+// Every request to the browser for it goes through pkCall.
+const b64uBytes = v => { const x = String(v || '').replace(/-/g, '+').replace(/_/g, '/'); return Uint8Array.from(atob(x + '==='.slice((x.length + 3) % 4)), c => c.charCodeAt(0)); };
+const b64uOf = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+async function sha256Hex(text) { const h = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text)); return Array.from(new Uint8Array(h), b => b.toString(16).padStart(2, '0')).join(''); }
+const pkErr = e => new Error(e && e.name === 'NotAllowedError' ? t('pk_abgebrochen') : e && e.name === 'InvalidStateError' ? t('pk_schon_da') : (e && e.message) || t('pk_nicht_moeglich'));
+async function pkCall(kind, publicKey) {
+  if (!window.PublicKeyCredential || !navigator.credentials || !window.isSecureContext) throw new Error(t('pk_nicht_moeglich'));
+  const run = () => (kind === 'create' ? navigator.credentials.create({publicKey}) : navigator.credentials.get({publicKey}));
+  const t0 = Date.now();
+  try { return await run(); }
+  catch (e) {
+    if (e && e.name === 'NotAllowedError' && Date.now() - t0 < 700) return pkTap(run);          // refused at once: Safari wants a tap of its own first
+    throw pkErr(e);
+  }
+}
+function pkTap(run) {
+  return new Promise((resolve, reject) => {
+    const old = $('#pk-tap'); if (old) old.remove();
+    const d = document.createElement('div'); d.id = 'pk-tap'; d.className = 'pk-tap'; d.setAttribute('role', 'dialog');
+    d.innerHTML = `<div class="card"><div>${esc(t('pk_tippen'))}</div><div class="row"><button type="button" class="secondary" data-a="no">${esc(t('abbrechen'))}</button><button type="button" data-a="go">${esc(t('pk_bestaetigen'))}</button></div></div>`;
+    document.body.appendChild(d);
+    d.addEventListener('click', async e => {
+      const b = e.target.closest('button[data-a]'); if (!b) return;
+      d.remove();
+      if (b.dataset.a !== 'go') { reject(new Error(t('pk_abgebrochen'))); return; }
+      try { resolve(await run()); } catch (er) { reject(pkErr(er)); }
+    });
+    $('button[data-a="go"]', d).focus();
+  });
+}
+// what changes nothing goes from an iPhone without Face ID (service.CONFIRM_FREE, CONFIRM_MAYBE: the service asks if it does)
+const SIGN_IN = ['/api/setup', '/api/login', '/api/touchid', '/api/touchid/switch', '/api/passkey/options', '/api/passkey/login', '/api/pair/begin', '/api/pair/finish'];      // (service.SIGN_IN)
+const NO_CONFIRM = ['/api/lock', '/api/confirm', '/api/rules/preview', '/api/bookings/plan', '/api/check', '/api/report', '/api/report/rebuild', '/api/bookings/refresh', '/api/properties/calculate',
+  '/api/assistant/ask', '/api/assistant/stop', '/api/assistant/reset', '/api/assistant/page', '/api/assistant/listen', '/api/assistant/transcribe', '/api/assistant/attach',
+  '/api/run', '/api/assistant/confirm'];
+async function faceConfirm(method, path, bodyText) {
+  const c = await api('/api/confirm', {method, path, body: await sha256Hex(bodyText)});
+  const cred = await pkCall('get', {challenge: b64uBytes(c.challenge), rpId: c.rp_id, allowCredentials: [{type: 'public-key', id: b64uBytes(c.credential)}], userVerification: 'required', timeout: c.timeout});
+  const r = cred.response;
+  return [cred.rawId, r.clientDataJSON, r.authenticatorData, r.signature].map(b64uOf).join('.');
 }
 // a file from Kontor itself: only one of its own addresses (/api/...), never another place
 function download(url) { if (!/^\/(?!\/)/.test(String(url))) return; const a = document.createElement('a'); a.href = url; a.download = ''; document.body.appendChild(a); a.click(); a.remove(); }
@@ -659,7 +710,7 @@ async function checkSession() {
   if (SESSION.offline && IS_LOCAL) { $('#login').classList.remove('hidden'); $('#login-err').textContent = t('der_kontor_dienst_antwortet_nicht'); setTimeout(checkSession, 5000); return; }
   if (SESSION.offline) { OFFLINE.mode = true; showLogin(); return; }
   OFFLINE.mode = false;
-  if (SESSION.signed_in) { S.csrf = SESSION.csrf; await enterApp(); } else showLogin();
+  if (SESSION.signed_in && !PAIR.token) { S.csrf = SESSION.csrf; await enterApp(); } else showLogin();      // (the link to add this iPhone: its form first)
 }
 function showLogin() {
   if (DEMO_PAGE) {          // the demo locked: loaded anew (nothing of it stays), the sign-in still set to the demo -- no Touch ID at once
@@ -672,10 +723,17 @@ function showLogin() {
   keysShow();                // locked: the keys (and the Mac app's menu entries) that need Kontor open are off
   const setup = SESSION && SESSION.setup_needed && !OFFLINE.mode;
   if (setup || OFFLINE.mode) LOGIN.demo = false;
+  // an iPhone: added with the link from the Mac (its form), then signing in with Face ID while the data are open
+  const pair = !!PAIR.token && !setup && !OFFLINE.mode && !!SESSION && !SESSION.setup_local_only;
+  const pk = !pair && !setup && !OFFLINE.mode && !!(SESSION && SESSION.passkey);
+  const pkMode = pk && (SESSION.passkey_only || !LOGIN.pw);
+  let hasKey = false; try { hasKey = LS.get('kontor.passkey') === '1'; } catch (e) {}
   $('#login-text').textContent = OFFLINE.mode ? t('der_mac_ist_nicht_erreichbar')
     : setup ? t('erster_start_passwort_festlegen_mindes')
+    : pair ? t('pk_hinzufuegen_titel')
     : LOGIN.demo ? t('demo_anmelden')
     : SESSION && SESSION.setup_local_only ? t('noch_kein_passwort_festgelegt_die')
+    : SESSION && SESSION.waiting && !IS_LOCAL && hasKey ? t('pk_nach_neustart')
     : SESSION && SESSION.waiting ? t('anmeldung_wartet') : '';
   $('#login-text').hidden = !$('#login-text').textContent;
   // Touch ID eingeschaltet (am Mac): nur Touch ID, Passwort erst auf Wunsch – nie beides gleichzeitig
@@ -685,15 +743,72 @@ function showLogin() {
   $('#setup-tid').classList.toggle('hidden', !(setup && SESSION && SESSION.touchid_available));
   $('#login-btn').textContent = setup ? t('passwort_festlegen') : LOGIN.demo ? t('demo_oeffnen') : t('anmelden');
   $('#tid-box').classList.toggle('hidden', !tidMode);
-  $('#login-form').classList.toggle('hidden', !!tidMode);
+  $('#fid-box').classList.toggle('hidden', !pkMode);
+  $('#fid-pw').classList.toggle('hidden', !!(SESSION && SESSION.passkey_only));
+  $('#fid-instead').classList.toggle('hidden', !(pk && LOGIN.pw));
+  $('#pair-form').classList.toggle('hidden', !pair);
+  $('#login-form').classList.toggle('hidden', !!tidMode || pkMode || pair);
   $('#tid-instead').classList.toggle('hidden', !(tid && LOGIN.pw));
-  $('#login-err').textContent = SESSION && SESSION.locked_seconds ? (t('gesperrt_fuer') + SESSION.locked_seconds + t('s_nach_fehlversuchen')) : '';
-  $('#demo-btn').classList.toggle('hidden', !!(setup || OFFLINE.mode || !SESSION || SESSION.setup_local_only));
+  const checking = !!(SESSION && SESSION.checking && !OFFLINE.mode);       // right after the start: Tailscale not looked at yet -- a moment
+  $('#login-err').textContent = SESSION && SESSION.exposed ? t('s_ts_weitergereicht') : checking ? t('s_ts_pruefe')
+    : SESSION && SESSION.locked_seconds ? (t('gesperrt_fuer') + SESSION.locked_seconds + t('s_nach_fehlversuchen')) : '';
+  if (checking) loginRecheck();
+  $('#demo-btn').classList.toggle('hidden', !!(setup || OFFLINE.mode || !SESSION || SESSION.setup_local_only || pair));
   $('#demo-btn').textContent = t(LOGIN.demo ? 'demo_zurueck' : 'demo_link');
-  if (!tidMode) setTimeout(() => { if (!$('#login').contains(document.activeElement)) $('#login-pw').focus(); }, 50);   // never move the cursor out of a field being filled
-  if (tidMode) tryTouchId(true);     // Touch ID at once, without a click -- only while Kontor is the active window (see tryTouchId)
+  if (pair) setTimeout(() => { if (!$('#login').contains(document.activeElement)) $('#pair-name').focus(); }, 50);
+  else if (!tidMode && !pkMode) setTimeout(() => { if (!$('#login').contains(document.activeElement)) $('#login-pw').focus(); }, 50);   // never move the cursor out of a field being filled
+  if (tidMode && !checking) tryTouchId(true);     // Touch ID at once, without a click -- only while Kontor is the active window (see tryTouchId)
 }
-const LOGIN = {pw: false, demo: false};      // pw: "Stattdessen Passwort eingeben" gewählt; demo: die Anmeldung öffnet die Demo
+// the sign-in at the Mac waits for the first look at Tailscale after a start ("tailscale serve"/Funnel): the page asks again shortly
+function loginRecheck() { clearTimeout(LOGIN.recheck); LOGIN.recheck = setTimeout(() => { if (!$('#login').classList.contains('hidden')) checkSession(); }, 2000); }
+const LOGIN = {pw: false, demo: false, recheck: null};      // pw: "Stattdessen Passwort eingeben" gewählt; demo: die Anmeldung öffnet die Demo
+// the link the Mac shows to add this iPhone (#pair=…): taken out of the address at once (it is not kept in the history)
+const PAIR = {token: null, busy: false};
+{ const m = /^#pair=([A-Za-z0-9_-]{20,64})$/.exec(location.hash); if (m) { PAIR.token = m[1]; history.replaceState(null, '', location.pathname); } }
+// sign-in with Face ID: the passkey of this iPhone (added at the Mac) -- while the data are open on the Mac
+const PK = {pending: false};
+async function pkLogin() {
+  if (PK.pending) return;
+  PK.pending = true; $('#login-err').textContent = '';
+  try {
+    const o = await api('/api/passkey/options', {});
+    const cred = await pkCall('get', {challenge: b64uBytes(o.challenge), rpId: o.rp_id, userVerification: 'required', timeout: o.timeout});
+    const r = cred.response;
+    const res = await api('/api/passkey/login', Object.assign({id: b64uOf(cred.rawId), client_data: b64uOf(r.clientDataJSON), auth_data: b64uOf(r.authenticatorData),
+      signature: b64uOf(r.signature), user_handle: r.userHandle ? b64uOf(r.userHandle) : ''}, LOGIN.demo ? {demo: true} : {}));
+    try { LS.set('kontor.passkey', '1'); } catch (e) {}
+    if (res.demo) return demoEnter();
+    S.csrf = res.csrf; await enterApp();
+  } catch (e) {
+    if (e.data && e.data.need_password) { SESSION.passkey = false; LOGIN.pw = true; showLogin(); }
+    $('#login-err').textContent = e.message;
+  } finally { PK.pending = false; }
+}
+$('#fid-btn').addEventListener('click', pkLogin);
+$('#fid-pw').addEventListener('click', () => { LOGIN.pw = true; $('#login-err').textContent = ''; showLogin(); });
+$('#fid-instead').addEventListener('click', () => { LOGIN.pw = false; $('#login-err').textContent = ''; showLogin(); });
+// adding this iPhone: its name and Kontor's password once, then a passkey with Face ID
+$('#pair-form').addEventListener('submit', async e => {
+  e.preventDefault();
+  if (PAIR.busy) return;
+  PAIR.busy = true; $('#pair-btn').disabled = true; $('#login-err').textContent = t('pruefe');
+  const pw = $('#pair-pw').value;
+  try {
+    const o = await api('/api/pair/begin', {token: PAIR.token, name: $('#pair-name').value.trim(), password: pw});
+    $('#login-err').textContent = '';
+    const cred = await pkCall('create', {challenge: b64uBytes(o.challenge), rp: o.rp, user: {id: b64uBytes(o.user.id), name: o.user.name, displayName: o.user.displayName},
+      pubKeyCredParams: [{type: 'public-key', alg: -7}], timeout: o.timeout, attestation: 'none',
+      authenticatorSelection: {authenticatorAttachment: 'platform', residentKey: 'required', requireResidentKey: true, userVerification: 'required'},
+      excludeCredentials: (o.exclude || []).map(id => ({type: 'public-key', id: b64uBytes(id)}))});
+    const r = await api('/api/pair/finish', {token: PAIR.token, id: b64uOf(cred.rawId), client_data: b64uOf(cred.response.clientDataJSON), attestation: b64uOf(cred.response.attestationObject)});
+    PAIR.token = null; $('#pair-pw').value = '';
+    try { LS.set('kontor.passkey', '1'); } catch (er) {}
+    await offKeyEnsure(pw);
+    S.csrf = r.csrf; toast(t('pk_hinzugefuegt'), 4000);
+    await enterApp();
+  } catch (er) { $('#login-err').textContent = er.message; }
+  finally { PAIR.busy = false; $('#pair-btn').disabled = false; }
+});
 const TID = {pending: false, lastTry: 0, id: null};       // id: the request running (random) -- the demo link switches it
 try { if (sessionStorage.getItem('kontor.login') === 'demo') { LOGIN.demo = true; TID.skipNext = true; } sessionStorage.removeItem('kontor.login'); } catch (e) {}
 const tidAsk = () => { $('#login-err').textContent = t(LOGIN.demo ? 'touch_id_bitte_am_mac_demo' : 'touch_id_bitte_am_mac'); };
@@ -712,6 +827,7 @@ async function tryTouchId(auto) {
   catch (err) {
     if (err.status === 409 && err.data && err.data.switched) again = true;          // switched meanwhile: its window closed, asked anew for that
     else if (err.status === 409 && LOGIN.demo && err.data && err.data.signed_in) location.reload();     // signed in meanwhile (another window)
+    else if (err.data && err.data.checking) { $('#login-err').textContent = err.message; TID.lastTry = 0; loginRecheck(); }
     else $('#login-err').textContent = auto ? t('touch_id_nicht_bestaetigt_erneut') : err.message;
   }
   finally { TID.pending = false; TID.id = null; }
@@ -752,11 +868,19 @@ async function loginSubmit() {
     if (LOGIN.demo && !setup) $('#login-err').textContent = t('demo_startet');
     const r = await api(setup ? '/api/setup' : '/api/login', setup ? Object.assign({password: pw, language: LANG}, SESSION.touchid_available ? {touchid: $('#setup-tid-cb').checked} : {}) : Object.assign({password: pw}, LOGIN.demo ? {demo: true} : {}));
     if (r.demo) return demoEnter();
+    if (r.passkey_needed) {          // after a restart of the Mac: the password opened the data -- Face ID signs in
+      $('#login-pw').value = ''; await offKeyEnsure(pw);
+      SESSION = await api('/api/session'); LOGIN.pw = false; showLogin(); return pkLogin();
+    }
     LOGIN.pw = false;
     S.csrf = r.csrf; $('#login-pw').value = ''; $('#login-pw2').value = '';
     await offKeyEnsure(pw);
     await enterApp();
-  } catch (err) { if (err.status === 409 && LOGIN.demo && err.data && err.data.signed_in) location.reload(); else $('#login-err').textContent = err.message; }      // signed in meanwhile (another window): that window's Kontor
+  } catch (err) {
+    if (err.status === 409 && LOGIN.demo && err.data && err.data.signed_in) location.reload();      // signed in meanwhile (another window): that window's Kontor
+    else if (err.data && err.data.passkey_only) { try { SESSION = await api('/api/session'); } catch (e) {} LOGIN.pw = false; showLogin(); $('#login-err').textContent = err.message; }
+    else { $('#login-err').textContent = err.message; if (err.data && err.data.checking) loginRecheck(); }
+  }
 }
 $('#touchid-btn').addEventListener('click', () => tryTouchId(false));
 $('#lang-sel').addEventListener('change', e => setLang(e.target.value, true));
@@ -1021,7 +1145,7 @@ function statusMini() {
   const mm = mmState(st), m = st.moneymoney || {}, b = st.report || {}, l = st.last_run, ba = m.bank_fetch;
   const zeile = (k, v, title) => `<div class="sm-row"${title ? ' title="' + esc(title) + '"' : ''}><span>${k}</span><b>${v}</b></div>`;
   let h = `<div class="sm-head"><span class="dot ${mm.cls}"></span>${mm.text} ${hq('abgleich')}</div>`;
-  if (st.read_only) h += `<div class="sm-ro" title="${esc(t('s_von_unterwegs_nur_ansehen'))}">${ICON.eye}${t('nur_ansehen')}</div>`;          // from another device: what you change is not taken
+  if (st.read_only) h += `<div class="sm-ro" title="${esc(t({setting: 'ro_why_setting', device: 'ro_why_device', password: 'ro_why_password', http: 'ro_why_http'}[st.read_only_why] || 's_von_unterwegs_nur_ansehen'))}">${ICON.eye}${t('nur_ansehen')}</div>`;          // from another device: what you change is not taken
   if (m.as_of || ba) {
     const n = ba ? ba.back_count : 0;
     const warn = n ? ` <span class="sm-badge" title="${esc(n + (n === 1 ? t('konto') : t('konten')) + t('laenger_nicht_abgerufen') + ba.back.slice(0, 5).map(k => k.name).join(', ') + (n > 5 ? ' …' : '') + t('details_unter_synchronisierung'))}">⚠ ${n}</span>` : '';
@@ -4894,7 +5018,7 @@ const acctCell = (name, id) => { const a = areaOfAcct(id); return esc(name) + (a
 function vBuchungen(runs) {
   BOOK.runs = runs;
   // Auto-Buchungen: what the auto rules would book (waiting for approval) and have booked; the rules themselves under Auto-Regeln
-  const st = S.STATUS, l = runs.last_run, ask = S.CFG.dry_run !== false, local = !!st.local;
+  const st = S.STATUS, l = runs.last_run, ask = S.CFG.dry_run !== false, local = !!st.trusted;          // booking: at the Mac or an added iPhone (Face ID)
   const pending = l && l.dry_run && (l.proposals || []).length ? l.proposals.length : 0;
   const artL = {repayment: t('art_tilgung'), interest: t('art_zins'), value: t('art_wert'), mirror: t('art_spiegel')};
   let h = `<div class="toolbar">
@@ -5360,7 +5484,7 @@ function vRegeln() {
   // Buchungsregeln: one switch (book automatically); loans as collapsible rows; one card per company (area of the kind
   // "Gesellschaft") with its participation and counter accounts; target, actual and difference live; one save bar for all
   const C = S.CFG;
-  const lr = (S.STATUS || {}).last_run, pend = lr && lr.dry_run ? (lr.proposals || []).length : 0, auto = C.dry_run === false, loc = !!(S.STATUS || {}).local;
+  const lr = (S.STATUS || {}).last_run, pend = lr && lr.dry_run ? (lr.proposals || []).length : 0, auto = C.dry_run === false, loc = !!(S.STATUS || {}).trusted;
   let h = `<div class="rules-page" data-ex="accounts.rules"><p class="lead">${t('regeln_lead')} <a href="#bookings">${pend ? tn('0_buchungsvorschlaege', pend) : t('nav_auto_buchungen')} →</a></p>`
     + (S.KONTEN.length ? '' : `<div class="note"><b>${t('noch_keine_konten_geladen_unter')}</b></div>`);
   h += `<div class="group" data-ex="accounts.rules.auto"><div class="set-row"><div class="grow"><b>${t('auto_buchen')}</b><div class="small muted">${t(auto ? 'auto_buchen_an' : 'auto_buchen_aus')}${loc ? '' : ' ' + t('nur_am_mac_klammer')}</div></div>`
@@ -6076,6 +6200,7 @@ function vTsHarden(ts, r) {
   const a = (href, txt) => `<a href="${href}" target="_blank" rel="noopener">${txt}</a>`;
   return `<details class="adv" style="margin-top:12px"><summary id="fz-acl-sum">${t('fern_absichern')}</summary>
     <div class="banner small info" id="fz-acl-state">${t('acl_wird_geprueft')}</div>
+    <div class="banner small info hidden" id="fz-serve"></div><div class="banner small info hidden" id="fz-lock"></div>
     <div class="note">${t('fern_absichern_text', port)}</div>
     <ol class="steps">
       <li>${t('acl_schritt1')} <button class="secondary small" id="fz-acl-copy">${t('regel_kopieren')}</button></li>
@@ -6111,14 +6236,16 @@ async function vEinstellungenZugang() {
   <div class="actions"><button id="save-settings">${t('einstellungen_speichern')}</button></div><div id="findings-e" class="findings"></div>
   <h2>${t('passwort')}</h2><div class="form pw-form"><label>${t('altes_passwort')}</label><input type="password" id="pw-alt" autocomplete="current-password"${S.STATUS.touchid && S.STATUS.touchid_active && lokal ? ` placeholder="${esc(t('leer_touch_id'))}"` : ''}><label>${t('neues_passwort')}</label><input type="password" id="pw-neu" autocomplete="new-password"><label>${t('ph_passwort_wiederholen')}</label><input type="password" id="pw-neu2" autocomplete="new-password"></div><div class="actions"><button id="pw-save" class="secondary">${t('passwort_aendern')}</button></div>`;
   h += `</div><div data-ex="settings.access.iphone"><h2>${t('zugriff_vom_iphone')} ${hq('fern')}</h2>`;
+  h += `<div class="banner small ${S.STATUS.exposed ? 'err' : 'hidden'}" id="fz-expose">${S.STATUS.exposed ? esc(t('ts_serve_serve')) : ''}</div>`;          // passed on by serve/Funnel: in red, first
   if (!r && S.remoteLoading) return h + `<div class="note"><span class="spin"></span> ${t('wird_geladen')}</div></div></div>`;
   if (r && r.active) {
     h += `<div class="banner ${r.listening ? 'ok' : 'warn'}">${r.listening ? t('fern_an', `<b>${esc(r.url)}</b>`) : t('fern_an_wartet', esc(r.error || ''))}</div>
       <div class="row tight"><button class="secondary small" id="fz-copy" data-url="${esc(r.url)}">${t('link_kopieren')}</button>${lokal ? `<button class="danger small" id="fz-aus">${t('zugriff_ausschalten')}</button>` : ''}</div>
-      <div class="kv" style="margin-top:12px"><div>${t('wer')}</div><div>${t('fern_wer', esc(ts.account || '?'))}${(ts.devices || []).length ? `<div class="small muted">${t('geraete_im_tailnet')}: ${ts.devices.map(g => esc(g.name) + (g.os ? ' (' + esc(g.os) + ')' : '') + (g.online ? '' : ' · ' + t('offline_klein'))).join(', ')}</div>` : ''}</div>
+      <div class="kv" style="margin-top:12px"><div>${t('wer')}</div><div>${t(r.passkey_only ? 'fern_wer_pk' : 'fern_wer', esc(ts.account || '?'))}${(ts.devices || []).length ? `<div class="small muted">${t('geraete_im_tailnet')}: ${ts.devices.map(g => esc(g.name) + (g.os ? ' (' + esc(g.os) + ')' : '') + (g.online ? '' : ' · ' + t('offline_klein'))).join(', ')}</div>` : ''}</div>
         <div>${t('wo')}</div><div>${t('fern_wo')}</div>
         <div>${t('was')}</div><div>${r.read_only ? t('fern_was_lesen') : t('fern_was_bearbeiten')}</div>
         <div>${t('verschluesselung')}</div><div>${r.tls ? t('fern_tls', r.valid_until ? FD(r.valid_until) : '?') : t('fern_ohne_tls')}</div></div>`;
+    if (lokal) h += `<div id="dev-area" data-ex="settings.access.devices"><h3>${t('pk_geraete')} ${hq('geraete')}</h3><div class="note"><span class="spin"></span> ${t('wird_geladen')}</div></div>`;
   } else {
     h += `<div class="banner info">${t('fern_aus')}</div><div class="note">${t('fern_warum')}</div>
       <ol class="steps">
@@ -6131,7 +6258,8 @@ async function vEinstellungenZugang() {
   }
   if (ts.connected && ts.ip) h += vTsHarden(ts, r);
   h += `<div class="form" style="margin-top:14px">
-    <label>${t('von_unterwegs')} ${hq('fern_was')}</label><label class="chk"><select id="fz-modus" ${lokal ? '' : 'disabled'}><option value="read" ${!r || r.read_only ? 'selected' : ''}>${t('nur_ansehen')}</option><option value="bearbeiten" ${r && !r.read_only ? 'selected' : ''}>${t('ansehen_und_bearbeiten')}</option></select></label>
+    <label>${t('aenderungen_vom_iphone')} ${hq('fern_was')}</label><label class="chk"><select id="fz-modus" ${lokal ? '' : 'disabled'}><option value="read" ${!r || r.read_only ? 'selected' : ''}>${t('nur_ansehen')}</option><option value="bearbeiten" ${r && !r.read_only ? 'selected' : ''}>${t('mit_face_id_aendern')}</option></select></label>
+    <label>${t('pk_anmeldung')} ${hq('pk_nur')}</label><label class="chk"><input type="checkbox" id="fz-pkonly" ${r && r.passkey_only ? 'checked' : ''} ${lokal && r && r.devices ? '' : 'disabled'}> ${t('pk_nur_faceid')}</label>
     <label>${t('offline_ansicht_0', hq('offline'))}</label><label class="chk"><input type="checkbox" id="fz-offline" ${!r || r.offline_copy ? 'checked' : ''} ${lokal ? '' : 'disabled'}> ${t('offline_kopie_erlauben')}</label>
   </div>`;
   if (!IS_LOCAL) h += `<div class="kv" style="margin-top:12px"><div>${t('auf_diesem_geraet')}</div><div id="sw-state">${navigator.serviceWorker && navigator.serviceWorker.controller ? t('aktiv_die_zuletzt_geladenen_daten') : (location.protocol === 'https:' || location.hostname === '127.0.0.1' ? t('wird_beim_naechsten_laden_aktiv') : t('nicht_moeglich_ueber_http_tailscale'))}</div></div>
@@ -6153,22 +6281,83 @@ function bindZugang(main) {
   const rc = $('#fz-recheck', main); if (rc) rc.addEventListener('click', async () => { rc.classList.add('busy'); try { S.remoteCache = {t: Date.now(), r: await api('/api/remote?fresh=1')}; } catch (e) { S.remoteCache = null; } route(); });
   // which ports Tailscale lets in on this Mac (rules as Tailscale applies them)
   const aclState = $('#fz-acl-state', main);
-  const aclCheck = async () => {
+  const aclCheck = async (fresh) => {
     if (!aclState) return;
     aclState.className = 'banner small info'; aclState.textContent = t('acl_wird_geprueft');
-    let a; try { a = await api('/api/remote/acl'); } catch (e) { a = {state: 'unknown', error: e.message}; }
+    let a; try { a = await api('/api/remote/acl' + (fresh === true ? '?fresh=1' : '')); } catch (e) { a = {state: 'unknown', error: e.message}; }
     const ports = (a.ports || []).map(([x, y]) => x === y ? x : x + '–' + y).join(', ');
     const [cls, txt, sum] = {secured: ['ok', t('acl_abgesichert', a.port), t('acl_sum_ok')],
       open: ['', a.all ? t('acl_offen_alle') : t('acl_offen_ports', ports), t('acl_sum_offen')],
       locked: ['err', t('acl_gesperrt', a.port), t('acl_sum_gesperrt')]}[a.state] || ['info', t('acl_unbekannt', a.error || '?'), t('fern_absichern')];
     aclState.className = 'banner small ' + cls; aclState.textContent = txt; $('#fz-acl-sum', main).textContent = sum;
+    // Tailnet Lock and whether "tailscale serve" or Funnel pass Kontor on (read only -- Kontor changes nothing in Tailscale)
+    const ex = a.exposure || {}, sv = $('#fz-serve', main), lk = $('#fz-lock', main), top = $('#fz-expose', main);
+    const [scls, stxt] = {none: ['ok', t('ts_serve_none')], off: ['ok', t('ts_serve_none')], serve: ['err', t('ts_serve_serve')], funnel: ['err', t('ts_serve_funnel')]}[ex.serve] || ['info', t('ts_serve_unknown')];
+    if (sv) { sv.className = 'banner small ' + (scls === 'err' ? 'hidden' : scls); sv.textContent = stxt; }          // passed on: shown above, in red, not again in here
+    if (top) { top.className = 'banner small ' + (scls === 'err' ? 'err' : 'hidden'); top.textContent = scls === 'err' ? stxt : ''; }
+    if (scls === 'err') $('#fz-acl-sum', main).textContent = t('ts_sum_serve');
+    if (lk) { lk.className = 'banner small ' + (ex.lock === true ? 'ok' : ex.lock === false ? '' : 'info'); lk.textContent = t(ex.lock === true ? 'ts_lock_an' : ex.lock === false ? 'ts_lock_aus' : 'ts_lock_unbekannt'); }
   };
   aclCheck();
-  const acc = $('#fz-acl-check', main); if (acc) acc.addEventListener('click', aclCheck);
+  const acc = $('#fz-acl-check', main); if (acc) acc.addEventListener('click', () => aclCheck(true));
   const ac = $('#fz-acl-copy', main); if (ac) ac.addEventListener('click', async () => { const txt = $('#fz-acl', main).textContent; try { await navigator.clipboard.writeText(txt); toast(t('regel_kopiert'), 4000); } catch (e) { prompt(t('regel_kopieren'), txt); } });
   const cp = $('#fz-copy', main); if (cp) cp.addEventListener('click', async () => { try { await navigator.clipboard.writeText(cp.dataset.url); toast(t('link_kopiert_iphone'), 5000); } catch (e) { prompt(t('link'), cp.dataset.url); } });
   const md = $('#fz-modus', main); if (md) md.addEventListener('change', () => act('settings', {remote_read_only: md.value === 'read'}));
+  const po = $('#fz-pkonly', main); if (po) po.addEventListener('change', () => act('settings', {passkey_only: po.checked}));
+  devLoad(main);
   const of = $('#fz-offline', main); if (of) of.addEventListener('change', () => act('settings', {offline_copy: of.checked}));
+}
+// Einstellungen -> Zugang -> Geräte (only at the Mac): the iPhones added (name, added, last used, remove) and the QR code to add one
+const DEV = {poll: null, n: null};
+async function devLoad(main, after) {
+  const area = $('#dev-area', main); if (!area) return;
+  let d; try { d = await api('/api/devices'); } catch (e) { area.innerHTML = `<h3>${t('pk_geraete')}</h3><div class="err">${esc(e.message)}</div>`; return; }
+  if (!$('#dev-area', main)) return;
+  const changed = DEV.n !== null && d.devices.length !== DEV.n;
+  if (changed && d.devices.length > DEV.n) toast(t('pk_hinzugefuegt_mac'), 5000);          // added on the iPhone meanwhile
+  DEV.n = d.devices.length;
+  if (changed) { S.remoteCache = null; route(); return; }          // who may sign in how: the page anew
+  area.innerHTML = devHtml(d);
+  devBind(main, d);
+  clearTimeout(DEV.poll);
+  if (d.pairing && d.pairing.active) DEV.poll = setTimeout(() => { if ($('#dev-area', main) && !document.hidden) devLoad(main); else if ($('#dev-area', main)) DEV.poll = setTimeout(() => devLoad(main), 2000); }, 2000);
+  if (after) after(d);
+}
+function devHtml(d) {
+  const dv = d.devices || [], p = d.pairing || {};
+  let h = `<h3>${t('pk_geraete')} ${hq('geraete')}</h3>`;
+  if (d.damaged) h += `<div class="banner small err">${esc(t('pk_beschaedigt', d.damaged.kept || '?'))}</div>`;
+  h += dv.length ? `<table class="plain dev-list"><thead><tr><th>${t('name')}</th><th>${t('pk_hinzugefuegt_am')}</th><th>${t('pk_zuletzt')}</th><th title="${esc(t('pk_aendern_tip'))}">${t('pk_aendern')}</th><th></th></tr></thead><tbody>`
+      + dv.map(x => `<tr><td>${esc(x.name)}${x.current ? '' : ` <span class="tag" title="${esc(t('pk_andere_adresse_tip'))}">${t('pk_andere_adresse')}</span>`}</td><td>${x.added ? esc(fmtZeit(x.added)) : '–'}</td><td>${x.used ? esc(fmtZeit(x.used)) : '–'}</td><td><input type="checkbox" class="dev-ch" data-id="${esc(x.id)}" aria-label="${esc(t('pk_aendern_tip'))}" ${x.changes ? 'checked' : ''}></td><td class="act"><button class="danger small dev-rm" data-id="${esc(x.id)}" data-name="${esc(x.name)}">${t('entfernen')}</button></td></tr>`).join('')
+      + '</tbody></table>' : `<div class="note">${t('pk_keine')}</div>`;
+  if (p.active) {
+    h += `<div class="pair-card"><div class="qr" role="img" aria-label="${esc(t('pk_qr_label'))}"><svg viewBox="0 0 ${+p.qr.size} ${+p.qr.size}" shape-rendering="crispEdges"><path d="${esc(p.qr.path)}"/></svg></div>
+      <div class="grow"><b>${t('pk_scannen')}</b><div class="small muted">${t('pk_scannen_text', Math.max(1, Math.ceil(p.seconds / 60)))}</div>
+      <label class="chk"><input type="checkbox" id="pair-changes" ${p.changes ? 'checked' : ''}> ${t('pk_aenderungen_erlauben')}</label>
+      <div class="row tight"><button class="secondary small" id="pair-copy" data-url="${esc(p.url)}">${t('link_kopieren')}</button><button class="secondary small" id="pair-cancel">${t('abbrechen')}</button></div></div></div>`;
+  } else h += `<div class="actions"><button id="dev-add" ${d.passkeys ? '' : `disabled title="${esc(t('pk_https_noetig'))}"`}>${t('pk_geraet_hinzufuegen')}</button></div>`;
+  return h;
+}
+function devBind(main, d) {
+  const area = $('#dev-area', main);
+  const add = $('#dev-add', area); if (add) add.addEventListener('click', async () => {
+    add.disabled = true;
+    // changes from the iPhone: on for the first device; else as they are now (you decided before)
+    try { await api('/api/devices/pair', {action: 'new', changes: (d.devices || []).length ? !d.read_only : true}); } catch (e) { toast(e.message, 6000); }
+    devLoad(main);
+  });
+  const ch = $('#pair-changes', area); if (ch) ch.addEventListener('change', () => api('/api/devices/pair', {action: 'changes', changes: ch.checked}).catch(e => toast(e.message, 5000)));
+  const cc = $('#pair-cancel', area); if (cc) cc.addEventListener('click', async () => { try { await api('/api/devices/pair', {action: 'cancel'}); } catch (e) {} devLoad(main); });
+  const cp = $('#pair-copy', area); if (cp) cp.addEventListener('click', async () => { try { await navigator.clipboard.writeText(cp.dataset.url); toast(t('link_kopiert_iphone'), 5000); } catch (e) { prompt(t('link'), cp.dataset.url); } });
+  $$('.dev-ch', area).forEach(c => c.addEventListener('change', async () => {
+    try { await api('/api/devices/set', {id: c.dataset.id, changes: c.checked}); } catch (e) { toast(e.message, 6000); }
+    devLoad(main);
+  }));
+  $$('.dev-rm', area).forEach(b => b.addEventListener('click', async () => {
+    if (!confirm(t('pk_entfernen_frage', b.dataset.name))) return;
+    try { await api('/api/devices/remove', {id: b.dataset.id}); toast(t('pk_entfernt'), 4000); S.remoteCache = null; } catch (e) { toast(e.message, 6000); }
+    devLoad(main);
+  }));
 }
 function vEinstellungenUpdates() {
   const up = S.CFG.updates || {};
@@ -6216,7 +6405,7 @@ function vSicherung() {
   // Sicherung (alles) · Einstellungspaket (zum Weitergeben) · Laden für beides über dieselbe Fläche · Zurücksetzen
   const C = S.CFG;
   return `<div data-ex="settings.backup"><div data-ex="settings.backup.backup"><h2>${t('sicherung_h')} ${hq('sicherung')}</h2><div class="note">${t('sicherung_text')}</div>
-  ${S.STATUS.local ? `<div class="row tight"><input type="password" id="bk-pw" placeholder="${t('passwort_fuer_die_sicherung')}" autocomplete="new-password" style="width:230px"><input type="password" id="bk-pw2" placeholder="${t('ph_passwort_wiederholen')}" autocomplete="new-password" style="width:230px"><button id="bk-save" class="secondary">${t('sicherung_verschluesselt_herunterladen')}</button></div><div class="small muted">${t('sicherung_passwort_hinweis')}</div>` : `<div class="small muted">${t('nur_am_mac')}</div>`}
+  ${S.STATUS.trusted ? `<div class="row tight"><input type="password" id="bk-pw" placeholder="${t('passwort_fuer_die_sicherung')}" autocomplete="new-password" style="width:230px"><input type="password" id="bk-pw2" placeholder="${t('ph_passwort_wiederholen')}" autocomplete="new-password" style="width:230px"><button id="bk-save" class="secondary">${t('sicherung_verschluesselt_herunterladen')}</button></div><div class="small muted">${t('sicherung_passwort_hinweis')}</div>` : `<div class="small muted">${t('nur_am_mac')}</div>`}
   </div><div data-ex="settings.backup.package"><h2>${t('einstellungspaket')} ${hq('package')}</h2><div class="note">${t('paket_text', `<code>${t('name_kontor_json')}</code>`)}</div>
   <div class="row tight"><label class="chk">${t('name')} <input type="text" id="pk-name" value="${esc(t('paket_name'))}"></label><button id="pk-export" class="secondary">${t('paket_herunterladen')}</button></div>
   <div class="small muted">${t('aktuell_0_darlehen_1_beteiligungen', (C.loans || []).length, (C.companies || []).length, Object.keys((C.cashflow || {}).positions || {}).length)}</div>
@@ -6830,7 +7019,7 @@ function bind(main) {
   const bt = $('.bk-table', main);
   if (bt) {
     const rows = () => $$('tr[data-key]', bt).filter(r => r.dataset.key && !r.classList.contains('gone'));
-    const count = () => { const n = rows().filter(r => !BOOK.off.has(r.dataset.key)).length, b = $('#run-live', main); if (b) { $('#sel-n', b).textContent = n; b.disabled = !n || !(S.STATUS || {}).local; } };
+    const count = () => { const n = rows().filter(r => !BOOK.off.has(r.dataset.key)).length, b = $('#run-live', main); if (b) { $('#sel-n', b).textContent = n; b.disabled = !n || !(S.STATUS || {}).trusted; } };
     bt.addEventListener('change', e => {
       // what you leave out or change moves the bookings after it: the list is recalculated (what you see is what is booked)
       // all or none: every booking of the list, also those added by a recalculation (none: nothing left to work out)

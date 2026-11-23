@@ -1672,11 +1672,21 @@ class Http(_Assist):
                 self.assertEqual(TA.events(self.a, r["job"])[-1]["type"], "done")
             self.assertEqual([n["text"] for n in self.a.memory.active()], ["Mit Zwischenablage"])
             cfg = json.loads(json.dumps(self.app.config)); cfg["ui"]["remote_read_only"] = False; self.app.save_config(cfg)
-            code, r = self.call("/api/assistant/ask", {"question": "Merk dir: Von unterwegs, mit Erlaubnis"})      # a device that may change things: as at the Mac
+            code, r = self.call("/api/assistant/ask", {"question": "Merk dir: Von unterwegs, mit Erlaubnis"})      # signed in with the password: still only looking
             TA.events(self.a, r["job"])
-            self.assertIn("Von unterwegs, mit Erlaubnis", [n["text"] for n in self.a.memory.active()])
+            self.assertNotIn("Von unterwegs, mit Erlaubnis", [n["text"] for n in self.a.memory.active()])
         finally:
             self.remote(False)
+        # from an added iPhone (its changes with Face ID): a note waits for the click on it, nothing is forgotten by talk
+        r = self.a.ask({"question": "Merk dir: Vom iPhone gesagt"}, may_note="offer")
+        offer = next(e for e in TA.events(self.a, r["job"]) if e["type"] == "memory")
+        self.assertEqual(offer["state"], "ask")
+        self.assertNotIn("Vom iPhone gesagt", [n["text"] for n in self.a.memory.active()])
+        self.a.memory_offer(offer["id"], True)
+        self.assertIn("Vom iPhone gesagt", [n["text"] for n in self.a.memory.active()])
+        r = self.a.ask({"question": "Vergiss: Vom iPhone gesagt"}, may_note="offer")
+        TA.events(self.a, r["job"])
+        self.assertIn("Vom iPhone gesagt", [n["text"] for n in self.a.memory.active()])
 
     def test_the_switch_not_over_the_configuration(self):
         cfg = json.loads(json.dumps(self.app.config))

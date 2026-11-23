@@ -7,6 +7,7 @@
 Ein kleiner Dienst, der dauerhaft auf dem Mac läuft, mit einer Oberfläche unter `http://127.0.0.1:8765/` – im Browser, als eigene Mac-App und vom iPhone. Nur Bordmittel von macOS (Python 3, `openssl`, `osascript`, Swift für kleine Helfer), keine Fremdbibliotheken, keine Zugangsdaten außerhalb von MoneyMoney. Kontor enthält keine Annahmen über deine Konten: Alles wird in der Oberfläche eingerichtet.
 
 - **Alles bleibt auf dem Mac:** verschlüsselt, lesbar erst nach deiner Anmeldung (Passwort oder Touch ID) – auch für jemanden am entsperrten Mac.
+- **Vom iPhone mit Face ID:** über dein privates Tailscale-Netz; jedes iPhone einmal am Mac hinzugefügt, jede Änderung von dort mit Face ID bestätigt, „Entfernen“ sperrt es sofort ([Zugriff vom iPhone](docs/help.de.md#iphone-devices)).
 - **Ins Netz nur, wo du es zulässt:** von selbst fragt Kontor nur nach neuen Versionen (abschaltbar); alles andere – Wertpapiernamen per ISIN, das Laden des Assistenten, seine Internetsuche zum Lesen – erst nach deinem Klick, nie mit deinen Daten ([Sicherheit](docs/help.de.md#security)).
 - **In MoneyMoney nur der enge Rahmen:** Buchungen der Buchungsregeln in Offline-Konten und die Kategorie eines Umsatzes, den du zuordnest – nie Überweisungen.
 

@@ -2,13 +2,15 @@
 
 Sicherheit:
   * bindet an 127.0.0.1 (oder eine Tailscale-Adresse 100.64.0.0/10, wenn eingestellt); nie 0.0.0.0
-  * Anmeldung mit Passwort (oder Touch ID von diesem Mac aus), Sitzungscookie HttpOnly/SameSite=Strict,
-    CSRF-Token fuer jede aendernde Anfrage, Origin-Pruefung, Ratenbegrenzung, Leerlaufsperre
+  * Anmeldung mit Passwort (oder Touch ID von diesem Mac aus, Face ID von einem hinzugefuegten iPhone), Sitzungscookie
+    HttpOnly/SameSite=Strict, CSRF-Token fuer jede aendernde Anfrage, Origin-Pruefung, Ratenbegrenzung, Leerlaufsperre
+  * von einem anderen Geraet: jede Aenderung nur von einem hinzugefuegten iPhone mit Face ID fuer genau diese Anfrage
+    (_remote_check); MAC_ONLY nie
   * CSP ohne Fremdquellen; Netzverbindungen nur zu GitHub (Update-Pruefung) und -- auf Klick -- zu OpenFIGI
     (Wertpapiernamen) sowie GitHub und Hugging Face (Programm und Modelle des Assistenten)
   * Schreibzugriffe auf MoneyMoney nur ueber die Bruecke (Liste erlaubter Methoden): Buchungen der Regeln in
     Offline-Konten, die Kategorie eines Umsatzes nach deinem Klick, auf Wunsch der Belegpfad im Kommentar
-  * Scharfe Laeufe, Updates, Dateizugriffe (Belegordner oeffnen) nur von diesem Mac aus
+  * Updates, Zugang, Dateizugriffe (Belegordner oeffnen) nur von diesem Mac aus; Buchen auch vom hinzugefuegten iPhone, nur wie gezeigt
 """
 from __future__ import annotations
 
@@ -17,6 +19,8 @@ import base64
 import bisect
 import binascii
 import copy
+import hashlib
+import hmac
 import ipaddress
 import json
 import re
@@ -51,6 +55,9 @@ import updates
 import changelog
 import assistant as assistant_mod
 import demo
+import devices as devices_mod
+import qr
+import webauthn
 from receipts import Belege, file_status, pattern_problem
 import receipt_text
 from mm_bridge import Bridge, MoneyMoneyError, MoneyMoneyLocked, MoneyMoneyNotRunning, is_running
@@ -564,6 +571,17 @@ class App:
             if self._demo_box is None:
                 self._demo_box = DemoBox(self)
             return self._demo_box
+
+    @property
+    def devices(self) -> Optional[devices_mod.Devices]:
+        """The iPhones added at the Mac (their passkeys, devices.py) -- none in the demo: it never changes them (a session of it
+        opened with an iPhone's passkey is confirmed against the real Kontor's, see the handler's _device_session)."""
+        if self.DEMO:
+            return None
+        with DEMO_LOCK:
+            if self.__dict__.get("_devices") is None:
+                self.__dict__["_devices"] = devices_mod.Devices(self.store)
+            return self.__dict__["_devices"]
 
     def __init__(self, store: Store, data_dir: str, bridge_factory=Bridge):
         self.store = store
@@ -1157,6 +1175,137 @@ class App:
         """Von unterwegs nur ansehen (Standard): Aenderungen nur am Mac."""
         return bool((self.config.get("ui") or {}).get("remote_read_only", True))
 
+    def passkey_site(self) -> Optional[Tuple[str, str]]:
+        """(rpId, origin) for passkeys: the Mac's name in the Tailscale network and Kontor's https address there -- only while
+        the access from other devices runs with its certificate (a passkey needs https and a name). None otherwise."""
+        ui = self.config.get("ui") or {}
+        if not (ui.get("tls_cert") and ui.get("tls_key")) or (ui.get("bind") or "127.0.0.1") == "127.0.0.1":
+            return None
+        host = os.path.basename(str(ui["tls_cert"]))[:-4].lower()
+        if not webauthn.RP_ID.fullmatch(host):
+            return None
+        return host, webauthn.origin_of(host, int(ui.get("port") or 8765))
+
+    def exposure(self) -> dict:
+        """The last look at Tailscale (tls_cert.exposure) -- never waits: {"serve": "pending" (not looked yet since the start),
+        "off" (no Tailscale running on this Mac), "none", "serve", "funnel" or "unknown" (never got an answer), "lock", "at",
+        "failed" (looks in a row without an answer)}."""
+        return self.__dict__.get("_exposure") or {"serve": "pending", "lock": None, "at": 0.0, "failed": 0}
+
+    def exposure_tick(self, fresh: bool = False) -> None:
+        """Looks at Tailscale anew in the background: at the start (serve), then when the last look is older than
+        EXPOSURE_SECONDS -- after a look without an answer sooner (EXPOSURE_RETRY, a few times). fresh: now."""
+        if self.DEMO:
+            return
+        with EXPOSURE_CV:
+            cur = self.exposure()
+            failed = int(cur.get("failed") or 0)
+            young = time.time() - self.__dict__.setdefault("_exposure_start", time.time()) < EXPOSURE_YOUNG     # (Tailscale may start after Kontor)
+            wait = EXPOSURE_RETRY if 0 < failed < EXPOSURE_TRIES or cur.get("serve") == "pending" or young else EXPOSURE_SECONDS
+            if self.__dict__.get("_exposure_running") or (not fresh and time.time() - cur.get("at", 0.0) < wait):
+                return
+            self.__dict__["_exposure_running"] = True
+        threading.Thread(target=self._exposure_run, name="kontor-exposure", daemon=True).start()
+
+    def _exposure_run(self) -> None:
+        import tls_cert
+        got = None
+        try:
+            got = tls_cert.exposure(int((self.config.get("ui") or {}).get("port") or 8765), self.own_names())
+        except Exception as e:  # pragma: no cover - a look without an answer
+            log.warning("Tailscale not checked (%s)", type(e).__name__)
+        finally:
+            self._exposure_set(got, running=False)
+
+    def own_names(self) -> List[str]:
+        """This Mac's names and addresses beyond 127.0.0.1 (for tls_cert.exposure): its address and name in the Tailscale
+        network (the address Kontor listens on, its certificate, Tailscale's last state) and its host name."""
+        ui = self.config.get("ui") or {}
+        ts = self._ts_cache[1] if isinstance(getattr(self, "_ts_cache", None), tuple) and isinstance(self._ts_cache[1], dict) else {}
+        node = os.uname().nodename.lower()
+        names = [str(ui.get("bind") or ""), os.path.basename(str(ui.get("tls_cert") or ""))[:-4], str(ts.get("name") or ""), str(ts.get("ip") or ""),
+                 node, node.split(".")[0] + ".local"]
+        return [n for n in names if n]
+
+    def _exposure_set(self, got: Optional[dict], running: Optional[bool] = None) -> dict:
+        """A look at Tailscale taken in: an answer replaces what was known; a look without one (Tailscale runs, but did not
+        answer) never does -- the last known state holds (passed on stays passed on); never known since the start: locked
+        until EXPOSURE_TRIES looks in a row went without an answer, then "unknown" (nobody is locked out for good). Found
+        passed on (it was not before): every session signed in at this Mac's own address ends -- it may have come from elsewhere."""
+        serve = (got or {}).get("serve")
+        with EXPOSURE_CV:
+            prev = self.exposure()
+            if serve in ("off", "none", "serve", "funnel"):
+                new = {"serve": serve, "lock": got.get("lock"), "at": time.time(), "failed": 0}
+            else:
+                failed = int(prev.get("failed") or 0) + 1
+                keep = prev.get("serve")
+                if keep == "pending" and failed >= EXPOSURE_TRIES:
+                    keep = "unknown"
+                lock = (got or {}).get("lock")
+                new = dict(prev, serve=keep, failed=failed, at=time.time(), lock=lock if lock is not None else prev.get("lock"))
+            self.__dict__["_exposure"] = new
+            if running is not None:
+                self.__dict__["_exposure_running"] = running
+            EXPOSURE_CV.notify_all()
+        was, now = prev.get("serve") in ("serve", "funnel"), new["serve"] in ("serve", "funnel")
+        if now and not was:
+            log.error("Tailscale passes Kontor's port on (%s) -- sign-in and what stays at the Mac are refused from this Mac until it is off", new["serve"])
+            self.end_mac_sessions()
+        elif new["serve"] == "unknown" and prev.get("serve") == "pending":
+            log.error("Tailscale gave no answer to %d looks -- whether it passes Kontor's port on is not known", new["failed"])
+        return new
+
+    def end_mac_sessions(self) -> int:
+        """Every session signed in at this Mac's own address (127.0.0.1) ends -- also the demo's -- and a Touch ID window still
+        open opens nothing: with "tailscale serve"/Funnel any of them may have come from elsewhere."""
+        n = self.sessions.drop_loopback()
+        d = self._demo_box.current()[0] if self._demo_box is not None else None        # (none started: none made for it)
+        if d is not None:
+            n += d.sessions.drop_loopback()
+        self.touchid_cancel()
+        if n:
+            log.warning("%d session(s) signed in at this Mac ended -- sign in again once Tailscale passes nothing on", n)
+        return n
+
+    def exposure_block(self, wait: float = 0.0) -> Optional[str]:
+        """Why sign-in and what stays at the Mac are refused from this Mac's address right now: "exposed" (serve/Funnel passes
+        Kontor's port on), "checking" (not looked yet since the start -- waits up to wait seconds for the first look), None."""
+        self.exposure_tick()
+        if wait > 0 and self.exposure().get("serve") == "pending":
+            until = time.time() + wait
+            with EXPOSURE_CV:
+                while self.exposure().get("serve") == "pending" and time.time() < until:
+                    EXPOSURE_CV.wait(max(0.01, until - time.time()))
+        serve = self.exposure().get("serve")
+        return "exposed" if serve in ("serve", "funnel") else "checking" if serve == "pending" else None
+
+    def exposed(self) -> bool:
+        """"tailscale serve" or Funnel passes Kontor's port on (the red note under Zugang)."""
+        self.exposure_tick()
+        return self.exposure().get("serve") in ("serve", "funnel")
+
+    def remote_acl(self, fresh: bool = False) -> dict:
+        """What Tailscale lets in on this Mac, Tailnet Lock and serve/Funnel -- one look at a time, kept 30 s (fresh: anew)."""
+        import tls_cert
+        with ACL_LOCK:
+            hit = self.__dict__.get("_acl")
+            if hit and not fresh and time.time() - hit[0] < 30:
+                return dict(hit[1], exposure=self.exposure())
+            port = int((self.config.get("ui") or {}).get("port") or 8765)
+            got = dict(tls_cert.access_check(port))
+            seen = self._exposure_set(tls_cert.exposure(port, self.own_names()))
+            self.__dict__["_acl"] = (time.time(), got)
+            return dict(got, exposure=seen)
+
+    def passkey_only(self) -> bool:
+        """Sign-in from other devices only with an added iPhone's passkey (while the data are open) -- devices.py."""
+        return bool(self.devices is not None and self.store.is_open and self.devices.passkey_only())
+
+    def remote_changes(self) -> bool:
+        """Changes from an added iPhone (each with Face ID) -- the setting "Änderungen vom iPhone" (ui.remote_read_only off)."""
+        return not self.remote_readonly()
+
     def offline_copy(self) -> bool:
         """Darf das iPhone die zuletzt geladenen Daten fuer die Offline-Ansicht behalten?"""
         return bool((self.config.get("ui") or {}).get("offline_copy", True))
@@ -1195,7 +1344,9 @@ class App:
         return {"active": bind != "127.0.0.1", "address": bind, "port": port, "tls": tls, "valid_until": exp,
                 "url": ("https://%s:%d/" % (host, port)) if tls else ("http://%s:%d/" % (bind, port)) if bind != "127.0.0.1" else None,
                 "listening": bool(self.remote_listening), "error": self.remote_error,
-                "read_only": self.remote_readonly(), "offline_copy": self.offline_copy(), "tailscale": ts}
+                "read_only": self.remote_readonly(), "offline_copy": self.offline_copy(), "tailscale": ts,
+                "passkeys": self.passkey_site() is not None, "passkey_only": self.passkey_only(),
+                "devices": len(self.devices.all()) if self.devices is not None else 0}
 
     def request_restart(self) -> None:
         """Dienst neu starten (neue Adresse/Zertifikat), kurz nachdem die Antwort raus ist. Nur im echten Dienst."""
@@ -1300,7 +1451,9 @@ class App:
             self.read_state["running"] = False
 
     def do_run(self, dry: Optional[bool], force: bool, with_report: bool = True, full: Optional[bool] = None,
-               approve: Optional[Dict[str, dict]] = None) -> dict:
+               approve: Optional[Dict[str, dict]] = None, write: bool = True) -> dict:
+        """A sync (dry: test run; None: as set). write=False (a test run asked for from another device): nothing goes into
+        MoneyMoney -- not even the waiting category assignments (they go with the next sync at the Mac)."""
         with self.lock:
             if self.running:
                 return {"status": "already_running", "text": tr("s_ein_abgleich_laeuft_bereits")}
@@ -1335,7 +1488,8 @@ class App:
                 self.request_rebuild("after approval" if approve is not None else "after sync")   # the figures follow
             self.last_result = res
             try:
-                self.flush_pending_categories()
+                if write or not d:
+                    self.flush_pending_categories()
             except Exception:  # pragma: no cover
                 log.exception("Pending categories")
             return res
@@ -1495,6 +1649,7 @@ class App:
 
     def scheduler(self) -> None:
         while not self.stop.is_set():
+            self.exposure_tick()                         # "tailscale serve"/Funnel: looked at again in the background (EXPOSURE_SECONDS)
             if not self.store.is_open:                   # nobody signed in since the start: nothing reads the data -- the schedule waits
                 try:
                     if self.restart_if_code_changed():
@@ -1971,7 +2126,8 @@ DEMO_POST = frozenset(("/api/lock", "/api/config", "/api/rules/preview", "/api/c
                        "/api/categories/undo", "/api/properties", "/api/properties/calculate",
                        "/api/assistant/ask", "/api/assistant/stop", "/api/assistant/reset", "/api/assistant/page", "/api/assistant/confirm",
                        "/api/assistant/listen", "/api/assistant/transcribe", "/api/assistant/attach", "/api/assistant/chats/delete", "/api/assistant/undo",
-                       "/api/assistant/memory/undo", "/api/assistant/memory/offer"))          # (notes of the demo's own memory, under its answers)
+                       "/api/assistant/memory/undo", "/api/assistant/memory/offer",          # (notes of the demo's own memory, under its answers)
+                       "/api/confirm"))         # Face ID for a change from the iPhone whose passkey opened it (the real Kontor's devices)
 # ... and what it never answers (named, so that a request is never in no list at all)
 DEMO_NEVER = frozenset(("/api/setup", "/api/login", "/api/touchid", "/api/touchid/switch", "/api/password", "/api/offline/verifier", "/api/log",
                         "/api/remote", "/api/remote/acl", "/api/timemachine", "/api/timemachine-exclusion", "/api/diagnostics", "/api/update/status",
@@ -1982,7 +2138,10 @@ DEMO_NEVER = frozenset(("/api/setup", "/api/login", "/api/touchid", "/api/touchi
                         "/api/assistant/settings", "/api/assistant/check", "/api/assistant/runtime/install", "/api/assistant/runtime/remove",
                         "/api/assistant/model/files", "/api/assistant/model/download", "/api/assistant/model/cancel", "/api/assistant/model/delete",
                         "/api/assistant/web", "/api/assistant/server", "/api/assistant/update-all",
-                        "/api/assistant/memory"))
+                        "/api/assistant/memory",
+                        # the iPhones added at the Mac and their passkeys: the demo knows none (a sign-in with one opens the demo in the real Kontor)
+                        "/api/passkey/options", "/api/passkey/login", "/api/pair/begin", "/api/pair/finish", "/api/devices",
+                        "/api/devices/pair", "/api/devices/set", "/api/devices/remove"))
 DEMO_FIXED = ("ui", "receipts", "updates", "assistant", "notifications")    # settings of the demo no page changes (how it looks and works)
 DEMO_SESSIONS = 20                     # at the same time at most
 DEMO_IDLE = 2 * 3600                   # seconds without any session (locked, closed): then it ends, its folder goes
@@ -2086,6 +2245,12 @@ class DemoApp(App):
     def tailscale(self, fresh: bool = False) -> dict:
         return {"found": False}
 
+    def exposed(self) -> bool:
+        return self.box.real.exposed()
+
+    def exposure_block(self, wait: float = 0.0) -> Optional[str]:
+        return self.box.real.exposure_block(wait)
+
     def start_remote(self) -> None:
         return None
 
@@ -2145,8 +2310,9 @@ class DemoBox:
     def current(self) -> Tuple[Optional["DemoApp"], Any]:
         return self.app, self.handler
 
-    def open_session(self, remote: str, handler_for: Callable[["DemoApp"], Any], via: str = "password") -> dict:
-        """A session in the demo (started if there is none) -- only after a sign-in: the session. handler_for: make_handler."""
+    def open_session(self, remote: str, handler_for: Callable[["DemoApp"], Any], via: str = "password", opened_by: Optional[str] = None) -> dict:
+        """A session in the demo (started if there is none) -- only after a sign-in: the session. handler_for: make_handler;
+        opened_by: the iPhone whose passkey opened it (its removal ends the session)."""
         with self.lock:
             if self.app is None:
                 remove_stale_demos(0 if self.real.restart_allowed else 600)
@@ -2166,7 +2332,7 @@ class DemoBox:
                 raise ValueError(tr("s_demo_zu_viele"))
             self.idle_since = None
             self.app.follow_real()
-            return self.app.sessions.create(remote, via)
+            return self.app.sessions.create(remote, via, opened_by=opened_by)
 
     def end(self, only: Optional["DemoApp"] = None, idle: bool = False) -> None:
         """Ends the demo (idle: only once it has had no session for DEMO_IDLE)."""
@@ -2967,7 +3133,14 @@ def make_handler(app: App):
             # a request the page sends without you having touched it for a minute (status poll, progress) is no activity
             if not app.store.is_open:                    # no data key in memory: nobody is signed in
                 return None
-            return app.sessions.get(self._cookie(), touch=self.headers.get("X-Kontor-Background") != "1")
+            s = app.sessions.get(self._cookie(), touch=self.headers.get("X-Kontor-Background") != "1")
+            for did in (s.get("device"), s.get("opened_by")) if s is not None else ():
+                # its iPhone was removed at the Mac: the session is over (also one of the demo) -- the list not readable right
+                # now (a passing error): it stays, but nothing changes from it meanwhile (_device_session finds no device)
+                if did and (home_app.devices is None or home_app.devices.present(did) is False):
+                    app.sessions.drop_device(did)
+                    return None
+            return s
 
         def _sec_headers(self) -> None:
             self.send_header("X-Content-Type-Options", "nosniff")
@@ -3004,19 +3177,24 @@ def make_handler(app: App):
             if n > limit:
                 raise ValueError(tr("s_anfrage_zu_gross_d_mb") % (n // 1048576, max(1, limit // 1048576)))
             raw = self.rfile.read(n) if n else b""
+            self._raw_body = raw                         # as sent: what a confirmation with Face ID is bound to (_confirmed)
             obj = json.loads(raw.decode("utf-8") or "{}")
             if not isinstance(obj, dict):
                 raise ValueError(tr("s_json_erwartet"))
             return obj
 
-        def _signed_in(self, remote: str, via: str, body: dict) -> None:
-            """After a sign-in (password or Touch ID, checked as always): a session of the real Kontor -- or, asked for ("demo"),
-            one of its demo (DemoApp): the same sign-in, but made-up data in place of yours."""
+        def _signed_in(self, remote: str, via: str, body: dict, device: Optional[str] = None) -> None:
+            """After a sign-in (password, Touch ID or an iPhone's passkey, checked as always): a session of the real Kontor --
+            or, asked for ("demo"), one of its demo (DemoApp): the same sign-in, but made-up data in place of yours. device: the
+            iPhone of a passkey -- the session is bound to it (in the demo: ends with it). At this Mac's own address the lock
+            for "tailscale serve"/Funnel is looked at again right before (a Touch ID window may have been open for minutes)."""
+            if self._loopback() and app.exposure_block():
+                return self._refuse_exposed(app.exposure_block() or "exposed", "sign-in", read=False)
             if body.get("demo") is not True:
-                s = app.sessions.create(remote, via)
+                s = app.sessions.create(remote, via, device=device)
                 return self._json(200, {"ok": True, "csrf": s["csrf"]}, self._set_cookie(s["token"]))
             try:
-                s = app.demo_box.open_session(remote, make_handler, via)
+                s = app.demo_box.open_session(remote, make_handler, via, opened_by=device)
             except ValueError as e:
                 return self._json(429, {"error": str(e)})
             except Exception as e:
@@ -3025,7 +3203,31 @@ def make_handler(app: App):
             log.info("Demo opened from %s", remote)
             return self._json(200, {"ok": True, "csrf": s["csrf"], "demo": True}, self._set_cookie(s["token"]))
 
-        def _refuse_unread(self, code: int, text: str) -> None:
+        def _proxied(self) -> bool:
+            """Passed on by a proxy ("tailscale serve", Funnel, any other: they add such headers) -- such a request would arrive
+            from this Mac itself and is never answered: Kontor never sits behind a proxy. Also a request whose header lines do not
+            read cleanly (a line Python stops at, e.g. a space before the colon: what follows it would go unseen)."""
+            h = self.headers
+            if getattr(h, "defects", None) or (h.get_payload() or "").strip():
+                return True
+            return any(PROXIED.fullmatch(k.strip()) for k in h.keys())
+
+        def _refuse_proxied(self) -> None:
+            log.warning("Request passed on by a proxy refused (%s %s)", self.command, urlparse(self.path).path[:60])
+            return self._refuse_unread(403, tr("s_weitergereicht"), {"proxied": True})
+
+        def _refuse_exposed(self, why: str, what: str, read: bool = True) -> None:
+            """Refused from this Mac's own address: "tailscale serve"/Funnel passes Kontor's port on (why "exposed") or Tailscale
+            was not looked at yet since the start ("checking": a moment)."""
+            if why == "checking":
+                log.info("%s from this Mac waits: Tailscale not looked at yet since the start", what)
+                text, code, extra = tr("s_ts_pruefe"), 503, {"checking": True}
+            else:
+                log.warning("%s refused from this Mac: Tailscale passes Kontor's port on", what)
+                text, code, extra = tr("s_ts_weitergereicht"), 403, {"exposed": True}
+            return self._refuse_unread(code, text, extra) if read else self._json(code, dict({"error": text}, **extra))
+
+        def _refuse_unread(self, code: int, text: str, extra: Optional[dict] = None) -> None:
             """An answer without reading the request (a small body is read, so that the answer arrives; a larger one ends the connection)."""
             try:
                 n = int(self.headers.get("Content-Length") or 0)
@@ -3035,7 +3237,7 @@ def make_handler(app: App):
                 self.rfile.read(n)
             elif n:
                 self.close_connection = True
-            return self._json(code, {"error": text})
+            return self._json(code, dict({"error": text}, **(extra or {})))
 
         def _wrong_password(self, pw, key: str = "s_passwort_falsch") -> bool:
             """Kontor's password, asked again for something weighty: False when it is right. Otherwise the answer is sent
@@ -3101,6 +3303,8 @@ def make_handler(app: App):
             if self._handed_over():
                 return
             u = urlparse(self.path)
+            if self._proxied():
+                return self._refuse_proxied()
             if not self._host_ok():
                 return self._raw(421, b"falsche Adresse", "text/plain; charset=utf-8")
             if not u.path.startswith("/api/"):
@@ -3110,7 +3314,7 @@ def make_handler(app: App):
                 s = self._session()
                 if u.path == "/api/session":
                     return self._json(200, {"signed_in": s is not None, "csrf": s["csrf"] if s else None, "demo": True, "setup_needed": False,
-                                            "setup_local_only": False, "touchid": False, "touchid_available": False, "locked_seconds": 0,
+                                            "setup_local_only": False, "touchid": False, "touchid_available": False, "locked_seconds": 0, "passkey": False, "passkey_only": False,
                                             "local": self._loopback(), "instance": app.instance, "offline_copy": False, "version": version()})
                 if not demo_allowed("GET", u.path):
                     return self._json(403, {"error": tr("s_demo_nicht_moeglich")})
@@ -3118,6 +3322,10 @@ def make_handler(app: App):
                 s = self._session()
                 setup = not app.password_set()           # nothing of the data is read here: the key file, the start settings
                 locked = not app.store.is_open
+                # an added iPhone signs in with Face ID (its passkey) while the data are open -- over https at Kontor's address
+                pk = not setup and not locked and not self._loopback() and tls_connection(self.connection) and app.passkey_site() is not None \
+                    and bool(app.devices is not None and app.devices.all())
+                lock = app.exposure_block(EXPOSURE_WAIT) if self._loopback() else None       # (right after the start: a moment for the first look)
                 return self._json(200, {"signed_in": s is not None, "csrf": s["csrf"] if s else None,
                                         "setup_needed": setup and self._loopback(),
                                         "setup_local_only": setup and not self._loopback(),
@@ -3127,6 +3335,8 @@ def make_handler(app: App):
                                         "waiting": locked and not setup,           # the schedule and auto bookings wait for a sign-in
                                         "touchid_available": auth.touchid_available() and self._loopback(),
                                         "locked_seconds": app.sessions.locked(self._remote()), "local": self._loopback(), "instance": app.instance,
+                                        "passkey": pk, "passkey_only": pk and app.passkey_only(),
+                                        "exposed": lock == "exposed", "checking": lock == "checking",
                                         "offline_copy": app.offline_copy(), "version": version()})
             s = self._session()
             if s is None:
@@ -3146,7 +3356,17 @@ def make_handler(app: App):
             if path == "/api/status":
                 st = app.status(self._loopback(), frisch=q.get("fresh") == "1")
                 st["storage"]["damaged"] = app.set_aside()       # files that did not read at a sign-in and were set aside (App.unlock)
-                st["read_only"] = not self._loopback() and app.remote_readonly()      # from another device, only looking: nothing it sends is taken
+                if self._is_local(s):
+                    st["read_only"], st["confirm"] = False, False
+                else:                                    # from another device: changes only from an added iPhone, each with Face ID (also in the demo)
+                    dsess = self._device_session(s)
+                    dev = dsess is not None and dsess.get("changes") is True
+                    st["read_only"] = not home_app.remote_changes() or not dev
+                    st["read_only_why"] = "setting" if not home_app.remote_changes() else "" if dev else "device" if dsess is not None \
+                        else "password" if home_app.passkey_site() else "http"
+                    st["confirm"] = not st["read_only"]
+                st["trusted"] = self._may_change(s)              # the page offers what is Mac-like (booking, taking back ...): at the Mac or an added iPhone
+                st["exposed"] = app.exposed()                     # "tailscale serve"/Funnel passes Kontor on (Einstellungen -> Zugang says how to stop it)
                 return self._json(200, st)
             if path == "/api/dataset":
                 return self._json(200, app.dataset())
@@ -3192,7 +3412,7 @@ def make_handler(app: App):
                 st = app.store.load("state.json", {}) or {}
                 return self._json(200, {"last_run": st.get("last_run"), "history_source": list(reversed(st.get("history_source", []))),
                                         "created_at": kontor_bookings(app.ledger)[:500], "not_book": list(reversed(app.config.get("not_book") or [])),
-                                        "local": self._is_local(s)})
+                                        "local": self._may_change(s)})
             if path == "/api/log":
                 n = max(1, min(2000, int(q.get("n", "300"))))
                 try:
@@ -3258,9 +3478,9 @@ def make_handler(app: App):
             if path == "/api/assistant/changes":                  # the log of what the assistant changed (after the user's click)
                 if not self._assistant_ok(s):
                     return self._json(403, {"error": tr("s_nur_von_diesem_mac_aus")})
-                return self._json(200, {"changes": app.assistant.changes(self._is_local(s))})
-            if path == "/api/assistant/memory":                   # what the assistant was told to remember: the list, only at the Mac
-                if not self._is_local(s):
+                return self._json(200, {"changes": app.assistant.changes(self._trusted(s))})
+            if path == "/api/assistant/memory":                   # what the assistant was told to remember: the list, at the Mac or on an added iPhone (with its right "remote")
+                if not self._trusted(s) or not self._assistant_ok(s):
                     return self._json(403, {"error": tr("s_nur_von_diesem_mac_aus")})
                 return self._json(200, app.assistant.memory_list(q))
             if path == "/api/assistant/poll":
@@ -3276,9 +3496,19 @@ def make_handler(app: App):
                 except OSError:
                     return self._json(200, {"text": "", "images": {}})
                 return self._json(200, {"text": text, "images": help_image_sizes(text)})
-            if path == "/api/remote/acl":
-                import tls_cert
-                return self._json(200, tls_cert.access_check(int((app.config.get("ui") or {}).get("port") or 8765)))
+            if path == "/api/remote/acl":                         # what Tailscale lets in, Tailnet Lock, Funnel/serve -- read only, one look at a time
+                if not self._trusted(s):
+                    return self._json(403, {"error": tr("s_nur_von_diesem_mac_aus")})
+                return self._json(200, app.remote_acl(fresh=q.get("fresh") == "1"))
+            if path == "/api/devices":                            # the iPhones added (their passkeys), the link to add one -- only at the Mac
+                if not self._at_mac(s) or app.devices is None:
+                    return self._json(403, {"error": tr("s_nur_von_diesem_mac_aus")})
+                site = app.passkey_site()
+                return self._json(200, {"devices": [{"id": d["id"], "name": d["name"], "added": d.get("added"), "used": d.get("used"),
+                                                     "changes": d.get("changes") is True, "current": bool(site) and d.get("rp") == site[0]}
+                                                    for d in app.devices.all()],
+                                        "pairing": self._pairing(), "passkeys": site is not None, "passkey_only": app.devices.passkey_only(),
+                                        "read_only": app.remote_readonly(), "damaged": app.devices.damaged()})
             if path == "/api/remote":
                 if q.get("fresh"):
                     app.tailscale(fresh=True)
@@ -3297,7 +3527,7 @@ def make_handler(app: App):
             if path == "/api/history":
                 return self._json(200, self._historie(q.get("account") or "", q.get("source") if q.get("source") in ("transactions", "balances") else None))
             if path == "/api/securities/lookup":
-                return self._json(200, dict(app.securities_unnamed(), local=self._is_local(s)))
+                return self._json(200, dict(app.securities_unnamed(), local=self._may_change(s)))
             if path == "/api/history/mm-status":
                 return self._json(200, dict(app.mmh, local=self._is_local(s)))
             if path == "/api/categories/positions":
@@ -3305,7 +3535,7 @@ def make_handler(app: App):
                     return self._json(200, {"categories": [], "positions": [], "hint": tr("s_noch_kein_lauf_moneymoney_lesen")})
                 return self._json(200, positions_overview(app.ledger, app.config, app.categories_raw, date.today()))
             if path == "/api/categories/written":
-                return self._json(200, dict(app.categories_written(), local=self._is_local(s)))
+                return self._json(200, dict(app.categories_written(), local=self._may_change(s)))
             if path == "/api/categories/unassigned":
                 if app.ledger is None:
                     return self._json(200, {"open": 0, "groups": [], "groups_total": 0, "hint": tr("s_noch_kein_lauf_moneymoney_lesen")})
@@ -3324,7 +3554,7 @@ def make_handler(app: App):
                 res["waiting"] = sum(1 for z in kat["assignment"].values() if categorize.waiting(z))      # written at the next sync
                 res["written"] = len((app.store.load_shared("state.json", {}) or {}).get(mm_categories.LOG_KEY) or {})      # entered by Kontor (to take back)
                 res["rule_proposals"] = len(app.rule_proposals(kat))
-                res["local"] = self._is_local(s)
+                res["local"] = self._may_change(s)
                 return self._json(200, res)
             if path == "/api/categories/proposals":
                 if app.ledger is None:
@@ -3392,9 +3622,19 @@ def make_handler(app: App):
             if self._handed_over():
                 return
             u = urlparse(self.path)
+            self._raw_body = b""
+            if self._proxied():
+                return self._refuse_proxied()
             if not u.path.startswith("/api/") or not self._origin_ok() or not self._host_ok():
                 return self._json(403, {"error": "rejected"})
-            before = u.path in ("/api/setup", "/api/login", "/api/touchid", "/api/touchid/switch")      # the ways in: a password, nothing large
+            if self._loopback() and (u.path in SIGN_IN or u.path in MAC_ONLY):
+                # "tailscale serve"/Funnel passes Kontor's port on: from this Mac's address may come anyone -- no sign-in (nor
+                # Touch ID), nothing that stays at the Mac, until it is switched off; not looked yet since the start: the same,
+                # a sign-in waits a moment for the first look (App.exposure_block)
+                why = app.exposure_block(EXPOSURE_WAIT if u.path in SIGN_IN else 0.0)
+                if why:
+                    return self._refuse_exposed(why, u.path)
+            before = u.path in SIGN_IN                   # the ways in: a password, a passkey, nothing large
             if app.DEMO and not demo_allowed("POST", u.path):     # (the ways in too: the demo knows no password)
                 return self._refuse_unread(403, tr("s_demo_nicht_moeglich"))
             if not before and self._session() is None:          # not signed in: nothing is read (a small body only, so the answer arrives)
@@ -3438,10 +3678,12 @@ def make_handler(app: App):
                     if body.get("language") in i18n.LANGS:
                         cfg.setdefault("ui", {})["language"] = body["language"]
                     app.save_config(cfg)
+                if app.exposure_block():                 # (looked at again right before the session at this Mac's address)
+                    return self._refuse_exposed(app.exposure_block() or "exposed", "setup", read=False)
                 s = app.sessions.create(remote, "password")
                 log.info("Password set, setup started")
                 return self._json(200, {"ok": True, "csrf": s["csrf"]}, self._set_cookie(s["token"]))
-            if body.get("demo") is True and u.path in ("/api/login", "/api/touchid") and app.sessions.get(self._cookie(), touch=False) is not None:
+            if body.get("demo") is True and u.path in ("/api/login", "/api/touchid", "/api/passkey/login") and app.sessions.get(self._cookie(), touch=False) is not None:
                 return self._json(409, {"error": tr("s_demo_angemeldet"), "signed_in": True})      # the demo not over a session of yours here (another window signed in meanwhile)
             if u.path == "/api/login":
                 wait = app.sessions.locked(remote)
@@ -3449,6 +3691,11 @@ def make_handler(app: App):
                     return self._json(429, {"error": tr("s_zu_viele_fehlversuche") % wait})
                 if not app.password_set():
                     return self._json(403, {"error": tr("s_noch_kein_passwort_festgelegt_einricht")})
+                # from another device "only with Face ID of added devices": the password no longer signs in there while the data
+                # are open -- after a restart it opens them once, and Face ID follows (never a session from the password alone)
+                passkey_only = lambda: not self._loopback() and app.passkey_only() and app.passkey_site() is not None
+                if app.store.is_open and passkey_only():
+                    return self._json(403, {"error": tr("s_pk_nur_faceid"), "passkey_only": True})
                 try:
                     ok = app.sessions.check_password(remote, str(body.get("password", "")), app.sign_in)
                 except StoreError as e:                  # the key file does not read, or its key does not open the data
@@ -3466,6 +3713,9 @@ def make_handler(app: App):
                         pw = str(body.get("password", ""))
                         app.store.save("auth.json", auth.with_offline(rec if rec.get("alg") else auth.hash_password(pw), pw))
                         log.info("Offline verifier for the iPhone view created")
+                    if passkey_only():
+                        log.info("Password from %s opened the data -- the sign-in goes on with Face ID", remote)
+                        return self._json(200, {"ok": False, "passkey_needed": True})
                     log.info("Login with password from %s", remote)
                     return self._signed_in(remote, "password", body)
                 log.warning("Failed login from %s", remote)
@@ -3491,6 +3741,8 @@ def make_handler(app: App):
                     return self._json(500, {"error": tr("s_interner_fehler_s") % e})
                 finally:
                     demo, switched, over = app.touchid_end(req)
+                if app.exposure_block():                  # found passed on meanwhile (its window ended with it): says so
+                    return self._refuse_exposed(app.exposure_block() or "exposed", "Touch ID", read=False)
                 if over:                                  # replaced (a newer request, a sign-in with the password): opens nothing
                     return self._json(409, {"error": tr("s_touch_id_nicht_bestaetigt"), "superseded": True})
                 if switched:                              # switched meanwhile -- before or after its window was confirmed: nothing signs in,
@@ -3510,15 +3762,16 @@ def make_handler(app: App):
                     return self._json(409, {"error": tr("s_touchid_keine_abfrage")})
                 log.info("Touch ID: the sign-in switched to %s", "the demo" if body["demo"] else "the real Kontor")
                 return self._json(200, {"ok": True})
+            if u.path in SIGN_IN:                        # the passkey of an added iPhone, adding one
+                return self._passkey(u.path, body, remote)
 
             s = self._session()
             if s is None:
                 return self._json(401, {"error": tr("s_nicht_angemeldet")})
             if self.headers.get("X-CSRF-Token") != s["csrf"]:
                 return self._json(403, {"error": tr("s_csrf_pruefung_fehlgeschlagen_seite_neu"), "csrf": "invalid"})
-            if not self._is_local(s) and app.remote_readonly() and u.path != "/api/lock" and not (
-                    u.path in ASSISTANT_ASK and self._assistant_ok(s)):          # asking changes none of the figures (the conversation is saved as at the Mac)
-                return self._json(403, {"error": tr("s_von_unterwegs_nur_ansehen")})
+            if not self._is_local(s) and self._remote_check(u.path, body, s):     # from another device: at the Mac only, or a change without Face ID
+                return None
             if u.path == "/api/history/mm-import":
                 return self._historie_einlesen(s)
             t0 = time.time()
@@ -3559,19 +3812,285 @@ def make_handler(app: App):
                                        available=res.get("version"), newer=True, review=res.get("review"))
             return self._json(200, res)
 
+        # -- from another device: an added iPhone, Face ID for each change ------------------------------------------------
+        def _device_session(self, s: Optional[dict]) -> Optional[dict]:
+            """The iPhone this session was signed in from with its passkey (in the demo: the one whose passkey opened it) --
+            while it is added, over https at Kontor's address in the Tailscale network. None otherwise (also for a session
+            signed in with the password, and while the list does not read)."""
+            did = (s.get("opened_by") if app.DEMO else s.get("device")) if s else None
+            if not did or home_app.devices is None or not tls_connection(self.connection) or home_app.passkey_site() is None:
+                return None
+            return home_app.devices.get(did)
+
+        def _device_may_change(self, s: Optional[dict]) -> bool:
+            """An added iPhone that may change things: "Änderungen vom iPhone" on (all devices) and its own flag (each device,
+            set at the Mac) -- every change then still with Face ID (_confirmed)."""
+            dev = self._device_session(s)
+            return dev is not None and home_app.remote_changes() and dev.get("changes") is True
+
+        def _may_change(self, s: dict) -> bool:
+            """For the page: at the Mac, or an added iPhone that may change things (each with Face ID)."""
+            return self._is_local(s) or self._device_may_change(s)
+
+        def _at_mac(self, s: dict) -> bool:
+            """At this Mac itself -- what stays at the Mac (MAC_ONLY, parts of requests); not while "tailscale serve"/Funnel
+            passes Kontor's port on (a request from this Mac's address may then come from anywhere), nor before it was looked at."""
+            return self._is_local(s) and not app.exposure_block()
+
+        def _trusted(self, s: dict) -> bool:
+            """At the Mac, or from an added iPhone (whose changes each came with Face ID, _remote_check): rights as at the Mac
+            but for MAC_ONLY and what acts on this Mac itself."""
+            return self._is_local(s) or self._device_session(s) is not None
+
+        def _remote_check(self, path: str, body: dict, s: dict) -> bool:
+            """A request from another device, before anything is done: what stays at the Mac is refused; a change only with
+            "Änderungen vom iPhone" on, from an added iPhone that may change things, confirmed with Face ID for exactly this
+            request (_confirmed). The demo the same (its assistant uses the real model and internet): a session of it opened
+            with an iPhone's passkey follows that iPhone, one opened with the password only looks. True when refused (answered)."""
+            if path in MAC_ONLY:
+                if path == "/api/history/mm-import":        # (an upload not read yet: refused without it, the iPhone gets the answer)
+                    self._refuse_unread(403, tr("s_nur_von_diesem_mac_aus"), {"mac_only": True})
+                else:
+                    self._json(403, {"error": tr("s_nur_von_diesem_mac_aus"), "mac_only": True})
+                return True
+            if not remote_change(path, body):
+                return False
+            if not home_app.remote_changes():
+                self._json(403, {"error": tr("s_von_unterwegs_nur_ansehen"), "read_only": True})
+                return True
+            dev = self._device_session(s)
+            if dev is None:
+                self._json(403, {"error": tr("s_pk_aendern_anmelden"), "read_only": True})
+                return True
+            if dev.get("changes") is not True:
+                self._json(403, {"error": tr("s_pk_geraet_nur_ansehen"), "read_only": True})
+                return True
+            if not self._confirmed(path, s):
+                self._json(403, {"error": tr("s_pk_nicht_bestaetigt"), "confirm": "needed"})
+                return True
+            return False
+
+        def _confirmed(self, path: str, s: dict) -> bool:
+            """A change from an iPhone confirmed with Face ID: X-Kontor-Confirm holds the passkey's signature (credential id,
+            clientDataJSON, authenticatorData, signature -- base64url, joined by dots) over a challenge Kontor made for exactly
+            this request: this session, its device, method, path and the SHA-256 of the body as sent; once, within two minutes."""
+            dev, site, devs = self._device_session(s), home_app.passkey_site(), home_app.devices
+            hdr = self.headers.get("X-Kontor-Confirm") or ""
+            if dev is None or site is None or not 16 < len(hdr) <= CONFIRM_HEADER_MAX or hdr.count(".") != 3:
+                return False
+            try:
+                cred, cdj, ad, sig = [webauthn.b64u_decode(x, CONFIRM_HEADER_MAX) for x in hdr.split(".")]
+                if not hmac.compare_digest(webauthn.b64u(cred), str(dev.get("cred") or "")):
+                    raise webauthn.Invalid("another passkey")
+                chal = webauthn.challenge_of(cdj)
+                bind = devs.challenge_take(chal, "confirm", str(s.get("sid") or ""))
+                want = {"sid": s.get("sid"), "demo": app.DEMO, "device": dev["id"], "method": self.command, "path": path,
+                        "body": hashlib.sha256(self._raw_body).hexdigest()}
+                if bind != want:
+                    raise webauthn.Invalid("challenge not for this request")
+                info = webauthn.verify_assertion(cdj, ad, sig, chal, site[1], site[0], int(dev["x"], 16), int(dev["y"], 16), int(dev.get("count") or 0),
+                                                 backup_eligible=dev.get("be") if isinstance(dev.get("be"), bool) else None)
+            except (webauthn.Invalid, ValueError, TypeError, KeyError) as e:
+                log.warning("Change from device %s refused: its confirmation does not check out (%s)", dev["id"], e)
+                return False
+            devs.used(dev["id"], info["count"])
+            return True
+
+        def _confirm_challenge(self, body: dict, s: dict):
+            """The challenge for one change from an added iPhone, bound to it (_confirmed) -- the page then asks for Face ID."""
+            dev, site = self._device_session(s), home_app.passkey_site()
+            if self._is_local(s) or dev is None or site is None:
+                return self._json(403, {"error": tr("s_pk_aendern_anmelden"), "read_only": True})
+            if not home_app.remote_changes():
+                return self._json(403, {"error": tr("s_von_unterwegs_nur_ansehen"), "read_only": True})
+            if dev.get("changes") is not True:
+                return self._json(403, {"error": tr("s_pk_geraet_nur_ansehen"), "read_only": True})
+            method, path, digest = body.get("method"), body.get("path"), body.get("body")
+            if method not in ("POST", "PUT") or not isinstance(path, str) or not re.fullmatch(r"/api/[a-z0-9/_-]{1,80}", path) or path in MAC_ONLY \
+                    or path in CONFIRM_FREE or path in SIGN_IN or not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest):
+                raise ValueError(tr("s_ungueltige_anfrage_s") % "confirm")
+            raw = home_app.devices.challenge_new("confirm", str(s.get("sid") or ""), {"sid": s.get("sid"), "demo": app.DEMO, "device": dev["id"], "method": method,
+                                                                                      "path": path, "body": digest})
+            return self._json(200, {"challenge": webauthn.b64u(raw), "credential": dev["cred"], "rp_id": site[0], "timeout": 120000})
+
+        def _passkey(self, path: str, body: dict, remote: str):
+            """Signing in with the passkey of an added iPhone (Face ID), and adding an iPhone with the link the Mac shows (its
+            password once, then a new passkey): only from another device, only over https at Kontor's address in the Tailscale
+            network, only while the data are open. Every failure counts like a wrong password."""
+            site = app.passkey_site()
+            if self._loopback():
+                return self._json(403, {"error": tr("s_pk_nur_iphone")})
+            if site is None or app.devices is None or not tls_connection(self.connection):
+                return self._json(403, {"error": tr("s_pk_https_noetig")})
+            wait = app.sessions.locked(remote)
+            if wait:
+                return self._json(429, {"error": tr("s_zu_viele_fehlversuche") % wait})
+            if not app.store.is_open:                    # after a restart: the password opens the data once
+                return self._json(409, {"error": tr("s_pk_erst_passwort"), "need_password": True})
+            if not app.devices.readable():               # a passing error: nothing let in, nothing counted
+                return self._json(503, {"error": tr("s_pk_liste_nicht_lesbar")})
+            rp_id, origin = site
+            if path == "/api/passkey/options":
+                if not app.devices.allow(remote):          # its own budget per address: nobody fills the store
+                    log.warning("Sign-in challenges asked for too often from %s", remote)
+                    return self._json(429, {"error": tr("s_pk_zu_oft")})
+                if not app.devices.all():
+                    return self._json(409, {"error": tr("s_pk_keine_geraete")})
+                raw = app.devices.challenge_new("login", remote, {"remote": remote})
+                return self._json(200, {"challenge": webauthn.b64u(raw), "rp_id": rp_id, "timeout": 120000})
+            if path == "/api/passkey/login":
+                try:
+                    cred = webauthn.b64u_decode(body.get("id"), 1400)
+                    cdj = webauthn.b64u_decode(body.get("client_data"), 2800)
+                    chal = webauthn.challenge_of(cdj)
+                    bind = app.devices.challenge_take(chal, "login", remote)
+                    dev = app.devices.by_credential(cred)
+                    if bind is None or bind.get("remote") != remote or dev is None or dev.get("rp") != rp_id:
+                        raise webauthn.Invalid("unknown passkey or challenge")
+                    uh = body.get("user_handle")
+                    if uh and not hmac.compare_digest(str(uh).encode("utf-8"), str(dev.get("user") or "").encode("ascii")):
+                        raise webauthn.Invalid("user handle")
+                    info = webauthn.verify_assertion(cdj, webauthn.b64u_decode(body.get("auth_data"), 5500), webauthn.b64u_decode(body.get("signature"), 120),
+                                                     chal, origin, rp_id, int(dev["x"], 16), int(dev["y"], 16), int(dev.get("count") or 0),
+                                                     backup_eligible=dev.get("be") if isinstance(dev.get("be"), bool) else None)
+                except (webauthn.Invalid, ValueError, TypeError, KeyError) as e:
+                    app.sessions.fail(remote)
+                    log.warning("Failed sign-in with a passkey from %s (%s)", remote, e)
+                    time.sleep(0.5)
+                    return self._json(401, {"error": tr("s_pk_nicht_angemeldet")})
+                app.sessions.clear_fails(remote)
+                app.devices.used(dev["id"], info["count"])
+                log.info("Login with Face ID from %s (device %s)", remote, dev["id"])
+                return self._signed_in(remote, "passkey", body, dev["id"])      # (the demo: a session of its own that ends with the device)
+            if path == "/api/pair/begin":
+                if self._link(body.get("token")) is None:
+                    app.sessions.fail(remote)
+                    log.warning("Adding a device from %s: link not valid", remote)
+                    return self._json(403, {"error": tr("s_pk_link_ungueltig")})
+                if self._wrong_password(body.get("password")):
+                    return None
+                if len(app.devices.all()) >= devices_mod.MAX_DEVICES:
+                    return self._json(409, {"error": tr("s_pk_zu_viele")})
+                name, user = devices_mod.clean_name(body.get("name")), secrets.token_bytes(16)
+                raw = app.devices.challenge_new("pair", remote, {"token": body["token"], "remote": remote, "name": name, "user": webauthn.b64u(user)})
+                return self._json(200, {"challenge": webauthn.b64u(raw), "rp": {"id": rp_id, "name": "Kontor"},
+                                        "user": {"id": webauthn.b64u(user), "name": name, "displayName": name},
+                                        "exclude": [d["cred"] for d in app.devices.all()], "timeout": 120000})
+            if path == "/api/pair/finish":
+                return self._pair_finish(body, remote, rp_id, origin)
+            return self._json(404, {"error": "unknown"})
+
+        def _pair_finish(self, body: dict, remote: str, rp_id: str, origin: str):
+            """The new passkey of an iPhone being added: checked against the challenge of this very link and address (made after
+            the password, /api/pair/begin); the link is used up, the device added, its session begins."""
+            try:
+                cdj = webauthn.b64u_decode(body.get("client_data"), 2800)
+                chal = webauthn.challenge_of(cdj)
+                bind = app.devices.challenge_take(chal, "pair", remote)
+                token = body.get("token")
+                if bind is None or bind.get("remote") != remote or not isinstance(token, str) or not hmac.compare_digest(str(bind["token"]).encode("utf-8"), token.encode("utf-8")) \
+                        or self._link(token) is None:
+                    raise webauthn.Invalid("challenge or link")
+                reg = webauthn.verify_registration(cdj, webauthn.b64u_decode(body.get("attestation"), 5500), chal, origin, rp_id)
+                if not hmac.compare_digest(reg["cred_id"], webauthn.b64u_decode(body.get("id"), 1400)):
+                    raise webauthn.Invalid("credential id")
+                if app.devices.by_credential(reg["cred_id"]) is not None:
+                    raise webauthn.Invalid("added already")
+            except (webauthn.Invalid, ValueError, TypeError, KeyError) as e:
+                app.sessions.fail(remote)
+                log.warning("Adding a device from %s refused (%s)", remote, e)
+                return self._json(400, {"error": tr("s_pk_nicht_hinzugefuegt")})
+            link = app.devices.pairing_take(token)
+            if link is None:
+                return self._json(403, {"error": tr("s_pk_link_ungueltig")})
+            first = link.get("first") is True and not app.devices.all()
+            try:                                             # may it change things: as ticked on the card at the Mac (for this device only)
+                dev = app.devices.add(bind["name"], reg["cred_id"], reg["x"], reg["y"], webauthn.b64u_decode(bind["user"]), rp_id, reg["count"],
+                                      changes=link["changes"], be=bool(reg["flags"] & webauthn.BE))
+            except devices_mod.NotWritable as e:
+                return self._json(409, {"error": str(e)})
+            except ValueError:
+                return self._json(409, {"error": tr("s_pk_zu_viele")})
+            if first and link["changes"] is True and app.remote_readonly():
+                cfg = copy.deepcopy(app.config)              # the very first iPhone, added with the tick set at the Mac: changes from the iPhone on
+                cfg.setdefault("ui", {})["remote_read_only"] = False
+                app.save_config(cfg)
+                log.info("First device added with changes allowed: changes from the iPhone on (as ticked at the Mac)")
+            app.sessions.clear_fails(remote)
+            log.info("Device %s added from %s", dev["id"], remote)
+            s = app.sessions.create(remote, "passkey", device=dev["id"])
+            return self._json(200, {"ok": True, "csrf": s["csrf"]}, self._set_cookie(s["token"]))
+
+        def _link(self, token: Any) -> Optional[dict]:
+            """The pairing link token names -- while valid and while the Mac's session that made it lasts (locked: gone)."""
+            link = app.devices.pairing_check(token)
+            if link is not None and not app.sessions.alive(link.get("by") or ""):
+                app.devices.pairing_cancel()
+                log.info("Link to add a device ended with the Mac's session")
+                return None
+            return link
+
+        def _pairing(self, token: Optional[str] = None) -> dict:
+            """The link to add an iPhone (only at the Mac): its address, the QR code of it, how long it holds."""
+            st = app.devices.pairing_state(with_token=True)
+            info = app.remote_info()
+            if st is None or not info.get("url"):
+                return {"active": False}
+            url = info["url"] + "#pair=" + st["token"]
+            size, path = qr.svg_path(url)
+            return {"active": True, "url": url, "qr": {"size": size, "path": path}, "seconds": st["seconds"], "changes": st["changes"]}
+
+        def _devices(self, path: str, body: dict, s: dict):
+            """Einstellungen -> Zugang: add an iPhone (a link, shown as a QR code), whether one may change things, remove one --
+            only at the Mac (MAC_ONLY)."""
+            if path == "/api/devices/remove":
+                did = str(body.get("id") or "")
+                gone = app.devices.remove(did)
+                n = app.sessions.drop_device(did)            # its sessions end at once; its passkey works no more
+                d = app.demo_box.current()[0] if app.demo_box is not None else None
+                if d is not None:
+                    n += d.sessions.drop_device(did)         # ... and the demo's it opened (it uses the real model and internet)
+                if gone:
+                    log.info("Device %s removed, %d session(s) ended", did, n)
+                return self._json(200, {"ok": gone is not None, "ended": n})
+            if path == "/api/devices/set":                   # whether this iPhone may change things (each change still with Face ID)
+                ok = app.devices.set_changes(str(body.get("id") or ""), body.get("changes") is True)
+                if ok:
+                    log.info("Device %s: changes %s", body.get("id"), "allowed" if body.get("changes") is True else "not allowed")
+                return self._json(200, {"ok": ok})
+            act = body.get("action")
+            if act == "cancel":
+                app.devices.pairing_cancel()
+                return self._json(200, {"ok": True})
+            if act == "changes":
+                return self._json(200, {"ok": app.devices.pairing_set(body.get("changes") is not False)})
+            if act != "new":
+                raise ValueError(tr("s_unbekannte_aktion"))
+            if app.passkey_site() is None or not app.remote_info().get("url"):
+                return self._json(409, {"error": tr("s_pk_https_noetig")})
+            # the first iPhone, ticked: "Änderungen vom iPhone" goes on once it is added with the tick (never here, see _pair_finish)
+            app.devices.pairing_new(body.get("changes") is not False, by=str(s.get("sid") or ""), first=not app.devices.all())
+            log.info("Link to add a device made (valid 10 minutes, while this session lasts)")
+            return self._json(200, self._pairing())
+
         def _assistant_ok(self, s: dict) -> bool:
             """The assistant answers at the Mac -- and from other devices only with its right "remote"."""
             return self._is_local(s) or bool(assistant_mod.settings(app.config)["rights"]["remote"])
 
-        def _assistant(self, path: str, body: dict, local: bool):
+        def _assistant(self, path: str, body: dict, local: bool, mac: bool, may_change: bool = False):
             """Everything about the assistant. Setting it up (install, models, rights, start) only at the Mac -- and never by the
-            assistant itself: it has no tool for it and no way to this service."""
+            assistant itself: it has no tool for it and no way to this service. From other devices only with its right
+            "remote"; local: at the Mac or an added iPhone (its changes confirmed with Face ID, see _remote_check)."""
             a = app.assistant
+            remote_ok = mac or bool(assistant_mod.settings(app.config)["rights"]["remote"])
             if path in ASSISTANT_ASK:
-                if not (local or assistant_mod.settings(app.config)["rights"]["remote"]):
+                if not remote_ok:
                     return self._json(403, {"error": tr("s_nur_von_diesem_mac_aus")})
-                if path == "/api/assistant/ask":         # (from a device that may only look: answered, but nothing of it is noted or forgotten)
-                    return self._json(200, a.ask(body, may_note=local or not app.remote_readonly()))
+                if path == "/api/assistant/ask":
+                    # what to remember: at the Mac at once; from an added iPhone (changes allowed) each note waits for a click
+                    # on it, which Face ID confirms; from a device that may only look nothing is noted or forgotten
+                    note = True if mac else "offer" if may_change else False
+                    return self._json(200, a.ask(body, may_note=note))
                 if path == "/api/assistant/stop":
                     a.stop()
                     return self._json(200, {"ok": True})
@@ -3598,28 +4117,30 @@ def make_handler(app: App):
                 if path == "/api/assistant/confirm":
                     ok = body.get("ok") is True
                     kind = a.waiting_kind(str(body.get("job") or ""), str(body.get("id") or ""))
-                    if ok and not local and app.remote_readonly() and kind != "web":       # entering values from another device: only when it may change things
+                    if ok and kind and not local:            # a yes from another device (values, internet -- also in the demo: the real key): an added iPhone, with Face ID
                         return self._json(403, {"error": tr("s_von_unterwegs_nur_ansehen")})
                     a.confirm(str(body.get("job") or ""), str(body.get("id") or ""), ok, body.get("ids"), local)
                     return self._json(200, {"ok": True})
             if path == "/api/assistant/chats/delete":            # one or all (from other devices: only where they may change things -- see do_POST)
-                if not (local or assistant_mod.settings(app.config)["rights"]["remote"]):
+                if not remote_ok:
                     return self._json(403, {"error": tr("s_nur_von_diesem_mac_aus")})
                 days = body.get("older_days")
                 days = days if isinstance(days, int) and not isinstance(days, bool) and 30 <= days <= 3650 else 0
                 return self._json(200, {"deleted": a.delete_chats(str(body.get("id") or ""), body.get("all") is True, older_days=days)})
             if path == "/api/assistant/undo":
-                if not local and (app.remote_readonly() or not assistant_mod.settings(app.config)["rights"]["remote"]):
+                if not remote_ok or not local:
                     return self._json(403, {"error": tr("s_von_unterwegs_nur_ansehen")})
                 return self._json(200, {"ok": True, "note": a.take_back(str(body.get("id") or ""), local)})
             if path in ("/api/assistant/memory/undo", "/api/assistant/memory/offer"):      # a note under an answer: taken back or brought back / kept after the click
-                if not local and (app.remote_readonly() or not assistant_mod.settings(app.config)["rights"]["remote"]):
+                if not remote_ok or not local:
                     return self._json(403, {"error": tr("s_von_unterwegs_nur_ansehen")})
                 return self._json(200, a.memory_undo(body.get("id")) if path.endswith("/undo") else a.memory_offer(body.get("id"), body.get("ok") is True))
-            if not local:
-                return self._json(403, {"error": tr("s_nur_von_diesem_mac_aus")})
             if path == "/api/assistant/memory":                  # notes added, changed, pinned, deleted -- by the user, in the settings
+                if not local or not remote_ok:
+                    return self._json(403, {"error": tr("s_nur_von_diesem_mac_aus")})
                 return self._json(200, a.memory_do(body))
+            if not mac:                                          # setting it up: at the Mac only (MAC_ONLY)
+                return self._json(403, {"error": tr("s_nur_von_diesem_mac_aus")})
             if path == "/api/assistant/settings":
                 a.set(body)
             elif path == "/api/assistant/check":
@@ -3654,14 +4175,26 @@ def make_handler(app: App):
             return self._json(200, a.status(True))
 
         def _route(self, path: str, body: dict, s: dict):
-            local = self._is_local(s)
+            # local: at the Mac or from an added iPhone (each change confirmed with Face ID, _remote_check) -- rights as at the
+            # Mac; mac: at this Mac itself (who gets in, whose code runs, what acts on this Mac: MAC_ONLY and parts of requests)
+            local, mac = self._trusted(s), self._at_mac(s)
             if path.startswith("/api/assistant/"):
-                return self._assistant(path, body, local)
+                return self._assistant(path, body, local, mac, self._may_change(s))
+            if path == "/api/confirm":
+                return self._confirm_challenge(body, s)
+            if path in ("/api/devices/pair", "/api/devices/set", "/api/devices/remove"):
+                if not mac:
+                    return self._json(403, {"error": tr("s_nur_von_diesem_mac_aus")})
+                return self._devices(path, body, s)
             if path == "/api/lock":
                 app.sessions.drop_all()                 # (the demo: locked like the real one -- it stays, see DemoBox)
+                if app.devices is not None:
+                    app.devices.pairing_cancel()         # a link to add an iPhone ends with it
                 return self._json(200, {"ok": True}, self._set_cookie("", clear=True))
             if path == "/api/password":
-                if not body.get("old") and local and app.touchid_on() and auth.touchid_available():
+                if not mac:
+                    return self._json(403, {"error": tr("s_nur_von_diesem_mac_aus")})
+                if not body.get("old") and mac and app.touchid_on() and auth.touchid_available():
                     if not auth.touchid_verify():                # forgotten: Touch ID (or the Mac's password) instead, at the Mac
                         return self._json(401, {"error": tr("s_touch_id_nicht_bestaetigt")})
                 elif self._wrong_password(body.get("old"), "s_altes_passwort_falsch"):
@@ -3704,27 +4237,27 @@ def make_handler(app: App):
                 net_keys = ("bind", "port", "tls_cert", "tls_key")
                 net_changed = any((old_ui.get(k) or "") != (new_ui.get(k) or "") for k in net_keys if k != "port") or \
                     int(old_ui.get("port") or 8765) != int(new_ui.get("port") or 8765)
-                if net_changed and not local:
+                if net_changed and not mac:
                     return self._json(403, {"error": tr("s_nur_von_diesem_mac_aus")})
                 # where files are read and written (receipts folder and its sub-folders): only at the Mac
                 if bool(cfg.get("dry_run", True)) != bool(app.config.get("dry_run", True)) and not local:
                     return self._json(403, {"error": tr("s_nur_von_diesem_mac_aus")})      # booking without asking: switched only at the Mac
                 old_b, new_b = app.config.get("receipts") or {}, cfg.get("receipts") or {}
                 # who gets in and how (as under /api/remote): only at the Mac
-                if not local:
+                if not mac:
                     cfg["ui"] = dict(cfg.get("ui") or {}, **{k: copy.deepcopy(old_ui[k]) for k in ("remote_read_only", "offline_copy", "touchid", "lock_minutes") if k in old_ui})
                     for k in ("remote_read_only", "offline_copy", "touchid", "lock_minutes"):
                         if k not in old_ui:
                             cfg["ui"].pop(k, None)
                     new_ui = cfg["ui"]
-                if any((old_b.get(k) or "") != (new_b.get(k) or "") for k in ("folder", "subfolder")) and not local:
+                if any((old_b.get(k) or "") != (new_b.get(k) or "") for k in ("folder", "subfolder")) and not mac:
                     return self._json(403, {"error": tr("s_nur_von_diesem_mac_aus")})
                 if (new_b.get("subfolder") or "") != (old_b.get("subfolder") or ""):
                     why = pattern_problem(str(new_b.get("subfolder") or ""))
                     if why:
                         return self._json(400, {"error": why})
                 # where updates come from: only at the Mac (an update is installed with one click there)
-                if ((cfg.get("updates") or {}).get("repo") or "stecrz/Kontor") != ((app.config.get("updates") or {}).get("repo") or "stecrz/Kontor") and not local:
+                if ((cfg.get("updates") or {}).get("repo") or "stecrz/Kontor") != ((app.config.get("updates") or {}).get("repo") or "stecrz/Kontor") and not mac:
                     return self._json(403, {"error": tr("s_nur_von_diesem_mac_aus")})
                 new_port = int(new_ui.get("port") or 8765)
                 if not 1024 <= new_port <= 65535:
@@ -3855,10 +4388,10 @@ def make_handler(app: App):
                                              wartend=len(res.get("proposals") or []) if res.get("dry_run") else 0))
             if path == "/api/run":
                 dry = body.get("dry_run")
-                if dry is False and not local:
-                    return self._json(403, {"error": tr("s_buchen_nur_von_diesem_mac")})
-                if not local:
-                    dry = True          # from elsewhere never a live run, whatever the test mode says (the Mac's schedule books)
+                if dry is False and not (local and (mac or body.get("approval") is not None)):
+                    return self._json(403, {"error": tr("s_buchen_nur_von_diesem_mac")})      # from an iPhone only what you approved, as shown
+                if not mac and dry is not False:
+                    dry = True          # from elsewhere a sync is a test run, whatever the test mode says (the Mac's schedule books)
                 if app.running:
                     return self._json(409, {"error": tr("s_ein_abgleich_laeuft_bereits")})
                 full = True if body.get("full_read") else None          # „Alles neu lesen“; sonst schnell, solange kein vollstaendiges Lesen faellig ist
@@ -3867,7 +4400,8 @@ def make_handler(app: App):
                     approve, err = approval(body.get("approval"))
                     if err:
                         return self._json(400, {"error": err})
-                threading.Thread(target=app.do_run, args=(dry, bool(body.get("force", True))), kwargs={"full": full, "approve": approve}, daemon=True).start()
+                threading.Thread(target=app.do_run, args=(dry, bool(body.get("force", True))), kwargs={"full": full, "approve": approve, "write": mac or dry is False},
+                                 daemon=True).start()
                 return self._json(202, {"started": True})
             if path == "/api/report":
                 ledger, err = app.refresh_ledger()
@@ -3878,13 +4412,13 @@ def make_handler(app: App):
             if path == "/api/plan":
                 return self._json(200, self._update_plan(body))
             if path.startswith("/api/receipts/"):
-                return self._belege(path, body, local)
+                return self._belege(path, body, mac)
             if path == "/api/package/import":
                 pkg = body.get("package")
                 if isinstance(pkg, str):
                     pkg = json.loads(pkg)
                 cfg, unresolved, report = import_package(app.config, pkg, app.ledger, body.get("mode") or "merge", body.get("assignment") or {})
-                if not local:                              # what is switched only at the Mac stays as it is (as when saving settings)
+                if not mac:                                # what is switched only at the Mac stays as it is (as when saving settings)
                     cfg["dry_run"] = app.config.get("dry_run", True)
                     for sec, keys in (("ui", ("bind", "port", "tls_cert", "tls_key")), ("receipts", ("folder", "subfolder"))):
                         old_s, new_s = app.config.get(sec) or {}, cfg.setdefault(sec, {})
@@ -3948,9 +4482,9 @@ def make_handler(app: App):
             if path.startswith("/api/categories/"):
                 return self._kategorien(path, body, local)
             if path.startswith("/api/properties"):
-                return self._immobilien(path, body, local)
+                return self._immobilien(path, body, mac)
             if path.startswith("/api/file/"):
-                return self._datei(path, body, local)
+                return self._datei(path, body, mac)
             if path == "/api/report/rebuild":
                 ok, err = app.rebuild_report(wait=bool(body.get("wait")), grund="rebuild requested")
                 return self._json(200, {"ok": ok, "text": err, "report": app.bericht_status()})
@@ -3968,7 +4502,7 @@ def make_handler(app: App):
                 log.info("Encrypted backup of all settings created")
                 return self._json(200, out)
             if path == "/api/backup/restore":
-                if not local:
+                if not mac:
                     return self._json(403, {"error": tr("s_nur_von_diesem_mac_aus")})
                 sich = body.get("backup") or {}
                 if isinstance(sich, dict) and sich.get("kontor_backup_encrypted"):
@@ -3992,7 +4526,7 @@ def make_handler(app: App):
                 return self._json(200, {"ok": True, "parts": teile, "report": ok, "config": app.config, "restart": narrower and app.restart_allowed,
                                         "port": int((app.config.get("ui") or {}).get("port") or 8765), "instance": app.instance})
             if path == "/api/reset":
-                if not local:
+                if not mac:
                     return self._json(403, {"error": tr("s_zuruecksetzen_nur_von_diesem_mac")})
                 if self._wrong_password(body.get("password")):
                     return
@@ -4008,6 +4542,8 @@ def make_handler(app: App):
                 app.store.delete(assistant_mod.CHANGES_FILE)         # ... and the log of what the assistant changed
                 app.assistant.memory.forget_all(quiet=True)          # ... and what it was told to remember
                 app.store.delete(assistant_mod.web_search.WEB_FILE)  # ... and your Tavily key
+                if app.devices is not None:
+                    app.devices.forget()                 # ... and the iPhones added (their passkeys work no more)
                 app.assistant.forget()                   # the assistant is switched off with its settings: model, conversation and entries to take back end
                 app.config = merged_config({})
                 app.ledger, app.ledger_time, app.categories_raw, app.last_result, app.last_run_at, app.umsaetze = None, None, [], None, None, None
@@ -4019,7 +4555,7 @@ def make_handler(app: App):
                 log.warning("Program reset (%s); receipt files and log kept", ", ".join(dateien))
                 return self._json(200, {"ok": True, "setup_again": bool(body.get("with_password"))}, self._set_cookie("", clear=True))
             if path == "/api/uninstall":
-                if not local:
+                if not mac:
                     return self._json(403, {"error": tr("s_nur_von_diesem_mac_aus")})
                 if self._wrong_password(body.get("password")):
                     return
@@ -4032,7 +4568,7 @@ def make_handler(app: App):
                 return self._json(200, rep, self._set_cookie("", clear=True))
             if path == "/api/key/renew":
                 # a new data key: everything re-encrypted, the old key gone only once all opens with the new one (only at the Mac)
-                if not local:
+                if not mac:
                     return self._json(403, {"error": tr("s_nur_von_diesem_mac_aus")})
                 if self._wrong_password(body.get("password")):
                     return
@@ -4043,21 +4579,21 @@ def make_handler(app: App):
                 return self._json(200, {"ok": True, "files": n, "left": list(app.store.renew_left)})      # left: no key opens them (damaged) -- they stay as they are
             if path == "/api/storage/notice":
                 # "a file was damaged and set aside" (App.unlock): read and closed -- the file itself stays where it is
-                if not local:
+                if not mac:
                     return self._json(403, {"error": tr("s_nur_von_diesem_mac_aus")})
                 app.store.update("state.json", lambda cur: cur.pop(DAMAGED_KEY, None), {})
                 return self._json(200, {"ok": True})
             if path == "/api/remote":
-                return self._remote_setup(body, local)
+                return self._remote_setup(body, mac)
             if path == "/api/mac-app/open":                 # Kontor's own app on this Mac: built if needed, then opened
-                if not local:
+                if not mac:
                     return self._json(403, {"error": tr("s_nur_von_diesem_mac_aus")})
                 if mac_app.ready():
                     return self._json(200, {"ok": mac_app.open_app(), "mac_app": mac_app.state()})
                 threading.Thread(target=lambda: mac_app.build() == "ok" and mac_app.open_app(), name="kontor-mac-app", daemon=True).start()
                 return self._json(200, {"ok": True, "mac_app": dict(mac_app.state(), building=True)})
             if path == "/api/timemachine-exclusion":
-                if not local:
+                if not mac:
                     return self._json(403, {"error": tr("s_nur_von_diesem_mac_aus")})
                 ok, text = timemachine_set(bool(body.get("exclude")), app.data_dir)
                 return self._json(200, {"ok": ok, "text": text, "status": timemachine_status(app.data_dir)})
@@ -4076,6 +4612,8 @@ def make_handler(app: App):
                 for k in ("remote_read_only", "offline_copy"):
                     if k in body:
                         ui[k] = bool(body[k])
+                if isinstance(body.get("passkey_only"), bool) and app.devices is not None:
+                    app.devices.set_passkey_only(body["passkey_only"])      # (beside the devices: never in a backup)
             elif aktion == "enable":                 # Zertifikat ueber Tailscale, Adresse = Tailscale-Adresse des Macs
                 try:
                     r = tls_cert.setup(cfg, app.data_dir)
@@ -4759,7 +5297,61 @@ def restore_backup(app: "App", backup: dict, with_receipts: bool = True) -> List
 ASSISTANT_ASK = ("/api/assistant/ask", "/api/assistant/stop", "/api/assistant/reset", "/api/assistant/page", "/api/assistant/confirm", "/api/assistant/listen",
                  "/api/assistant/transcribe", "/api/assistant/attach")
 
-_KONTOR_FILE = re.compile(r"(?:^|\s)(?:(?:auth|cf-ids|config|dataset|plan|receipts|state|transactions|categories|mm-history|assistant-changes|assistant-web|memory-[a-z]+(?:-\d{4,6})?)"
+# -- From another device (an iPhone over Tailscale) -------------------------------------------------------------------------
+# The ways in before a session: password, Touch ID (only at the Mac), the passkey of an added iPhone, adding an iPhone with
+# the link the Mac shows -- small bodies only.
+SIGN_IN = ("/api/setup", "/api/login", "/api/touchid", "/api/touchid/switch", "/api/passkey/options", "/api/passkey/login",
+           "/api/pair/begin", "/api/pair/finish")
+# What stays at the Mac, whoever asks from elsewhere, also with Face ID: who gets in and how (access, devices, pairing,
+# password, data key), whose code runs (installing updates; where they come from: a setting, see /api/config), setting up
+# the assistant, loading a backup, resetting, deleting Kontor's data -- and what acts on this Mac itself (its windows, its
+# files, Time Machine, the MoneyMoney database).
+MAC_ONLY = frozenset(("/api/password", "/api/remote", "/api/devices/pair", "/api/devices/set", "/api/devices/remove", "/api/update/install", "/api/backup/restore",
+                      "/api/reset", "/api/key/renew", "/api/uninstall", "/api/storage/notice", "/api/mac-app/open", "/api/timemachine-exclusion",
+                      "/api/history/mm-import", "/api/history/mm-reveal", "/api/file/choose", "/api/file/open", "/api/file/reveal", "/api/receipts/open",
+                      "/api/assistant/settings", "/api/assistant/check", "/api/assistant/update-all", "/api/assistant/runtime/install",
+                      "/api/assistant/runtime/remove", "/api/assistant/model/files", "/api/assistant/model/download", "/api/assistant/model/cancel",
+                      "/api/assistant/model/delete", "/api/assistant/web", "/api/assistant/server"))
+# Requests that change nothing: from another device without Face ID (reading, computing what something would do, asking
+# the assistant, locking, the challenge for a confirmation). Every other request from another device changes something and
+# waits for Face ID on the iPhone it was signed in from (service: _remote_check) -- one not named here is a change.
+CONFIRM_FREE = frozenset(("/api/lock", "/api/confirm", "/api/rules/preview", "/api/bookings/plan", "/api/check", "/api/report", "/api/report/rebuild",
+                          "/api/bookings/refresh", "/api/properties/calculate", "/api/assistant/ask", "/api/assistant/stop", "/api/assistant/reset", "/api/assistant/page",
+                          "/api/assistant/listen", "/api/assistant/transcribe", "/api/assistant/attach"))
+# ... and requests that change something only as they are asked: a sync books only when it is not a test run (a test run from
+# another device writes nothing into MoneyMoney, not even waiting categories); a click on the assistant's card counts when it
+# says yes -- to changes, and to fetches from the internet (they send search words out)
+CONFIRM_MAYBE = frozenset(("/api/run", "/api/assistant/confirm"))
+CONFIRM_HEADER_MAX = 6000
+# Kontor never sits behind a proxy: a request passed on ("tailscale serve", Funnel, any other) would arrive from this Mac
+# itself -- one that carries a proxy's headers is never answered (_proxied)
+PROXIED = re.compile(r"(?i)forwarded|x-forwarded-.*|x-real-ip|x-original-forwarded-for|true-client-ip|x-client-ip|x-cluster-client-ip|cf-connecting-ip|tailscale-.*")
+EXPOSURE_SECONDS = 60                   # how old the check of "tailscale serve"/Funnel may be (App.exposed: looked at anew in the background)
+EXPOSURE_RETRY = 5                      # ... after a look without an answer: the next one after these seconds,
+EXPOSURE_YOUNG = 180                    # ... in the first minutes after the start (Tailscale may come up later): every EXPOSURE_RETRY
+EXPOSURE_TRIES = 3                      # ... never known since the start: locked until so many looks in a row went without an answer
+EXPOSURE_WAIT = 4.0                     # a sign-in at the Mac right after the start waits so long for the first look
+EXPOSURE_LOCK = threading.Lock()
+EXPOSURE_CV = threading.Condition(EXPOSURE_LOCK)
+ACL_LOCK = threading.Lock()             # one look at Tailscale's rules at a time (App.remote_acl)
+
+
+def tls_connection(conn: Any) -> bool:
+    """The request came over https (Kontor's address in the Tailscale network with its certificate)."""
+    return isinstance(conn, ssl.SSLSocket)
+
+
+def remote_change(path: str, body: dict) -> bool:
+    """Does this request from another device change something (and wait for Face ID)?"""
+    if path in CONFIRM_FREE:
+        return False
+    if path == "/api/run":
+        return body.get("dry_run") is False
+    if path == "/api/assistant/confirm":
+        return body.get("ok") is True
+    return True
+
+_KONTOR_FILE = re.compile(r"(?:^|\s)(?:(?:auth|cf-ids|config|dataset|plan|receipts|state|transactions|categories|mm-history|assistant-changes|assistant-web|devices|memory-[a-z]+(?:-\d{4,6})?)"
                           r"\.json(?:\.enc)?(?:\.tmp|\.renew|\.left|\.damaged-[\d-]+)?"
                           r"|moneymoney-ledger\.bin(?:\.enc)?(?:\.tmp|\.renew|\.left)?|kontor\.log[\w.]*|service\.(?:out\.log|err\.log|lock)|key\.json(?:\.tmp)?|key\.lock"
                           r"|start\.json(?:\.tmp)?|tls|assistant|chats)(?=\s|$)")
@@ -4906,6 +5498,7 @@ def serve(app: App) -> None:
         log.error("Bind address %s not allowed -- 127.0.0.1 only", extra)
         extra = "127.0.0.1"
     port = int(ui.get("port") or 8765)
+    app.exposure_tick(fresh=True)           # "tailscale serve"/Funnel: looked at at once (until then no sign-in at this Mac's address)
     handler = make_handler(app)
     servers = []
     try:

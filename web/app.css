@@ -132,6 +132,7 @@ body.mac-chrome .side { padding-top:calc(var(--lb) + 12px); }
 .login .tid-icon { width:46px; height:46px; color:var(--accent); }
 .login .tid #touchid-btn { width:100%; }
 .login form.hidden, .login .tid.hidden { display:none; }
+.login .tid #fid-btn { width:100%; }
 .login .err { text-align:center; }
 .login .demo-link { position:absolute; left:50%; bottom:calc(12px + env(safe-area-inset-bottom)); transform:translateX(-50%); background:none; color:var(--muted); opacity:.5; font-weight:400; font-size:11px; padding:4px 10px; }
 .login .demo-link:hover { opacity:.85; filter:none; } .login .demo-link:active { transform:translateX(-50%) scale(.98); }
@@ -1097,3 +1098,15 @@ input.invalid { border-color:var(--neg) !important; }
 .pk-h { font-weight:600; margin:12px 0 4px; } .pk-list { max-height:30vh; overflow:auto; border:1px solid var(--line); border-radius:var(--radius-s); }
 .pk-list table { width:100%; font-size:12.5px; } .pk-list th, .pk-list td { padding:3px 8px; } .pk-list .muted { padding:4px 8px; }
 @media (max-width:700px) { .ptable .edit { flex-wrap:wrap; max-width:200px; } .ptable .edit select { max-width:100%; padding-left:5px; padding-right:2px; font-size:11px; } }          /* iPhone: a row's rule in two lines, nothing cut off */
+
+/* Face ID: Safari wants a tap of its own before it asks (pkTap) */
+.pk-tap { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,.35); z-index:300; padding:16px; }
+.pk-tap .card { width:min(320px, 100%); background:var(--head); border:1px solid var(--line); border-radius:14px; padding:20px; display:flex; flex-direction:column; gap:16px; text-align:center; box-shadow:0 24px 70px rgba(0,0,0,.2); }
+.pk-tap .row { justify-content:center; gap:10px; }
+/* Einstellungen -> Zugang: the iPhones added, the QR code to add one */
+.dev-list td.act { text-align:right; white-space:nowrap; }
+.pair-card { display:flex; gap:18px; align-items:flex-start; flex-wrap:wrap; margin-top:10px; }
+.pair-card .qr { width:176px; height:176px; flex:none; background:#fff; border-radius:10px; padding:6px; box-sizing:border-box; }
+.pair-card .qr svg { width:100%; height:100%; display:block; }
+.pair-card .qr path { fill:#000; }
+.pair-card .grow { flex:1; min-width:200px; display:flex; flex-direction:column; gap:10px; }

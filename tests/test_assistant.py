@@ -2388,10 +2388,10 @@ class Bookings(_Assist):
         job, cards, batch, evs = self.propose({"approve": [x["id"] for x in pick], "reason": "geprüft"})
         self.assertEqual([(c["kind"], c["count"], c["final"], c["sum"]) for c in cards], [("book", 2, True, round(sum(x["amount"] for x in pick), 2))])
         self.assertEqual(len(T.MockBridge.state["txs"]), n0)                         # proposed: nothing booked
-        # from the iPhone: refused, nothing booked
+        # from a device that is neither the Mac nor an added iPhone: refused, nothing booked
         self.a.confirm(job, batch, True, None, False)
         st = next(e for e in events(self.a, job) if e["type"] == "entry_state")
-        self.assertEqual(st["state"], "failed"); self.assertIn("nur von diesem Mac", st["text"])
+        self.assertEqual(st["state"], "failed"); self.assertIn("Buchen nur am Mac", st["text"])
         self.assertEqual(len(T.MockBridge.state["txs"]), n0)
         # at the Mac: booked, fixed (no take back), logged
         job, cards, batch, evs = self.propose({"approve": [x["id"] for x in pick]})
@@ -4247,7 +4247,8 @@ class Http(_Assist):
         cfg = copy.deepcopy(self.app.config); cfg["ui"]["remote_read_only"] = False; self.app.save_config(cfg)
         self.remote()
         try:
-            self.assertEqual(self.call("/api/assistant/chats/delete", {"id": "0123456789abcdef"})[1], {"deleted": 0})      # a device that may change things: may delete
+            # signed in with the password (no iPhone added): still only looking -- deleting from an added iPhone needs Face ID (test_passkeys)
+            self.assertEqual(self.call("/api/assistant/chats/delete", {"id": "0123456789abcdef"})[1].get("read_only"), True)
         finally:
             self.remote(False)
         code, r = self.call("/api/assistant/chats/delete", {"all": True})

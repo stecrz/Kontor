@@ -190,7 +190,7 @@ CHECKED: Dict[str, Tuple[str, ...]] = {
     "core.py": ("_cached", "refresh_accounts"), "model.py": ("ledger_to_bytes", "without_planned"),     # values copied from one of Kontor's objects to another
     "service.py": ("show_in_finder", "open_document", "choose_on_mac", "timemachine_set", "timemachine_status"),     # a path or a line of text
     "updates.py": ("_get",),                                              # allowed hosts only
-    "tls_cert.py": ("setup", "renew_if_due", "cert_expiry"),              # Tailscale's own program (found by Kontor), paths in Kontor's data folder
+    "tls_cert.py": ("setup", "renew_if_due", "cert_expiry", "ask"),       # Tailscale's own program (found by Kontor), paths in Kontor's data folder; fixed questions, read only
     "security_names.py": ("_post", "lookup"),                             # one fixed address; ISINs only
 }
 # -- more rules (review before 3.17), kept apart from the lists above: who may install an update and with whose approval (only
@@ -198,7 +198,7 @@ CHECKED: Dict[str, Tuple[str, ...]] = {
 # where the assistant's downloads come from and that nothing is loaded without a SHA-256 that fits. A name stands for a
 # function or for a setting at the top of the file. The function that installs an update is also CHECKED: it looks itself
 # at where the request comes from, and what it hands on is the approval the page sent.
-for _rel, _names in (("service.py", ("_is_local", "_loopback", "_update_install", "restored_config")),
+for _rel, _names in (("service.py", ("_is_local", "_loopback", "_update_install", "restored_config", "_proxied", "PROXIED", "_at_mac")),
                      ("auth.py", ("is_loopback",)),
                      ("llm_local.py", ("_fetch", "pick_asset", "repo_files", "latest_runtime", "RUNTIME_REPO", "RELEASES_URL"))):
     RULES[_rel] = tuple(RULES.get(_rel, ())) + _names
@@ -239,7 +239,7 @@ RULE_GROUPS: Tuple[Tuple[str, str, Dict[str, Tuple[str, ...]]], ...] = (
     # shows of the findings and sends (a change could hide a finding or approve by itself) -- always asked about
     ("check", "risk", {"service.py": ("_update_install", "restored_config"), "web/app.js": PAGE_RULES["web/app.js"]}),
     # where Kontor listens, who counts as "at the Mac", what its pages may load and from where -- a change can open Kontor
-    ("access", "risk", {"service.py": ("bind_allowed", "_sec_headers", "_host_ok", "_origin_ok", "_static", "_is_local", "_loopback"),
+    ("access", "risk", {"service.py": ("bind_allowed", "_sec_headers", "_host_ok", "_origin_ok", "_static", "_is_local", "_loopback", "_proxied", "PROXIED", "_at_mac"),
                         "auth.py": ("is_loopback",)}),
     # where the internet search's reader may connect (hosts, redirects, no address of this Mac or the local network), the
     # headers it sends (not on the card), which results the page links -- a change can reach other places unseen

@@ -440,6 +440,7 @@ class Job:
         self.looking = False                          # ... and asks the model for it right now (that connection is cut then)
         self.turn: List[dict] = []                    # the question being answered and what was read for it (a note forgotten meanwhile leaves it too)
         self.gave: set = set()                        # notes Kontor named with this question ("noted: ...", "already noted: ..."): not given again with it
+        self.offer_notes = False                      # asked from an iPhone: a note waits for the click on it (confirmed there with Face ID), nothing is forgotten
 
     def emit(self, type_: str, **data) -> None:
         with self.cv:
@@ -1661,7 +1662,7 @@ class Assistant:
         return self._common
 
     def memory_list(self, q: dict) -> dict:
-        """The notes for the settings page (only at the Mac, see service.py): q -- words to find, offset, limit, replaced=1 --
+        """The notes for the settings page (at the Mac or an added iPhone, see service.py): q -- words to find, offset, limit, replaced=1 --
         the replaced ones too. Each note says whether it is in the profile right now."""
         st = self.settings()
         num = lambda k, d: int(str(q.get(k))) if str(q.get(k) or "").isdigit() else d
@@ -1680,7 +1681,7 @@ class Assistant:
         return out
 
     def memory_do(self, body: dict) -> dict:
-        """What the user does with the notes in the settings (only at the Mac): add, edit, pin, delete, forget_all."""
+        """What the user does with the notes in the settings (at the Mac or an added iPhone, with Face ID): add, edit, pin, delete, forget_all."""
         act, nid = str(body.get("action") or ""), str(body.get("id") or "")
         known = False
         if act == "add":
@@ -1802,7 +1803,7 @@ class Assistant:
             names = [str(x) for x in n["names"] if isinstance(x, str)][:12] if isinstance(n.get("names"), list) else None     # (None: not named -- named later, _name_notes)
             old = [ids[r]["text"] for r in rep]
             pinned = any(ids[r].get("pinned") for r in rep)          # what takes the place of a pinned note is pinned
-            if foreign and not self._rests_on(text, texts, 0.9):     # not the words of this message but the answer's: the user's click first
+            if (foreign and not self._rests_on(text, texts, 0.9)) or job.offer_notes:     # not the words of this message but the answer's (or asked from an iPhone): the user's click first
                 oid = "o" + secrets.token_hex(5)
                 self.offered[oid] = {"text": text, "kind": kind, "names": names, "replaces": rep, "chat": str(conv.get("id") or ""), "pasted": pasted, "pinned": pinned}
                 while len(self.offered) > 50:
@@ -1822,6 +1823,9 @@ class Assistant:
             job.emit("memory", id=note["id"], state="remembered", text=note["text"], replaces=old, rids=rep, pasted=pasted)
             told.append("noted: %s" % note["text"])
             self._gave(conv, note["id"], note["text"], job)
+        if job.offer_notes and may_forget and forget:   # from an iPhone nothing is forgotten by talk (a click there needs Face ID): at the Mac
+            told.append("not forgotten: asked from another device -- the user can forget it at the Mac (Einstellungen → KI-Assistent → Gedächtnis)")
+            forget = []
         may_go = self._may_go(conv, texts) if may_forget and forget else set()
         for nid in forget if may_forget else []:         # only when the user said so: talk alone never deletes a note
             if nid not in may_go:                        # ... and only what they named ("Ok, vergiss die Frage" takes no note that has nothing to do with it)
@@ -4049,7 +4053,7 @@ class Assistant:
 
     def changes(self, local: bool = True) -> List[dict]:
         """The changes the assistant carried out, the latest first (taken back: state "undone"). From another device the
-        entries of the memory come without what a note says (the notes themselves are shown at the Mac only)."""
+        entries of the memory come without what a note says (the notes themselves: at the Mac and on an added iPhone only)."""
         try:
             lst = self.app.store.load(CHANGES_FILE, [])
         except Exception:
@@ -4420,7 +4424,7 @@ class Assistant:
                          "after the user's click, and each booking from it waits for approval until the user confirms the rule under %s." % tr("konten_regeln"))
         if can_book:
             lines.append("- Auto bookings waiting for approval (get_auto_bookings, each with an id): propose approving or holding back with decide_bookings only "
-                         "what the user asked for, after checking them (amount, date, rule); approving books into MoneyMoney after the user's click, only at the Mac, "
+                         "what the user asked for, after checking them (amount, date, rule); approving books into MoneyMoney after the user's click (at the Mac or on an added iPhone with Face ID) "
                          "and cannot be taken back there; holding back can. Bookings with check_first: never propose approving them -- tell the user why Kontor "
                          "wants them checked; they decide on the page.")
         if ctx.get("tables"):
@@ -4472,8 +4476,9 @@ class Assistant:
         # in the language of Kontor: the first words of a question set the language of the model's thoughts
         return "[%s: %s%s]\n" % (tr("ref_seite"), str(p.get("title") or tab)[:60], (", %s: %s" % (tr("ref_bereich"), p["area_name"])) if p.get("area_name") else "")
 
-    def ask(self, body: dict, may_note: bool = True) -> dict:
-        """may_note: whether what is said may be remembered (not from another device that may only look)."""
+    def ask(self, body: dict, may_note: Any = True) -> dict:
+        """may_note: whether what is said may be remembered (not from another device that may only look) -- "offer": asked
+        from an iPhone, each note waits for the click on it (which Face ID confirms there), nothing is forgotten by talk."""
         st = self.settings()
         if not st["enabled"]:
             raise ValueError(tr("s_ki_aus"))
@@ -4528,8 +4533,9 @@ class Assistant:
                 self.conv.setdefault("unnoticed", []).extend(old.conv.pop("unnoticed"))       # said in the conversation before, not looked at yet: with this one
             ctx = {"job": job, "conv": self.conv, "area": str((body.get("page") or {}).get("area") or "") if isinstance(body.get("page"), dict) else "",
                    "pasted": body.get("pasted") is True,      # text was pasted into the question (said by the page): notes from it say so
-                   "notice": may_note,                        # (asked from a device that may only look: nothing is noted or forgotten)
+                   "notice": may_note,                        # (asked from a device that may only look: nothing is noted or forgotten; "offer": see job.offer_notes)
                    "refs": _refs(body.get("refs")), "files": [self._file_info(f) for f in self._given(body.get("files"), self.conv)]}
+            job.offer_notes = may_note == "offer"
             if not q and not ctx["files"]:
                 raise ValueError(tr("s_ki_frage_fehlt"))
             if any(f.get("sheets") for f in ctx["files"]):
@@ -5604,7 +5610,7 @@ TOOLS: List[dict] = [
     _tool("file_receipt", "receipts", "enter", "Proposes filing a receipt the user gave (its id), linked to a transaction (its id; left out: none).",
           {"receipt": {"type": "string"}, "transaction": {"type": "integer"}, "note": {"type": "string"}, "reason": {"type": "string"}},
           ["receipt"], also=("transactions",)),
-    _tool("decide_bookings", "book", "enter", "Proposes approving or holding back auto bookings waiting for approval (ids from get_auto_bookings). Approved ones are booked into MoneyMoney's offline accounts (only at the Mac, final); held back ones are not proposed again.",
+    _tool("decide_bookings", "book", "enter", "Proposes approving or holding back auto bookings waiting for approval (ids from get_auto_bookings). Approved ones are booked into MoneyMoney's offline accounts (at the Mac or on an added iPhone with Face ID; final); held back ones are not proposed again.",
           {"approve": {"type": "array", "items": {"type": "string"}, "description": "ids of waiting bookings to book"},
            "hold_back": {"type": "array", "items": {"type": "string"}, "description": "ids of waiting bookings not to book"}}, [], also=("figures", "transactions")),
     _tool("web_search", "internet", "web", "Internet research: only when the user asks for it or you lack expertise. Plan first, then ask ONCE: every lookup the question needs in this one call -- Kontor fetches them (the first time in a conversation after the user's approval on a card); untrusted text; never the user's own data. Lowest tier that fits. "
