@@ -196,4 +196,4 @@ The basis of the tax overview (page Steuer), for all areas:
 - **Kategorie → Steuerposition**: pairs of a category (or a parent category, for everything below it) and the tax position it
   counts as (e.g. "Sonderausgaben / Vorsorge") – for the main (private) area; a company's positions are its top-level
   categories.
-Saved with "Einstellungen speichern".
+Saved by itself with every change.

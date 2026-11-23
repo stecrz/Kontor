@@ -6408,6 +6408,12 @@ class KeysFindBrowserTest(unittest.TestCase):
                   api = async (p, b) => p === '/api/bookings/plan' ? {proposals: [{key: 'a', amount: 1}, {key: 'neu', amount: 3}].filter(x => !b.hold.includes(x.key)), waiting: []} : o(p, b);
                   try { await bkRecalc(); return [...BOOK.off].sort().concat([bkChosen(BOOK.runs.last_run)]); } finally { api = o; route = keep; BOOK.runs = null; BOOK.off = new Set(); BOOK.extra = {}; BOOK.pick = false; BOOK.calc = null; }
                 }""")
+                # settings save themselves: a field changed is saved, no button to click
+                pg.evaluate("location.hash = '#settings/moneymoney'"); pg.wait_for_selector("#e-intervall")
+                self.assertIsNone(pg.query_selector("#save-settings"))
+                pg.fill("#e-intervall", "45"); pg.press("#e-intervall", "Tab")
+                until(pg, "(S.CFG.schedule || {}).interval_minutes === 45")
+                self.assertEqual(store.load("config.json")["schedule"]["interval_minutes"], 45)
                 self.assertEqual(off, ["b", "neu", 1])                                        # "Freigeben (1)": only what is ticked
                 # transactions: its search; a page without one: the browser's find (nothing of Kontor's)
                 pg.evaluate("location.hash = '#transactions'"); pg.wait_for_selector("#uf-q")
@@ -6417,7 +6423,7 @@ class KeysFindBrowserTest(unittest.TestCase):
                 self.assertFalse(pg.evaluate("kontorCmd('find') && !!document.querySelector('#find')"))
                 # tooltips: the browser keeps ⇧⌘R and ⌘1-9 -- not shown; ⌘S on a save button is
                 self.assertNotIn("⌘", pg.get_attribute("#sync-btn", "title") + pg.get_attribute("#lock-btn", "title")); self.assertFalse(pg.get_attribute("#nav a[href='#overview']", "title"))
-                pg.evaluate("location.hash = '#settings/moneymoney'"); pg.wait_for_selector("#main [data-cmd-s]")
+                pg.evaluate("location.hash = '#accounts/rules'"); pg.wait_for_selector("#main [data-cmd-s]", state="attached")
                 self.assertTrue(pg.evaluate("[...document.querySelectorAll('#main [data-cmd-s]')].every(b => b.title.endsWith('(⌘S)'))"))
                 # Safari's web app in the Dock: ⌘R stays the browser's (reload, as everywhere), ⇧⌘R syncs with MoneyMoney
                 standalone = """(() => { const mm = window.matchMedia.bind(window);

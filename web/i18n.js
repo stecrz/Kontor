@@ -1712,7 +1712,6 @@ const I18N = {
 "port":["Port", "Port"],
 "tls_zertifikat_optional_0":["TLS-Zertifikat (optional) {0}", "TLS certificate (optional) {0}"],
 "tls_schluessel_optional":["TLS-Schlüssel (optional)", "TLS key (optional)"],
-"einstellungen_speichern":["Einstellungen speichern", "Save settings"],
 "passwort":["Passwort", "Password"],
 "altes_passwort":["Altes Passwort", "Old password"],
 "neues_passwort":["Neues Passwort", "New password"],

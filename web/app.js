@@ -5727,7 +5727,7 @@ async function restartTo(port, before) {
   }
   if (samePort) location.reload(); else leave();
 }
-async function saveConfig(cfg, findingsEl, trotzdem, extra) {
+async function saveConfig(cfg, findingsEl, trotzdem, extra, quiet) {
   try {
     const r = await api('/api/config', Object.assign({config: cfg, anyway: !!trotzdem, seen: CFG_DRAWN}, extra || {}), 'PUT');
     DIRTY.on = false; CFG_DRAWN = cfgCopy(r.config);
@@ -5735,11 +5735,12 @@ async function saveConfig(cfg, findingsEl, trotzdem, extra) {
     S.CFG = r.config;
     if (r.restart) { restartTo(r.port, r.instance); return true; }
     if (((r.config.ui || {}).language || 'de') !== LANG) { setLang(r.config.ui.language); return true; }
-    showFindings(findingsEl, probleme, t('gespeichert_2') + (S.KONTEN.length ? '' : t('noch_nicht_gegen_moneymoney_geprueft')), 'ok'); toast(t('gespeichert'));
+    if (quiet) { if (probleme.length) showFindings(findingsEl, probleme, t('gespeichert_2'), 'ok'); else if (findingsEl) findingsEl.innerHTML = ''; }     // saved by itself: only what needs a look
+    else { showFindings(findingsEl, probleme, t('gespeichert_2') + (S.KONTEN.length ? '' : t('noch_nicht_gegen_moneymoney_geprueft')), 'ok'); toast(t('gespeichert')); }
     S.STATUS = await api('/api/status'); statusMini();
     return true;
   } catch (e) {
-    if (e.data && e.data.findings) { showFindings(findingsEl, e.data.findings.filter(f => f.severity !== 'ok'), t('nicht_gespeichert_fehler_beheben_oder'), 'error'); findingsEl.insertAdjacentHTML('beforeend', `<div class="actions"><button id="save-anyway" class="danger small">${t('trotzdem_speichern')}</button></div>`); $('#save-anyway').addEventListener('click', () => saveConfig(cfg, findingsEl, true, extra)); }
+    if (e.data && e.data.findings) { showFindings(findingsEl, e.data.findings.filter(f => f.severity !== 'ok'), t('nicht_gespeichert_fehler_beheben_oder'), 'error'); findingsEl.insertAdjacentHTML('beforeend', `<div class="actions"><button id="save-anyway" class="danger small">${t('trotzdem_speichern')}</button></div>`); $('#save-anyway').addEventListener('click', () => saveConfig(cfg, findingsEl, true, extra, quiet)); }
     else if (e.data && e.data.stale) { showFindings(findingsEl, [], e.message, 'error'); findingsEl.insertAdjacentHTML('beforeend', `<div class="actions"><button class="small secondary cfg-reload">${t('neu_laden')}</button></div>`); $('.cfg-reload', findingsEl).addEventListener('click', async () => { DIRTY.on = false; await loadAll(); route(); }); }
     else toast(t('fehler_3') + e.message, 5000);
     return false;
@@ -6115,7 +6116,7 @@ async function vEinstellungen() {
   const v = {moneymoney: vEinstellungenMM, access: vEinstellungenZugang, receipts: vEinstellungenBelege, assistant: vEinstellungenAssistent, updates: () => vUpdates(vEinstellungenUpdates()), backup: vSicherung}[S.sub] || vEinstellungenAllgemein;
   return tabs + await v();
 }
-const saveBar = () => `<div class="actions"><button id="save-settings" data-cmd-s>${t('einstellungen_speichern')}</button></div><div id="findings-e" class="findings"></div>`;
+const saveBar = () => `<div id="findings-e" class="findings" data-autosave></div>`;          // saved at once with every change (bind: autosave)
 function vEinstellungenAllgemein() {
   return `<div data-ex="settings.general"><div class="note">${t('einstellungen_vs_einrichtung', '<a href="#accounts">' + t('konten_regeln') + '</a>')}</div><div class="form">
     <label>${t('sprache_label')}</label><label class="chk"><select id="e-lang">${langOpts()}</select> <span class="small muted">${t('sprache_hinweis')}</span></label>
@@ -6207,7 +6208,7 @@ function vEinstellungenSteuer() {
     <div class="full"><h3>${t('darlehen_objekt')}</h3>${loans.length ? `<table class="plain objloans"><thead><tr><th>${t('darlehenskonto')}</th><th>${t('objekt_wie_in_der_kategorie')}</th></tr></thead><tbody>${loans.map(l => `<tr><td>${esc(l.name)}<div class="small muted">${esc(CP(l.path.split(' / ').slice(0, -1).join(' / ')))}</div></td><td><input type="text" class="e-obj" data-ref="${l.uuid} | ${esc(l.name)}" value="${esc((st.property_loans || {})[l.uuid + ' | ' + l.name] || Object.entries(st.property_loans || {}).find(([k]) => k.startsWith(l.uuid))?.[1] || '')}" placeholder="${t('objektname_wie_in_der_kategorie')}"></td></tr>`).join('')}</tbody></table>` : `<span class="muted small">${t('keine_darlehenskonten_erkannt')}</span>`}</div>
     <label>${t('kategorie_steuerposition')}</label><div class="list" id="tax-positions">${Object.entries(st.positions || {}).filter(([k]) => !k.startsWith('_')).map(([k, v]) => posRow(k, v)).join('')}<button id="add-pos" class="secondary small" style="align-self:flex-start;width:auto">${t('zuordnung_hinzufuegen')}</button></div>
   </div>
-  <div class="actions"><button id="save-settings">${t('einstellungen_speichern')}</button></div><div id="findings-e" class="findings"></div></div>`;
+  ${saveBar()}</div>`;
 }
 // Why Tailscale is not usable yet, in words (state from "tailscale status")
 function tsReason(ts) {
@@ -6254,7 +6255,7 @@ async function vEinstellungenZugang() {
     <label>${t('tls_schluessel_optional')}</label><input type="text" id="e-key" value="${esc(o.tls_key || '')}" placeholder="/Pfad/zert.key">
     <div class="full note">${t('adresse_port_neustart')}</div>
   </div></details>
-  <div class="actions"><button id="save-settings">${t('einstellungen_speichern')}</button></div><div id="findings-e" class="findings"></div>
+  ${saveBar()}
   <h2>${t('passwort')}</h2><div class="form pw-form"><label>${t('altes_passwort')}</label><input type="password" id="pw-alt" autocomplete="current-password"${S.STATUS.touchid && S.STATUS.touchid_active && lokal ? ` placeholder="${esc(t('leer_touch_id'))}"` : ''}><label>${t('neues_passwort')}</label><input type="password" id="pw-neu" autocomplete="new-password"><label>${t('ph_passwort_wiederholen')}</label><input type="password" id="pw-neu2" autocomplete="new-password"></div><div class="actions"><button id="pw-save" class="secondary">${t('passwort_aendern')}</button></div>`;
   h += `</div><div data-ex="settings.access.iphone"><h2>${t('zugriff_vom_iphone')} ${hq('fern')}</h2>`;
   h += `<div class="banner small ${S.STATUS.exposed ? 'err' : 'hidden'}" id="fz-expose">${S.STATUS.exposed ? esc(t('ts_serve_serve')) : ''}</div>`;          // passed on by serve/Funnel: in red, first
@@ -6386,7 +6387,7 @@ function vEinstellungenUpdates() {
     <label>${t('automatisch_pruefen_0', hq('updates'))}</label><label class="chk"><select id="e-up-pruefen">${[['daily', t('taeglich')], ['weekly', t('woechentlich')], ['aus', t('nie')]].map(([v, l]) => `<option value="${v}" ${(up.check_mode || 'daily') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
     <label>${t('quelle_github_0', hq('update_quelle'))}</label><input type="text" id="e-up-repo" value="https://github.com/${esc(up.repo || 'stecrz/Kontor')}">
   </div>
-  <div class="actions"><button id="save-settings">${t('einstellungen_speichern')}</button></div><div id="findings-e" class="findings"></div>`;
+  ${saveBar()}`;
 }
 function vEinstellungenDaten() {
   return `<h2>${t('daten')}</h2><div class="kv"><div>${t('datenordner')}</div><div>${esc(S.STATUS.storage.folder)}</div>${S.STATUS.storage.program_folder ? `<div>${t('programmordner')}</div><div>${esc(S.STATUS.storage.program_folder)}</div>` : ''}<div>${t('verschluesselung')}</div><div>${!S.STATUS.storage.encrypted ? t('keine_verschluesselung') : t('aes_256_nach_anmeldung', t(S.STATUS.storage.touchid_unlock ? 'passwort_oder_touch_id' : 'passwort'))}</div><div>${t('belegordner')}</div><div><a href="#settings/receipts" title="${esc(t('belegordner_aendern'))}">${esc(S.STATUS.receipts.folder)}</a></div>
@@ -7319,7 +7320,15 @@ function bind(main) {
   bindDel(main);
 
   // Einstellungen
-  const ss = $('#save-settings', main); if (ss) ss.addEventListener('click', () => { try { saveConfig(collectSettings(), $('#findings-e')); } catch (e) { toast(e.message, 6000); } });
+  // settings save themselves (user, 2026-11-23): a change -- a field left or confirmed, a box ticked, a row removed -- is saved at
+  // once, nothing to click; what needs a look (an error, a warning) stays below. The password has its own button (Zugang).
+  const fe = $('#findings-e[data-autosave]', main), page = fe && (fe.closest('[data-ex]') || main);
+  if (page) {
+    let tm = 0;
+    const go = () => { clearTimeout(tm); tm = setTimeout(() => { try { saveConfig(collectSettings(), fe, false, null, true); } catch (e) { toast(e.message, 6000); } }, 250); };
+    page.addEventListener('change', e => { if (!/^(pw-|fz-)/.test(e.target.id || '') && !e.target.closest('#findings-e')) go(); });
+    page.addEventListener('click', e => { if (e.target.closest('.del, .del-row')) setTimeout(go, 0); });
+  }
   const bs = $('#e-bl-sub', main); if (bs) bs.addEventListener('input', () => { const why = subPatternProblem(bs.value.trim()); bs.classList.toggle('invalid', !!why); bs.title = why; });
   for (const [id, done] of [['#setup-done', true], ['#setup-again', false]]) { const b = $(id, main); if (b) b.addEventListener('click', async () => {
     const cfg = JSON.parse(JSON.stringify(S.CFG)); cfg.ui = Object.assign({}, cfg.ui, {setup_done: done});

@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.17.32 (2026-11-23 22:30)
+- Einstellungen: speichern sich bei jeder Änderung selbst – kein „Einstellungen speichern“ mehr (MoneyMoney-Sync, Zugang, Belege, Updates, Steuer)
+
 ## 3.17.31 (2026-11-23 22:10)
 - Anmeldung: wartet nach einem Start höchstens 2 s auf Tailscale, dann geht sie – Kontor braucht Tailscale nicht
 - Auto-Buchungen: „Freigeben (n)“ zählt genau die angehakten Buchungen – auch nach dem Neuladen der Seite

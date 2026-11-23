@@ -211,6 +211,7 @@ einer beschriebenen Stelle liegt.
 - Zielgeräte: 14-Zoll-MacBook (Kontors Mac-App bzw. Safari, Fenster fast im Vollbild) und iPhone; im Dunkelmodus gut lesbar (keine Pastelltöne).
 - Texte auf Deutsch, kurz, ohne Fachbegriffe, Einzahl/Mehrzahl korrekt. Keine überflüssigen Erklärtexte: was Tooltip oder Hilfe sagt, steht nicht noch einmal auf der Seite.
 - Konten in der Reihenfolge von MoneyMoney.
+- Einstellungen speichern sich bei jeder Änderung selbst (Feld verlassen, Haken, Auswahl, Zeile entfernt) – kein Speichern-Knopf; Fehler und Hinweise erscheinen darunter (`saveBar`, `data-autosave`; Nutzer, 2026-11-23).
 - Optionale Felder: was bei Leerlassen gilt, steht grau im Feld (Platzhalter) oder im Tooltip (Nutzer, 2026-11-23).
 - Zweistufige Kontoauswahl (erst Bereich, dann Konto): in der Kontoliste kein Bereichsname mehr; Gleichnamiges nur innerhalb des Bereichs unterschieden.
 - Wo was liegt: Was die Zahlen bestimmt, unter „Konten & Regeln“ (Konten, Bereiche, Kontostände, Cashflow-Positionen, Buchungsregeln, Steuer); wie Kontor arbeitet (Verbindung, Abgleich, Zugang, Belege, Assistent, Updates, Sicherung), unter „Einstellungen“. Die Einrichtung ist nur ein geführter Weg durch diese Seiten, keine eigene Ablage.

@@ -230,6 +230,7 @@ anhängen – nie löschen.
   einer Gruppe „Off-Balance“) steht unter Konten in seinem Bereich, nicht unter „ohne Bereich“. (umgesetzt in 3.17.24)
 - **Kontoauswahl ohne Bereichsnamen** und **optionale Felder erklärt** (Nutzer, 2026-11-23): siehe CLAUDE.md, Oberfläche. (umgesetzt in 3.17.24)
 
+- **Einstellungen speichern sich selbst** (Nutzer, 2026-11-23): Jede Änderung in den Einstellungen wird sofort gespeichert, kein Knopf „Einstellungen speichern“ mehr (MoneyMoney-Sync, Zugang, Belege, Updates, Steuer); nur das Passwort hat seinen eigenen Knopf. (umgesetzt in 3.17.32)
 - **Anmeldung wartet nicht auf Tailscale** (Nutzer, 2026-11-23): Kontor muss ohne Tailscale funktionieren. Zweck der Prüfung bleibt
   (reicht „tailscale serve“/Funnel Kontors Port weiter, kämen fremde Anfragen als „am Mac“ an – dann keine Anmeldung am Mac, alle
   Sitzungen dort enden), aber vor der ersten Prüfung nach einem Start wartet eine Anmeldung höchstens 2 s und geht dann. (umgesetzt in 3.17.31)
