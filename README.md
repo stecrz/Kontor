@@ -45,7 +45,7 @@ Sie lädt Kontor und ein aktuelles [Python](docs/help.de.md#python) dazu, richte
 - **Er schlägt vor, du entscheidest:** Kontostände und Planwerte, Kategorien, wartende Auto-Buchungen, Buchungsregeln, Belege – alle Änderungen einer Antwort stehen auf einer Karte, ausgeführt erst nach deinem Klick, danach zurücknehmbar und im Protokoll. Jedes Recht ist einzeln schaltbar; Einstellungen, Zugang, Updates und Überweisungen fasst er nie an.
 - **Er merkt sich, was du ihm sagst** (Ziele, Entscheidungen, Menschen, Vorlieben) – nur aus deinen eigenen Worten, verschlüsselt, nur auf diesem Mac, jederzeit einsehbar und löschbar.
 - **Nichts verlässt den Mac:** Die Modelle laufen ohne Netz in der Abschirmung von macOS. Ins Netz geht Kontor dafür nur, um nach neueren Versionen zu fragen (von selbst, einstellbar) und – auf Klick – Programm und Modelle zu laden.
-- **Internet nur zum Lesen** (ab Werk aus): Kontor sucht selbst bei festen, überwiegend amtlichen Quellen; was gesendet wird, steht vorher auf einer Karte im Chat, nie etwas aus deinen Daten.
+- **Internet nur zum Lesen** (ab Werk aus): Kontor sucht selbst bei festen, überwiegend amtlichen Quellen; was gesendet wird, steht vorher auf einer Karte im Chat, nie etwas aus deinen Daten. Mit eigenem Schlüssel kann der Assistent auch Claude von Anthropic fragen – jede Frage erst nach deinem Klick.
 
 **Mac-App** – Kontor in einem eigenen Fenster mit Menüleiste, Tastaturkürzeln und Suche (⌘F); am Mac gebaut, öffnet nur Kontors eigene Seite (Einstellungen → Allgemein → Als App).
 

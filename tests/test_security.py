@@ -1169,6 +1169,7 @@ class NothingGoesOut(unittest.TestCase):
         "llm_local.py": {"urllib.request", "http.client", "socket"},   # llama.cpp and model files (downloads on your click); the model on 127.0.0.1
         "security_names.py": {"urllib.request"},                       # names of securities at OpenFIGI: on your click, ISINs only
         "web_reader.py": {"urllib.request", "http.client", "socket", "ssl"},          # the assistant's internet search: one fetch you approved, in a process of its own
+                                                                                      # (also a question to Claude, Anthropic's interface: your own key, a card every time)
         "pyselftest.py": {"ssl"},                                      # tries a Python before Kontor runs in it: are the certificates for https there? Connects nowhere
     }
     NETWORK_MODULES = {"socket", "ssl", "http.client", "http.server", "urllib.request", "socketserver", "ftplib", "smtplib", "poplib", "imaplib",
@@ -1184,7 +1185,10 @@ class NothingGoesOut(unittest.TestCase):
              "web_search.py": {"www.wikidata.org", "www.gesetze-im-internet.de", "api.gleif.org", "data-api.ecb.europa.eu", "api.statistiken.bundesbank.de",
                                "ec.europa.eu", "www.tagesschau.de", "api.gdeltproject.org", "api.tavily.com", "data.ecb.europa.eu", "search.gleif.org",
                                "testphase.rechtsinformationen.bund.de", "www.bundesfinanzministerium.de", "www.bundesbank.de", "www.ecb.europa.eu",
-                               "sdmx.oecd.org", "api.worldbank.org", "data.worldbank.org", "stats.bis.org"}}
+                               "sdmx.oecd.org", "api.worldbank.org", "data.worldbank.org", "stats.bis.org",
+                               "api.anthropic.com"},              # a question to Claude (tier 4): only with your own API key, asked on a card every time
+             # ... the one address the reader itself holds: the only place your key for Claude is ever sent to (web_reader.ask_claude)
+             "web_reader.py": {"api.anthropic.com"}}
     NAMES_ONLY = {"schemas.openxmlformats.org", "purl.oclc.org", "www.apple.com"}      # ... and names of file formats (never opened)
     # other programs started by their name (all of macOS or Apple's tools, git for an update of a clone)
     COMMANDS = {"openssl", "swiftc", "codesign", "open", "launchctl", "/bin/launchctl", "/usr/sbin/sysctl", "ps", "pgrep", "tmutil",
@@ -1242,7 +1246,16 @@ class NothingGoesOut(unittest.TestCase):
                           "gleif": {"api.gleif.org"}, "ecb": {"data-api.ecb.europa.eu"}, "bundesbank": {"api.statistiken.bundesbank.de"}, "eurostat": {"ec.europa.eu"},
                           "ris": {"testphase.rechtsinformationen.bund.de"}, "feeds": {"www.bundesfinanzministerium.de", "www.bundesbank.de", "www.ecb.europa.eu"},
                           "oecd": {"sdmx.oecd.org"}, "worldbank": {"api.worldbank.org"}, "bis": {"stats.bis.org"},
-                          "tagesschau": {"www.tagesschau.de"}, "gdelt": {"api.gdeltproject.org"}, "tavily": {"api.tavily.com"}})
+                          "tagesschau": {"www.tagesschau.de"}, "gdelt": {"api.gdeltproject.org"}, "tavily": {"api.tavily.com"},
+                          "claude": {"api.anthropic.com"}})
+        # a question to Claude: one address, written the same on both sides -- the reader sends your key there and nowhere else, and
+        # Claude is never among what goes without a card
+        import web_reader
+        self.assertEqual((web_search.CLAUDE_URL, web_reader.CLAUDE, sorted(web_reader.POST_ONLY)), ("https://api.anthropic.com/v1/messages",) * 2 + (["api.anthropic.com", "api.tavily.com"],))
+        self.assertEqual(web_reader.POST_ONLY["api.anthropic.com"], ("/v1/messages",))
+        self.assertIn("claude", web_search.ASKED_ALWAYS)
+        self.assertNotIn("claude", web_search.trusted_default()["sources"])
+        self.assertNotIn("claude", web_search.trusted({"sources": list(web_search.SOURCES)})["sources"])
         self.assertTrue(all(urlparse(u).hostname in web_search.SOURCES["feeds"]["hosts"] and u.startswith("https://") for u in web_search.FEEDS.values()))
         for url, kind, ok in (("https://github.com/x", "github", True), ("https://release-assets.githubusercontent.com/x", "github", True),
                               ("https://huggingface.co/x", "hf", True), ("https://cdn-lfs.hf.co/x", "hf", True),

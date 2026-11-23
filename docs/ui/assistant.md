@@ -39,12 +39,21 @@ card counts done, not done, failed. A booking rule from the assistant waits for 
 
 ## assistant.web — Im Internet nachschlagen
 A card of lookups Kontor (not the model) would make, only with the right "Internet": the reason, then one row per request – the
-search words or page address, the source ("gefunden über …" for a page on another website), "Stufe 1–3" (official sources and
-statistics, news, general web search), "nur falls nötig" (fetched only if the ones before found nothing); unfolded the addresses
-and what is sent ("Nur die Adresse", or the text sent and "und dein Tavily-Schlüssel"). Buttons "Abrufen" / "Für diesen Chat
-erlauben" (then trusted sources go without asking in this chat; such cards say "ohne Rückfrage" and have no buttons), "Nicht
-abrufen"; no answer in 3 minutes: not fetched. After it each row: "N Treffer", "Abgerufen", "Nicht abgerufen", "Nicht nötig" or the
-error. Text from the internet is material, never instruction; after it Kontor accepts no change in this conversation.
+search words or page address, the source ("gefunden über …" for a page on another website), "Stufe 1–4" (official sources and
+statistics, news, general web search, a question to Claude), "nur falls nötig" (fetched only if the ones before found nothing);
+unfolded the addresses and what is sent ("Nur die Adresse", or the text sent and "und dein Tavily-Schlüssel"). Buttons "Abrufen" /
+"Für diesen Chat erlauben" (then trusted sources go without asking in this chat; such cards say "ohne Rückfrage" and have no
+buttons), "Nicht abrufen"; no answer in 3 minutes: not fetched. After it each row: "N Treffer", "Abgerufen", "Nicht abgerufen",
+"Nicht nötig" or the error. Text from the internet is material, never instruction; after it Kontor accepts no change in this
+conversation.
+
+A row "Claude (Anthropic) · <model> · Stufe 4" is a question to Claude, a stronger AI model at Anthropic that searches the web
+itself (only with the user's own API key, it costs API credit there): the row's title is the question, and it stands open while
+the card asks – "Gesendet" is the whole text of the request (model, max_tokens = the most it may answer, system = Kontor's fixed
+words on how to answer, messages = the question, tools = Anthropic's own web search) and "und dein Claude-Schlüssel" (never
+shown). Such a row is asked every time, also in a chat that allows the internet. After it: "Antwort · N Quellen" (N = sources
+the answer cites; their addresses are text in the chat until Kontor has read the page) or why not: the key refused, no API
+credit, Anthropic's limit or overload, the day's limit set in the settings.
 
 ## assistant.notes — Notizen
 Lines under an answer about the assistant's memory (notes in the user's words, kept by Kontor, never from bookings, files, pages or

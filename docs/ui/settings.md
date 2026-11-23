@@ -141,12 +141,18 @@ pages, filter transactions, highlight places, show charts), **Ändern** – each
 balances and plan values, assign categories in MoneyMoney (only transactions without one), approve or hold back waiting
 auto-bookings, create and change booking rules, file receipts given in the chat; **Von wo**: also from the iPhone (default off);
 **Internet** (default off): look things up, read only, per chat after a click – with the optional Tavily key, the sources trusted
-without asking ("Ohne Rückfrage") and further websites. Never: settings, access, updates, transfers, itself.
+without asking ("Ohne Rückfrage") and further websites. **Claude-Schlüssel (optional)**: the user's own API key of Anthropic for
+questions to Claude (tier 4), typed once and never shown again – "Gespeichert · heute N von M Anfragen" counts today's questions
+against the day's limit; with a key **Claude-Modell** (Opus 5.5, Sonnet 5.5 or Fable 5.2: which model answers) and
+**Claude-Anfragen je Tag** (the most questions that go out in a day, default 20). Claude is never among "Ohne Rückfrage": every
+question is asked on a card. Never: settings, access, updates, transfers, itself.
 
 ### settings.assistant.changes — Protokoll der Änderungen und Abrufe
 Folded table of everything the assistant changed after a click, every internet lookup and every change of the memory, newest
 first: **Zeitpunkt**, **Änderung** (kind, title, each row before and after as on the card), **Begründung**, **Stand** (done, taken
-back, final, failed; lookups: fetched or the number of results). At most 500 entries per kind; never in backups.
+back, final, failed; lookups: fetched or the number of results). A question to Claude: the question, the model, and of its answer
+only figures – "N Token ein · M aus" (tokens Anthropic counted for the request and for the answer: what it cost) and how many web
+searches it made; never the answer. At most 500 entries per kind; never in backups.
 
 ## settings.updates — Updates
 Cards **Installiert** (version and date) and **Verfügbar** (the newest version on GitHub; "neuer als installiert", "Kontor ist
@@ -197,7 +203,7 @@ Backup, passing on, loading, data, reset and uninstall. Backup, reset and uninst
 ### settings.backup.backup — Sicherung
 For the user: everything to restore Kontor on a new Mac or after a reset – settings, areas, rules, properties, planning,
 categories and assignments, month-end balances, the receipt index, the assistant's memory; not the transactions (they come from
-MoneyMoney), receipt files, conversations, the Tavily key or Kontor's password. Encrypted with a password of its own (typed twice,
+MoneyMoney), receipt files, conversations, the keys for Tavily and Claude or Kontor's password. Encrypted with a password of its own (typed twice,
 never stored).
 
 ### settings.backup.package — Einstellungspaket und Datei laden
@@ -214,7 +220,7 @@ file with a new key; the old one is deleted only when everything opens with the 
 
 ### settings.backup.reset — Zurücksetzen und Deinstallieren
 **Zurücksetzen**: deletes settings, planning, categories, history, receipt index, reports and the assistant's conversations, memory,
-change log, settings and Tavily key – optionally also the password (then the setup starts anew). Receipt files, linked documents,
+change log, settings and the keys for Tavily and Claude – optionally also the password (then the setup starts anew). Receipt files, linked documents,
 the log and loaded models stay. **Deinstallieren**: removes the background service, Kontor's files in the data folder (also the
 assistant's program and models), the data key, the Mac app's data and – if ticked – the program folder. Receipts and MoneyMoney
 stay untouched.

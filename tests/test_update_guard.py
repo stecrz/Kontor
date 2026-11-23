@@ -585,9 +585,21 @@ class Program(unittest.TestCase):
             ("the reader's sandbox", "web_search.py", swap(b'"(version 1)", "(allow default)", "(deny network*)",', b'"(version 1)", "(allow default)",')),
             ("the reader without its sandbox", "web_search.py", swap(b'        if sys.platform == "darwin" and level != "off":\n', b"        if False:\n")),
             ("another program as the reader", "web_search.py", swap(b'READER = os.path.join(HERE, "web_reader.py")', b'READER = os.path.join(HERE, "docs", "reader.py")')),
+            # a question to Claude: asked every time, its text as the card shows it, one address, the key beside it
+            ("Claude without asking", "web_search.py", swap(b'ASKED_ALWAYS = frozenset(("claude",))', b"ASKED_ALWAYS = frozenset(())")),
+            ("Claude trusted like any source", "web_search.py", swap(b'    return {"sources": [x for x in SOURCES if x not in ASKED_ALWAYS], "hosts": []}', b'    return {"sources": list(SOURCES), "hosts": []}')),
+            ("a page Claude named read without asking", "web_search.py", swap(b'ANYWHERE = frozenset(("gdelt", "tavily", "claude"))', b'ANYWHERE = frozenset(("gdelt", "tavily"))')),
+            ("Claude's address", "web_search.py", swap(b'CLAUDE_URL = "https://api.anthropic.com/v1/messages"', b'CLAUDE_URL = "https://api.anthropic.com/v1/complete"')),
+            ("a longer question to Claude", "web_search.py", swap(b"CLAUDE_QUESTION = 1000 ", b"CLAUDE_QUESTION = 100000 ")),
+            ("another frame around the question", "web_search.py", swap(b'CLAUDE_SYSTEM = ("Research question from a personal finance program; today is %s. ', b'CLAUDE_SYSTEM = ("Research question; today is %s. ')),
+            ("more than the question in the request", "web_search.py", swap(b'            "messages": [{"role": "user", "content": question}],\n', b'            "messages": [{"role": "user", "content": question}], "metadata": {"user_id": model},\n')),
+            ("a question to Claude not checked", "web_search.py", swap(b"        p.update(query=q, check=q, url=CLAUDE_URL, ", b'        p.update(query=q, check="", url=CLAUDE_URL, ')),
+            ("more handed to the reader beside the key", "web_search.py", swap(b"body=p[\"body\"], key=key, timeout=CLAUDE_SECONDS", b"body=p[\"body\"], key=key, headers={\"Accept-Language\": key}, timeout=CLAUDE_SECONDS")),
+            ("any model to choose", "web_search.py", swap(b'CLAUDE_MODELS = {"claude-opus-5-5": "Claude Opus 5.5", ', b'CLAUDE_MODELS = {"other": "Other", "claude-opus-5-5": "Claude Opus 5.5", ')),
             # in the assistant
             ("changes after web text", "assistant.py", swap(b'        if job.conv is not None and job.conv.get("web"):', b'        if job.conv is not None and job.conv.get("no"):')),
             ("everything trusted", "assistant.py", swap(b'        return p["source"] in tw["sources"]', b"        return True")),
+            ("Claude trusted when the settings say so", "assistant.py", swap(b' and p["source"] not in web_search.ASKED_ALWAYS\n', b"\n")),
             ("no index: search anyway", "assistant.py", swap(b'        idx = web_search.own_index(*got()) if got else {"empty": True}', b'        idx = web_search.own_index(*got()) if got else {"empty": False}')))
         # a rule is kept per file: each change is looked for in its file alone (quick) -- three of them in the whole program too
         before = {rel: G.scan({rel: self.files[rel]})[0] for rel in ("web_reader.py", "web_search.py", "assistant.py")}
@@ -610,10 +622,24 @@ class Program(unittest.TestCase):
         self.assertIn(("rule", "web_reader.py", "host_ok()", True), [(f["kind"], f["file"], f["what"], f.get("gone", False)) for f in gone])
         gone = found("web_search.py", swap(b"\nSOURCES: Dict[str, dict] = {", b"\nPLACES: Dict[str, dict] = {"))
         self.assertIn(("rule", "web_search.py", "SOURCES", True), [(f["kind"], f["file"], f["what"], f.get("gone", False)) for f in gone])
+        # the reader's one request to Claude reaches out itself: softened, it is found as a call that goes out (not as a rule)
+        for name, change in (("the key to another address", swap(b'CLAUDE = "https://api.anthropic.com/v1/messages"', b'CLAUDE = "https://api.example.org/v1/messages"')),
+                             ("any address with the key", swap(b"    if req.get(\"url\") != CLAUDE or not isinstance(key, str)", b"    if not isinstance(key, str)")),
+                             ("any key", swap(b" or not CLAUDE_KEY.fullmatch(key)", b"")),
+                             ("the request's own headers to Claude", swap(b'"headers": {"Content-Type": "application/json"}}\n', b'"headers": req.get("headers")}\n')),
+                             ("more of the answer handed back", swap(b'    res["data"] = claude_answer(res["data"])\n', b"")),
+                             ("Claude over the general way", swap(b" or (host == urlparse(CLAUDE).hostname and own is None)", b"")),
+                             ("the general way's headers after the reader's own", swap(b"    headers.update(own or {})\n", b"    headers = dict(own or {}, **headers)\n"))):
+            with self.subTest(name):
+                got = found("web_reader.py", change)
+                self.assertTrue([f for f in got if f["kind"] in ("call", "around", "address")], name)
+        self.assertIn("ask_claude", G.CHECKED["web_reader.py"])                 # it looks itself at what it is handed: its callers are not followed
         # how results are shaped for the model, a label, an explanation, a new helper: an ordinary change
         for name, rel, change in (("a shorter summary", "web_search.py", swap(b"SNIPPET = 360", b"SNIPPET = 300")),
                                   ("a source's label", "web_search.py", swap(b'"gleif": "GLEIF"', b'"gleif": "GLEIF (LEI)"')),
                                   ("a new helper", "web_search.py", lambda b: b + b"\n\ndef _shorter(s):\n    return str(s)[:80]\n"),
+                                  ("how much of Claude's answer the model gets", "web_search.py", swap(b"CLAUDE_TEXT = 6000 ", b"CLAUDE_TEXT = 5000 ")),
+                                  ("the day's limit from the factory", "web_search.py", swap(b"CLAUDE_PER_DAY = 20 ", b"CLAUDE_PER_DAY = 10 ")),
                                   ("an explanation", "web_reader.py", swap(b'    """The host of url if it may be fetched: ', b'    """The host of an address if it may be fetched: '))):
             with self.subTest(name):
                 self.assertEqual(found(rel, change), [], name)
@@ -752,6 +778,31 @@ class Program(unittest.TestCase):
         # and an update with only what is plain is installed without a word
         self.assertEqual(G.asking(self.judged(web_search_py=swap(b'             "(deny file-write*)",', b'             "(deny file-write*)", "(deny iokit-open)",'),
                                               receipt_text_py=swap(b'        "(deny file-write*)",', b'        "(deny file-write*)", "(deny iokit-open)",'))), [])
+
+    def test_claude_asked_every_time_is_judged_like_a_table(self):
+        """The sources asked on a card every time (Claude): one more is only stricter -- installed without asking; one less lets
+        a question go out unasked -- critical. (Judged in the file alone: quick.)"""
+        def swap(old, new):
+            def change(b):
+                self.assertEqual(b.count(old), 1, old)
+                return b.replace(old, new)
+            return change
+        old = {"web_search.py": self.files["web_search.py"]}
+
+        def judged(change):
+            new = {"web_search.py": change(old["web_search.py"])}
+            return G.compare(old, new)
+        more = judged(swap(b'ASKED_ALWAYS = frozenset(("claude",))', b'ASKED_ALWAYS = frozenset(("claude", "tavily"))'))
+        self.assertEqual([(f["kind"], f["where"], f["level"], f["topic"]) for f in more], [("rule", "ASKED_ALWAYS", "plain", "trust")])
+        self.assertEqual(G.asking(more), [])
+        fewer = judged(swap(b'ASKED_ALWAYS = frozenset(("claude",))', b"ASKED_ALWAYS = frozenset(())"))
+        self.assertEqual([(f["kind"], f["where"], f["level"], f["topic"]) for f in G.asking(fewer)], [("rule", "ASKED_ALWAYS", "critical", "trust")])
+        fewer = judged(swap(b'ANYWHERE = frozenset(("gdelt", "tavily", "claude"))', b'ANYWHERE = frozenset(("gdelt",))'))
+        self.assertEqual([(f["where"], f["level"], f["topic"]) for f in G.asking(fewer)], [("ANYWHERE", "critical", "trust")])
+        text = judged(swap(b"CLAUDE_TOKENS = 8192 ", b"CLAUDE_TOKENS = 64000 "))             # what the card shows whole: to review, with the filter
+        self.assertEqual([(f["where"], f["level"], f["topic"]) for f in G.asking(text)], [("CLAUDE_TOKENS", "review", "filter")])
+        where = judged(swap(b"CLAUDE_SECONDS = 300 ", b"CLAUDE_SECONDS = 3000 "))             # what the card does not show: a risk
+        self.assertEqual([(f["where"], f["level"], f["topic"]) for f in G.asking(where)], [("CLAUDE_SECONDS", "critical", "reader")])
 
     def test_every_kind_is_shown(self):
         """Each kind of finding and each entry the check can name has its title and explanation on the update page, in both

@@ -203,7 +203,7 @@ const H = {
   tls: t('optional_zertifikat_schluessel_pem_fue'),
   updates: t('einzige_netzverbindung_von_kontor_einm'), python: t('h_python'), programme: t('h_programme'),
   assistent: t('h_assistent'), ki_abschirmung: t('h_ki_abschirmung'), ki_kontext: t('h_ki_kontext'), ki_leerlauf: t('h_ki_leerlauf'),
-  ki_eintragen: t('h_ki_eintragen'), ki_eigenes: t('h_ki_eigenes'), ki_diktat: t('h_ki_diktat'), ki_bedeutung: t('h_ki_bedeutung'), ki_sp_start: t('h_ki_sp_start'), ki_mikrofilter: t('h_ki_mikrofilter'), ki_speichern: t('h_ki_speichern'), ki_internet: t('h_ki_internet'), ki_tavily: t('h_ki_tavily'), ki_vertraut: t('h_ki_vertraut'), ki_websites: t('h_ki_websites'),
+  ki_eintragen: t('h_ki_eintragen'), ki_eigenes: t('h_ki_eigenes'), ki_diktat: t('h_ki_diktat'), ki_bedeutung: t('h_ki_bedeutung'), ki_sp_start: t('h_ki_sp_start'), ki_mikrofilter: t('h_ki_mikrofilter'), ki_speichern: t('h_ki_speichern'), ki_internet: t('h_ki_internet'), ki_tavily: t('h_ki_tavily'), ki_claude: t('h_ki_claude'), ki_claude_tag: t('h_ki_claude_tag'), ki_vertraut: t('h_ki_vertraut'), ki_websites: t('h_ki_websites'),
   ki_gedaechtnis: t('h_ki_gedaechtnis'),
   ki_programm: t('h_ki_programm'), ki_auto_suchen: t('h_ki_auto_suchen'), ki_modelle: t('h_ki_modelle'), ki_ablage: t('h_ki_ablage'),
   darlehen_iban: t('die_rate_wird_am_gegenkonto'),
@@ -264,7 +264,7 @@ const HELP_AT = {als_app: 'app', berechtigung: 'setup', immo_abrechnung: 'proper
   h_co_rueck: 'rules-back', h_co_takt: 'rules-companies', h_co_schwelle: 'rules-companies', h_co_gp: 'rules-companies', method: 'planning', plan_modell: 'planning', inflation: 'planning', steig_ein: 'planning',
   rendite: 'planning', event: 'planning', wert_bereich: 'planning', fern: 'iphone', fern_was: 'iphone', offline: 'iphone', bind: 'iphone', tls: 'iphone',
   port: 'iphone', touchid: 'security', package: 'backup', timemachine: 'backup', datenschluessel: 'security', diagnose: 'troubleshooting', einrichtung_knoepfe: 'setup', updates: 'updates', python: 'python', programme: 'components',
-  update_quelle: 'updates', belege_ordner: 'receipts', belege_sub: 'receipts', documents: 'properties', assistent: 'assistant', ki_diktat: 'assistant-dictation', ki_bedeutung: 'assistant-memory', ki_sp_start: 'assistant-dictation', ki_mikrofilter: 'assistant-dictation', ki_abschirmung: 'assistant-safety', ki_kontext: 'assistant-setup', ki_leerlauf: 'assistant-setup', ki_auto_suchen: 'assistant-setup', ki_eintragen: 'assistant-rights', ki_eigenes: 'assistant-setup', ki_speichern: 'assistant', ki_programm: 'assistant-setup', ki_modelle: 'assistant-setup', ki_ablage: 'assistant-setup', ki_internet: 'assistant-internet', ki_tavily: 'assistant-internet', ki_vertraut: 'assistant-internet', ki_websites: 'assistant-internet'};
+  update_quelle: 'updates', belege_ordner: 'receipts', belege_sub: 'receipts', documents: 'properties', assistent: 'assistant', ki_diktat: 'assistant-dictation', ki_bedeutung: 'assistant-memory', ki_sp_start: 'assistant-dictation', ki_mikrofilter: 'assistant-dictation', ki_abschirmung: 'assistant-safety', ki_kontext: 'assistant-setup', ki_leerlauf: 'assistant-setup', ki_auto_suchen: 'assistant-setup', ki_eintragen: 'assistant-rights', ki_eigenes: 'assistant-setup', ki_speichern: 'assistant', ki_programm: 'assistant-setup', ki_modelle: 'assistant-setup', ki_ablage: 'assistant-setup', ki_internet: 'assistant-internet', ki_tavily: 'assistant-internet', ki_claude: 'assistant-claude', ki_claude_tag: 'assistant-claude', ki_vertraut: 'assistant-internet', ki_websites: 'assistant-internet'};
 const more = id => ` <a href="#help/${id}" class="more">${t('mehr_in_der_hilfe')}</a>`;   // Verweis auf einen Abschnitt der Hilfe
 // beside a page's title: what the page does in a line, a click opens its part of the help (settings and Konten & Regeln: per tab)
 const PAGE_HELP = {overview: 'overview', balance: 'balance-sheet', cashflow: 'cash-flow', planning: 'planning', properties: 'properties', tax: 'tax',
@@ -7598,6 +7598,7 @@ function asBatch(p, m) {
   return `<div class="as-batch done" data-ex="assistant.change"><span class="muted small">${esc(bits.join(' · '))}</span></div>`;
 }
 // The requests on the card of a research: each {id, what: search | read, source, label, tier, query, addresses, sent, state}
+// (model: a question to Claude -- which model is asked; its row stands open while the card asks: the whole text that goes out).
 // (reads: a line of cards saved by 3.16.76-3.16.88, results read with the search's approval). A card saved before the lookups
 // of an answer were asked together named one request: shown as its only one.
 const asWebItems = p => Array.isArray(p.items) ? p.items : (p.items = [{id: p.id, what: p.what || 'search', label: p.label, tier: p.tier, query: p.query, addresses: p.addresses || [],
@@ -7617,7 +7618,7 @@ function asWebCard(p, i, j) {
   // with it on demand (the row opens); Kontor fetches the ticked ones with one click (chat: that click allows the conversation),
   // afterwards each row says what came of it. free: trusted, in a conversation that allows the internet -- no buttons, just shown
   const items = asWebItems(p), ask = p.state === 'ask', none = p.state === 'declined' || p.state === 'expired', reqs = items.filter(it => it.what !== 'reads'), on = reqs.filter(it => !it.off).length;
-  const state = it => it.state === 'done' ? `<span class="as-w-st ok">${ICON.check}${it.what === 'read' ? t('ki_w_done_read') : tn('ki_w_treffer', it.count || 0, it.count || 0)}</span>`
+  const state = it => it.state === 'done' ? `<span class="as-w-st ok">${ICON.check}${it.what === 'read' ? t('ki_w_done_read') : tn(it.source === 'claude' ? 'ki_w_antwort' : 'ki_w_treffer', it.count || 0, it.count || 0)}</span>`
     : it.state === 'run' ? `<span class="as-w-st"><span class="spin xs"></span></span>`
     : it.state === 'failed' ? `<span class="as-w-st">${esc(t('ki_w_fehler', it.text || ''))}</span>`
     : it.state === 'unneeded' ? `<span class="as-w-st">${t('ki_w_unneeded')}</span>`
@@ -7627,11 +7628,12 @@ function asWebCard(p, i, j) {
     const off = it.off || (it.what === 'reads' && ask && !on);
     if (it.what === 'reads') return `<div class="as-w-row reads ${esc(it.state || '')}${off ? ' off' : ''}">${tick(it)}<div class="as-w-plain"><span class="as-w-q">${tn('ki_w_reads', it.count || 0, it.count || 0)}</span>${ask || none ? '' : `<span class="as-w-st${it.state ? '' : ' ok'}">${it.state ? t('ki_w_reads_nein') : ICON.check + t('ki_w_reads_ja')}</span>`}</div></div>`;
     const adr = it.addresses || [], what = it.what === 'read' ? String(it.query || '').replace(/^https:\/\//, '') : it.query || '';
-    const meta = (it.site ? [it.site, t('ki_w_ueber', it.label || '')] : [it.label || '', t('ki_w_stufe', it.tier || 1), it.fallback ? t('ki_w_falls') : '']).filter(Boolean).join(' · ');          // a page on some website: the website first
-    return `<div class="as-w-row ${esc(it.state || '')}${off ? ' off' : ''}">${tick(it)}<details class="as-w-d" data-m="${i}" data-p="${j}" data-i="${esc(it.id || '')}"${it.open ? ' open' : ''}>
+    const meta = (it.site ? [it.site, t('ki_w_ueber', it.label || '')] : [it.label || '', it.model || '', t('ki_w_stufe', it.tier || 1), it.fallback ? t('ki_w_falls') : '']).filter(Boolean).join(' · ');          // a page on some website: the website first
+    const open = it.open != null ? it.open : ask && !!it.model;          // a question to Claude: what goes out stands there whole before the click
+    return `<div class="as-w-row ${esc(it.state || '')}${off ? ' off' : ''}">${tick(it)}<details class="as-w-d" data-m="${i}" data-p="${j}" data-i="${esc(it.id || '')}"${open ? ' open' : ''}>
       <summary><span class="as-w-q${it.what === 'read' ? ' one' : ''}">${esc(what)}</span><span class="as-w-sub"><span class="as-w-src">${esc(meta)}</span>${ask || none ? '' : state(it)}</span></summary>
       <dl class="as-w-more"><dt>${tn('ki_w_adresse', adr.length)}</dt><dd>${adr.map(u => `<code>${esc(u)}</code>`).join('')}</dd>
-      ${it.old ? '' : `<dt>${t('ki_w_gesendet')}</dt><dd>${it.sent ? `<code>${esc(it.sent)}</code><span class="muted">${it.key ? t('ki_w_schluessel') : ''}</span>` : `<span class="muted">${tn('ki_w_nur_adresse', adr.length)}</span>`}</dd>`}</dl></details></div>`;
+      ${it.old ? '' : `<dt${it.model ? ' class="whole"' : ''}>${t('ki_w_gesendet')}</dt><dd${it.model ? ' class="whole"' : ''}>${it.sent ? `<code>${esc(it.sent)}</code><span class="muted">${it.key ? t(it.source === 'claude' ? 'ki_w_schluessel_claude' : 'ki_w_schluessel') : ''}</span>` : `<span class="muted">${tn('ki_w_nur_adresse', adr.length)}</span>`}</dd>`}</dl></details></div>`;
   };
   const yes = p.chat ? t('ki_w_chat_ja') : on === reqs.length ? tn('ki_w_alle', on, on) : tn('ki_w_auswahl', on, on);
   const end = ask ? `<div class="as-e-btn"><button class="small as-w-yes" data-id="${esc(p.id)}" ${on ? '' : 'disabled'}${p.chat ? ` title="${esc(t('ki_w_chat_tip'))}"` : ''}>${yes}</button><button class="small secondary as-w-no" data-id="${esc(p.id)}">${t(p.chat ? 'ki_w_chat_nein' : reqs.length > 1 ? 'ki_w_nichts' : 'ki_w_nein')}</button></div>`
@@ -8898,7 +8900,8 @@ $('#assist').addEventListener('toggle', e => {
   if (d.classList.contains('as-e-more')) { const y = AS.msgs.flatMap(m => m.parts || []).find(x => x.k === 'entry' && x.id === d.dataset.id); if (y) y.more = d.open; return; }          // all bookings of a card: stay unfolded
   const p = ((AS.msgs[+d.dataset.m] || {}).parts || [])[+d.dataset.p]; if (!p) return;
   if (d.classList.contains('as-think')) p.open = d.open;
-  else if (d.classList.contains('as-w-d')) { const it = asWebItems(p).find(x => String(x.id || '') === d.dataset.i); if (it) it.open = d.open; }          // a request's address and what is sent: stays open while the answer goes on
+  else if (d.classList.contains('as-w-d')) { const it = asWebItems(p).find(x => String(x.id || '') === d.dataset.i);          // a request's address and what is sent: stays open while the answer goes on
+    if (it && (it.open != null || d.open !== (p.state === 'ask' && !!it.model))) it.open = d.open; }          // (a question to Claude stands open by itself while its card asks -- that is no choice of yours: it folds once you have answered)
 }, true);
 window.addEventListener('resize', () => { if (S.tab === 'assistant') asLayout(); });
 function vAssistent() {
@@ -8941,6 +8944,11 @@ async function vEinstellungenAssistent() {
     ? `<span class="muted small">${t('ki_tavily_da', a.web.tavily_used || 0, a.web.tavily_limit || 950, a.web.tavily_days || 31)}</span><button class="small secondary" id="as-tavily-del">${t('ki_entfernen')}</button>`
     : `<input type="password" id="as-tavily" placeholder="tvly-…" autocomplete="off" spellcheck="false"><button class="small secondary" id="as-tavily-save">${t('ki_tavily_sichern')}</button>${a.web
       ? `<span class="muted small">${t('ki_tavily_frei', a.web.tavily_used || 0, a.web.tavily_limit || 200, a.web.tavily_days || 31)}</span>` : ''}`}</div>
+    <label for="as-claude">${t('ki_claude')}${hq('ki_claude')}</label><div class="row tight">${(a.web || {}).claude
+    ? `<span class="muted small" id="as-claude-n">${t('ki_claude_da', a.web.claude_used || 0, a.web.claude_limit || 20)}</span><button class="small secondary" id="as-claude-del">${t('ki_entfernen')}</button>`
+    : `<input type="password" id="as-claude" placeholder="sk-ant-api…" autocomplete="off" spellcheck="false"><button class="small secondary" id="as-claude-save">${t('ki_tavily_sichern')}</button>`}</div>
+    ${(a.web || {}).claude ? `<label for="as-claude-model">${t('ki_claude_modell')}</label><label class="chk"><select id="as-claude-model">${(a.web.claude_models || []).map(m => { const k = `ki_claude_m_${m.id.replace(/\W/g, '_')}`; return opt(m.id, I18N[k] ? t(k) : esc(m.name), (st.claude || {}).model); }).join('')}</select></label>
+    <label for="as-claude-day">${t('ki_claude_tag')}${hq('ki_claude_tag')}</label><label class="chk"><select id="as-claude-day">${[...new Set([5, 10, 20, 50, 100, (st.claude || {}).per_day || 20])].sort((x, y) => x - y).map(n => opt(n, t('ki_claude_tag_n', n), (st.claude || {}).per_day || 20)).join('')}</select></label>` : ''}
     <span class="as-wk-l">${t('ki_vertraut')}${hq('ki_vertraut')}</span><div class="as-trust">${((a.web || {}).sources || []).map(x => `<label class="chk"><input type="checkbox" class="as-trust-src" value="${esc(x.id)}" ${(wt.sources || []).includes(x.id) ? 'checked' : ''}> <span>${esc(x.label)}</span></label>`).join('')}</div>
     <label for="as-websites">${t('ki_websites')}${hq('ki_websites')}</label><input type="text" id="as-websites" value="${esc((wt.hosts || []).join(', '))}" placeholder="${esc(t('ki_websites_ph'))}" autocomplete="off" spellcheck="false" autocapitalize="off" inputmode="url"></div>` : '';
   return `<div data-ex="settings.assistant"><div class="row tight">${swCtl('as-enabled', st.enabled, t('ki_verwenden'))}${hq('assistent')}</div>
@@ -9077,9 +9085,9 @@ async function asChangesLoad() {
     : `<tr><td>${esc(/^\d{4}-\d{2}$/.test(r.label || '') ? MLL(r.label) : r.label || '')}</td><td class="num muted">${r.old != null ? num(c, r.old) : r.shown != null ? num(c, r.shown) : '–'}</td><td class="num"><b>${num(c, r.new)}</b></td></tr>`;
   const rows = c => (c.rows || []).length ? `<details class="as-log-rows"><summary class="muted small">${tn('ki_a_zeilen', c.rows.length, c.rows.length)}</summary><table class="as-e-t"><tbody>${c.rows.map(r => row(c, r)).join('')}</tbody></table></details>` : '';
   el.classList.toggle('muted', !list.length);
-  el.innerHTML = !list.length ? t('ki_aenderungen_keine') : `<div class="as-tw"><table><thead><tr><th>${t('ki_a_zeit')}</th><th>${t('ki_a_was')}</th><th>${t('ki_a_grund')}</th><th>${t('ki_a_stand')}</th></tr></thead><tbody>${list.map(c => c.kind === 'memory' ? mem(c) : `<tr>
-    <td class="nowrap">${esc(FDT(c.time))}</td><td><b>${esc(kind(c.kind))}</b> · ${esc(c.title || '')}${c.category ? ' → ' + esc(c.category.replace(/ \/ /g, ' › ')) : ''}${c.sub ? `<div class="muted small">${esc(c.sub)}</div>` : ''}${c.count && c.kind !== 'web' ? `<div class="muted small">${tn(c.kind === 'book' || c.kind === 'hold' ? 'ki_e_buchungen' : 'ki_a_umsaetze', c.count, c.count)}${c.sum != null ? ' · ' + fmt.format(c.sum) : ''}</div>` : ''}${c.kind !== 'web' ? rows(c) : ''}</td><td>${esc(c.reason || '–')}</td>
-    <td class="nowrap">${c.kind === 'web' ? (c.state === 'failed' ? t('ki_a_fehlgeschlagen') : c.what === 'read' ? t('ki_a_abgerufen') : tn('ki_w_done_n', c.count || 0, c.count || 0)) : t(c.state === 'undone' ? 'ki_e_undone' : 'ki_e_done')}${c.final ? ' · ' + t('ki_a_endgueltig') : ''}${[c.note, c.state === 'undone' ? c.undo_note : ''].filter(Boolean).map(x => `<div class="muted small">${esc(x)}</div>`).join('')}</td></tr>`).join('')}</tbody></table></div>`;
+  el.innerHTML = !list.length ? t('ki_aenderungen_keine') : `<div class="as-tw"><div class="as-tw-in"><table><thead><tr><th>${t('ki_a_zeit')}</th><th>${t('ki_a_was')}</th><th>${t('ki_a_grund')}</th><th>${t('ki_a_stand')}</th></tr></thead><tbody>${list.map(c => c.kind === 'memory' ? mem(c) : `<tr>
+    <td class="nowrap">${esc(FDT(c.time))}</td><td><b>${esc(kind(c.kind))}</b> · ${esc(c.title || '')}${c.category ? ' → ' + esc(c.category.replace(/ \/ /g, ' › ')) : ''}${c.sub ? `<div class="muted small">${esc(c.sub)}</div>` : ''}${c.kind === 'web' && c.usage ? `<div class="muted small">${esc(t('ki_a_tokens', asN(c.usage.in || 0), asN(c.usage.out || 0)) + (c.usage.searches ? ' · ' + tn('ki_a_suchen', c.usage.searches, asN(c.usage.searches)) : ''))}</div>` : ''}${c.count && c.kind !== 'web' ? `<div class="muted small">${tn(c.kind === 'book' || c.kind === 'hold' ? 'ki_e_buchungen' : 'ki_a_umsaetze', c.count, c.count)}${c.sum != null ? ' · ' + fmt.format(c.sum) : ''}</div>` : ''}${c.kind !== 'web' ? rows(c) : ''}</td><td>${esc(c.reason || '–')}</td>
+    <td class="nowrap">${c.kind === 'web' ? (c.state === 'failed' ? t('ki_a_fehlgeschlagen') : c.what === 'read' ? t('ki_a_abgerufen') : tn(c.usage ? 'ki_w_antwort' : 'ki_w_done_n', c.count || 0, c.count || 0)) : t(c.state === 'undone' ? 'ki_e_undone' : 'ki_e_done')}${c.final ? ' · ' + t('ki_a_endgueltig') : ''}${[c.note, c.state === 'undone' ? c.undo_note : ''].filter(Boolean).map(x => `<div class="muted small">${esc(x)}</div>`).join('')}</td></tr>`).join('')}</tbody></table></div></div>`;
 }
 const asRate = b => b >= 1e6 ? (b / 1e6).toLocaleString(LOCALE, {maximumFractionDigits: b >= 1e7 ? 0 : 1}) + ' MB/s' : Math.max(1, Math.round(b / 1e3)).toLocaleString(LOCALE) + ' KB/s';
 const asLeft = l => { const s = (l.total - l.done) / l.rate; return s >= 90 ? t('ki_dl_rest_min', asN(s / 60)) : t('ki_dl_rest_s', asN(Math.max(1, s))); };
@@ -9167,6 +9175,11 @@ function bindAssistent(main) {
   const key = () => { const el = $('#as-tavily', main), v = el ? el.value.trim() : ''; if (v) post('/api/assistant/web', {tavily_key: v}); };
   on('#as-tavily-save', 'click', key); on('#as-tavily', 'keydown', (el, e) => { if (e.key === 'Enter') { e.preventDefault(); key(); } });
   on('#as-tavily-del', 'click', () => { if (confirm(t('ki_tavily_frage'))) post('/api/assistant/web', {tavily_key: ''}); });
+  const ckey = () => { const el = $('#as-claude', main), v = el ? el.value.trim() : ''; if (v) post('/api/assistant/web', {claude_key: v}); };
+  on('#as-claude-save', 'click', ckey); on('#as-claude', 'keydown', (el, e) => { if (e.key === 'Enter') { e.preventDefault(); ckey(); } });
+  on('#as-claude-del', 'click', () => { if (confirm(t('ki_claude_frage'))) post('/api/assistant/web', {claude_key: ''}); });
+  on('#as-claude-model', 'change', el => set({claude: {model: el.value}}));
+  on('#as-claude-day', 'change', el => set({claude: {per_day: +el.value}}));
   on('.as-trust-src', 'change', () => set({web_trusted: {sources: $$('.as-trust-src', main).filter(x => x.checked).map(x => x.value)}}));
   on('#as-websites', 'change', el => set({web_trusted: {hosts: el.value}}));
   on('#as-websites', 'keydown', (el, e) => { if (e.key === 'Enter') { e.preventDefault(); el.blur(); } });          // (saved as it loses the focus)

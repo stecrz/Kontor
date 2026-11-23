@@ -9,6 +9,8 @@ network), fetches it (GET; POST only to the one search service that has no other
 hosts, keeps no cookies, reads at most max_bytes within timeout seconds, and writes plain data to stdout as JSON:
   json  the parsed answer          xml   the records of the document (elements holding only text, as {tag: text})
   csv   the rows                   html  {title, text, lang, paywall}     text  the text
+A question to Claude (Anthropic's Messages API) goes its own way (ask_claude): {"url", "body", "key", ...} -- the text given is
+sent to the one fixed address with your key in its header, and only what Kontor uses of the answer comes back.
 Nothing else ever leaves this process; what it read is gone when it ends.
 """
 import codecs
@@ -31,7 +33,14 @@ from xml.parsers import expat
 MAX_BYTES = 8 << 20                 # an answer larger than this is never read
 MAX_TEXT = 200000                   # characters of text handed back at most
 MAX_SECONDS = 40
-POST_ONLY = {"api.tavily.com": ("/search",)}         # the one service that takes its question only as POST (no cookies, no forms)
+POST_ONLY = {"api.tavily.com": ("/search",), "api.anthropic.com": ("/v1/messages",)}     # the services that take their question only as POST (no cookies, no forms)
+# Claude (Anthropic's Messages API): the one address a key for it is ever sent to, the version of that interface (its header
+# anthropic-version), how long an answer may take (it searches and thinks first) and what such a key looks like -- an API key
+# of Anthropic's Console, never the login of a subscription
+CLAUDE = "https://api.anthropic.com/v1/messages"
+CLAUDE_VERSION = "2026-10-21"
+CLAUDE_SECONDS = 300
+CLAUDE_KEY = re.compile(r"sk-ant-api[A-Za-z0-9_\-]{20,300}")
 SKIP = {"script", "style", "noscript", "svg", "template", "iframe", "nav", "footer", "header", "form", "aside", "button", "select", "canvas", "object"}
 BLOCK = {"p", "div", "br", "li", "ul", "ol", "tr", "table", "h1", "h2", "h3", "h4", "h5", "h6", "section", "article", "main", "blockquote", "pre", "dd", "dt", "dl"}
 
@@ -154,15 +163,17 @@ def _build(ctx, hosts, check, pins=None):
     return o
 
 
-def fetch(req: dict, open_=None) -> dict:
-    """The request carried out: {"ok", "status", "url", "type", "charset", "raw"} (raw: bytes) -- or Refused."""
+def fetch(req: dict, open_=None, own=None, longest: float = MAX_SECONDS) -> dict:
+    """The request carried out: {"ok", "status", "url", "type", "charset", "raw"} (raw: bytes) -- or Refused. own: headers a
+    function of this file adds itself, never taken from the request (ask_claude: nothing else reaches Claude's host);
+    longest: the most seconds it may take."""
     url, hosts = str(req.get("url") or ""), list(req.get("hosts") or [])
     host = host_ok(url, hosts)
     method = "POST" if req.get("method") == "POST" else "GET"
-    if method == "POST" and urlparse(url).path not in POST_ONLY.get(host, ()):
+    if (method == "POST" and urlparse(url).path not in POST_ONLY.get(host, ())) or (host == urlparse(CLAUDE).hostname and own is None):
         raise Refused("method")
     max_bytes = max(1, min(MAX_BYTES, int(req.get("max_bytes") or MAX_BYTES)))
-    timeout = max(1.0, min(float(req.get("timeout") or 20), MAX_SECONDS))
+    timeout = max(1.0, min(float(req.get("timeout") or 20), longest))
     test = req.get("_check") if callable(req.get("_check")) else None
     pins: dict = {}
 
@@ -180,13 +191,14 @@ def fetch(req: dict, open_=None) -> dict:
             headers["X-Tavily-Access-Mode"] = v
     if any(k.lower() == "authorization" for k in headers):   # a key or no key -- never both
         headers.pop("X-Tavily-Access-Mode", None)
+    headers.update(own or {})
     data = str(req.get("body") or "").encode("utf-8") if method == "POST" else None
     r = urllib.request.Request(url, data=data, headers=headers, method=method)
     t0 = time.time()
     try:
         resp = (open_ or _build(ssl.create_default_context(), hosts, check, pins).open)(r, timeout=timeout)
     except urllib.error.HTTPError as e:
-        return {"ok": False, "error": "http", "status": e.code}
+        return dict({"ok": False, "error": "http", "status": e.code}, **_said(e, req.get("error_words")))
     except Refused:
         raise
     except (urllib.error.URLError, OSError, ssl.SSLError, ValueError) as e:
@@ -219,6 +231,65 @@ def fetch(req: dict, open_=None) -> dict:
     m = re.search(r"charset=([\w.:-]+)", ctype, re.I)
     return {"ok": True, "status": getattr(resp, "status", 200), "url": final, "type": ctype.split(";")[0].strip().lower(), "charset": m.group(1) if m else "",
             "raw": bytes(buf)}
+
+
+def _said(e, words) -> dict:
+    """Which of the words the request named stand in an error's answer (its first bytes, lower case) -- never the answer
+    itself: so Kontor can tell why a service said no (no credit left) without taking a line of its text."""
+    try:
+        text = e.read(4096).decode("utf-8", "replace").lower()
+    except Exception:                                  # no answer with the error, or one that cannot be read: nothing said
+        return {}
+    hit = [w for w in (words if isinstance(words, list) else [])[:8] if isinstance(w, str) and 3 <= len(w) <= 40 and w.lower() in text]
+    return {"said": hit} if hit else {}
+
+
+def ask_claude(req: dict, open_=None) -> dict:
+    """The one request to Claude (Anthropic's Messages API): the text given -- the POST the card showed, whole -- to the one
+    fixed address, with your key and the version of the interface in its headers. The address, its host, the method and the
+    headers stand here and not in the request: one that names another address, or brings no text or no key that looks like
+    one, is refused, and whatever else it names (hosts, a method, headers) is not looked at -- the key can go nowhere else
+    (a redirect could only stay on that host). Handed back is only what Kontor uses of the answer (claude_answer), or that
+    there is none."""
+    key, body = req.get("key"), req.get("body")
+    if req.get("url") != CLAUDE or not isinstance(key, str) or not CLAUDE_KEY.fullmatch(key) or not isinstance(body, str) or not body.strip():
+        raise Refused("request")
+    ask = {"url": CLAUDE, "hosts": [urlparse(CLAUDE).hostname], "method": "POST", "body": body, "headers": {"Content-Type": "application/json"}}
+    ask.update({k: req[k] for k in ("timeout", "max_bytes", "user_agent", "error_words", "_check") if k in req})
+    res = fetch(ask, open_, {"x-api-key": key, "anthropic-version": CLAUDE_VERSION}, CLAUDE_SECONDS)
+    if not res.get("ok"):
+        return res
+    res = convert(res, {"as": "json"})
+    res["data"] = claude_answer(res["data"])
+    return res
+
+
+def claude_answer(msg) -> dict:
+    """Of Claude's answer what Kontor uses, as plain data: its text piece by piece, each with the sources it cites (address,
+    title); what its own searches found (address, title, age) and how many of them failed; how the answer ended; the figures
+    of its use (tokens in and out, searches). Nothing else comes out of this process -- not what it thought, nothing
+    encrypted."""
+    if not isinstance(msg, dict) or not isinstance(msg.get("content"), list):
+        raise Refused("parse")
+    cut = lambda v, n: str(v if isinstance(v, str) else "")[:n]
+    parts, found, failed = [], [], 0
+    for b in msg["content"][:400]:
+        if not isinstance(b, dict):
+            continue
+        if b.get("type") == "text" and isinstance(b.get("text"), str):
+            cites = b.get("citations") if isinstance(b.get("citations"), list) else []
+            parts.append({"text": b["text"][:MAX_TEXT], "sources": [{"url": cut(c.get("url"), 500), "title": cut(c.get("title"), 200)} for c in cites[:20] if isinstance(c, dict)]})
+        elif b.get("type") == "web_search_tool_result":
+            got = b.get("content")
+            failed += 0 if isinstance(got, list) else 1    # (an error of the search stands there instead of its results)
+            found += [{"url": cut(r.get("url"), 500), "title": cut(r.get("title"), 200), "age": cut(r.get("page_age"), 40)}
+                      for r in (got if isinstance(got, list) else [])[:20] if isinstance(r, dict)]
+    use = msg.get("usage") if isinstance(msg.get("usage"), dict) else {}
+    tools = use.get("server_tool_use") if isinstance(use.get("server_tool_use"), dict) else {}
+    n = lambda v: v if isinstance(v, int) and not isinstance(v, bool) and 0 <= v < 10 ** 9 else 0
+    return {"model": cut(msg.get("model"), 80), "stop": cut(msg.get("stop_reason"), 40), "parts": parts, "results": found[:100], "failed": failed,
+            "usage": {"in": n(use.get("input_tokens")) + n(use.get("cache_creation_input_tokens")) + n(use.get("cache_read_input_tokens")),
+                      "out": n(use.get("output_tokens")), "searches": n(tools.get("web_search_requests"))}}
 
 
 def decode(raw: bytes, charset: str, html: bool = False) -> str:
@@ -391,6 +462,8 @@ def convert(res: dict, req: dict) -> dict:
 
 def handle(req: dict, open_=None) -> dict:
     try:
+        if "key" in req or urlparse(str(req.get("url") or "")).hostname == urlparse(CLAUDE).hostname:     # to Claude: only ever its own way
+            return ask_claude(req, open_)
         res = fetch(req, open_)
         return convert(res, req) if res.get("ok") else res
     except Refused as e:

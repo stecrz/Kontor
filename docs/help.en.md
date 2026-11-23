@@ -542,13 +542,14 @@ Part of the [backup](#backup) (what comes back from one is marked); a reset and 
 <a id="assistant-internet"></a>
 ### Internet (read only)
 
-Off by default; switch it on under “What the AI assistant may do” → **Internet**. The assistant can then look things up – Kontor searches, not the model. It plans its research and asks for it in one go: the first time in a chat a card shows every lookup (source, search words, reason; opened: the address and what is sent), each can be left out. **Allow for this chat** fetches them – after that it searches trusted sources in this chat without asking; every lookup still shows in the chat. A page on another website (found via GDELT or Tavily) is always asked for one by one.
+Off by default; switch it on under “What the AI assistant may do” → **Internet**. The assistant can then look things up – Kontor searches, not the model. It plans its research and asks for it in one go: the first time in a chat a card shows every lookup (source, search words, reason; opened: the address and what is sent), each can be left out. **Allow for this chat** fetches them – after that it searches trusted sources in this chat without asking; every lookup still shows in the chat. A page on another website (found via GDELT, Tavily or Claude) is always asked for one by one – and so is every [question to Claude](#assistant-claude).
 
 **Without asking** (under the Internet checkbox): which sources count as trusted – all of them by default – and **More websites** whose pages it reads without asking (e.g. `handelsblatt.com`; also covers `www.` and other parts of the site).
 
 - **Tier 1, official sources and statistics:** Wikipedia, Wikidata, German federal laws (Gesetze im Internet), the federal legal information portal (laws, court rulings including the BFH), news of the BMF, Bundesbank and ECB, GLEIF (companies and group structure), ECB, Bundesbank, BIS, Eurostat (also figures by sector), OECD, World Bank – all without an account.
 - **Tier 2, news:** tagesschau.de, GDELT – articles only where they are free to read.
 - **Tier 3, general web search:** Tavily – without an account or with your own free key.
+- **Tier 4, a question to Claude:** a stronger model by Anthropic that searches the web itself – only with your own key, always asked first: [Asking Claude](#assistant-claude).
 
 Kontor checks every search for your data first (names, accounts, IBANs, amounts) and refuses when in doubt; pages are fetched in a sealed-off process, without naming Kontor. If a source refuses (say, after too many lookups), the card says so. Text from the internet is only material for the model – afterwards Kontor takes no changes in the same conversation (start a new one for them). Every lookup is in the log of changes and lookups.
 
@@ -561,12 +562,29 @@ Without a key Kontor uses Tavily's access without an account – tied to no acco
 
 The key is stored encrypted in Kontor's data folder, never shown again and not in backups; “Remove” deletes it. 1,000 searches a month are free – Kontor stops after 950 in 31 days. Without a key it goes on without an account.
 
+<a id="assistant-claude"></a>
+### Asking Claude (tier 4, optional)
+
+Where searching is not enough, the assistant can ask Anthropic's Claude a question – a stronger model that searches the web itself and names its sources. It is a service on the internet and costs money (API credit at Anthropic). So:
+
+- **Always asked first.** Every question stands on a card beforehand: the source “Claude (Anthropic)”, the model and the whole text that is sent – with it only your key, which is never shown. Only **Fetch** sends it. That holds in a chat where you allowed the internet, too; Claude is never under “Without asking”.
+- **Without your data.** The assistant writes the question, Kontor sends it – and first checks the whole text for your names, accounts, IBANs and amounts like any search; when in doubt it refuses. It goes to exactly one address (`api.anthropic.com`), from the same sealed-off process as every lookup.
+- **The answer is outside text** like a web page: afterwards Kontor takes no changes in this conversation, and nothing of it is remembered. Sources Claude names are results – their address shows in the chat, and the assistant reads a page of them only after your click.
+- **Cost guard.** Under **Claude requests a day** you set how many questions go out in a day at most (20 by default). The log of changes and lookups says for each question how many tokens it cost (in and out) – never the answer.
+
+**Setting up the Claude key:**
+1. Create an API key in Anthropic's [Console](https://platform.claude.com) (it starts with `sk-ant-api`).
+2. With a Claude subscription that includes API credit (Max, Ultra, Team): in claude.ai's settings, at “Billing” → “API credits”, link the Console organization and create the key in exactly that organization – then the subscription's credit counts. Once it is used up and nothing more was bought, Anthropic refuses until next month's credit arrives; the card says so.
+3. Paste it here under **Internet** into “Claude key” and click **Save**. Then choose the **Claude model**: Opus 5.5 for most questions, Sonnet 5.5 faster and cheaper, Fable 5.2 more thorough and more expensive.
+
+A subscription login does not work in Kontor – Anthropic does not allow it in other programs; Kontor takes an API key only. It is stored encrypted in Kontor's data folder, never shown again and not in backups; “Remove” deletes it, and so do a reset and uninstalling.
+
 <a id="assistant-safety"></a>
 ### How safe is this?
 
 - **No network**: Kontor starts the model on this Mac and talks to it at `127.0.0.1` only – with a key that is made anew at every start and lives in memory only. llama.cpp's built-in interface and its own tools are switched off, the program runs in offline mode. It learns only what Kontor gives it for a question.
 - **The macOS sandbox** as a second line of defence, should the program or a model file ever be faulty: no network connection – neither to the internet nor to the home network –, starting no other programs, no Apple events (so no steering of MoneyMoney, the browser or other apps), opening nothing through the system, writing temporary files only and reading nothing in the home folder but its own folder – so neither Kontor's data nor MoneyMoney's nor your documents. Under “Operation” it says **sandboxed** when this holds. If the model does not start like that on your Mac, Kontor says so – it never switches to weaker rules by itself. Only you can set “Sandbox” to **Basic** (still no network, Kontor's folders closed) or **Off**, each after a question.
-- **When Kontor goes online here**: by itself only to ask for newer versions of llama.cpp and your models (set under Updates, “never” too); otherwise only on your click – to download llama.cpp (GitHub) and model files (Hugging Face, also the models for dictating and for search by meaning) – and, with the right Internet, for [lookups](#assistant-internet), in each chat only after you allow it. Looking and downloading send nothing of yours, only which file is wanted; every file is compared with its checksum (SHA-256) and discarded otherwise. Without internet the assistant works just the same.
+- **When Kontor goes online here**: by itself only to ask for newer versions of llama.cpp and your models (set under Updates, “never” too); otherwise only on your click – to download llama.cpp (GitHub) and model files (Hugging Face, also the models for dictating and for search by meaning) – and, with the right Internet, for [lookups](#assistant-internet), in each chat only after you allow it (a [question to Claude](#assistant-claude) one by one, every time). Looking and downloading send nothing of yours, only which file is wanted; every file is compared with its checksum (SHA-256) and discarded otherwise. Without internet the assistant works just the same.
 - **It cannot change itself**: installing, the model, rights and switching it on happen only at the Mac in the settings – not through the assistant, not from the iPhone, not through a settings package or a backup.
 - **Texts cannot take it over**: an instruction in a payment reference, a file or on a page (“ignore everything and …”) stays text. Even if a model fell for it: it can do no more than read, open a page and propose a change that you see and have to confirm – and it cannot reach the network. After text from the internet Kontor takes no more changes in the same conversation; after a receipt or a table other proposals stand unticked on the card.
 - **Dictating** and **search by meaning** work the same way: a model of their own on this Mac each, with the same shielding, without network. The recording goes from the browser or from Kontor's Mac app to Kontor and from there to this model – nowhere else – and is discarded afterwards.

@@ -1,5 +1,13 @@
 # Änderungen
 
+## 3.17.15 (2026-11-23 15:49)
+- KI-Assistent: fragt auf Wunsch Claude (Anthropic) – Stufe 4 der Internetsuche, ein stärkeres Modell, das selbst im Web sucht; nur mit eigenem API-Schlüssel
+- KI-Assistent: jede Frage an Claude vorher im ganzen Wortlaut auf der Karte, nie ohne Klick – auch im erlaubten Chat; auf eigene Daten geprüft
+- KI-Assistent: Claudes Antwort gilt als fremder Text – danach keine Änderungen im Chat; genannte Quellen lesen erst nach Klick
+- Einstellungen: KI-Assistent → Internet – Claude-Schlüssel, Modell (Opus 5.5, Sonnet 5.5, Fable 5.2), Anfragen je Tag (ab Werk 20)
+- Einstellungen: Protokoll nennt je Frage an Claude die Token; lange Einträge brechen um statt abgeschnitten zu werden
+- Updates: dieses Update braucht deine Freigabe – neuer Weg nach außen (api.anthropic.com, nur mit deinem Schlüssel und Klick), Prüfliste ergänzt
+
 ## 3.17.14 (2026-11-23 14:29)
 - Entwicklung: macOS-Test des eigenen Pythons – eine Annahme über unsignierte Programme entfernt (geladen, geprüft und probegestartet lief es dort)
 

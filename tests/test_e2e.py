@@ -2627,6 +2627,72 @@ class DemoTests(_AppBase):
         self.app.demo_box.end()
         self.app.assistant.stop_all()
 
+    def test_asks_claude_with_the_real_kontors_key(self):
+        """A question to Claude from the demo: asked on a card there too, with the key, model, day's limit and count of the real
+        Kontor (the demo's pages are told none of it, its settings set none of it); the request is in the real Kontor's log as
+        well -- it left this Mac -- marked as the demo's, with the figures of the answer only."""
+        import service as MA
+        import test_assistant as TA
+        import test_web as TW
+        W = MA.assistant_mod.web_search
+        TA.install(self.app, rights={"internet": True})
+        real = self.app.assistant
+        real.set_web({"claude_key": TW.CKEY}); real.set({"claude": {"model": "claude-sonnet-5-5", "per_day": 2}})
+        self.login(); self.call("/api/lock", {}); self.csrf = None
+        d = self._demo()
+        fake = TW.FakeWeb({TW.CLAUDE: TW.claude_says(model="claude-sonnet-5-5")})
+        d.assistant.web_fetch = fake
+        self.assertIs(d.assistant._web_store(), self.app.store)
+        self.assertTrue(d.assistant._claude())                                   # named to the demo's model like to the real one's
+        q = "Wie hoch ist der Leitzins der EZB aktuell und wann wurde er zuletzt geändert?"
+        code, r = self.call("/api/assistant/ask", {"question": "call web_search %s" % json.dumps({"searches": [{"source": "claude", "query": q}], "reason": "Stand"})})
+        self.assertEqual(code, 200, r)
+        evs = TA.events(d.assistant, r["job"], until="web")
+        card = next(e for e in evs if e["type"] == "web")
+        it, = card["items"]
+        self.assertEqual((card["state"], it["source"], it["model"], it["key"], json.loads(it["sent"])["model"]), ("ask", "claude", "Claude Sonnet 5.5", True, "claude-sonnet-5-5"))
+        self.assertEqual(fake.calls, [])
+        code, ok = self.call("/api/assistant/confirm", {"job": r["job"], "id": card["id"], "ok": True, "ids": [it["id"]]})
+        self.assertEqual(code, 200, ok)
+        evs = TA.events(d.assistant, r["job"])
+        self.assertEqual([(e["state"], e.get("count")) for e in evs if e["type"] == "web_item" and e["state"] != "run"], [("done", 2)])
+        req, = fake.calls
+        self.assertEqual((req["url"], req["body"], req["key"]), (TW.CLAUDE, it["sent"], TW.CKEY))
+        self.assertEqual(W.claude_status(self.app.store, real.settings()["claude"])["claude_used"], 1)        # counted in the real Kontor
+        self.assertNotIn("claude_days", d.store.load(W.WEB_FILE, {}) or {})
+        mine, = [c for c in d.store.load(MA.assistant_mod.CHANGES_FILE, []) if c.get("kind") == "web"]
+        theirs, = [c for c in self.app.store.load(MA.assistant_mod.CHANGES_FILE, []) if c.get("kind") == "web"]
+        self.assertEqual((mine["title"], mine["usage"], mine["state"]), (q, {"in": 6049, "out": 931, "searches": 1}, "fetched"))
+        self.assertEqual((theirs["title"], theirs["usage"], theirs["state"], theirs["demo"], theirs["chat"]), (q, mine["usage"], "fetched", True, ""))
+        self.assertTrue(theirs["sub"].startswith("Demo · Claude (Anthropic) · Claude Sonnet 5.5"))
+        # the day's limit is the real Kontor's: the second goes, the third is told -- no card
+        for n, card_there in ((2, True), (2, False)):
+            code, r = self.call("/api/assistant/ask", {"question": "call web_search %s" % json.dumps({"searches": [{"source": "claude", "query": q + " Und davor?"}]}), "conversation": ""})
+            self.assertEqual(code, 200, r)
+            evs = TA.events(d.assistant, r["job"], until="web")
+            cards = [e for e in evs if e["type"] == "web"]
+            self.assertEqual(bool(cards), card_there)
+            if cards:
+                self.call("/api/assistant/confirm", {"job": r["job"], "id": cards[0]["id"], "ok": True, "ids": [x["id"] for x in cards[0]["items"]]})
+                TA.events(d.assistant, r["job"])
+            self.assertEqual((W.claude_status(self.app.store, real.settings()["claude"])["claude_used"], len(fake.calls)), (n, n))
+        # the demo's pages: nothing of the key, the model or the limit -- and no way to set them
+        code, st = self.call("/api/assistant/status")
+        said = json.dumps([st, self.call("/api/config")[1], self.call("/api/assistant/changes")[1], self.call("/api/assistant/chats")[1]], ensure_ascii=False)
+        self.assertNotIn("web", st); self.assertNotIn("claude", st["settings"])
+        for word in (TW.CKEY, TW.CKEY[-12:], "claude_key", "per_day"):
+            self.assertNotIn(word, said, word)
+        for path, body in (("/api/assistant/web", {"claude_key": ""}), ("/api/assistant/settings", {"claude": {"per_day": 200}})):
+            self.assertIn(self.call(path, body)[0], (403, 404), path)
+        self.assertEqual((W.claude_key(self.app.store), real.settings()["claude"]), (TW.CKEY, {"model": "claude-sonnet-5-5", "per_day": 2}))
+        for root, _dirs, files in os.walk(d.data_dir):                           # the demo's own folder never holds the key
+            for name in files:
+                with open(os.path.join(root, name), "rb") as f:
+                    self.assertNotIn(TW.CKEY.encode(), f.read(), name)
+        self.call("/api/lock", {})
+        self.app.demo_box.end()
+        real.stop_all()
+
     def test_assistant_shares_only_the_model(self):
         import test_assistant as TA
         TA.install(self.app)

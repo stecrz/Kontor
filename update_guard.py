@@ -173,7 +173,11 @@ RULES = {"service.py": ("bind_allowed", "_sec_headers", "_host_ok", "_origin_ok"
                            "prepare", "prepare_read", "_q", "_month", "_since", "_last", "_req", "link_hits", "user_agent", "NEUTRAL_AGENT",
                            "SOURCES", "LINK_HOSTS", "FEEDS", "_SERIES", "_DATASET", "_LEI", "_QID",
                            "site", "_ace", "trusted", "trusted_site", "trusted_default", "SHARED", "_SECOND", "HOSTS_MAX",
-                           "reader_profile", "command", "python_exe", "READER", "SANDBOX", "HERE"),
+                           "reader_profile", "command", "python_exe", "READER", "SANDBOX", "HERE",
+                           # ... a question to Claude (Anthropic's interface): the text of its POST (on the card, whole), what the reader
+                           # is handed beside it, that it is asked every time, and that a page it names is a page on any website
+                           "claude_body", "CLAUDE_MODELS", "CLAUDE_TOKENS", "CLAUDE_SEARCHES", "CLAUDE_QUESTION", "CLAUDE_SYSTEM",
+                           "claude_request", "CLAUDE_URL", "CLAUDE_SECONDS", "CLAUDE_BYTES", "CLAUDE_SAID", "ASKED_ALWAYS", "ANYWHERE"),
          # ... and in the assistant: the index it is checked against, what goes without a card, no change once web text is there
          "assistant.py": ("_own", "_trusted", "_propose"),
          "llm_local.py": ("sandbox_profile", "host_allowed", "_safe_join"),
@@ -196,6 +200,7 @@ CHECKED: Dict[str, Tuple[str, ...]] = {
     # Kontor's own kontor.py (or itself anew); a build is tried alone (-I -S -B) and only from inside that folder; Apple's
     # xattr and codesign only on a folder inside it
     "pyboot.py": ("_serve", "_again"), "pyruntime.py": ("run_python", "unmark", "sign"),
+    "web_reader.py": ("ask_claude",),                                     # one fixed address (Anthropic's interface), the key in its header; nothing else of the request counts
 }
 # -- more rules (review before 3.17), kept apart from the lists above: who may install an update and with whose approval (only
 # at the Mac; the approval the page sent, never one made up by the program; a backup cannot change where updates come from),
@@ -254,7 +259,10 @@ RULE_GROUPS: Tuple[Tuple[str, str, Dict[str, Tuple[str, ...]]], ...] = (
     # where the internet search's reader may connect (hosts, redirects, no address of this Mac or the local network), the
     # headers it sends (not on the card), which results the page links -- a change can reach other places unseen
     ("reader", "risk", {"web_reader.py": ("host_ok", "public", "global_address", "inner_addresses", "NAT64", "NAT64_LOCAL", "redirect_request"),
-                        "web_search.py": ("_req", "link_hits", "user_agent", "NEUTRAL_AGENT")}),
+                        "web_search.py": ("_req", "link_hits", "user_agent", "NEUTRAL_AGENT",
+                                          # a question to Claude: what the reader is handed beside the card's text -- the address, your
+                                          # key, how long and how much, the words an error is looked through for
+                                          "claude_request", "CLAUDE_URL", "CLAUDE_SECONDS", "CLAUDE_BYTES", "CLAUDE_SAID")}),
     # ... the sources, their hosts, the hosts results are linked on, the fixed feeds: fewer is stricter
     ("reader", "allow", {"web_search.py": ("SOURCES", "LINK_HOSTS", "FEEDS")}),
     # ... the reader's own process: its sandbox profile (judged by its rules), and which program runs as the reader
@@ -262,14 +270,17 @@ RULE_GROUPS: Tuple[Tuple[str, str, Dict[str, Tuple[str, ...]]], ...] = (
     ("reader_shield", "risk", {"web_search.py": ("command", "python_exe", "READER", "SANDBOX", "HERE")}),
     # what goes without a card in a chat you allowed: trusted sources and websites -- a change can let more out unasked
     ("trust", "risk", {"web_search.py": ("site", "_ace", "trusted", "trusted_site", "trusted_default", "HOSTS_MAX"), "assistant.py": ("_trusted",)}),
-    # ... domains shared by many websites and second-level names (each subdomain its own website): more is stricter
-    ("trust", "deny", {"web_search.py": ("SHARED", "_SECOND")}),
+    # ... domains shared by many websites and second-level names (each subdomain its own website): more is stricter -- so are
+    # the sources asked on a card every time (Claude) and those whose results stand on any website (a page there is asked for)
+    ("trust", "deny", {"web_search.py": ("SHARED", "_SECOND", "ASKED_ALWAYS", "ANYWHERE")}),
     # the filter that keeps your own data out of a lookup and how a lookup is put together: behind the card (see "card")
     ("filter", "card", {"web_search.py": ("privacy_problem", "_own_in", "_not_plain", "_fold", "_name_tokens", "_readings", "_figure", "_iban", "_lei_ok",
                                           "own_index", "_INVISIBLE", "_LETTERS", "_SIGNS", "_BASE", "_PERCENT", "LEGAL", "GENERIC", "IBAN_LENGTH",
                                           "_IBAN_RUN", "_CODE", "_NO_AMOUNT", "_NO_FIGURES", "_PERIOD", "_NUMBER", "_YEAR", "_RUN", "_CHAIN", "_LEET",
                                           "_PLAIN_LEAST", "prepare", "prepare_read", "_q", "_month", "_since", "_last", "_SERIES", "_DATASET",
-                                          "_LEI", "_QID"),
+                                          "_LEI", "_QID",
+                                          # the text of a question to Claude: on its card whole, and that card is clicked every time
+                                          "claude_body", "CLAUDE_MODELS", "CLAUDE_TOKENS", "CLAUDE_SEARCHES", "CLAUDE_QUESTION", "CLAUDE_SYSTEM"),
                         "assistant.py": ("_own",)}),
     # no change once text from the internet is in a chat -- not a way out, but what keeps foreign text from acting on your data
     ("web_changes", "risk", {"assistant.py": ("_propose",)}),

@@ -2206,8 +2206,8 @@ class DemoApp(App):
     opened only with the real Kontor's sign-in. It never reads the real data folder, sessions, conversations, memory or receipts,
     of the real settings only how Kontor looks and works (language, lock, the assistant); it answers only DEMO_GET / DEMO_POST.
     The assistant answers with the same model as the real Kontor (a model knows nothing of anyone) and the same rights (the
-    internet too, with the real Kontor's Tavily key and count) -- with a conversation, saved conversations, memory and changes
-    of its own."""
+    internet too, with the real Kontor's keys for Tavily and Claude and their counts) -- with a conversation, saved conversations,
+    memory and changes of its own."""
     DEMO = True
 
     def __init__(self, real: "App", box: "DemoBox"):
@@ -4233,7 +4233,7 @@ def make_handler(app: App):
                 a.ai.delete_model(mid)
                 if assistant_mod.settings(app.config)["model"] == mid:
                     a.set({"model": ""})
-            elif path == "/api/assistant/web":                  # your Tavily key (tier 3 of the internet search): saved or removed, never shown
+            elif path == "/api/assistant/web":                  # your keys for the internet search (Tavily; Claude, tier 4): saved or removed, never shown
                 a.set_web(body)
             elif path == "/api/assistant/server":
                 if body.get("action") == "start":
@@ -4613,7 +4613,7 @@ def make_handler(app: App):
                 app.assistant.delete_chats(everything=True)          # the saved conversations go with the data
                 app.store.delete(assistant_mod.CHANGES_FILE)         # ... and the log of what the assistant changed
                 app.assistant.memory.forget_all(quiet=True)          # ... and what it was told to remember
-                app.store.delete(assistant_mod.web_search.WEB_FILE)  # ... and your Tavily key
+                app.store.delete(assistant_mod.web_search.WEB_FILE)  # ... and your keys for the internet search (Tavily, Claude)
                 if app.devices is not None:
                     app.devices.forget()                 # ... and the iPhones added (their passkeys work no more)
                 app.assistant.forget()                   # the assistant is switched off with its settings: model, conversation and entries to take back end

@@ -142,7 +142,7 @@ anhängen – nie löschen.
 - **Claude als Recherche-Stufe** (Nutzer, 2026-11-23): Der Assistent darf Claude über Anthropics Schnittstelle fragen – mit dem
   eigenen API-Schlüssel des Nutzers (API-Guthaben seines Claude-Abos), nie über ein Abo-Login –, als stärkere Internetsuche neben
   Tavily: Kontor sendet, vorher steht der volle Wortlaut auf der Karte (immer mit Klick, auch in einer erlaubten Unterhaltung),
-  gefiltert gegen eigene Daten; die Antwort gilt als Text aus dem Internet.
+  gefiltert gegen eigene Daten; die Antwort gilt als Text aus dem Internet. (umgesetzt in 3.17.15)
 - **Modelle verständlich** (Nutzer, 2026-11-23): Die Modellauswahl erklärt jedes Modell in einfachen Worten (schnell oder
   gründlich, wofür gut, Speicherbedarf, ob es auf diesem Mac läuft) und führt auch größere Modelle für stärkere Rechner.
   (teilweise umgesetzt in 3.17.9: die verständliche Auswahl; größere Modelle folgen)
@@ -232,6 +232,9 @@ anhängen – nie löschen.
   Zu entscheiden: Herkunft der Wheels – die Paketablage von Python (files.pythonhosted.org; ein neuer Host, den das Update als
   Fund zeigt) oder nur Bibliotheken, die ihre Wheels auch bei GitHub veröffentlichen; und welche Lizenzen in Frage kommen
   (Empfehlung: nur MIT, BSD, Apache 2.0, MPL 2.0 – keine AGPL-Bibliothek wie PyMuPDF).
+- Claude als Recherche-Stufe, Protokoll: Die Frage steht wie bei jeder Suche im Protokoll der Änderungen und Abrufe (verschlüsselt, nur auf
+  dem Mac), von der Antwort nur Zahlen (Token, Websuchen). Der Auftrag sagte „nur Zahlen, nie Inhalte“ – soll auch die Frage nicht hinein?
+  Empfehlung: so lassen, damit nachvollziehbar bleibt, was hinausging.
 
 ## 1. Daten erst nach Anmeldung (Sicherheit) – umgesetzt in 3.16.83 (3.17.0: Umstellung von früher entfernt, nur Neueinrichtung)
 Ziel: Wer den entsperrten Mac hat, aber nicht bei Kontor angemeldet ist, kommt an keine Kontor-Daten.
@@ -344,6 +347,14 @@ Mächtiger und trotzdem sicher (Auftrag vom 21.11.2026; jede Änderung erst nach
   Eurostat (SBS); eine anonyme Kennung an alle Quellen, „Quelle lehnt ab“ auf der Karte. Stufe 3 auch ohne Schlüssel (Tavilys Zugang ohne
   Konto, Kontor stoppt bei 200 Abrufen in 31 Tagen; mit eigenem Schlüssel bei 950; nie beides in einer Anfrage). Nicht drin: Destatis-GENESIS
   (Konto, POST), IWF (neue Schnittstelle, Zugang unklar), Feeds von Branchenportalen, BFH und BaFin (Adressen nicht prüfbar). Am Mac einmal echt prüfen.
+- [x] 3.17.15 Internet, Stufe 4: eine Frage an Claude (Anthropic) über dessen Schnittstelle – eigener API-Schlüssel (kein Abo-Login), Modell wählbar
+  (Opus 5.5 ab Werk, Sonnet 5.5, Fable 5.2), jede Frage vorher im ganzen Wortlaut auf einer Karte und nie ohne Klick (auch im erlaubten Chat), Filter
+  gegen eigene Daten auf den ganzen Text, ein Abruf an einen festen Host im abgeschirmten Prozess, Antwort als fremder Text, genannte Quellen als
+  Treffer, Tagesgrenze (ab Werk 20), im Protokoll die Frage wie bei jeder Suche und von der Antwort nur Zahlen (Token, Websuchen); auch in der Demo
+  (Schlüssel des echten Kontors). Nicht drin: eine von Anthropic unterbrochene Antwort fortsetzen (wäre ein zweiter, nicht gezeigter Abruf – das
+  Modell erfährt, dass sie unvollständig sein kann), Preise in Euro (nur Token). Ohne echten Schlüssel gebaut (Tests mit Attrappe) – am Mac einmal
+  echt prüfen: Schlüssel aus der mit dem Abo verknüpften Console-Organisation, ob die Grenzen passen (Antwort höchstens 8.192 Token, 5 Websuchen,
+  5 Minuten), Antwortzeit und Kosten je Frage.
 
 Modelle und Rechner (Auftrag vom 23.11.2026: verständliche Auswahl, größere Modelle, Vorbereitung für einen stärkeren Rechner):
 - [x] 3.17.9 Modellauswahl verständlich: Gruppen nach Zweck (gründlich, schnell, klein), je Modell ein Satz, wofür es taugt,
