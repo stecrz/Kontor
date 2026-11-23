@@ -90,7 +90,8 @@ class OnMac(unittest.TestCase):
         hook = ("const o = window.refAt; window.refAt = e => (window.__ref = o(e)); "          # what the right click hands the assistant
                 "const n = document.querySelector('#main .cf-pair table.cf-names'), v = document.querySelector('#main .cf-pair table.cf-tbl:not(.cf-names)'); "
                 "const tr = [...n.tBodies[0].rows].find(r => r.getClientRects().length && +r.dataset.depth > 0 && refLabel(r.cells[0]) && refVal(v.rows[r.rowIndex].cells[1])); "
-                "const c = v.rows[tr.rowIndex].cells[1]; c.id = 'ref-cell'; return [refLabel(tr.cells[0]), refVal(c)];")
+                "const c = [...v.rows[tr.rowIndex].cells].reverse().find(x => refVal(x) && x.getClientRects().length && !x.classList.contains('cf-ph')); "   # (the newest month: in view, not under the names)
+                "c.id = 'ref-cell'; return [refLabel(tr.cells[0]), refVal(c)];")
         out = self.drive(list(self.SIGN_IN) + [
             {"js": "location.hash = '#cashflow'; for (let i = 0; i < 150 && !document.querySelector('#main .cf-pair table.cf-names'); i++) await new Promise(r => setTimeout(r, 100)); "
                    "await new Promise(r => setTimeout(r, 600)); return true;"},

@@ -1,5 +1,12 @@
 # Änderungen
 
+## 3.17.5 (2026-11-23 03:20)
+- Updates: Freigabe nur bei echtem Risiko (neuer Weg nach außen, gelockerte Abschirmung, ungelesene Datei, Prüfung selbst geändert)
+- Updates: je Eintrag Erklärung in klaren Worten und aufklappbar die betroffenen Zeilen (− entfernt, + neu)
+- Updates: geänderte bestehende Wege und der Filter der Internetsuche gebündelt je ein Eintrag; nur Strengeres ohne Freigabe, eine Zeile
+- Updates: Prüfung strenger – Dateien in anderer Kodierung, nachträglich geänderte Regeln, versteckte Zeichen werden gefunden
+- Updates: dieses Update braucht einmal deine Freigabe – die Prüfung selbst hat sich geändert
+
 ## 3.17.4 (2026-11-23 02:50)
 - Buchungsregeln: Zins auf den Stand zum Jahresanfang – nur die letzten Monate gelesen und Darlehen im Vorjahr ruhend: im ersten Jahr fehlten die Zinsen
 - Entwicklung: Zufallswelten vielfältiger – leere Monate und Jahre, Schübe mit Hunderten Buchungen, stark schwankend, konstant, saisonal, Konten mittendrin auf und zu

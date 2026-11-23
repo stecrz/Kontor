@@ -120,8 +120,14 @@ back, final, failed; lookups: fetched or the number of results). At most 500 ent
 Cards **Installiert** (version and date) and **Verfügbar** (the newest version on GitHub; "neuer als installiert", "Kontor ist
 aktuell" or "wartet auf Freigabe") with when it was checked. "Jetzt prüfen"; "Update installieren und Dienst neu starten"
 (only at the Mac, only after a click). If the new files reach beyond the program (network, other programs, loaded code,
-addresses, the check itself), the findings are listed by kind with file and line, and "Freigeben und installieren" installs exactly
-these files. Fields: **Automatisch prüfen** (täglich, wöchentlich, nie), **Quelle (GitHub)** – a tag warns when it is not the
+addresses, shields, the check itself), each finding is judged: "can be a risk" (a new way out, a loosened shield, a file that
+arrives unread, the check changed; amber triangle), "existing way changed" (what goes out over a way Kontor already uses is
+put together differently; one entry per way, grey triangle), or no approval needed (rules only stricter). The internet search's filter against
+the user's own data counts as "existing way changed" (one entry). The box above the list counts the entries of the first two kinds; each entry (title in
+plain words) opens to an explanation, then file and function or setting, "neu/geändert/entfernt" and the lines concerned
+("−" removed, "+" new, a line around them; "… und N weitere Zeilen": not shown). "Freigeben und installieren" installs exactly
+these files. Below, quiet and folded: "N Änderungen an Regeln – nur strenger" with file and name;
+with only these the update installs with the ordinary button. Fields: **Automatisch prüfen** (täglich, wöchentlich, nie), **Quelle (GitHub)** – a tag warns when it is not the
 official repository.
 
 ### settings.updates.changes — Änderungen

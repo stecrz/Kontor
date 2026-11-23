@@ -739,7 +739,24 @@ tr.pos { cursor:pointer; }
 .h-chart { margin:6px 0 10px; } .h-svg { width:100%; height:auto; display:block; user-select:none; -webkit-user-select:none; touch-action:pan-y; } .h-head { display:flex; justify-content:flex-end; margin-bottom:4px; }
 .h-line { fill:none; stroke:var(--accent); stroke-width:1.8; } .h-area { fill:var(--accent); opacity:.12; }
 .card.link { cursor:pointer; transition:box-shadow .15s; } .card.link:hover { box-shadow:0 2px 12px rgba(0,0,0,.12); }
-.up-review { margin:14px 0; display:grid; gap:6px; } .up-find summary { cursor:pointer; } .up-lines { margin:4px 0 2px 16px; display:grid; gap:3px; font-size:12px; } .up-lines code { word-break:break-word; }
+/* the update's findings: one row per entry (a disclosure, HIG), its explanation and folded lines; what needs no approval below, quiet */
+.up-review { margin:14px 0; } .up-review > .note { margin:0 0 8px; max-width:none; }
+.up-list { border:1px solid var(--line); border-radius:var(--radius-s); background:var(--head); overflow:hidden; }
+.up-find + .up-find { border-top:1px solid var(--line); }
+.up-find > summary { list-style:none; display:flex; align-items:baseline; gap:8px; padding:9px 12px; cursor:pointer; }
+.up-find > summary::-webkit-details-marker { display:none; }
+.up-find > summary::before { content:"▸"; color:var(--muted); font-size:11px; width:10px; flex:none; transition:transform .15s; }
+.up-find.crit > summary::before { color:var(--warn-fg); } .up-find[open] > summary::before { transform:rotate(90deg); }
+.up-find > summary b { font-weight:600; min-width:0; overflow-wrap:anywhere; }
+.up-body { padding:0 12px 11px 30px; min-width:0; }
+.up-why { margin:0 0 6px; font-size:13px; max-width:760px; }
+.up-part { margin:7px 0 0; min-width:0; } .up-where { font-size:12.5px; color:var(--muted); overflow-wrap:anywhere; } .up-where code { color:var(--fg); }
+.up-lines { margin:3px 0 0; } .up-lines > summary { cursor:pointer; font-size:12px; color:var(--muted); } .up-lines > summary:hover { color:var(--fg); }
+pre.up-diff { margin:5px 0 0; background:var(--sub); border:1px solid var(--line); border-radius:8px; padding:8px 10px; font:11.5px/1.5 ui-monospace, Menlo, monospace; overflow:auto; white-space:pre; max-height:340px; }
+.up-diff .up-add { color:var(--pos); } .up-diff .up-del { color:var(--neg); } .up-diff .up-ctx { color:var(--muted); } .up-diff .up-gap { color:var(--faint); }
+.up-plain { margin:10px 0 14px; } .up-plain > summary { cursor:pointer; font-size:13px; color:var(--muted); } .up-plain > summary:hover { color:var(--fg); }
+.up-quiet { margin:6px 0 0 16px; display:grid; gap:2px; font-size:12px; color:var(--muted); overflow-wrap:anywhere; }
+@media (max-width:600px) { .up-body { padding-left:14px; } .up-find > summary { padding:9px 10px; } }
 .cl-series { margin:16px 0 0; } .cl-series > h3 { font-size:15px; margin:0 0 4px; }
 .cl-topics { font-size:13px; color:var(--muted); margin:2px 0; }
 .cl-versions { margin:6px 0 0; } .cl-versions > summary, .cl-older > summary { cursor:pointer; font-size:13px; font-weight:600; color:var(--muted); }

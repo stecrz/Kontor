@@ -106,7 +106,7 @@ anhängen – nie löschen.
   außen, eine gelockerte Abschirmung, Code, der ungelesen ankommt oder von selbst startet, eine Änderung der Prüfung selbst.
   Jeder solche Fund mit einer Erklärung in klaren Worten (was er bewirken kann, worauf achten) und aufklappbar den betroffenen
   Zeilen (entfernt/neu). Alles andere (strengere Regeln, gewöhnliche Änderungen) braucht keine Freigabe und steht höchstens
-  zusammengefasst darunter.
+  zusammengefasst darunter. (umgesetzt in 3.17.5)
 - **Assistent aktuell halten:** Kontor fragt von selbst – täglich, einstellbar unter KI-Assistent (täglich, wöchentlich, nie),
   nur solange der Assistent eingeschaltet ist – GitHub nach einem neueren llama.cpp und Hugging Face nach neueren Dateien der
   geladenen Modelle (auch des Diktiermodells); gesendet wird dabei nichts vom Nutzer, geladen nichts. Gibt es etwas für das Modell

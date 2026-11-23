@@ -6,6 +6,7 @@ Einstellungen → Updates zeigt den Überblick vor den einzelnen Versionen; die 
 
 ## 3.18
 - KI-Assistent kennt jede Stelle jeder Seite: der Rechtsklick sagt, was eine Zahl ist – Wert des Zeitraums, Anteil oder Veränderung
+- Updates fragen nur bei echtem Risiko – je Fund in klaren Worten erklärt, mit den betroffenen Zeilen
 
 ## 3.17
 - Sicherheit: Daten erst nach deiner Anmeldung lesbar (Passwort oder Touch ID); jedes Update vor dem Installieren gelesen und geprüft

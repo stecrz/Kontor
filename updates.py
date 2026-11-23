@@ -6,8 +6,9 @@ Integritaet: HTTPS zu GitHub, feste Host-Liste, das Archiv muss kontor.py und
 VERSION enthalten.
 Before anything of a new version is installed (or run), the installed one reads its files and compares what they hold of
 the things that reach beyond the program -- network, other programs, loading code, addresses, helpers (update_guard.py).
-Nothing new or changed among them: installed as before. Otherwise the update waits, the settings name what was found, and
-it is installed only with an approval given for exactly these files (their digest). A folder that is a git clone is
+Nothing among them that can be a risk (nothing at all, or only rules that got stricter or work behind a card): installed as
+before. Otherwise the update waits, the settings name what was found, and it is installed only with an approval given for
+exactly these files (their digest). A folder that is a git clone is
 checked the same way: fetched from the repository the settings name (its origin must be that one), read as a whole -- what
 of it is no part of the program and no ordinary file of its tests is a finding, an approval is for the whole new state --
 and only then moved forward to exactly the commit that was read.
@@ -201,11 +202,13 @@ def review(new: Dict[str, bytes]) -> Dict[str, object]:
 
 
 def _approved(rev: Dict[str, object], approved: str) -> bool:
-    return not rev["findings"] or (bool(approved) and approved == rev["digest"])
+    """Installed without a word when nothing of it can be a risk (only stricter rules, or rules behind a card: update_guard's
+    "plain") -- else only with your approval for exactly these files."""
+    return not update_guard.asking(rev["findings"]) or (bool(approved) and approved == rev["digest"])     # type: ignore[arg-type]
 
 
 def _waits(rev: Dict[str, object], version: str) -> Dict[str, object]:
-    kinds = update_guard.summary(rev["findings"])            # type: ignore[arg-type]
+    kinds = update_guard.summary(update_guard.asking(rev["findings"]))      # type: ignore[arg-type]
     log.warning("Update to %s waits for approval: %s", version, ", ".join("%d %s" % (n, k) for k, n in sorted(kinds.items())))
     return {"ok": False, "needs_approval": True, "version": version, "review": rev, "text": tr("s_update_wartet")}
 

@@ -45,18 +45,21 @@ final class Driver: NSObject, NSApplicationDelegate, WKNavigationDelegate {
         if let js = s["js"] as? String {
             web.callAsyncJavaScript(js, arguments: [:], in: nil, in: WKContentWorld.page) { r in
                 switch r {
-                case .success(let v): self.out.append(v ?? NSNull())
+                case .success(let v): self.out.append(v)
                 case .failure(let e): self.out.append(["error": String(describing: e)])
                 }
                 self.next()
             }
         } else if let sel = s["right"] as? String {
-            // where the element is (CSS pixels from the top left of the page's view), then a right click there -- as the mouse sends it
-            let q = "const el = document.querySelector(\(Driver.quote(sel))); if (!el) return null; el.scrollIntoView({block: 'center'}); "
-                + "const b = el.getBoundingClientRect(); return [b.left + Math.min(b.width / 2, 12), b.top + b.height / 2];"
+            // where the element is (CSS pixels from the top left of the page's view: near its right edge, where a figure stands),
+            // only when nothing covers it there (a sticky column) -- then a right click there, as the mouse sends it
+            let q = "const el = document.querySelector(\(Driver.quote(sel))); if (!el) return null; el.scrollIntoView({block: 'center', inline: 'center'}); "
+                + "await new Promise(r => requestAnimationFrame(() => r())); "
+                + "const b = el.getBoundingClientRect(), x = b.right - Math.min(b.width / 2, 12), y = b.top + b.height / 2, hit = document.elementFromPoint(x, y); "
+                + "return hit && (el === hit || el.contains(hit)) ? [x, y] : null;"
             web.callAsyncJavaScript(q, arguments: [:], in: nil, in: WKContentWorld.page) { r in
                 guard case .success(let v) = r, let xy = v as? [Double], xy.count == 2 else {
-                    self.out.append(["error": "no element: " + sel]); self.next(); return
+                    self.out.append(["error": "no element, or covered: " + sel]); self.next(); return
                 }
                 let z = Double(self.web.pageZoom)
                 let local = NSPoint(x: xy[0] * z, y: self.web.isFlipped ? xy[1] * z : Double(self.web.bounds.height) - xy[1] * z)

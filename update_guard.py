@@ -21,8 +21,12 @@ things that let a program reach beyond itself:
     after it;
   - in a git clone, where the whole repository arrives and not only the program: every file of it that is no part of the
     program and no ordinary file of its tests and development (ready-made programs, caches, helpers' folders).
-Nothing new or changed among these: the update is installed as before, without a word. Otherwise it waits, and the settings
-show what was found -- an update is then installed only after you have seen that and said so.
+Nothing new or changed among these: the update is installed as before, without a word. Each finding is then judged (judge):
+critical -- a new or further way out, a looser shield, a file that arrives unread, a change of the check itself; review -- what
+goes out over a way there is already is put together differently; plain -- a rule that is only stricter, or one of the
+internet search behind its card (RULE_GROUPS). Only plain findings: installed as before, the settings name them in one quiet
+line. Otherwise it waits, and the settings show what was found -- each entry in plain words, what it can do, and its lines
+-- an update is then installed only after you have seen that and said so. What is not known as less is critical.
 
 This narrows the way for a change slipped into the repository; it cannot close it (a program can be rebuilt in ways no
 reader of its text foresees). Only what is new or changed is named, never what the installed version already does.
@@ -200,7 +204,7 @@ for _rel, _names in (("service.py", ("_is_local", "_loopback", "_update_install"
     RULES[_rel] = tuple(RULES.get(_rel, ())) + _names
 CHECKED["service.py"] = CHECKED["service.py"] + ("_update_install",)
 # ... on the pages: what the update page shows of the findings and how it sends the approval, each as a whole
-PAGE_RULES = {"web/app.js": ("UP_KINDS", "upFinds", "upReview", "upInstall")}
+PAGE_RULES = {"web/app.js": ("UP_KINDS", "upFinds", "upPlain", "upLines", "upEntry", "upReview", "upInstall")}
 # ... words that carry an approval: where one of them turns up in these files (as a text or as the name of an argument), the
 # function around it is kept as a whole
 WORDS = {"service.py": ("approved",)}
@@ -208,6 +212,107 @@ WORDS = {"service.py": ("approved",)}
 # x.get("repo") or "a/b") is kept as an address -- another one is shown, more of the same (a new model in a repository named
 # already) is not
 SOURCE = re.compile(r"(?i)(?:^|_)repo(?:s|sitory)?(?:_|$)")
+
+# -- what a finding means to you. Every finding is a risk ("critical": asked about) unless it is known here as something
+# less, and the reason why that is safe stands beside it:
+#   "review" -- a way out that is there already now carries something put together differently (what feeds a call that
+#               reaches out, the call itself changed): asked about as well, but one entry per way, not per function;
+#   "plain"  -- nothing that can reach further: a rule that is only stricter (below). Shown as one quiet line, installed
+#               without asking.
+L_CRITICAL, L_REVIEW, L_PLAIN = "critical", "review", "plain"
+# How each rule above is judged (a test keeps every name of RULES, PAGE_RULES and WORDS in here; a rule not in here is a
+# risk). Policies:
+#   "risk"   -- every change is asked about;
+#   "card"   -- what the internet search checks or builds before anything goes out: every lookup stands on a card in the chat
+#               first, whole (web_search.SHOWN_MAX: a longer one is not made), with every word and address that goes out, and
+#               goes out only after your click -- but in a chat you allowed, without a click (only visibly on the card). Whether
+#               a change makes the filter stricter or softer cannot be proven: asked about, as one entry (review) for all of it;
+#   "allow"  -- a fixed table of what may be reached: plain when the new one holds nothing the old did not (entries only taken
+#               away, nothing else changed) -- fewer places to reach can only be stricter;
+#   "deny"   -- a fixed table of what is kept apart: plain when the new one holds everything the old did (entries only added);
+#   "shield" -- a profile of macOS' sandbox: plain when the function is the same but for rules "(deny ...)" added -- each a
+#               plain text that is one whole rule -- and rules "(allow ...)" taken away. In the sandbox's language a rule
+#               more that denies, or one less that allows, never lets anything more through, wherever it stands.
+# Each group: (topic, policy, {file: names}) -- the topic names the entry the update page shows (and its explanation).
+RULE_GROUPS: Tuple[Tuple[str, str, Dict[str, Tuple[str, ...]]], ...] = (
+    # the check itself: who may install an update, with whose approval, what a backup may change of it, what the update page
+    # shows of the findings and sends (a change could hide a finding or approve by itself) -- always asked about
+    ("check", "risk", {"service.py": ("_update_install", "restored_config"), "web/app.js": PAGE_RULES["web/app.js"]}),
+    # where Kontor listens, who counts as "at the Mac", what its pages may load and from where -- a change can open Kontor
+    ("access", "risk", {"service.py": ("bind_allowed", "_sec_headers", "_host_ok", "_origin_ok", "_static", "_is_local", "_loopback"),
+                        "auth.py": ("is_loopback",)}),
+    # where the internet search's reader may connect (hosts, redirects, no address of this Mac or the local network), the
+    # headers it sends (not on the card), which results the page links -- a change can reach other places unseen
+    ("reader", "risk", {"web_reader.py": ("host_ok", "public", "global_address", "inner_addresses", "NAT64", "NAT64_LOCAL", "redirect_request"),
+                        "web_search.py": ("_req", "link_hits", "user_agent", "NEUTRAL_AGENT")}),
+    # ... the sources, their hosts, the hosts results are linked on, the fixed feeds: fewer is stricter
+    ("reader", "allow", {"web_search.py": ("SOURCES", "LINK_HOSTS", "FEEDS")}),
+    # ... the reader's own process: its sandbox profile (judged by its rules), and which program runs as the reader
+    ("reader_shield", "shield", {"web_search.py": ("reader_profile",)}),
+    ("reader_shield", "risk", {"web_search.py": ("command", "python_exe", "READER", "SANDBOX", "HERE")}),
+    # what goes without a card in a chat you allowed: trusted sources and websites -- a change can let more out unasked
+    ("trust", "risk", {"web_search.py": ("site", "_ace", "trusted", "trusted_site", "trusted_default", "HOSTS_MAX"), "assistant.py": ("_trusted",)}),
+    # ... domains shared by many websites and second-level names (each subdomain its own website): more is stricter
+    ("trust", "deny", {"web_search.py": ("SHARED", "_SECOND")}),
+    # the filter that keeps your own data out of a lookup and how a lookup is put together: behind the card (see "card")
+    ("filter", "card", {"web_search.py": ("privacy_problem", "_own_in", "_not_plain", "_fold", "_name_tokens", "_readings", "_figure", "_iban", "_lei_ok",
+                                          "own_index", "_INVISIBLE", "_LETTERS", "_SIGNS", "_BASE", "_PERCENT", "LEGAL", "GENERIC", "IBAN_LENGTH",
+                                          "_IBAN_RUN", "_CODE", "_NO_AMOUNT", "_NO_FIGURES", "_PERIOD", "_NUMBER", "_YEAR", "_RUN", "_CHAIN", "_LEET",
+                                          "_PLAIN_LEAST", "prepare", "prepare_read", "_q", "_month", "_since", "_last", "_SERIES", "_DATASET",
+                                          "_LEI", "_QID"),
+                        "assistant.py": ("_own",)}),
+    # no change once text from the internet is in a chat -- not a way out, but what keeps foreign text from acting on your data
+    ("web_changes", "risk", {"assistant.py": ("_propose",)}),
+    # what the language model is shut out of (judged by its rules)
+    ("model_shield", "shield", {"llm_local.py": ("sandbox_profile",)}),
+    # where the assistant's programs and models come from and that each file is checked
+    ("downloads", "risk", {"llm_local.py": ("host_allowed", "_safe_join", "_fetch", "pick_asset", "repo_files", "latest_runtime", "RUNTIME_REPO", "RELEASES_URL")}),
+    # what goes to OpenFIGI (only ISINs) -- after a click, but not shown before
+    ("isin", "risk", {"security_names.py": ("valid_isin",)}),
+    # which receipt files Kontor hands out or opens
+    ("receipts", "risk", {"receipts.py": ("external_ok", "inside")}),
+)
+# ... the words that carry an approval belong to the check
+WORD_TOPIC = "check"
+# sandbox profiles that are no rule above but feed a call that reaches out (an "around"): judged by their rules as well
+PROFILES = {"receipt_text.py": {"_profile": "receipt_shield"}}
+RULE_LEVEL: Dict[str, Dict[str, Tuple[str, str]]] = {}
+for _topic, _policy, _files in RULE_GROUPS:
+    for _rel, _names in _files.items():
+        for _name in _names:
+            RULE_LEVEL.setdefault(_rel, {})[_name] = (_topic, _policy)
+for _rel, _names in PROFILES.items():
+    for _name, _topic in _names.items():
+        RULE_LEVEL.setdefault(_rel, {}).setdefault(_name, (_topic, "shield"))
+# the entries of the update page: (title, explanation) as keys of web/i18n.js, by topic -- a title takes the entry's {0}
+RULE_TOPICS = frozenset([g[0] for g in RULE_GROUPS] + [t for names in PROFILES.values() for t in names.values()] + ["check", "rules"])
+TOPIC_TEXT = {t: ("upd_t_" + t, "upd_w_" + t) for t in (
+    "check", "access", "reader", "reader_shield", "trust", "filter", "web_changes", "model_shield", "receipt_shield", "downloads", "isin",
+    "receipts", "rules", "shadow", "module", "detour", "self", "place", "address", "page", "file", "script", "extra", "unreadable",
+    "new_host", "new_program", "new_net", "new_other", "way_host", "way_program", "way_net", "way_other")}
+# ... in this order on the page (a topic not named here after them)
+TOPIC_ORDER = ("check", "access", "model_shield", "reader_shield", "receipt_shield", "reader", "trust", "web_changes", "downloads", "isin",
+               "receipts", "rules", "shadow", "self", "detour", "module", "new_host", "new_program", "new_net", "new_other", "address", "place",
+               "page", "script", "file", "extra", "unreadable", "way_host", "way_program", "way_net", "way_other", "filter")
+_PY_BREAK = re.compile(r"\r\n|\r|\n")                 # where Python ends a line (splitlines cuts at more)
+_ODD_BREAK = re.compile("[\x0b\x0c\x1c\x1d\x1e\x85\u2028\u2029]")       # ... where it does not, but splitlines would
+_FILLERS = frozenset("\u00ad\u034f\u061c\u115f\u1160\u17b4\u17b5\u180e\u3164\uffa0")
+
+
+def _hidden(c: str) -> bool:
+    """A character that hides in a line or turns it around: controls (not a tab), format and private characters, separators,
+    variation selectors, tags, fillers that look like nothing."""
+    o = ord(c)
+    return c != "\t" and (unicodedata.category(c) in ("Cc", "Cf", "Co", "Cs", "Cn", "Zl", "Zp") or c in _FILLERS
+                          or 0xFE00 <= o <= 0xFE0F or 0xE0000 <= o <= 0xE01EF)
+MUTATORS = frozenset("""clear update add discard remove pop popitem setdefault append extend insert sort reverse difference_update
+intersection_update symmetric_difference_update __setitem__ __delitem__ __iadd__ __ior__ __isub__ __iand__ __setattr__""".split())
+LINES_MOST = 24                     # lines of one finding shown, at most (changed lines with one line around them)
+LINES_ALL = 400                     # ... of all findings together (the settings carry them)
+LINE_WIDTH = 160                    # characters of one line shown
+NET = frozenset("socket urllib http ssl ftplib smtplib poplib imaplib xmlrpc asyncio selectors webbrowser".split())
+# what a file of the check holds is part of the check's own finding (its content is all compared there): never its name
+INSIDE = frozenset(("call", "around", "detour", "place", "address", "module", "self"))
 
 # names every list, text or table has: a call like x.update() says nothing about whose update it is
 COMMON = frozenset(n for t in (dict, list, str, set, bytes, tuple, bytearray, frozenset) for n in dir(t)) | frozenset(
@@ -507,6 +612,21 @@ def _show(node: ast.AST, limit: int = 110) -> str:
     return text if len(text) <= limit else text[:limit - 1] + "…"
 
 
+def _span(node: ast.AST) -> Optional[Tuple[int, int]]:
+    """The lines a piece of code stands on (a function with its decorators)."""
+    first = getattr(node, "lineno", None)
+    if not isinstance(first, int):
+        return None
+    first = min([first] + [d.lineno for d in getattr(node, "decorator_list", []) if isinstance(getattr(d, "lineno", None), int)])
+    return first, max(first, getattr(node, "end_lineno", None) or first)
+
+
+def _at(node: ast.AST, **more) -> dict:
+    """What the page is told of a finding at this piece of code: its lines and whatever else is given."""
+    span = _span(node)
+    return dict(more, spans=[span] if span else [])
+
+
 _PLACES_OF_VALUES = (ast.Assign, ast.AnnAssign, ast.AugAssign, ast.NamedExpr, ast.For, ast.AsyncFor, ast.comprehension, ast.With, ast.AsyncWith)
 _SOURCE_PLACES = (ast.Dict, ast.Assign, ast.AnnAssign, ast.keyword, ast.arguments, ast.BoolOp)
 
@@ -539,13 +659,15 @@ class _Py:
         self.chains: List[ast.AST] = [n for n in self.nodes if type(n) in (ast.Name, ast.Attribute) and type(self.parents.get(id(n))) is not ast.Attribute]
         self.out: Dict[Tuple[str, str, str], str] = {}        # (kind, file, what) -> content, to compare
         self.shown: Dict[Tuple[str, str, str], str] = {}      # ... and a line of it to show
+        self.info: Dict[Tuple[str, str, str], dict] = {}      # ... and for the page: its lines (spans), name, way out
+        self.direct: Dict[int, tuple] = {}                    # ... and of each place that reaches out what it uses (ways_known)
         self.bound: Dict[str, str] = {}                       # a name in this file -> the part of Python behind it
         self.risky_names: Set[str] = set()                    # names that stand for something that reaches out
         self.modules: Set[str] = set()                        # names that stand for a whole part of Python (import x)
         self.assigned: Set[str] = {n.id for n in of(ast.Name) if isinstance(n.ctx, ast.Store)} | {
             a.arg for n in of(ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda) for a in n.args.args + n.args.kwonlyargs}
         self.heads: Dict[int, str] = {}
-        self.late: List[Tuple[str, str]] = []                 # names taken from the program's own parts: judged when every part is read
+        self.late: List[Tuple[str, str, ast.AST]] = []        # names taken from the program's own parts: judged when every part is read
         self.exports: Set[str] = set()                        # names of this file (at its top) for something that reaches out
         self.home: Set[str] = set()                           # names of this file (settings, functions) that lead to the program's folder
         self.home_attrs: Set[str] = set()                     # ... and values kept in an object (self.base = HERE)
@@ -601,22 +723,30 @@ class _Py:
 
     def find(self) -> None:
         """Every place of this file that reaches out -- asked when all files are read (a name may lead through another one)."""
-        for mod, name in self.late:
+        for mod, name, node in self.late:
             full = "%s.%s" % (mod, name)
             real, how = self._through(full)
             if how == "name" or how and real.split(".")[0] not in self.local and (how == "whole" or self._risky_path(real)):
-                self._note("module", full, show="from %s import %s" % (mod, name))
+                self._note("module", full, show="from %s import %s" % (mod, name), info=_at(node))
         self._find()
         self._writes()
 
     # -- what is imported -------------------------------------------------------------------------------------------------
-    def _note(self, kind: str, what: str, content: str = "1", show: str = "") -> None:
+    def _note(self, kind: str, what: str, content: str = "1", show: str = "", info: Optional[dict] = None) -> None:
         key = (kind, self.rel, what)
         if key not in self.out:
             self.out[key] = content
         elif content not in self.out[key].split("+"):          # (the same thing reached from two places is still one thing)
             self.out[key] = "+".join(sorted(self.out[key].split("+") + [content]))
         self.shown.setdefault(key, show or what)
+        if info:                                              # for the page: where it stands, its name, the way out it belongs to
+            have = self.info.setdefault(key, {})
+            for k, v in info.items():
+                if isinstance(v, list):
+                    have.setdefault(k, [])
+                    have[k] += [x for x in v if x not in have[k]]
+                else:
+                    have.setdefault(k, v)
 
     def _imports(self) -> None:
         for n in self.nodes:
@@ -625,7 +755,7 @@ class _Py:
                     self.bound[a.asname or a.name.split(".")[0]] = a.name if a.asname else a.name.split(".")[0]
                     self.modules.add(a.asname or a.name.split(".")[0])
                     if not _harmless_module(a.name, self.local):
-                        self._note("module", a.name, show="import " + a.name)
+                        self._note("module", a.name, show="import " + a.name, info=_at(n))
             elif isinstance(n, ast.ImportFrom):
                 mod = ("." * n.level) + (n.module or "")
                 if n.level and not n.module:
@@ -634,9 +764,9 @@ class _Py:
                     self.bound[a.asname or a.name] = "%s.%s" % (mod, a.name)
                     full = "%s.%s" % (mod, a.name)
                     if a.name == "*" or not (_harmless_module(mod, self.local) or _harmless_module(full, self.local)) or self._risky_path(full):
-                        self._note("module", full, show="from %s import %s" % (mod, a.name))
+                        self._note("module", full, show="from %s import %s" % (mod, a.name), info=_at(n))
                     elif mod.split(".")[0] in self.local:
-                        self.late.append((mod, a.name))
+                        self.late.append((mod, a.name, n))
 
     # -- is this dotted name something that reaches out? ------------------------------------------------------------------
     def _risky_path(self, path: str) -> bool:
@@ -1280,10 +1410,20 @@ class _Py:
             call = first[0]
             while isinstance(self.parents.get(id(call)), (ast.Attribute, ast.Call)) and getattr(self.parents[id(call)], "func", call) is call:
                 call = self.parents[id(call)]
+            # for the page (nothing of it is compared): the lines, the name, the way out, the places named, whether a detour is
+            # only a word that carries an approval
+            way = self.way(uid)
+            more = {"way": way, "args": sorted({w for _n, k, w in found if k == "place"}),
+                    "words": all(w in ["%r" % x for x in WORDS.get(self.rel, ())] + [x + "=" for x in WORDS.get(self.rel, ())]
+                                 for _n, k, w in found if k == "detour")}
             if id(unit) in self.heads:
-                self._note(kind, qual, _same(unit), "%s: %s" % (qual, _show(call, 90)))
+                head = self.parents[id(unit)]                  # its first line: up to where its body begins
+                body = getattr(head.body[0], "lineno", head.end_lineno + 1) if head.body else head.end_lineno + 1
+                self._note(kind, qual, _same(unit), "%s: %s" % (qual, _show(call, 90)),
+                           dict(more, spans=[((_span(head) or (head.lineno, 0))[0], max(head.lineno, body - 1))], name=head.name, where=qual))
             elif isinstance(unit, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                self._note(kind, qual, _same(unit), "%s: %s" % (qual, _show(call, 90)))
+                self._note(kind, qual, _same(unit), "%s: %s" % (qual, _show(call, 90)), _at(unit, name=unit.name, where=qual, **more))
+                feeds = {"feeds": [qual], "way": way}
                 # what reaches those places from outside the function: names set at the top of the file and small functions of
                 # the file whose result goes into them (directly, or through a name of the function) ...
                 feeding, names = self._feeding(unit, [n for n, _k, _w in found])
@@ -1293,7 +1433,7 @@ class _Py:
                 for name in sorted(names):
                     if name in tops and name not in ("log", "logger"):
                         for st in tops[name]:
-                            self._note("around", name, _same(st), _show(st))
+                            self._note("around", name, _same(st), _show(st), _at(st, name=name, where=name, **feeds))
                 feeding += tests
                 todo = list(feeding)
                 while todo:
@@ -1305,23 +1445,169 @@ class _Py:
                             for d in defs[name]:
                                 if d is not unit and id(d) not in self.hits and id(d) not in around and d.end_lineno - d.lineno < SMALL:
                                     around.add(id(d))
-                                    self._note("around", name + "()", _same(d), "%s() → %s" % (name, qual))
+                                    self._note("around", name + "()", _same(d), "%s() → %s" % (name, qual), _at(d, name=name, where=name + "()", **feeds))
                                     todo.append(d)             # and the small functions that one calls in turn
                                     for x in ast.walk(d):      # ... with the names from the top of the file it uses
                                         if isinstance(x, ast.Name) and x.id in tops and x.id not in ("log", "logger"):
                                             for st2 in tops[x.id]:
-                                                self._note("around", x.id, _same(st2), _show(st2))
+                                                self._note("around", x.id, _same(st2), _show(st2), _at(st2, name=x.id, where=x.id, **feeds))
             else:
-                self._note(kind, (qual + " " if qual else "") + _show(unit, 200), show=_show(call if kind != "place" else unit, 100))
+                target = [t.id for st in [unit] if isinstance(st, (ast.Assign, ast.AnnAssign))
+                          for t in (st.targets if isinstance(st, ast.Assign) else [st.target]) if isinstance(t, ast.Name)]
+                self._note(kind, (qual + " " if qual else "") + _show(unit, 200), show=_show(call if kind != "place" else unit, 100),
+                           info=_at(unit, name=(target or [""])[0], where=qual or (target or [""])[0], **more))
         for name in RULES.get(self.rel, ()):                   # rules that keep Kontor to itself: each as a whole
             for d in defs.get(name, []):
-                self._note("rule", name, _same(d), "%s()" % name)
+                self._note("rule", name, _same(d), "%s()" % name, _at(d, name=name, where=name + "()"))
             for st in tops.get(name, []):                      # ... a setting at the top of the file
-                self._note("rule", name, _same(st), _show(st))
+                self._note("rule", name, _same(st), _show(st), _at(st, name=name, where=name))
+            if name in tops:                                   # ... and what else at the top touches it (NAME.clear(), y = NAME)
+                for st in self.tree.body:
+                    if st not in tops[name] and not isinstance(st, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Import, ast.ImportFrom)) \
+                            and any(isinstance(x, ast.Name) and x.id == name for x in ast.walk(st)):
+                        self._note("rule", name, _same(st), _show(st), _at(st, name=name, where=name))
+        self._rule_changes()
         self._sources()
         if _own(self.rel):
             self._note("guard", "", _same(self.tree), self.rel)
 
+    def _rule_changes(self) -> None:
+        """What changes a rule from anywhere, in this file: NAME.clear(), NAME[k] = v, del NAME[k], NAME += ..., global NAME,
+        module.NAME = v or module.NAME.update(...) (also through an import, also of this very file), x.__dict__["NAME"] = v --
+        each a finding of that rule (in another file than the rule's own: a rule nobody judged, a risk)."""
+        files = {_module(r): r for r in RULES}
+
+        def scope(node: ast.AST) -> Optional[ast.AST]:
+            up = self.parents.get(id(node))
+            while up is not None and not isinstance(up, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)):
+                up = self.parents.get(id(up))
+            return up
+
+        def own(node: ast.Name) -> bool:
+            """This file's rule by its name -- not a name of the same spelling that a function keeps for itself."""
+            f = scope(node)
+            if f is None or isinstance(f, ast.ClassDef):
+                return True
+            inner = [x for x in ast.walk(f) if x is not f]
+            if any(isinstance(x, (ast.Global, ast.Nonlocal)) and node.id in x.names for x in inner):
+                return True
+            args = f.args if not isinstance(f, ast.ClassDef) else None
+            names = {a.arg for a in (args.posonlyargs + args.args + args.kwonlyargs + [x for x in (args.vararg, args.kwarg) if x])} if args else set()
+            return node.id not in names and not any(isinstance(x, ast.Name) and x.id == node.id and not isinstance(x.ctx, ast.Load) for x in inner)
+
+        def rule(node: ast.AST) -> Optional[str]:
+            if isinstance(node, ast.Name):
+                path = self.bound.get(node.id, "").lstrip(".")
+                mod, _dot, nm = path.rpartition(".")
+                if mod and nm in RULES.get(files.get(mod, ""), ()):
+                    return nm
+                return node.id if not path and node.id in RULES.get(self.rel, ()) and own(node) else None
+            if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name):
+                mod = self.bound.get(node.value.id, "").lstrip(".")
+                if node.attr in RULES.get(files.get(mod, ""), ()):
+                    return node.attr
+            return None
+
+        def down(x: ast.AST) -> List[ast.AST]:
+            """x and what it is part of: NAME["a"]["b"] -> itself, NAME["a"], NAME (each may name a rule)."""
+            out = [x]
+            while isinstance(x, (ast.Attribute, ast.Subscript)):
+                x = x.value
+                out.append(x)
+            return out
+
+        def changed(n: ast.AST) -> List[ast.AST]:
+            if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and n.func.attr in MUTATORS:
+                return down(n.func.value)
+            if isinstance(n, (ast.Name, ast.Attribute, ast.Subscript)) and isinstance(n.ctx, (ast.Store, ast.Del)) \
+                    and isinstance(self.parents.get(id(n)), (ast.Assign, ast.AugAssign, ast.AnnAssign, ast.Delete)):
+                return down(n)
+            return []
+
+        for n in self.nodes:
+            names: List[str] = []
+            if isinstance(n, (ast.Global, ast.Nonlocal)):
+                names = [x for x in n.names if x in RULES.get(self.rel, ())]
+            elif isinstance(n, ast.Subscript) and isinstance(n.ctx, (ast.Store, ast.Del)) and self._table(n.value):
+                key = _text_of(self._fixed(n.slice))
+                names = [key] if key and any(key in v for v in RULES.values()) else []
+            else:
+                names = sorted({x for x in (rule(c) for c in changed(n)) if x})
+            if not names:
+                continue
+            st, up = n, self.parents.get(id(n))
+            while not isinstance(st, ast.stmt) and up is not None:
+                st, up = up, self.parents.get(id(up))
+            for name in names:
+                if st not in self.tops.get(name, []) or isinstance(st, ast.AugAssign):
+                    self._note("rule", name, _same(st), _show(st), _at(st, name=name, where=name))
+
+    def ways_known(self) -> None:
+        """For the page, before any file is recorded (see way): of each place that reaches out, the Internet addresses its
+        function names, the programs it starts as far as they are fixed, whether it connects, what it hands things on to."""
+        for uid, found in self.hits.items():
+            unit, _qual = self.units[uid]
+            hosts: Set[str] = set()
+            programs: Set[str] = set()
+            passes: List[str] = []
+            net = unknown = False
+            for node, kind, what in found:
+                if kind in ("place", "self"):
+                    continue
+                if what.startswith("→ "):
+                    passes.append(what[2:])
+                    continue
+                root = what.split(".")[0]
+                net = net or root in NET
+                call = self.parents.get(id(node))
+                if isinstance(call, ast.Call) and call.func is node and (root == "subprocess" or root in RISKY_START and bool(RISKY_START[root].match(what[len(root) + 1:]))):
+                    first = call.args[0] if call.args else None
+                    if isinstance(first, (ast.List, ast.Tuple)):
+                        first = first.elts[0] if first.elts else None
+                    prog = _text_of(self._fixed(first)) if first is not None else None
+                    if prog:
+                        programs.add(prog.rstrip("/").rsplit("/", 1)[-1][:40])
+                    else:
+                        unknown = True
+            names = {n.id for n in ast.walk(unit) if isinstance(n, ast.Name)}
+            texts = [n.value for n in ast.walk(unit) if isinstance(n, ast.Constant) and isinstance(n.value, str)]
+            texts += [t for t in (_text_of(self._fixed(self.consts[x])) for x in sorted(names) if x in self.consts) if t]
+            for text in texts:
+                for a in ADDRESS.findall(text):
+                    m = HOST.search(a)
+                    host = (m.group(1) if m else "").lower()
+                    if host and host not in NAMESPACES and not OWN_ADDRESSES.match(host) and host != "localhost":
+                        hosts.add(host)
+            self.direct[uid] = (sorted(hosts), sorted(programs), passes, net, unknown)
+
+    def way(self, uid: int, depth: int = 0) -> List[str]:
+        """The way out a place uses, for the page: [kind, what] -- "host" (the Internet addresses its function names), "program"
+        (the programs it starts, as far as they are fixed; else the file that starts one), "net" (a connection without a fixed
+        address), or "other" (the function it hands things on to, followed to that one's way where it can be). Only to say it
+        in words: it decides nothing of what is asked about."""
+        if uid not in self.direct:
+            return ["other", ""]
+        hosts, programs, passes, net, unknown = self.direct[uid]
+        qual = self.units[uid][1]
+        if hosts:
+            return ["host", ", ".join(hosts[:3])]
+        if programs:
+            return ["program", ", ".join(programs[:3])]
+        for target in passes:                                  # handed on: the way of the function it goes to
+            other, name = self, target
+            if "." in target:
+                mod, name = target.rsplit(".", 1)
+                other = self.world.get(mod.lstrip("."), None) if mod else None
+            for p in ([other] if other is not None else list(self.world.values())) if depth < 4 else []:
+                for vid, (_u, q) in p.units.items():
+                    if vid in p.direct and (q.split(".")[-1] == name or q.endswith("." + name + ".__init__") or q == name + ".__init__"):
+                        w = p.way(vid, depth + 1)
+                        if w[0] != "other":
+                            return w
+            return ["other", target.lstrip(".")[:60]]
+        if unknown:                                            # a program not fixed in the code: by the file that starts it
+            return ["program", self.rel]
+        return ["net", qual] if net else ["other", qual]
 
     def _sources(self) -> None:
         """Where something is fetched from: each fixed text given to a key or a name like "repo" -- in a table ({"repo": ..}), set
@@ -1365,6 +1651,19 @@ class _Py:
                     self._note("address", where, show="repo: " + where)
 
 
+_CODING = re.compile(rb"^[ \t\f]*#.*?coding[:=][ \t]*([-\w.]+)")
+
+
+def _py_text(data: bytes) -> str:
+    """A Python file's text as Python reads it -- only UTF-8: a declaration of another encoding in its first two lines (which
+    Python obeys, utf-7 among them: code hidden in what reads as a comment) makes the file unreadable here (ValueError)."""
+    for line in re.split(rb"\r\n|\r|\n", data, maxsplit=2)[:2]:
+        m = _CODING.match(line)
+        if m and m.group(1).decode("ascii", "replace").lower().replace("_", "-") not in ("utf-8", "utf8"):
+            raise ValueError("encoding " + m.group(1).decode("ascii", "replace"))
+    return data.decode("utf-8")
+
+
 def _analyse(files: Dict[str, bytes], names: List[str], local: Set[str]) -> Tuple[List[_Py], List[str], List[str]]:
     """The program files read and followed through: (each file, the files no reader of Python understands, methods that hand
     things on but have a name every list or text has -- those cannot be followed)."""
@@ -1374,7 +1673,7 @@ def _analyse(files: Dict[str, bytes], names: List[str], local: Set[str]) -> Tupl
     world: Dict[str, _Py] = {}
     for rel in names:
         try:
-            parsed.append(_Py(rel, ast.parse(files[rel].decode("utf-8")), local, world))
+            parsed.append(_Py(rel, ast.parse(_py_text(files[rel])), local, world))
             world[_module(rel)] = parsed[-1]
         except (SyntaxError, ValueError, UnicodeDecodeError, RecursionError, MemoryError):
             unreadable.append(rel)
@@ -1425,15 +1724,19 @@ def _module(rel: str) -> str:
     return ".".join(parts[:-1] if parts[-1] == "__init__" and len(parts) > 1 else parts)
 
 
-def _python(files: Dict[str, bytes], names: List[str], local: Set[str], out: dict, shown: dict) -> None:
+def _python(files: Dict[str, bytes], names: List[str], local: Set[str], out: dict, shown: dict, info: Optional[dict] = None) -> None:
     parsed, unreadable, _common = _analyse(files, names, local)
     for rel in unreadable:
         out[("unreadable", rel, "")] = _sha(files[rel])
         shown[("unreadable", rel, "")] = rel
+    for p in parsed:                                           # (for the page: what each way out uses, read across files)
+        p.ways_known()
     for p in parsed:
         p.record()
         out.update(p.out)
         shown.update(p.shown)
+        if info is not None:
+            info.update(p.info)
 
 
 def handing_on(files: Dict[str, bytes]) -> Dict[str, object]:
@@ -1695,8 +1998,9 @@ def _js_definition(t: str, start: int) -> int:
     raise _Unclean()
 
 
-def _page_rules(rel: str, text: str) -> Dict[str, List[str]]:
-    """The functions and settings of a page named in PAGE_RULES: {name: [each definition, without comments and space]}."""
+def _page_rules(rel: str, text: str, spans: Optional[Dict[str, list]] = None) -> Dict[str, List[str]]:
+    """The functions and settings of a page named in PAGE_RULES: {name: [each definition, without comments and space]}
+    (spans: filled with the lines each stands on, for the page)."""
     out: Dict[str, List[str]] = {}
     for name in PAGE_RULES.get(rel, ()):
         for m in re.finditer(r"(?m)^[ \t]*(?:(?:async[ \t]+)?function[ \t]*\*?[ \t]*%s[ \t]*\(|(?:const|let|var)[ \t]+%s[ \t]*=)" % (name, name), text):
@@ -1705,8 +2009,11 @@ def _page_rules(rel: str, text: str) -> Dict[str, List[str]]:
                 end = _js_definition(text, start)
                 body = "\n".join(_js_lines(text[start:end]))
             except _Unclean:
+                end = len(text)
                 body = text[start:]                          # not to be followed: everything from here on counts
             out.setdefault(name, []).append(body)
+            if spans is not None:
+                spans.setdefault(name, []).append((text.count("\n", 0, start) + 1, text.count("\n", 0, max(start, end - 1)) + 1))
     return out
 
 
@@ -2004,16 +2311,19 @@ def _joined(text: str) -> str:
     return text
 
 
-def _page(rel: str, data: bytes, out: dict, shown: dict) -> None:
+def _page(rel: str, data: bytes, out: dict, shown: dict, info: Optional[dict] = None) -> None:
+    info = {} if info is None else info
     try:
         text = data.decode("utf-8")
     except UnicodeDecodeError:
         out[("unreadable", rel, "")] = _sha(data)
         shown[("unreadable", rel, "")] = rel
         return
-    for name, bodies in _page_rules(rel, text).items():     # what the update page shows and sends: each as a whole
+    spans: Dict[str, list] = {}
+    for name, bodies in _page_rules(rel, text, spans).items():     # what the update page shows and sends: each as a whole
         out[("rule", rel, name)] = "+".join(_sha(b.encode("utf-8")) for b in bodies)
         shown[("rule", rel, name)] = name
+        info[("rule", rel, name)] = {"spans": spans.get(name, []), "name": name, "where": name}
     if rel.lower().endswith((".js", ".mjs", ".html", ".htm")):
         text = _joined(text)
     for a in ADDRESS.findall(text):
@@ -2026,31 +2336,35 @@ def _page(rel: str, data: bytes, out: dict, shown: dict) -> None:
         out[("address", rel, m.group(1).lower())] = "1"
         shown[("address", rel, m.group(1).lower())] = m.group(1)[:80]
     low = rel.lower()
-    found: List[str] = []
+    found: List[Tuple[str, int]] = []
     if not low.endswith(".css"):                               # (a style sheet runs nothing)
         for m in PAGE.finditer(text):
             hit = m.group(0)
             if LEAVING.search(hit):                            # where a page leaves or clicks: the whole line, with what guards it
                 start, end = text.rfind("\n", 0, m.start()) + 1, text.find("\n", m.end())
                 hit = text[start:end if end >= 0 else len(text)].strip()[:600]
-            found.append(hit)
+            found.append((hit, m.start()))
     if not low.endswith((".js", ".mjs")):
-        found += [m.group(0) for m in STYLE.finditer(text)]
-    for hit in found:
+        found += [(m.group(0), m.start()) for m in STYLE.finditer(text)]
+    for hit, at in found:
         s = " ".join(hit.split())
         key = ("page", rel, s)
         out[key] = str(int(out.get(key, "0")) + 1)
         shown[key] = s[:110]
+        line = text.count("\n", 0, at) + 1                   # (of the page's own text: pieces put together count by the joined one)
+        info.setdefault(key, {"spans": [], "name": "", "where": ""})["spans"].append((line, line))
 
 
-def scan(files: Dict[str, bytes], before: Iterable[str] = ()) -> Tuple[Dict[Tuple[str, str, str], str], Dict[Tuple[str, str, str], str]]:
-    """What a set of program files holds of the things named above: ({(kind, file, what): content}, {the same: a line to show}).
+def scan(files: Dict[str, bytes], before: Iterable[str] = ()) -> Tuple[Dict[Tuple[str, str, str], str], Dict[Tuple[str, str, str], str], Dict[Tuple[str, str, str], dict]]:
+    """What a set of program files holds of the things named above: ({(kind, file, what): content}, {the same: a line to show},
+    {the same: for the update page -- the lines it stands on, its name, the way out it belongs to; never compared}).
     before: the names of the files there are now (a new name that takes the place of one of them is shown)."""
     out: Dict[Tuple[str, str, str], str] = {}
     shown: Dict[Tuple[str, str, str], str] = {}
+    info: Dict[Tuple[str, str, str], dict] = {}
     names = [r for r in files if installable(r)]
     local = _local(names)
-    _python(files, sorted(r for r in names if r.lower().endswith(".py")), local, out, shown)
+    _python(files, sorted(r for r in names if r.lower().endswith(".py")), local, out, shown, info)
     for key, what in _shadows(names, [r for r in before if installable(r)]).items():
         out[key], shown[key] = "1", what
     for rel in sorted(names):
@@ -2058,7 +2372,7 @@ def scan(files: Dict[str, bytes], before: Iterable[str] = ()) -> Tuple[Dict[Tupl
         if low.endswith(".py"):
             continue
         elif low.endswith(PAGE_FILES):
-            _page(rel, data, out, shown)
+            _page(rel, data, out, shown, info)
         elif low.endswith(PASSIVE) or base in PASSIVE_NAMES:
             continue
         elif low.endswith(SCRIPTS):                            # a helper in Swift, a script: its lines without comments
@@ -2067,20 +2381,29 @@ def scan(files: Dict[str, bytes], before: Iterable[str] = ()) -> Tuple[Dict[Tupl
         else:                                                  # anything else Kontor cannot read this way
             out[("file", rel, "")] = _sha(data)
             shown[("file", rel, "")] = rel
-    return out, shown
+    return out, shown, info
 
 
 def compare(old_files: Dict[str, bytes], new_files: Dict[str, bytes], limit: int = 200) -> List[Dict[str, object]]:
     """What the new files hold of those things that the old ones do not hold the same way: [{kind, file, what, new}] -- "new":
     it was not there at all (else: it is changed); of a helper or script also how many lines are added and taken away and how
-    many of the changed ones reach out ("added", "removed", "out"). Empty: nothing to ask about."""
-    return differences(scan(old_files)[0], scan(new_files, set(old_files)), set(new_files), limit)
+    many of the changed ones reach out ("added", "removed", "out"). With each what it means to you and how the update page
+    shows it (judge): "level" (critical, review, plain -- see RULE_GROUPS), "topic" (the entry it belongs to, with "title",
+    "why", "arg"), "where" (function or setting) and "lines" (what it concerns: "-" taken away, "+" new, " " beside them, "…"
+    left out; "more": lines not shown). Empty: nothing new at all; asked about is what asking() gives."""
+    old = scan(old_files)
+    new = scan(new_files, set(old_files))
+    return judge(_differences(old[0], new, set(new_files)), old_files, new_files, old, new)[:limit]
 
 
 def differences(old: Dict[Tuple[str, str, str], str], scanned: tuple, new_files: Set[str], limit: int = 200) -> List[Dict[str, object]]:
-    new, shown = scanned
+    return [f for _key, f in _differences(old, scanned, new_files)][:limit]
+
+
+def _differences(old: Dict[Tuple[str, str, str], str], scanned: tuple, new_files: Set[str]) -> List[Tuple[Tuple[str, str, str], Dict[str, object]]]:
+    new, shown = scanned[0], scanned[1]
     known = {k[2] for k in old if k[0] == "address"}           # an address the program names already, written in another file too
-    found: List[Dict[str, object]] = []
+    found: List[Tuple[Tuple[str, str, str], Dict[str, object]]] = []
     for key in sorted(new, key=lambda k: (KINDS.index(k[0]) if k[0] in KINDS else 99, k[1], k[2])):
         if old.get(key) == new[key]:
             continue
@@ -2092,11 +2415,12 @@ def differences(old: Dict[Tuple[str, str, str], str], scanned: tuple, new_files:
         f: Dict[str, object] = {"kind": kind, "file": rel, "what": shown.get(key, "")[:160], "new": key not in old}
         if kind == "file" and new[key].startswith(LINES):     # a helper or script: what of it changes
             f.update(_script_change(rel, old.get(key), new[key]))
-        found.append(f)
+        found.append((key, f))
     for key in sorted(old, reverse=True):                      # a rule, or the check itself, that is no longer there
         if key not in new and key[0] in ("rule", "guard") and (key[0] == "guard" or key[1] in new_files):     # (a rule of a file that is gone: the file tells)
-            found.insert(0, {"kind": key[0], "file": key[1], "what": (key[2] + ("" if key[2].isupper() else "()")) if key[0] == "rule" else key[1], "new": False, "gone": True})
-    return found[:limit]
+            found.insert(0, (key, {"kind": key[0], "file": key[1], "what": (key[2] + ("" if key[2].isupper() else "()")) if key[0] == "rule" else key[1],
+                                   "new": False, "gone": True}))
+    return found
 
 
 def summary(found: Iterable[Dict[str, str]]) -> Dict[str, int]:
@@ -2104,3 +2428,451 @@ def summary(found: Iterable[Dict[str, str]]) -> Dict[str, int]:
     for f in found:
         out[f["kind"]] = out.get(f["kind"], 0) + 1
     return out
+
+
+def asking(found: Iterable[Dict[str, object]]) -> List[Dict[str, object]]:
+    """The findings an update waits for your approval for: every one that is not plain -- also one that was not judged (a file
+    of a git clone that arrives unread, a check that failed)."""
+    return [f for f in found if f.get("level") != L_PLAIN]
+
+
+# ---------------------------------------------------------------------------
+# what each finding means to you, and the lines it concerns
+# ---------------------------------------------------------------------------
+
+def judge(pairs: List[Tuple[Tuple[str, str, str], Dict[str, object]]], old_files: Dict[str, bytes], new_files: Dict[str, bytes],
+          old_scan: tuple, new_scan: tuple) -> List[Dict[str, object]]:
+    """Each finding with its level, the entry of the update page it belongs to and its lines (see compare). Critical unless it
+    is known as less: a call that reaches out and is new, a new address, place, part of Python, a detour, a file that takes
+    another's place or arrives unread, a change of the check itself and of a rule that is no plain table -- critical; a call
+    that was there and is changed, and what feeds such a call -- review, one entry per way out; a rule that is only stricter
+    -- plain (RULE_GROUPS). What else a file of the check itself holds is in the check's own finding:
+    any change to it is critical anyway, its lines are the file's changes."""
+    old_info: dict = old_scan[2] if len(old_scan) > 2 else {}
+    new_info: dict = new_scan[2] if len(new_scan) > 2 else {}
+    texts: Dict[Tuple[str, str], List[str]] = {}
+    trees: Dict[tuple, object] = {}
+    proven: Dict[Tuple[str, str], bool] = {}
+
+    def raw(side: str, rel: str) -> Optional[bytes]:
+        data = (old_files if side == "old" else new_files).get(rel)
+        return data if isinstance(data, bytes) else None
+
+    def lines(side: str, rel: str) -> List[str]:
+        """The file's lines as Python counts them (only at \\n, \\r\\n, \\r -- not at a form feed or the like, where
+        splitlines would cut and Python reads on: what is shown and judged is what runs)."""
+        if (side, rel) not in texts:
+            data = raw(side, rel)
+            out = _PY_BREAK.split(data.decode("utf-8", "replace")) if data is not None else []
+            texts[(side, rel)] = out[:-1] if out and out[-1] == "" else out
+        return texts[(side, rel)]
+
+    def tree(side: str, rel: str) -> Optional[ast.Module]:
+        """The file as Python reads it -- the same text the scan read (strictly UTF-8), else none (and no proof)."""
+        if (side, rel) not in trees:
+            data = raw(side, rel)
+            try:
+                trees[(side, rel)] = ast.parse(_py_text(data)) if data is not None else None
+            except (SyntaxError, ValueError, RecursionError, MemoryError, UnicodeDecodeError):
+                trees[(side, rel)] = None
+        return trees[(side, rel)]                          # type: ignore[return-value]
+
+    def quiet(side: str, rel: str) -> Set[int]:
+        """The lines of a file that only explain (comments, a function's explanation): a change there alone is not shown."""
+        if (side, rel, "quiet") not in trees:
+            text = lines(side, rel)
+            out = {i + 1 for i, x in enumerate(text) if x.lstrip().startswith("#" if rel.endswith(".py") else "//")}
+            t = tree(side, rel) if rel.endswith(".py") else None
+            for n in ast.walk(t) if t is not None else ():
+                body = getattr(n, "body", None)
+                if isinstance(n, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)) and body and isinstance(body[0], ast.Expr) \
+                        and isinstance(body[0].value, ast.Constant) and isinstance(body[0].value.value, str):
+                    out.update(range(body[0].lineno, (body[0].end_lineno or body[0].lineno) + 1))
+            trees[(side, rel, "quiet")] = out              # type: ignore[index,assignment]
+        return trees[(side, rel, "quiet")]                 # type: ignore[index,return-value]
+
+    def stricter(rel: str, name: str, policy: str) -> bool:
+        """Only stricter -- and nothing else in the program may change the table: no other file touches it under its name
+        (module.NAME, "NAME") differently than before, and no line break Python and the lines see differently."""
+        if (rel, name) not in proven:
+            try:
+                new_raw = raw("new", rel) or b""
+                ok = not _ODD_BREAK.search(new_raw.decode("utf-8", "replace")) and _stricter(policy, tree("old", rel), tree("new", rel), name)
+                if ok and policy in ("allow", "deny"):
+                    py = sorted(r for r in set(old_files) | set(new_files) if r.endswith(".py") and r != rel)
+                    ok = all(_uses(tree("old", r), name, None, False) == _uses(tree("new", r), name, None, False) for r in py)
+                proven[(rel, name)] = ok
+            except (ValueError, TypeError, RecursionError):
+                proven[(rel, name)] = False
+        return proven[(rel, name)]
+
+    guarded = {key[1] for key, _f in pairs if key[0] == "guard"}
+    judged: List[Tuple[Tuple[int, int, int], Dict[str, object], Tuple[str, str, str], str]] = []      # (order, finding, key, name)
+    for i, (key, f) in enumerate(pairs):
+        kind, rel, what = key
+        if kind in INSIDE and _own(rel) and rel in guarded:
+            continue                                           # (in the check's own finding: its lines are the file's changes)
+        inf = new_info.get(key) or old_info.get(key) or {}
+        name = str(inf.get("name") or (what if kind == "rule" else ""))
+        rule = RULE_LEVEL.get(rel, {}).get(name) if name else None
+        way = list(inf.get("way") or ["other", ""])
+        level, topic, arg = L_CRITICAL, kind, rel
+        if kind == "guard":
+            topic = "check"
+        elif kind == "rule" and rule is None:
+            topic, arg = "rules", name                         # a rule nobody judged: a risk
+        elif rule is not None and (kind == "rule" or kind in ("call", "around") and rule[1] in ("allow", "deny", "shield")):
+            # the rule itself -- or the same function or setting as found by what reaches out: a table or a profile is judged
+            # as a whole, so what it proves holds for those, too (a filter behind a card is no proof for anything else)
+            topic = rule[0]
+            if kind == "rule" and rule[1] == "card":
+                level = L_REVIEW                               # (one entry: the filter as a whole, its lines below)
+            elif rule[1] in ("allow", "deny", "shield") and not f.get("new") and not f.get("gone") and stricter(rel, name, rule[1]):
+                level = L_PLAIN
+        elif rule is not None and rule[1] != "card":
+            topic = rule[0]                                    # what reaches out in a rule's own function: in its entry, a risk
+        elif kind == "detour":
+            topic = WORD_TOPIC if inf.get("words") and rel in WORDS else "detour"
+        elif kind in ("call", "around"):
+            new_way = kind == "call" and bool(f.get("new"))   # a new call: a new way out; else what goes over one there is already
+            topic, arg = ("new_" if new_way else "way_") + way[0], way[1]
+            level = L_CRITICAL if new_way else L_REVIEW
+        elif kind == "file":
+            topic = "script" if str(new_scan[0].get(key, "")).startswith(LINES) else "file"
+        elif kind == "place":
+            arg = ", ".join(inf.get("args") or [str(f.get("what", ""))])
+        elif kind in ("address", "module"):
+            arg = what
+        if topic in RULE_TOPICS:
+            arg = ""                                           # (one entry for the rules of a topic, named by the topic)
+        f["level"] = level
+        f["topic"] = topic if topic in RULE_TOPICS else "%s:%s" % (topic, arg)
+        f["title"], f["why"] = TOPIC_TEXT.get(topic, ("upd_t_" + kind, "upd_w_" + kind))
+        f["arg"] = str(arg)[:80]
+        f["where"] = str(inf.get("where") or "")[:80]
+        rank = TOPIC_ORDER.index(topic) if topic in TOPIC_ORDER else len(TOPIC_ORDER)
+        judged.append(((0 if level == L_CRITICAL else 1 if level == L_REVIEW else 2, rank, i), f, key, name or str(f["where"]).split(".")[-1].rstrip("()") or what))
+    judged.sort(key=lambda x: x[0])
+    budget = [LINES_ALL]
+    seen: Set[Tuple[str, str, str]] = set()
+    for _rank, f, key, name in judged:
+        place = (str(f["topic"]), key[1], name)
+        if place in seen:                                     # the same function or setting found once more (as a rule and as
+            f["dup"] = True                                   # what reaches out): one part of its entry, its lines once
+            continue
+        seen.add(place)
+        if f["level"] == L_PLAIN:
+            continue
+        shown, more = _excerpt(key, f, lines, quiet, old_scan, new_scan, old_info, new_info)
+        take = min(len(shown), budget[0])
+        budget[0] -= take
+        if shown:
+            f["lines"] = shown[:take]
+            if more + len(shown) - take:
+                f["more"] = more + len(shown) - take
+    return [f for _rank, f, _key, _name in judged]
+
+
+def _excerpt(key: Tuple[str, str, str], f: Dict[str, object], lines, quiet, old_scan: tuple, new_scan: tuple, old_info: dict,
+             new_info: dict) -> Tuple[List[str], int]:
+    """The lines a finding concerns, as the files have them: its function or setting before and after (only what changed, with
+    a line around it; a change of comments and explanations alone left out), the lines that name a new address, of a helper
+    its lines without comments, of the check its file."""
+    kind, rel, what = key
+    if kind in ("shadow", "extra", "unreadable") or f.get("gone") and kind == "guard":
+        return [], 0
+    if kind == "guard":
+        return _diff(lines("old", rel), lines("new", rel), LINES_MOST + 8, quiet("old", rel), quiet("new", rel))
+    if kind == "file":
+        before, after = str(old_scan[0].get(key, "")), str(new_scan[0].get(key, ""))
+        if not after.startswith(LINES):
+            return [], 0
+        return _diff(before.split("\n")[1:] if before.startswith(LINES) else [], after.split("\n")[1:])
+    if kind == "address":
+        was = set(lines("old", rel))
+        return _diff([], [x for x in lines("new", rel) if what.lower() in x.lower() and x not in was][:4])
+    if kind == "page":                                         # the line of the page, found by its beginning
+        start = " ".join(what.split())[:40]
+        hit = [x for x in lines("new", rel) if start and start in " ".join(x.split())][:2]
+        if hit:
+            return _diff([], hit)
+
+    def cut(side: str, info: dict, scan: tuple) -> Tuple[List[str], Set[int]]:
+        if key not in scan[0]:
+            return [], set()
+        text, explains = lines(side, rel), quiet(side, rel)
+        nums = [i for a, b in (info.get(key) or {}).get("spans", []) for i in range(a, min(b, len(text)) + 1)]
+        return [text[i - 1] for i in nums], {k + 1 for k, i in enumerate(nums) if i in explains}
+    (a, qa), (b, qb) = cut("old", old_info, old_scan), cut("new", new_info, new_scan)
+    return _diff(a, b, LINES_MOST, qa, qb)
+
+
+def _diff(a: List[str], b: List[str], most: int = LINES_MOST, quiet_a: Iterable[int] = (), quiet_b: Iterable[int] = ()) -> Tuple[List[str], int]:
+    """What changed from lines a to lines b: "-" taken away, "+" new, " " a line beside them, "…" lines left out -- at most this
+    many lines, each cut to LINE_WIDTH, the indentation they all share taken away; a place where only lines that explain
+    changed (quiet_a, quiet_b: their numbers, from 1) left out. (lines shown, how many more there are)"""
+    out: List[str] = []
+    qa, qb = set(quiet_a), set(quiet_b)
+    if not a or not b:
+        out = ["-" + x for x in a] + ["+" + x for x in b]
+    else:
+        for group in difflib.SequenceMatcher(None, a, b, autojunk=False).get_grouped_opcodes(1):
+            changed = [(tag, i1, i2, j1, j2) for tag, i1, i2, j1, j2 in group if tag != "equal"]
+            if all(set(range(i1 + 1, i2 + 1)) <= qa and set(range(j1 + 1, j2 + 1)) <= qb for _t, i1, i2, j1, j2 in changed):
+                continue                                       # (nothing changed here, or only what explains)
+            if out:
+                out.append("…")
+            for tag, i1, i2, j1, j2 in group:
+                out += [" " + x for x in a[i1:i2]] if tag == "equal" else ["-" + x for x in a[i1:i2]] + ["+" + x for x in b[j1:j2]]
+    out = [x if x == "…" else x[0] + x[1:].rstrip() for x in out]
+    body = [x[1:] for x in out if x != "…" and x[1:].strip()]
+    cut = min((len(x) - len(x.lstrip(" \t")) for x in body), default=0)
+    out = [x if x == "…" else x[0] + x[1 + cut:] if x[1:].strip() else x[0] for x in out]
+    out = ["".join("⟨U+%04X⟩" % ord(c) if _hidden(c) else c for c in x) for x in out]      # (what would turn a line around or hide in it)
+    out = [x if len(x) <= LINE_WIDTH else x[:LINE_WIDTH - 1] + "…" for x in out]
+    return out[:most], max(0, len(out) - most)
+
+
+def _stricter(policy: str, old: Optional[ast.Module], new: Optional[ast.Module], name: str) -> bool:
+    """Is the rule of this name only stricter in the new file? (see RULE_GROUPS) -- each side must hold it exactly once, never
+    given a value anywhere else (a name set again later, global): else no proof, and a risk."""
+    if old is None or new is None or policy not in ("allow", "deny", "shield"):
+        return False
+    if policy == "shield":
+        a, b = _defs(old, name), _defs(new, name)
+        return len(a) == len(b) == 1 and _profile_stricter(a[0], b[0]) and _uses(old, name, a[0]) == _uses(new, name, b[0])
+    sa, sb = _top_stmt(old, name), _top_stmt(new, name)
+    if sa is None or sb is None or type(sa) is not type(sb):
+        return False
+    if isinstance(sa, ast.AnnAssign) and ast.dump(sa.annotation) != ast.dump(sb.annotation):      # (a type is run, too)
+        return False
+    if _uses(old, name, sa) != _uses(new, name, sb):
+        return False                                   # (the table changed elsewhere, or handed on: no proof)
+    if any(_bound(t, b) or _uses(t, b, None, False) for t in (old, new) for b in ("frozenset", "set", "tuple")):
+        return False                                   # (frozenset(...) read as the built-in only when no one redefines it)
+    va, vb = _literal(sa.value), _literal(sb.value)   # type: ignore[arg-type]
+    return _within(vb, va) if policy == "allow" else _within(va, vb)
+
+
+def _bound(tree: ast.Module, name: str) -> List[ast.AST]:
+    """Every place of a file that gives this name a value (also as a function, a class, an import or with global)."""
+    out: List[ast.AST] = []
+    for n in ast.walk(tree):
+        if isinstance(n, ast.Name) and n.id == name and not isinstance(n.ctx, ast.Load) or \
+                isinstance(n, (ast.Subscript, ast.Attribute)) and not isinstance(n.ctx, ast.Load) and isinstance(n.value, ast.Name) and n.value.id == name or \
+                isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and n.name == name or \
+                isinstance(n, (ast.Global, ast.Nonlocal)) and name in n.names or \
+                isinstance(n, ast.alias) and (n.asname or n.name.split(".")[0]) == name or \
+                isinstance(n, ast.arg) and n.arg == name:
+            out.append(n)
+    return out
+
+
+def _defs(tree: ast.Module, name: str) -> List[ast.AST]:
+    """The function of this name, when that is all that gives the name a value in its file."""
+    bound = _bound(tree, name)
+    return bound if all(isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) for n in bound) else []
+
+
+def _top_stmt(tree: ast.Module, name: str) -> Optional[ast.stmt]:
+    """The line at the top of the file that gives a setting its value, when that is the only place that gives the name a value."""
+    sts = [st for st in tree.body if isinstance(st, (ast.Assign, ast.AnnAssign)) and st.value is not None and
+           [t.id for t in (st.targets if isinstance(st, ast.Assign) else [st.target]) if isinstance(t, ast.Name)] == [name] and
+           len(st.targets if isinstance(st, ast.Assign) else [st.target]) == 1]
+    return sts[0] if len(sts) == 1 and len(_bound(tree, name)) == 1 else None
+
+
+def _tops(tree: ast.Module, name: str) -> Optional[ast.AST]:
+    """The value a setting at the top of the file is given, when that is the only place that gives the name a value."""
+    st = _top_stmt(tree, name)
+    return st.value if st is not None else None
+
+
+def _uses(tree: Optional[ast.Module], name: str, skip: Optional[ast.AST], bare: bool = True) -> List[str]:
+    """Every place that touches this name (as NAME -- only with bare --, as x.NAME, as the text "NAME"), each as the line
+    around it (of a block only its head: what holds the name), the line skip left out; sorted, to compare two versions --
+    a table changed after its line (NAME["x"] = ..., NAME.clear(), y = NAME) adds a place."""
+    if tree is None:
+        return []
+    parent: Dict[ast.AST, ast.AST] = {}
+    for p in ast.walk(tree):
+        for c in ast.iter_child_nodes(p):
+            parent[c] = p
+    out: List[str] = []
+    for n in ast.walk(tree):
+        if not (bare and isinstance(n, ast.Name) and n.id == name or isinstance(n, ast.Attribute) and n.attr == name
+                or isinstance(n, ast.Constant) and isinstance(n.value, str) and n.value == name):
+            continue
+        child, st = n, parent.get(n)
+        while st is not None and not isinstance(st, ast.stmt):
+            child, st = st, parent.get(st)
+        if st is None or st is skip:
+            continue
+        out.append(type(st).__name__ + ":" + ast.dump(child if hasattr(st, "body") else st, annotate_fields=False))
+    return sorted(out)
+
+
+def _literal(node: ast.AST):
+    """A table written out as it is: texts, numbers, lists, sets, tables -- else ValueError (nothing of the code is run)."""
+    if isinstance(node, ast.Constant) and (node.value is None or isinstance(node.value, (str, bytes, int, float, bool))):
+        return node.value
+    if isinstance(node, (ast.Tuple, ast.List)):
+        return tuple(_literal(e) for e in node.elts)
+    if isinstance(node, ast.Set):
+        return frozenset(_literal(e) for e in node.elts)
+    if isinstance(node, ast.Dict) and None not in node.keys:
+        return {_literal(k): _literal(v) for k, v in zip(node.keys, node.values)}     # type: ignore[arg-type]
+    if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in ("frozenset", "set", "tuple") and not node.keywords and len(node.args) <= 1:
+        inner = _literal(node.args[0]) if node.args else ()
+        if not isinstance(inner, (str, tuple, frozenset)):
+            raise ValueError("no row")
+        return frozenset(inner) if node.func.id != "tuple" else tuple(inner)
+    if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "split" and not node.args and not node.keywords:
+        text = _literal(node.func.value)
+        if isinstance(text, str):
+            return tuple(text.split())
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
+        a, b = _literal(node.left), _literal(node.right)
+        if isinstance(a, frozenset) and isinstance(b, frozenset):
+            return a | b
+    raise ValueError("not written out")
+
+
+def _within(new, old) -> bool:
+    """Does new hold nothing old does not hold -- entries taken away, nothing added or changed?"""
+    if isinstance(new, dict):
+        return isinstance(old, dict) and all(k in old and _within(v, old[k]) for k, v in new.items())
+    if isinstance(new, (tuple, frozenset)):
+        return type(old) is type(new) and all(any(type(x) is type(y) and x == y for y in old) for x in new)
+    return type(new) is type(old) and new == old
+
+
+def _sb_kind(e: ast.AST) -> str:
+    """"allow" or "deny" when this piece of code is one rule of a sandbox profile written as a text (or a text % values)."""
+    t = e.value if isinstance(e, ast.Constant) else e.left.value if isinstance(e, ast.BinOp) and isinstance(e.op, ast.Mod) and isinstance(e.left, ast.Constant) else None
+    m = re.match(r"\s*\((allow|deny)[\s)]", t) if isinstance(t, str) else None
+    return m.group(1) if m else ""
+
+
+# The sandbox's language is a Scheme: each part of a rule is run. A rule counts as whole only in this plain form -- the kind,
+# operations, then filters of these names with texts, patterns or names as values (also nested in require-any/-all/-not) --
+# never a form that defines or runs anything (define, begin, lambda ...), a comment, a quote or a modifier (with ...).
+_SB_FILTERS = frozenset("""literal subpath prefix regex path global-name global-name-regex local-name local-name-regex remote local
+vnode-type target extension extension-class ipc-posix-name ipc-posix-name-regex xattr xattr-regex file-mode signal-target
+process-path iokit-registry-entry-class iokit-user-client-class iokit-property sysctl-name sysctl-name-prefix preference-domain
+appleevent-destination""".split())
+_SB_FORMS = frozenset("""define begin lambda let let* letrec if cond case quote quasiquote unquote set! allow deny import version
+debug trace with param when unless and or not apply eval load string-append""".split())
+_SB_ATOM = re.compile(r"[A-Za-z0-9*:._/+-]+")
+_SB_OP = re.compile(r"[a-z][a-z0-9-]*\*?")
+
+
+def _sb_read(t: str):
+    """A text of the sandbox's language as nested lists: ("s", text or #"pattern"), ("a", name) -- else ValueError."""
+    toks: List[object] = []
+    i, n = 0, len(t)
+    while i < n:
+        c = t[i]
+        if c.isspace():
+            i += 1
+        elif c in "()":
+            toks.append(c)
+            i += 1
+        elif c == '"' or t.startswith('#"', i):
+            j = i + (2 if c == "#" else 1)
+            while j < n and t[j] != '"':
+                if t.startswith('\\"', j):
+                    raise ValueError("an escaped quote")    # (read as raw text or not: two readings -- never whole)
+                j += 2 if t[j] == "\\" else 1
+            if j >= n:
+                raise ValueError("open text")
+            toks.append(("s", t[i:j + 1]))
+            i = j + 1
+        else:
+            m = _SB_ATOM.match(t, i)
+            if not m:
+                raise ValueError("not plain: %r" % c)
+            toks.append(("a", m.group()))
+            i = m.end()
+
+    def form(k: int):
+        if k >= len(toks) or toks[k] == ")":
+            raise ValueError("unbalanced")
+        if toks[k] != "(":
+            return toks[k], k + 1
+        out, k = [], k + 1
+        while k < len(toks) and toks[k] != ")":
+            x, k = form(k)
+            out.append(x)
+        if k >= len(toks):
+            raise ValueError("unbalanced")
+        return out, k + 1
+
+    whole, k = form(0)
+    if k != len(toks):
+        raise ValueError("more than one form")
+    return whole
+
+
+def _sb_filter(f) -> bool:
+    if not isinstance(f, list) or len(f) < 2 or not isinstance(f[0], tuple) or f[0][0] != "a":
+        return False
+    head = f[0][1]
+    if head in ("require-any", "require-all", "require-not"):
+        return all(_sb_filter(x) for x in f[1:])
+    return head in _SB_FILTERS and all(isinstance(x, tuple) and (x[0] == "s" or x[1] not in _SB_FORMS) for x in f[1:])
+
+
+def _sb_whole(t: str, kind: str = "deny") -> bool:
+    """Is this text exactly one plain rule "(deny ...)" (or "(allow ...)") of the sandbox's language -- the kind, at least one
+    operation, filters (above) and nothing else: no comment, no second form, nothing that defines or runs anything?"""
+    try:
+        whole = _sb_read(t.strip())
+    except (ValueError, RecursionError):
+        return False
+    if not isinstance(whole, list) or len(whole) < 2 or whole[0] != ("a", kind):
+        return False
+    k = 1
+    while k < len(whole) and isinstance(whole[k], tuple):
+        if whole[k][0] != "a" or not _SB_OP.fullmatch(whole[k][1]) or whole[k][1] in _SB_FORMS:
+            return False
+        k += 1
+    return k > 1 and all(_sb_filter(f) for f in whole[k:])
+
+
+def _skeleton(node, lists: List[list]) -> str:
+    """A function without its sandbox rules: how it is built, with the rules of each list kept apart in order (lists) -- so
+    that two versions can be compared without them, and their rules list by list."""
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
+        lists.append([(k, ast.dump(e, annotate_fields=False), e.value if isinstance(e, ast.Constant) else None)
+                      for e in node.elts for k in [_sb_kind(e)] if k])
+        return "%s[%s]" % (type(node).__name__, ",".join(_skeleton(e, lists) for e in node.elts if not _sb_kind(e)))
+    if isinstance(node, ast.AST):
+        parts = []
+        for field, v in ast.iter_fields(node):
+            if field == "body" and isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and v and isinstance(v[0], ast.Expr) \
+                    and isinstance(v[0].value, ast.Constant) and isinstance(v[0].value.value, str):
+                v = v[1:]                                      # (its explanation is no code)
+            parts.append(_skeleton(v, lists))
+        return "%s(%s)" % (type(node).__name__, ",".join(parts))
+    if isinstance(node, list):
+        return "[%s]" % ",".join(_skeleton(x, lists) for x in node)
+    return repr(node)
+
+
+def _profile_stricter(old_fn: ast.AST, new_fn: ast.AST) -> bool:
+    """The same function but for rules "(deny ...)" added (each a plain text, one whole rule) and rules "(allow ...)" taken
+    away, list by list -- in the sandbox's language neither lets anything more through."""
+    a_lists: List[list] = []
+    b_lists: List[list] = []
+    if _skeleton(old_fn, a_lists) != _skeleton(new_fn, b_lists) or len(a_lists) != len(b_lists):
+        return False
+    for a, b in zip(a_lists, b_lists):
+        for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(None, [x[1] for x in a], [x[1] for x in b], autojunk=False).get_opcodes():
+            if tag == "equal":
+                continue
+            if any(k != "allow" or not isinstance(t, str) or not _sb_whole(t, "allow") for k, _d, t in a[i1:i2]):
+                return False                                   # only whole rules that allow are taken away ...
+            if any(k != "deny" or not isinstance(t, str) or not _sb_whole(t) for k, _d, t in b[j1:j2]):
+                return False                                   # ... and only whole rules that deny are added
+    return True

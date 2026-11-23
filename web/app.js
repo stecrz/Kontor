@@ -383,7 +383,10 @@ function toast(msg, ms = 2600) { const t = $('#toast'); t.textContent = msg; t.c
 // a note that may wait: not over one still being read (e.g. the result of a sync when the report follows quickly)
 function toastQuiet(msg, ms) { const t = $('#toast'); if (!t._until || Date.now() > t._until) toast(msg, ms); }
 // what the installed version found in the files of an available update (empty: it installs as always, without a word)
-const upFinds = u => (u && u.newer && u.review && u.review.findings) || [];
+// an update's findings that need your approval: all but those Kontor judged plain (only stricter, or behind a card in the chat) --
+// one without a level (not judged) counts; the plain ones, for one quiet line
+const upFinds = u => ((u && u.newer && u.review && u.review.findings) || []).filter(f => f.level !== 'plain');
+const upPlain = u => ((u && u.newer && u.review && u.review.findings) || []).filter(f => f.level === 'plain');
 function banner(msg, kind = '') { const b = $('#banner'); if (!msg) { b.classList.add('hidden'); return; } b.textContent = msg; b.className = 'banner ' + kind; }
 
 // Am Mac selbst gibt es keine Offline-Ansicht: der Dienst ist erreichbar oder nicht (Tests können das Gerät als "entfernt" markieren)
@@ -6190,18 +6193,35 @@ function clHistory(hist) {
   return `<h2>${t('aenderungen_je_hauptversion')}</h2>${hist.slice(0, CL_SHOWN).map(clSeries).join('')}`
     + (old.length ? `<details class="cl-older"><summary>${tn('aeltere_hauptversionen_0', old.length, old.length > 1 ? t('0_bis_1', old[0].series, old[old.length - 1].series) : old[0].series)}</summary>${old.map(clSeries).join('')}</details>` : '');
 }
-// An update whose files hold something the installed version cannot do: one line per kind of finding (what and where, the
-// lines of the program behind it), nothing for an update without findings.
-const UP_KINDS = {guard: 'upd_k_guard', rule: 'upd_k_rule', shadow: 'upd_k_shadow', module: 'upd_k_module', call: 'upd_k_call', around: 'upd_k_around', detour: 'upd_k_detour',
-  self: 'upd_k_self', place: 'upd_k_place', address: 'upd_k_address', page: 'upd_k_page', file: 'upd_k_file', extra: 'upd_k_extra', unreadable: 'upd_k_unreadable'};
+// An update whose files hold something that can be a risk (update_guard.py read them before any of it runs): one entry per
+// finding or way out, its title in plain words; opened, what it can do and what to look for, then where it is and -- folded
+// -- the lines it concerns ("−" taken away, "+" new). What needs no approval: one quiet line below. Every text of the
+// update's files (names, lines) is shown as text.
+const UP_KINDS = {guard: ['upd_t_check', 'upd_w_check'], rule: ['upd_t_rules', 'upd_w_rules'], shadow: ['upd_t_shadow', 'upd_w_shadow'],
+  module: ['upd_t_module', 'upd_w_module'], call: ['upd_t_new_other', 'upd_w_new_other'], around: ['upd_t_way_other', 'upd_w_way_other'],
+  detour: ['upd_t_detour', 'upd_w_detour'], self: ['upd_t_self', 'upd_w_self'], place: ['upd_t_place', 'upd_w_place'], address: ['upd_t_address', 'upd_w_address'],
+  page: ['upd_t_page', 'upd_w_page'], file: ['upd_t_file', 'upd_w_file'], extra: ['upd_t_extra', 'upd_w_extra'], unreadable: ['upd_t_unreadable', 'upd_w_unreadable']};
+function upLines(x) {
+  if (!Array.isArray(x.lines) || !x.lines.length) return '';
+  const row = l => { const s = String(l), c = s[0]; return s === '…' ? '<span class="up-gap">⋯</span>' : `<span class="${c === '+' ? 'up-add' : c === '-' ? 'up-del' : 'up-ctx'}">${c === '+' ? '+' : c === '-' ? '−' : ' '} ${esc(s.slice(1))}</span>`; };
+  return `<details class="up-lines"><summary>${esc(tn('upd_zeilen_zeigen', x.lines.length))}</summary><pre class="up-diff">${x.lines.map(row).join('\n')}${x.more ? `\n<span class="up-gap">${esc(tn('upd_mehr_zeilen', x.more))}</span>` : ''}</pre></details>`;
+}
+function upEntry(xs) {
+  const x = xs[0], k = UP_KINDS[x.kind] || UP_KINDS.unreadable, crit = xs.some(y => y.level !== 'review');
+  const arg = esc(x.arg != null ? x.arg : x.kind === 'extra' ? x.what : x.file || x.what || '');
+  const parts = xs.filter(y => !y.dup).map(y => `<div class="up-part"><div class="up-where">${esc(y.file || '')}${y.where ? ` · <code>${esc(y.where)}</code>` : !y.lines && y.what && y.what !== y.file ? ` · ${esc(y.what)}` : ''} <span class="muted">${t(y.gone ? 'upd_entfernt' : y.new ? 'upd_neu' : 'upd_geaendert')}</span></div>${upLines(y)}</div>`).join('');
+  return `<details class="up-find${crit ? ' crit' : ''}"><summary><b>${t(x.title || k[0], arg)}</b></summary><div class="up-body"><p class="up-why">${t(x.why || k[1], arg)}</p>${parts}</div></details>`;
+}
 function upReview(info) {
-  const f = upFinds(info); if (!f.length) return '';
-  const rows = Object.keys(UP_KINDS).map(k => [k, f.filter(x => x.kind === k)]).filter(([, xs]) => xs.length).map(([k, xs]) => {
-    const files = [...new Set(xs.map(x => x.file).filter(Boolean))];
-    return `<details class="up-find"><summary><b>${t(UP_KINDS[k])}</b> <span class="muted">${xs.length > 1 ? xs.length + ' × · ' : ''}${esc(files.slice(0, 3).join(', '))}${files.length > 3 ? ' …' : ''}</span></summary>
-      <div class="up-lines">${xs.slice(0, 40).map(x => `<div><span class="muted">${esc(x.file)}${x.new ? '' : ' · ' + t('upd_geaendert')}</span> <code>${esc(x.what)}</code></div>`).join('')}${xs.length > 40 ? `<div class="muted">+ ${xs.length - 40}</div>` : ''}</div></details>`;
-  }).join('');
-  return `<div class="note warn up-review" id="up-review"><b>${t('upd_titel', esc(info.available))}</b><div>${t('upd_text')}${more('updates')}</div>${rows}</div>`;
+  const f = upFinds(info), plain = upPlain(info).filter(x => !x.dup);
+  if (!f.length && !plain.length) return '';
+  const groups = new Map();
+  f.forEach(x => { const k = x.topic || x.kind + ':' + x.file; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(x); });
+  const entries = [...groups.values()], crit = entries.filter(xs => xs.some(x => x.level !== 'review')).length, rev = entries.length - crit;
+  const why = crit && rev ? `${tn('upd_satz_krit', crit)}, ${tn('upd_satz_pruef', rev)}.` : crit ? `${tn('upd_satz_krit', crit)}.` : tn('upd_satz_pruef_allein', rev);
+  const asks = f.length ? `<div class="up-review" id="up-review"><div class="note warn"><b>${t('upd_titel', esc(info.available))}</b><div>${why} ${t('upd_text')}${more('updates')}</div></div>
+    <div class="up-list">${entries.map(upEntry).join('')}</div></div>` : '';
+  return asks + (plain.length ? `<details class="up-plain" id="up-plain"><summary>${tn('upd_ruhig', plain.length)}</summary><div class="up-quiet">${plain.map(x => `<div>${esc(x.file || '')}${x.where ? ` · <code>${esc(x.where)}</code>` : ''}</div>`).join('')}</div></details>` : '');
 }
 // the click is the decision: installed without a second question (the button rests meanwhile -- a double click installs once).
 // Only a version with findings is asked about -- and installed with your approval for exactly the files you were shown; if
