@@ -217,6 +217,12 @@ anhängen – nie löschen.
 - **Tests je Push kürzer** (Nutzer, 2026-11-23): Der Lauf je Push soll schnell sein und den Nachtlauf nicht doppeln – Zufallsfälle
   vor allem nachts (dessen Fehler behebt der nächste Chat); je Push wenige feste Fälle, die Tests auf mehr Rechner verteilt. (umgesetzt in 3.17.21)
 
+- **Anmeldung nach Start/Update** (Nutzer, 2026-11-23): Kein „Zugang wird geprüft“ vor dem Festlegen des Passworts; ein Passwort,
+  das während der ersten Tailscale-Prüfung abgeschickt wurde, geht danach von selbst ab. (umgesetzt in 3.17.24)
+- **Nicht bilanzierte Konten im Bereich** (Nutzer, 2026-11-23): Ein Konto mit „nicht bilanzieren“ (z. B. Genossenschaftsanteile in
+  einer Gruppe „Off-Balance“) steht unter Konten in seinem Bereich, nicht unter „ohne Bereich“. (umgesetzt in 3.17.24)
+- **Kontoauswahl ohne Bereichsnamen** und **optionale Felder erklärt** (Nutzer, 2026-11-23): siehe CLAUDE.md, Oberfläche. (umgesetzt in 3.17.24)
+
 ## Offen (Entscheidung steht aus – mit Empfehlung vorlegen, wenn der Punkt dran ist)
 - Umsatzsteuer-Voranmeldung direkt an ELSTER senden (ELSTERs Programmbibliothek ERiC, Anmeldung als Hersteller, Zertifikat und
   PIN bei jedem Senden, nie gespeichert; neue Verbindung) – oder Kontor rechnet nur und der Nutzer überträgt die Werte.

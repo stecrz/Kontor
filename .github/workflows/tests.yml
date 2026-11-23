@@ -121,7 +121,7 @@ jobs:
             echo "KONTOR_PYTHON_ARCHIVE=$RUNNER_TEMP/$f" >> "$GITHUB_ENV"
           fi
       - name: Tests
-        timeout-minutes: 30                 # today 4 min per half: room for many more tests
+        timeout-minutes: 30                 # a few minutes per part: room for many more tests
         env:
           TZ: Europe/Berlin
           KONTOR_FUZZ_SEEDS: "12"      # few fixed random cases per push (and all found before): the nightly run checks 1000 and new ones

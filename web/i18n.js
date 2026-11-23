@@ -1905,7 +1905,7 @@ const I18N = {
 "h_l_excl":["Zahlungen an dieselbe Gegenseite, die keine Rate sind (z. B. Nebenkosten), an ihrem Text ausschließen. Mehrere mit ; trennen.", "Exclude payments to the same party that are no instalment (e.g. service charges) by their text. Separate several with ;."],
 "h_l_zinstag":["Zinsen am Tag der Rate buchen oder am Monatsende.", "Book the interest on the day of the payment or at month end."],
 "h_l_ab":["Raten ab diesem Tag bucht Kontor, ältere nicht.", "Kontor books payments from this day on, older ones not."],
-"h_l_gp":["Name der Gegenseite in den gebuchten Umsätzen.", "Name of the other side in the booked transactions."],
+"h_l_gp":["Name der Gegenpartei in den Buchungen, die Kontor für dieses Darlehen in MoneyMoney anlegt – für Tilgung und Zinsen. Leer: der Name des Darlehens (grau im Feld).", "Name of the counterparty in the bookings Kontor makes for this loan in MoneyMoney – for repayment and interest. Empty: the loan's name (grey in the field)."],
 "h_l_kt":["Kategorie der Tilgung in MoneyMoney, meist „Umbuchung“.", "Category of the repayment in MoneyMoney, usually “Umbuchung” (transfer)."],
 "h_l_kz":["Kategorie der Zinsen, z. B. „Zinsen“ – im Cashflow dann Zinsaufwand.", "Category of the interest, e.g. “Zinsen” – then interest expense in the cash flow."],
 "h_co_anteil":["Dein Anteil an der Gesellschaft. Er steht nur an einer Stelle: Konten & Regeln → Bereiche.", "Your share in the company. It is set in one place only: Accounts & rules → Areas."],

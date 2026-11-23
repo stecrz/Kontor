@@ -1628,6 +1628,13 @@ def account_tree(ledger: Ledger, config: dict, roles: Optional[Dict[str, str]] =
             if not r.get("group") and bname:
                 bereich_of[r["id"]] = (bereich_of[r["id"]] + ", " + bname) if r["id"] in bereich_of else bname
                 bereich_id.setdefault(r["id"], bid)
+    if datasets:                                 # accounts not on the balance sheet ("nicht bilanzieren"): in their area all the same
+        for b in bereiche_for(ledger, config):
+            if b["id"] in datasets:
+                for a in b["leaves"]:
+                    if a.uuid not in bereich_id:
+                        bereich_of[a.uuid] = (bereich_of[a.uuid] + ", " + b["name"]) if a.uuid in bereich_of else b["name"]
+                        bereich_id[a.uuid] = b["id"]
     zu = (config.get("balance") or {}).get("accounts_mapping") or {}
     confirmed = set()
     for ref in zu:

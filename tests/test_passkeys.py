@@ -1495,5 +1495,46 @@ class BrowserFaceId(unittest.TestCase):
             shutil.rmtree(d, ignore_errors=True)
 
 
+    def test_setup_while_tailscale_is_looked_at(self):
+        """Right after a start (the first look at Tailscale on its way): the page asks for the password as always -- no note
+        about Tailscale before anything waits for it; the password sent meanwhile waits and goes by itself once the look is there."""
+        try:
+            from playwright.sync_api import sync_playwright
+        except ImportError:
+            self.skipTest("playwright missing")
+        import service as MA
+        import fixtures as F
+        import test_e2e as E
+        d = tempfile.mkdtemp(prefix="kontor-pkc-")
+        store = F.new_store(d)
+        store.save("config.json", E.config_for_test(os.path.join(d, "Belege")))
+        store.save("state.json", dict(E.ALL_NEW))
+        E.reset_mock()
+        E.patch_today()
+        app = MA.App(store, d, bridge_factory=E.MockBridge)
+        app.tailscale = lambda fresh=False: {"found": False}
+        app.__dict__.pop("_exposure", None); app.__dict__["_exposure_running"] = True      # the first look: on its way
+        wait, MA.EXPOSURE_WAIT = MA.EXPOSURE_WAIT, 0.05
+        srv = ThreadingHTTPServer(("127.0.0.1", 0), MA.make_handler(app))
+        port = srv.server_address[1]
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        try:
+            with sync_playwright() as p:
+                b = p.chromium.launch()
+                pg = b.new_page(viewport={"width": 1360, "height": 900})
+                pg.goto("http://127.0.0.1:%d/" % port)
+                pg.wait_for_selector("#login-pw2")
+                self.assertEqual(pg.inner_text("#login-err").strip(), "")
+                pg.fill("#login-pw", "sehr-geheimes-passwort"); pg.fill("#login-pw2", "sehr-geheimes-passwort"); pg.click("#login-btn")
+                E.until(pg, "document.querySelector('#login-err').textContent.length > 0")      # it waits -- and says so
+                self.assertFalse(pg.evaluate("!document.querySelector('#shell').classList.contains('hidden')"))
+                app._exposure_set({"serve": "off", "lock": None}, running=False)              # the look is there: it goes by itself
+                pg.wait_for_selector("#shell:not(.hidden)", timeout=15000)
+                b.close()
+        finally:
+            MA.EXPOSURE_WAIT = wait
+            srv.shutdown(); srv.server_close()
+            shutil.rmtree(d, ignore_errors=True)
+
 if __name__ == "__main__":
     unittest.main()

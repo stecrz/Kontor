@@ -3351,8 +3351,16 @@ class FeatureTests(_AppBase):
         code, k = self.call("/api/accounts")
         self.assertTrue(all(x["confirmed"] for x in k["accounts"] if not x["group"]))
         self.assertEqual([x for x in k["accounts"] if x["uuid"] == F.uid("priv.immo")][0]["area_id"], F.uid("ga"))
-        # Neues Konto in MoneyMoney -> wieder 'neu'
+        # an account not on the balance sheet ("nicht bilanzieren", e.g. a group "Off-Balance") stays listed in its area
         accts = MockBridge.state["accounts"]
+        accts.insert([a["uuid"] for a in accts].index(F.uid("priv.tr")) + 1, F.acc("priv.off", "Genossenschaftsanteile Off-Balance", 3, "Sparkonto", balance=500.0))
+        self.run_and_wait()
+        code, k = self.call("/api/accounts")
+        off = [x for x in k["accounts"] if x["uuid"] == F.uid("priv.off")][0]
+        self.assertEqual((off["role_proposal"], off["area_id"]), ("ignore", F.uid("priv")))
+        del accts[[a["uuid"] for a in accts].index(F.uid("priv.off"))]
+        self.run_and_wait()
+        # Neues Konto in MoneyMoney -> wieder 'neu'
         accts.insert([a["uuid"] for a in accts].index(F.uid("priv.tr")) + 1, F.acc("priv.new", "Neues Tagesgeld", 3, "Sparkonto", balance=5000.0, iban="DE02100100100006820102", bank="10010010"))
         self.run_and_wait()
         code, ds = self.call("/api/dataset")
@@ -5380,7 +5388,7 @@ class BrowserTest(unittest.TestCase):
                 self.assertEqual(pg.eval_on_selector_all(".co-card h3", "e => e.map(x => x.textContent)"), ["Alpha GbR", "Beta GbR"])
                 self.assertIn("40", pg.inner_text(".co-card .co-head"))
                 self.assertEqual(pg.eval_on_selector(".co-card .c-bet", "e => e.value").split(" | ")[0], F.uid("priv.bet.ga"))
-                pg.wait_for_function("(document.querySelector('.co-card [data-pv=\"b\"]') || {}).textContent?.includes('Soll')", timeout=8000)
+                until(pg, "!!(document.querySelector('.co-card [data-pv=\"b\"]') || {}).textContent?.includes('Soll')", 8)      # (a string polled by Playwright breaks on the page's rules: until asks from here)
                 self.assertGreaterEqual(len(pg.query_selector_all(".co-card .hq")), 6); self.assertGreaterEqual(len(pg.query_selector_all("#loans .hq")), 15)
                 self.assertTrue(pg.is_disabled("#save-rules"))
                 # participation account: only offline accounts with the position "Beteiligungen", nothing chosen in advance
@@ -5401,12 +5409,12 @@ class BrowserTest(unittest.TestCase):
                 pg.evaluate(pick, ["#mirrors .gk-row .acct-pick:first-child .ap-area", "Alpha GbR"])
                 self.assertEqual(pg.eval_on_selector("#mirrors .gk-row .g-a", "e => e.value"), "")          # another area: nothing chosen
                 opts = pg.eval_on_selector_all("#mirrors .gk-row .g-a option", "e => e.map(o => o.textContent)")
-                self.assertIn("Kapitalkonto A · Alpha GbR", opts); self.assertNotIn("Kapitalkonto A · Beta GbR", opts); self.assertNotIn("Immobilie Lindenstraße", opts)
+                self.assertIn("Kapitalkonto A", opts); self.assertFalse([o for o in opts if " · " in o], opts); self.assertNotIn("Immobilie Lindenstraße", opts)   # the area is chosen: its name not repeated
                 pg.evaluate(pick, ["#mirrors .gk-row .acct-pick:first-child .ap-area", "Beta GbR"])
-                self.assertIn("Kapitalkonto A · Beta GbR", pg.eval_on_selector_all("#mirrors .gk-row .g-a option", "e => e.map(o => o.textContent)"))
+                self.assertIn("Kapitalkonto A", pg.eval_on_selector_all("#mirrors .gk-row .g-a option", "e => e.map(o => o.textContent)"))
                 pg.evaluate(pick, ["#mirrors .gk-row .acct-pick:first-child .ap-area", "Privat"])
                 opts = pg.eval_on_selector_all("#mirrors .gk-row .g-a option", "e => e.map(o => o.textContent)")
-                self.assertIn("Immobilie Lindenstraße", opts); self.assertNotIn("Immobilie Lindenstraße · Privat", opts)    # a name of its own: as it is
+                self.assertIn("Immobilie Lindenstraße", opts); self.assertFalse([o for o in opts if " · " in o], opts)
                 pg.evaluate(pick, ["#mirrors .gk-row .g-a", "Immobilie Lindenstraße"]); pg.evaluate(pick, ["#mirrors .gk-row .g-b", "Immobilie Lindenstraße"])
                 pg.click("#save-rules"); pg.wait_for_timeout(300)                                  # the same account twice: said so, not saved
                 self.assertTrue(pg.query_selector("#mirrors .gk-row.invalid")); self.assertIn("dasselbe Konto", pg.inner_text("#toast"))

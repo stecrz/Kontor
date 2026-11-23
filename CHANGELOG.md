@@ -1,5 +1,12 @@
 # Änderungen
 
+## 3.17.24 (2026-11-23 19:40)
+- Anmeldung: kein „Zugang wird geprüft“ vor dem Festlegen des Passworts; ein während der Prüfung abgeschicktes Passwort geht danach von selbst ab
+- Konten: „nicht bilanzieren“ (z. B. Gruppe „Off-Balance“) steht in seinem Bereich statt unter „ohne Bereich“
+- Regeln: Kontoauswahl nach Bereich ohne Bereichsnamen hinter den Konten
+- Darlehen: Gegenpartei – Tooltip sagt, wofür (Tilgung und Zinsen) und was leer gilt; der Name des Darlehens grau im Feld
+- Entwicklung: Regeln für optionale Felder und die Kontoauswahl; ein wackliger Browsertest robuster
+
 ## 3.17.23 (2026-11-23 19:16)
 - Entwicklung: Tests auf GitHub starten wieder – seit 3.17.21 (anderer Chat) stand `env:` im Schritt „Tests“ doppelt, GitHub lehnte die Datei ab
 - Entwicklung: neuer Test prüft alle Workflow-Dateien auf doppelte Schlüssel

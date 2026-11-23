@@ -750,7 +750,9 @@ function showLogin() {
   $('#login-form').classList.toggle('hidden', !!tidMode || pkMode || pair);
   $('#tid-instead').classList.toggle('hidden', !(tid && LOGIN.pw));
   const checking = !!(SESSION && SESSION.checking && !OFFLINE.mode);       // right after the start: Tailscale not looked at yet -- a moment
-  $('#login-err').textContent = SESSION && SESSION.exposed ? t('s_ts_weitergereicht') : checking ? t('s_ts_pruefe')
+  // the first look at Tailscale after a start: said only where something waits for it (Touch ID by itself, a sign-in sent) --
+  // a password being typed (or set up) is sent once it is done, by itself
+  $('#login-err').textContent = SESSION && SESSION.exposed ? t('s_ts_weitergereicht') : checking ? (tidMode || LOGIN.again ? t('s_ts_pruefe') : '')
     : SESSION && SESSION.locked_seconds ? (t('gesperrt_fuer') + SESSION.locked_seconds + t('s_nach_fehlversuchen')) : '';
   if (checking) loginRecheck();
   $('#demo-btn').classList.toggle('hidden', !!(setup || OFFLINE.mode || !SESSION || SESSION.setup_local_only || pair));
@@ -758,10 +760,11 @@ function showLogin() {
   if (pair) setTimeout(() => { if (!$('#login').contains(document.activeElement)) $('#pair-name').focus(); }, 50);
   else if (!tidMode && !pkMode) setTimeout(() => { if (!$('#login').contains(document.activeElement)) $('#login-pw').focus(); }, 50);   // never move the cursor out of a field being filled
   if (tidMode && !checking) tryTouchId(true);     // Touch ID at once, without a click -- only while Kontor is the active window (see tryTouchId)
+  if (!checking && LOGIN.again) { LOGIN.again = false; if ($('#login-pw').value && !$('#login-form').classList.contains('hidden')) $('#login-form').requestSubmit(); }     // sent while Tailscale was looked at: again, now
 }
 // the sign-in at the Mac waits for the first look at Tailscale after a start ("tailscale serve"/Funnel): the page asks again shortly
 function loginRecheck() { clearTimeout(LOGIN.recheck); LOGIN.recheck = setTimeout(() => { if (!$('#login').classList.contains('hidden')) checkSession(); }, 2000); }
-const LOGIN = {pw: false, demo: false, recheck: null};      // pw: "Stattdessen Passwort eingeben" gewählt; demo: die Anmeldung öffnet die Demo
+const LOGIN = {pw: false, demo: false, recheck: null, again: false};      // again: a sign-in waited for the first look at Tailscale -- sent again after it      // pw: "Stattdessen Passwort eingeben" gewählt; demo: die Anmeldung öffnet die Demo
 // the link the Mac shows to add this iPhone (#pair=…): taken out of the address at once (it is not kept in the history)
 const PAIR = {token: null, busy: false};
 { const m = /^#pair=([A-Za-z0-9_-]{20,64})$/.exec(location.hash); if (m) { PAIR.token = m[1]; history.replaceState(null, '', location.pathname); } }
@@ -879,7 +882,7 @@ async function loginSubmit() {
   } catch (err) {
     if (err.status === 409 && LOGIN.demo && err.data && err.data.signed_in) location.reload();      // signed in meanwhile (another window): that window's Kontor
     else if (err.data && err.data.passkey_only) { try { SESSION = await api('/api/session'); } catch (e) {} LOGIN.pw = false; showLogin(); $('#login-err').textContent = err.message; }
-    else { $('#login-err').textContent = err.message; if (err.data && err.data.checking) loginRecheck(); }
+    else { $('#login-err').textContent = err.message; if (err.data && err.data.checking) { LOGIN.again = true; loginRecheck(); } }
   }
 }
 $('#touchid-btn').addEventListener('click', () => tryTouchId(false));
@@ -5520,10 +5523,12 @@ function acctSel(cls, selected, filter, empty) {
 const AP = new Map(); let apN = 0;
 const apAreaName = id => id ? (((S.CFG.areas || []).find(b => String(b.id) === id) || {}).name || BN(id) || id) : t('ohne_bereich');
 function acctPick(cls, selected, filter, empty) {
-  const sel = (selected || '').split('|')[0].trim(), list = S.KONTEN.filter(filter), lab = acctLabels(list), areaOf = k => String(k.area_id || '');
+  const sel = (selected || '').split('|')[0].trim(), list = S.KONTEN.filter(filter), areaOf = k => String(k.area_id || '');
   const order = (S.CFG.areas || []).map(b => String(b.id)), rank = id => id === '' ? 1e6 : (order.indexOf(id) + 1 || 1e5);
   const ids = [...new Set(list.map(areaOf))].sort((a, b) => rank(a) - rank(b));
   if (ids.length < 2) return acctSel(cls, selected, filter, empty);
+  // names told apart within the area chosen first (its name is not repeated): only two of one name there get more
+  const lab = new Map(); ids.forEach(id => acctLabels(list.filter(k => areaOf(k) === id)).forEach((l, u) => lab.set(u, l)));
   const cur = list.find(k => k.uuid === sel), area = cur ? areaOf(cur) : ids[0], n = String(++apN);
   const missing = sel && !cur ? `<option value="${esc(selected)}" selected>${S.KONTEN.some(k => k.uuid === sel) ? t('0_nicht_waehlbar', esc(refName(selected))) : t('0_nicht_gefunden', esc(refName(selected) || selected))}</option>` : '';
   AP.set(n, {opts: list.map(k => ({a: areaOf(k), v: `${k.uuid} | ${k.name}`, l: lab.get(k.uuid), on: k.uuid === sel})), empty, missing});
@@ -5650,7 +5655,7 @@ function loanForm(l, i) {
     + f(t('l_zinsbasis'), 'base_override', `<input type="text" class="f-basis" value="${esc(Object.entries(z.base_override || {}).map(([k, v]) => k + '=' + v).join('; '))}" placeholder="2026=160000">`, 'zo')
     + g(t('fg_buchung'))
     + f(t('l_ab'), 'h_l_ab', `<input type="date" class="f-ab" value="${esc(l.from_date || '')}">`)
-    + f(t('gegenpartei'), 'h_l_gp', `<input type="text" class="f-gp" value="${esc(b.counterparty || '')}">`)
+    + f(t('gegenpartei'), 'h_l_gp', `<input type="text" class="f-gp" value="${esc(b.counterparty && b.counterparty !== l.name ? b.counterparty : '')}" placeholder="${esc(l.name || '')}">`)
     + f(t('kategorie_tilgung'), 'h_l_kt', `<select class="f-kt">${catOptions(b.category_repayment)}</select>`)
     + f(t('kategorie_zinsen'), 'h_l_kz', `<select class="f-kz">${catOptions(b.category_interest)}</select>`, 'zo')
     + `</div>`, !!l.review);
