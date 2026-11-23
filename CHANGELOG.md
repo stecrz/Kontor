@@ -1,5 +1,9 @@
 # Änderungen
 
+## 3.17.36 (2026-11-23 23:21)
+- Entwicklung: Regeln schlanker – Sicherheit im Detail in docs/rules/security.md (je Abschnitt nur bei Bedarf gelesen), Tests in docs/rules/tests.md
+- Entwicklung: lokal nur betroffene Tests (tests/affected.py), volle Prüfung auf GitHub; auf GitHub in einem Schritt warten
+
 ## 3.17.35 (2026-11-23 23:14)
 - KI-Assistent: llama.cpp und Modelle aktualisieren sich von selbst („Automatisch laden“, abschaltbar) – nur wenn der Assistent ruht
 - KI-Assistent: Suche nach neuen Versionen ab Werk täglich statt monatlich

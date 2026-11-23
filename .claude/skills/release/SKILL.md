@@ -1,6 +1,6 @@
 ---
 name: release
-description: Jede Änderung an Kontor abschließen – prüfen (auch mit Python 3.9), ein Commit je Version direkt auf main, GitHub Actions abwarten. Am Ende jeder Änderung verwenden, auch bei kleinen.
+description: Jede Änderung an Kontor abschließen – betroffene Tests prüfen (auch mit Python 3.9), ein Commit je Version direkt auf main, GitHub Actions abwarten. Am Ende jeder Änderung verwenden, auch bei kleinen.
 ---
 
 # Release
@@ -9,13 +9,13 @@ description: Jede Änderung an Kontor abschließen – prüfen (auch mit Python 
    - `node --check web/app.js && node --check web/i18n.js && node --check web/sw.js`
    - `python3 -m pyflakes *.py tests/*.py .claude/hooks/*.py` und `npx eslint -c .github/eslint.config.mjs web` – keine Funde
      (ESLint einmal je Sitzung: `npm install --no-save --no-package-lock eslint@9 globals`)
-   - `python3 -m pytest -q -rs tests` (~2½ min, im Hintergrund laufen lassen). Übersprungenes steht am Ende: „WebKit nicht
-     installiert“ heißt, die Safari-Tests prüft erst GitHub – einmal je Sitzung `python3 -m playwright install webkit` versuchen;
-     geht es nicht und die Änderung betrifft die Oberfläche, das Verhalten auch in Chrome prüfen.
+   - Betroffene Tests mit beiden Python-Versionen, Ausgabe in eine Datei, nur das Ende lesen:
+     `T=$(python3 tests/affected.py); python3 -m pytest -q $T > /tmp/t.log 2>&1; tail -3 /tmp/t.log` und
+     `TZ=Europe/Berlin ~/py39/bin/python -m pytest -q $T > /tmp/t39.log 2>&1; tail -3 /tmp/t39.log` (beide nebeneinander in einem
+     Befehl mit `&` und `wait`). Fehlt `~/py39`: `uv python install 3.9 && uv venv -q -p 3.9 ~/py39 && VIRTUAL_ENV=~/py39 uv pip
+     install -q pytest cryptography`. Die volle Prüfung macht GitHub (`CLAUDE.md`, Sparsam arbeiten) – lokal alles nur vor einem
+     großen Versionssprung.
    - Rechenlogik oder Buchungsregeln geändert: zusätzlich `KONTOR_FUZZ_SEEDS=400 python3 -m pytest -q tests/test_fuzz.py`
-   - Python 3.9 (Apples Version auf dem Mac): `TZ=Europe/Berlin ~/py39/bin/python -m pytest -q tests` (~1 min; Browser-Tests
-     laufen nur mit dem aktuellen Python). Fehlt `~/py39`, einmal einrichten: `uv python install 3.9 && uv venv -q -p 3.9 ~/py39 &&
-     VIRTUAL_ENV=~/py39 uv pip install -q pytest cryptography` (ohne Playwright).
 2. **Mitpflegen** – GitHub ist das einzige Gedächtnis (`CLAUDE.md`, Arbeitsweise): ein neuer Chat kennt nur das Repo. Jede
    Entscheidung des Nutzers aus diesem Chat (`ROADMAP.md`, „Entschieden“/„Offen“), jede geänderte Regel oder jeder geänderte
    Ablauf (`CLAUDE.md`, Skills, Hooks) und jedes geänderte Verhalten gehört in diese Version – ohne Erinnerung durch den Nutzer.
@@ -56,8 +56,9 @@ description: Jede Änderung an Kontor abschließen – prüfen (auch mit Python 
       `git reset -q --soft HEAD~1 && git checkout HEAD -- VERSION CHANGELOG.md && git commit -qm wip` – und zurück zu 1
       (die nächste Nummer ergibt sich dort von selbst).
    5. **GitHub Actions für genau diesen Commit abwarten:**
-      `gh api "repos/stecrz/Kontor/actions/runs?head_sha=$(git rev-parse HEAD)" --jq '.workflow_runs[0] | [.status, .conclusion]'`
-      (ein paar Minuten). Rot: `gh run view <id> --log-failed | tail -60` zeigt, was. Eigener Fehler (etwa WebKit oder
+      in **einem** blockierenden Befehl (Zeitgrenze 600000 ms), nie mit `sleep`-Schleifen:
+      `gh run watch $(gh run list -R stecrz/Kontor -c $(git rev-parse HEAD) -L1 --json databaseId -q '.[0].databaseId') -R stecrz/Kontor --exit-status > /tmp/ci.log 2>&1; tail -3 /tmp/ci.log`
+      (noch kein Lauf da: einmal 20 s warten, dann erneut). Rot: `gh run view <id> --log-failed | grep -E "FAILED|Error" | head -20`. Eigener Fehler (etwa WebKit oder
       Schriften, die es lokal nicht gibt): sofort als nächste Version beheben und dem Nutzer in einem Satz Bescheid geben.
       War schon die Version davor rot und es sind dieselben Fehler: geerbt – nicht reparieren, das macht der Chat jener
       Version (`CLAUDE.md`, „Rot auf GitHub“); dem Nutzer in einem Satz sagen, dass der eigene Teil grün ist.
