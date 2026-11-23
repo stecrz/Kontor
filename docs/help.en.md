@@ -325,7 +325,7 @@ Planning plans every position and the categories in it; a MoneyMoney budget coun
 <a id="categories-tree"></a>
 ### Recommended categories
 
-Above the table stands what Kontor needs from your categories in MoneyMoney – open during setup. The basic rule: **one category per purpose**. What belongs in different positions never belongs in the same category – a category “Immobilie” holding purchase price, costs, loan rate, loan payout and rent, say, turns the payout into rental income and the purchase price into costs. Better:
+Above the table stands what Kontor needs from your categories in MoneyMoney – folded, open it when needed. The basic rule: **one category per purpose**. What belongs in different positions never belongs in the same category – a category “Immobilie” holding purchase price, costs, loan rate, loan payout and rent, say, turns the payout into rental income and the purchase price into costs. Better:
 
 | Category in MoneyMoney | Position |
 |---|---|

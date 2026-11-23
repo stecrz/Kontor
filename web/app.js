@@ -5837,10 +5837,7 @@ const KB_TREE = [['work_income', 'einnahmen', ['work_income'], 0, 'p'], ['revenu
   ['property', 'kb_g_property', ['property'], 0, ''], ['property_buy', 'kb_g_property', ['property_saving'], 1, '']];
 const KB_SAME_TIP = ['mobility', 'insurance', 'health', 'leisure', 'taxes'];      // one reason for these (kb_more_tip)
 let KB_KINDS = ['private'];
-let kbSeen = false;
-function kbCard() {
-  if (!kbSeen && setupOpen()) KEEP_OPEN.add('kp-kb');          // open while you set Kontor up (closed afterwards: as you left it)
-  kbSeen = true;
+function kbCard() {                                          // folded by default, also during setup (only looked up when wanted)
   return `<details class="card kb" data-keep="kp-kb" data-ex="accounts.positions.needs"${keepOpen('kp-kb')}><summary>${t('kb_titel')} <span class="kb-sum small muted" id="kb-sum"></span></summary><div id="kb-body"></div></details>`;
 }
 // eff: [{path, eff (its position now), obj (a property's)}] -- from the table as it stands

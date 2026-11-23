@@ -93,7 +93,7 @@ transactions in the user's areas are listed. Choices count after "Speichern"; th
 categories are never changed; Kontor creates none.
 
 ### accounts.positions.needs — Was Kontor von deinen Kategorien braucht
-A folded card; its title shows "X von Y vorhanden" (Y: the recommended rows plus those "bei Bedarf" that are present). The
+A folded card (also during setup); its title shows "X von Y vorhanden" (Y: the recommended rows plus those "bei Bedarf" that are present). The
 recommended category tree for MoneyMoney – one category per position –, grouped like the position menu (Einnahmen, Ausgaben,
 Investitionen, Finanzierung, Sonstiges, "Je Immobilie"), each group with one line on how it is best set up.
 Rows follow the kinds of the user's areas: private ones (Gehalt, Lebenshaltung, Gesundheit …), companies' (Umsatzerlöse,

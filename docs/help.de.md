@@ -325,7 +325,7 @@ Die Planung plant jede Position und die Kategorien darin; ein Budget aus MoneyMo
 <a id="categories-tree"></a>
 ### Empfohlene Kategorien
 
-Über der Tabelle steht, was Kontor von deinen Kategorien in MoneyMoney braucht – in der Einrichtung aufgeklappt. Die Grundregel: **eine Kategorie je Zweck**. Was in verschiedene Positionen gehört, gehört nie in dieselbe Kategorie – eine Kategorie „Immobilie“ mit Kaufpreis, Nebenkosten, Rate, Darlehensauszahlung und Miete etwa macht aus der Auszahlung eine Mieteinnahme und aus dem Kaufpreis Kosten. Besser:
+Über der Tabelle steht, was Kontor von deinen Kategorien in MoneyMoney braucht – eingeklappt, bei Bedarf aufklappen. Die Grundregel: **eine Kategorie je Zweck**. Was in verschiedene Positionen gehört, gehört nie in dieselbe Kategorie – eine Kategorie „Immobilie“ mit Kaufpreis, Nebenkosten, Rate, Darlehensauszahlung und Miete etwa macht aus der Auszahlung eine Mieteinnahme und aus dem Kaufpreis Kosten. Besser:
 
 | Kategorie in MoneyMoney | Position |
 |---|---|

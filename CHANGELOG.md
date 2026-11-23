@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.17.39 (2026-11-24 00:30)
+- Cashflow-Positionen: „Was Kontor von deinen Kategorien braucht“ immer eingeklappt, auch in der Einrichtung.
+
 ## 3.17.38 (2026-11-23 23:45)
 - Cashflow-Positionen: Kategorien-Karte zeigt „Je Immobilie“ immer (privat und Firma), allgemeine Zeilen Mieteinnahmen/Objektkosten entfallen.
 
