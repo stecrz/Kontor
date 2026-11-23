@@ -57,12 +57,21 @@ class OnMac(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stdout[-2000:] + r.stderr[-2000:])
         return json.loads(r.stdout)["steps"]
 
+    # signed in once the page knows its state (SESSION): sets the password on the first start, else signs in with it -- with
+    # the password even where Touch ID is on (LOGIN.pw), never turning Touch ID on. Answers true, or what the page shows.
     SIGN_IN = [{"js": "window.__errors = []; window.addEventListener('error', e => window.__errors.push(String(e.message))); "
-                      "for (let i = 0; i < 100 && !document.querySelector('#login-pw'); i++) await new Promise(r => setTimeout(r, 100)); "
-                      "document.querySelector('#login-pw').value = 'sehr-geheimes-passwort'; document.querySelector('#login-pw2').value = 'sehr-geheimes-passwort'; "
+                      "window.addEventListener('unhandledrejection', e => window.__errors.push(String(e.reason))); "
+                      "const ready = () => typeof SESSION !== 'undefined' && SESSION && !document.querySelector('#login').classList.contains('hidden'); "
+                      "for (let i = 0; i < 300 && !ready(); i++) await new Promise(r => setTimeout(r, 100)); "
+                      "if (!ready()) return ['no login page', document.body.innerText.slice(0, 300)]; "
+                      "const setup = !!SESSION.setup_needed; if (!setup && SESSION.touchid) { LOGIN.pw = true; showLogin(); } "
+                      "const cb = document.querySelector('#setup-tid-cb'); if (cb) cb.checked = false; "
+                      "document.querySelector('#login-pw').value = 'sehr-geheimes-passwort'; "
+                      "if (setup) document.querySelector('#login-pw2').value = 'sehr-geheimes-passwort'; "
                       "document.querySelector('#login-btn').click(); "
-                      "for (let i = 0; i < 200 && document.querySelector('#shell').classList.contains('hidden'); i++) await new Promise(r => setTimeout(r, 100)); "
-                      "return !document.querySelector('#shell').classList.contains('hidden');"}]
+                      "for (let i = 0; i < 300 && document.querySelector('#shell').classList.contains('hidden'); i++) await new Promise(r => setTimeout(r, 100)); "
+                      "return !document.querySelector('#shell').classList.contains('hidden') "
+                      "|| ['not signed in', setup, document.querySelector('#login-err').textContent, window.__errors.slice()];"}]
 
     def test_pages_open_without_script_errors(self):
         steps = list(self.SIGN_IN)
@@ -89,6 +98,8 @@ class OnMac(unittest.TestCase):
             {"right": "#ref-cell"},
             {"js": "const r = window.__ref || {}; return [r.label || '', r.text || '', r.ex || [], getSelection().toString(), !!document.querySelector('#ctx')];"},
         ])
+        self.assertIs(out[0], True, out)
+        self.assertIsInstance(out[2], list, out)
         row, val = out[2]
         label, text, ex, selected, menu = out[4]
         self.assertTrue(menu, out)                                  # Kontor's own menu, not the system's

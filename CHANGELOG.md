@@ -1,5 +1,9 @@
 # Änderungen
 
+## 3.17.4 (2026-11-23 02:50)
+- Buchungsregeln: Zins auf den Stand zum Jahresanfang – nur die letzten Monate gelesen und Darlehen im Vorjahr ruhend: im ersten Jahr fehlten die Zinsen
+- Entwicklung: Zufallswelten vielfältiger – leere Monate und Jahre, Schübe mit Hunderten Buchungen, stark schwankend, konstant, saisonal, Konten mittendrin auf und zu
+
 ## 3.17.3 (2026-11-23 02:14)
 - Hilfe: genannte Seiten von Kontor öffnen per Klick direkt die Seite (fett mit ↗) – Sprünge innerhalb der Hilfe bleiben unterstrichen
 - Entwicklung: Rundgang in macOS' WebKit (Engine der Mac-App) auf GitHub – jede Seite ohne Skriptfehler, echter Rechtsklick auf eine Zelle

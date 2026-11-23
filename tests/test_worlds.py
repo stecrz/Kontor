@@ -6,6 +6,23 @@ areas and from and to a friend, interest, value changes. Amounts come from a sma
 times, a cent, a large one) and days lean towards the edges of months and years -- the cases where bookings could be
 confused with each other.
 
+Time and activity differ from world to world (a quarter of them stay "classic": 1 Nov 2025 to 20 Jun 2026, every area
+alike): the time read lasts from ten days to four years and ends on any day from 2023 to 2027 (often the 1st, a month's
+last day, 31 Dec, 1 Jan, 29 Feb 2024), and each area has its own way of life --
+
+  * normal: a few bookings a month, on any day;
+  * quiet: almost nothing, whole months and years empty;
+  * dormant: no booking at all for a year or more (in short worlds: most of the time), over a year end, then bookings again;
+  * constant: every month the same -- salary, rent, savings, a standing order to another area, on one day of the month
+    (the 31st is the month's last day);
+  * volatile: amounts from a cent to 20 million, income booked back and expenses refunded;
+  * a burst: one month with 150 to 400 bookings (card payments, refunds) besides everything else;
+  * seasonal: December (presents, a bonus) and summer (holidays) with most of it and larger amounts.
+
+Besides that, areas other than the first may begin in the middle of the time (a company founded later), and an area may
+open a second bank account in the middle of it -- which half of the time is closed again: its balance moved back to 0,
+nothing after. No booking falls into a time where its account does not exist or rests.
+
 For every world, in every area and every month, without knowing the expected rows in advance:
 
   * both checks add up (net worth and cash explained to the cent; the only reason allowed: money in transit),
@@ -39,15 +56,60 @@ SHARES = [1.0, 0.5, 1 / 3, 0.749, 0.005, 0.25]
 AMOUNTS = [12.5, 250.0, 250.0, 999.99, 1500.0, 0.01, 4000.0, 123456.78]
 INCOME = {"Privat": "Gehalt", "Partnerin": "Gehalt", "Kinder": "Gehalt"}     # companies: "Miete"
 EXPENSE = ["Lebensmittel", "Wohnen\\Miete"]
+MORE_EXPENSE = ["Versicherungen", "Tankstelle", "Restaurants"]              # (not in classic worlds: they draw as before)
+CLASSIC = 0.25                  # share of the random worlds built as before: START .. TODAY, every area alike
+# the cases nights found before diverse worlds (FOUND up to 3.17.x, test_cashflow's two among them): they build the worlds they
+# were found in -- here, in test_rule_worlds and in test_cashflow. Fixed: a case found later (FOUND) is drawn like any other
+LEGACY = frozenset({377654401, 357881360, 763175317, 224088165})
+PROFILES = {"normal": 4, "quiet": 2, "dormant": 2, "constant": 2, "volatile": 2, "burst": 1, "seasonal": 2}
+SEASON = (12, 6, 7, 8)          # December and summer
+CARD = [4.99, 12.5, 2.2, 89.0, 0.01, 19.99, 250.0]                          # a burst: the same amounts many times
+TOPUP = [4.99, 2.2, 89.0, 19.99]                                             # ... and top-ups to PayPal (none of AMOUNTS)
 
 
-def edge_day(rnd, start=START, end=TODAY):
-    """A day, leaning towards the edges: the last and first days of months, the year end, today."""
+def cents(x):
+    return int(round(x * 100))
+
+
+def month_end(d):
+    return (d.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
+
+
+def months_of(lo, hi):
+    y, m = lo.year, lo.month
+    while (y, m) <= (hi.year, hi.month):
+        yield y, m
+        y, m = (y + 1, 1) if m == 12 else (y, m + 1)
+
+
+def edge_days(start, end):
+    return [d for d in (start + timedelta(n) for n in range((end - start).days + 1))
+            if d.day in (1, 28, 29, 30, 31) or (d.month, d.day) in ((12, 31), (1, 1)) or d == end]
+
+
+def edge_day(rnd, start=START, end=TODAY, edges=None):
+    """A day, leaning towards the edges: the last and first days of months, the year end, today. edges: edge_days(start,
+    end), if known already (a long time: not built anew for every booking)."""
     if rnd.random() < 0.45:
-        days = [d for d in (start + timedelta(n) for n in range((end - start).days + 1))
-                if d.day in (1, 28, 29, 30, 31) or (d.month, d.day) in ((12, 31), (1, 1)) or d == end]
-        return rnd.choice(days)
+        return rnd.choice(edge_days(start, end) if edges is None else edges)
     return start + timedelta(rnd.randrange((end - start).days + 1))
+
+
+def some_today(rnd):
+    """The last day read: any day from 2023 to 2027, often one at an edge -- the 1st, a month's last day, 31 Dec, 1 Jan, 29 Feb."""
+    d = date(2023, 1, 1) + timedelta(rnd.randrange((date(2027, 12, 31) - date(2023, 1, 1)).days + 1))
+    r = rnd.random()
+    if r < 0.15:
+        return d.replace(day=1)
+    if r < 0.3:
+        return month_end(d)
+    if r < 0.36:
+        return date(d.year, 12, 31)
+    if r < 0.42:
+        return date(d.year, 1, 1)
+    if r < 0.46:
+        return date(2024, 2, 29)
+    return d
 
 
 class World:
@@ -63,6 +125,27 @@ class World:
         self.value = {}                 # area -> value changes booked
         self.n_iban = 10
         self.between = {}               # (two areas, cents) -> days of payments between them
+        self.start, self.today = START, TODAY
+        self.profile = {}               # area -> its way of life (none in classic worlds)
+        self.since = {}                 # area -> its first day
+        self.life = {}                  # account key -> (first day, last day) -- only where it differs from its area's
+        self.rest = {}                  # area -> (first day, last day) without any booking
+        self.pools = {}                 # area -> the amounts it pays with
+        self.notes = {}                 # area -> what is special about it (for the message of a failure)
+        self.taken = {cents(x) for x in AMOUNTS}        # amounts odd() does not give
+        self.edges = {}
+        # which worlds stay classic: decided apart from the seed's own draws, so a classic world is the one this seed built
+        # before (and what a night found before, LEGACY, stays what it was)
+        self.classic = bool(privates) or seed in LEGACY or random.Random("activity %d" % seed).random() < CLASSIC
+        if not self.classic:
+            self.today = some_today(rnd)
+            n = rnd.choice([rnd.randint(10, 60), rnd.randint(61, 365), rnd.randint(366, 1461), rnd.randint(366, 1461)])
+            self.start = self.today - timedelta(n)
+            r = rnd.random()
+            if r < 0.4:
+                self.start = self.start.replace(day=1)
+            elif r < 0.55 and month_end(self.start) <= self.today - timedelta(7):
+                self.start = month_end(self.start)
         self.privates = privates or PRIVATE[:rnd.choice([1, 1, 2, 3])]
         self.companies = (companies or []) if privates else rnd.sample(COMPANY, rnd.choice([0, 1, 1, 2, 2, 3, 4]))
         self.areas = self.privates + self.companies
@@ -86,12 +169,224 @@ class World:
         self.account(self.privates[0], "kredit", "Darlehen von Freund", "liabilities")
         self.account(self.privates[0], "ford", "Darlehen an Freund", "receivables")
         self.account(self.privates[0], "immo", "Wohnung", "real_estate")
+        self.since = {a: self.start for a in self.areas}
         if privates:
             return
-        for a in self.areas:            # money to start with, before anything happens
-            self.add(a, "bank", START, rnd.choice([5000.0, 250000.0]), cat=self.cat_in(a), counts=True)
-        for _ in range(rnd.randint(15, 70)):
-            self.event()
+        if self.classic:
+            for a in self.areas:        # money to start with, before anything happens
+                self.add(a, "bank", START, rnd.choice([5000.0, 250000.0]), cat=self.cat_in(a), counts=True)
+            for _ in range(rnd.randint(15, 70)):
+                self.happen()
+            return
+        self.ways_of_life()
+        for a in self.areas:
+            self.add(a, "bank", self.since[a], rnd.choice(self.pools[a][:2] if self.profile[a] == "volatile" else [5000.0, 250000.0]),
+                     cat=self.cat_in(a), counts=True)
+        for a in self.areas:
+            if a + "|k2" in self.accounts:          # a second account, opened with a transfer from the first
+                self.move(a, "bank", "k2", self.life[a + "|k2"][0], self.rnd.choice(self.pools[a]))
+            if self.profile[a] == "constant":
+                self.monthly(a)
+            for d in self.own_days(a):
+                self.happen(a, d)
+            if self.profile[a] == "burst":
+                self.burst(a)
+        for a in self.areas:
+            if a + "|k2" in self.accounts and self.life[a + "|k2"][1] < self.today:
+                self.close(a, "k2")
+
+    # -- time and ways of life ---------------------------------------------------------------------------------------------
+    def ways_of_life(self):
+        """Each area's way of life, its first day, a time it rests, a second account; the amounts it pays with."""
+        rnd = self.rnd
+        for a in self.areas:
+            if a != self.privates[0] and rnd.random() < 0.25 and (self.today - self.start).days >= 40:
+                self.since[a] = self.start + timedelta(rnd.randint(7, (self.today - self.start).days - 7))
+                self.notes[a] = ["from %s" % self.since[a]]
+            else:
+                self.notes[a] = []
+            p = self.profile[a] = rnd.choices(list(PROFILES), list(PROFILES.values()))[0]
+            lo, span = self.since[a], (self.today - self.since[a]).days
+            if p == "dormant":
+                if span >= 400:
+                    n = rnd.randint(365, min(span - 20, 550))
+                elif span >= 30:
+                    n = int(span * rnd.uniform(0.4, 0.7))
+                else:
+                    p = self.profile[a] = "quiet"
+                if p == "dormant":
+                    g = lo + timedelta(rnd.randint(1, span - n - 5))
+                    self.rest[a] = (g, g + timedelta(n))
+                    self.notes[a].append("rests %s..%s" % self.rest[a])
+            if p == "volatile":         # from a cent to 20 million
+                self.pools[a] = [max(0.01, round(10 ** rnd.uniform(-2, 7.3), 2)) for _ in range(8)]
+                self.taken.update(cents(x) for x in self.pools[a])
+            else:
+                self.pools[a] = AMOUNTS
+            if span >= 20 and rnd.random() < 0.3:
+                k = self.account(a, "k2", "Zweitkonto " + a, "cash", bank=True)
+                for _ in range(30):
+                    o = lo + timedelta(rnd.randint(1, span - 2))
+                    c = o + timedelta(rnd.randint(1, (self.today - o).days)) if rnd.random() < 0.5 else self.today
+                    if self.area_alive(a, o) and self.area_alive(a, c) and c > o:
+                        break
+                else:
+                    o, c = lo, self.today
+                self.life[k] = (o, c)
+                self.notes[a].append("second account %s..%s" % (o, "" if c == self.today else c))
+            self.notes[a].insert(0, self.profile[a])
+
+    def area_alive(self, area, day):
+        r = self.rest.get(area)
+        return self.since[area] <= day <= self.today and not (r and r[0] <= day <= r[1])
+
+    def alive(self, k, day):
+        """May the account have a booking on this day: it exists, and its area does not rest."""
+        area = self.accounts[k][1]
+        lo, hi = self.life.get(k, (self.since[area], self.today))
+        if not (lo <= day <= hi and self.area_alive(area, day)):
+            return False
+        return "|stake:" not in k or day >= self.since[k.split("|stake:")[1]]     # a stake: once its company is there
+
+    def happen(self, a=None, d=None, what=None):
+        """Something happens (event, or what) -- only where every booking of it may be: otherwise nothing."""
+        n, income, value = len(self.txs), dict(self.income), dict(self.value)
+        what() if what else self.event(a, d)
+        if any(not self.alive(e[1], e[2]) for e in self.txs[n:]):
+            del self.txs[n:]
+            self.income, self.value = income, value
+
+    def edge_day(self, lo=None, hi=None):
+        lo, hi = lo or self.start, hi or self.today
+        if (lo, hi) not in self.edges:
+            self.edges[(lo, hi)] = edge_days(lo, hi)
+        return edge_day(self.rnd, lo, hi, self.edges[(lo, hi)])
+
+    def own_days(self, a):
+        """The days on which something starts in the area, by its way of life."""
+        rnd, p, lo = self.rnd, self.profile[a], self.since[a]
+        months = max(1.0, ((self.today - lo).days + 1) / 30.4)
+        rate = rnd.choice([rnd.uniform(0.3, 2), rnd.uniform(2, 8)]) / max(1.0, len(self.areas) / 2.5)    # many areas: each a little less
+        n = {"quiet": rnd.randint(0, 4), "constant": rnd.randint(0, 3), "burst": int(months * rate / 2)}.get(p, int(months * rate) + 1)
+        out = []
+        for _ in range(min(n, 200)):
+            for _ in range(40):
+                d = self.edge_day(lo)
+                if p == "seasonal" and d.month not in SEASON and rnd.random() < 0.85:
+                    continue
+                if self.area_alive(a, d):
+                    out.append(d)
+                    break
+        return out
+
+    def monthly(self, a):
+        """Every month the same: income, an expense, savings to the area's own savings account, a standing order to another
+        area -- each with its amount, on its day of the month (30 and 31: or the month's last day)."""
+        rnd = self.rnd
+        plan = [(rnd.choice([1, 2, 15, 28, 30, 31]), self.odd(), "in"), (rnd.choice([1, 3, 15, 31]), self.odd(), "out")]
+        if a + "|tg" in self.accounts and rnd.random() < 0.7:
+            plan.append((rnd.choice([1, 28, 31]), self.odd(), "save"))
+        others = [o for o in self.areas if o != a]
+        if others and rnd.random() < 0.5:
+            plan.append((rnd.choice([1, 15, 30, 31]), self.odd(), rnd.choice(others)))
+        mine = [c for c in self.companies if a in self.owners[c]]
+        if mine and rnd.random() < 0.5:
+            plan.append((rnd.choice([1, 10, 31]), self.odd(), "stake:" + rnd.choice(mine)))
+        self.notes[a].append("monthly %s" % ", ".join("%s on %d" % (what, day) for day, _, what in plan))
+        for y, m in months_of(self.since[a], self.today):
+            for day, x, what in plan:
+                d = date(y, m, min(day, month_end(date(y, m, 1)).day))
+                if not self.area_alive(a, d):
+                    continue
+                if what == "in":
+                    self.add(a, "bank", d, x, cat=self.cat_in(a), counts=True)
+                elif what == "out":
+                    self.add(a, "bank", d, -x, cat=rnd.choice(EXPENSE), counts=True)
+                elif what == "save":
+                    self.move(a, "bank", "tg", d, x, lag=rnd.choice([0, 0, 1]), days=10)
+                elif what.startswith("stake:"):     # into the company, booked by hand on the stake and (mostly) its capital account
+                    self.happen(what=lambda: self.contribute(a, what[6:], d, x, rnd.choice([0, 1, 2])))
+                else:                   # a standing order: from the bank to the other area's bank, a day later there at most
+                    self.happen(what=lambda: [self.add(a, "bank", d, -x, iban=self.iban(what), purpose="Dauerauftrag", to=what),
+                                              self.add(what, "bank", min(d + timedelta(rnd.choice([0, 1])), self.today), x, iban=self.iban(a),
+                                                       purpose="Dauerauftrag", to=a)])
+
+    def contribute(self, o, c, d, x, lag):
+        """A contribution of o into c: paid, booked on o's stake (on the day or up to two days later), arriving in the company,
+        booked there on o's capital account (on the day paid or arrived; now and then not at all)."""
+        rnd, later = self.rnd, min(d + timedelta(lag), self.today)
+        self.add(o, "bank", d, -x, iban=self.iban(c), cat=rnd.choice(["Umbuchung", ""]), purpose="Einlage " + c)
+        self.add(o, "stake:" + c, min(d + timedelta(rnd.choice([0, 0, 1, 2])), self.today), x, purpose="Einlage " + c)
+        self.add(c, "bank", later, x, iban=self.iban(o), purpose="Einlage")
+        if rnd.random() < 0.6:
+            self.add(c, "kap:" + o, rnd.choice([d, later]), -x, purpose="Einlage")      # on the day paid (mirrored) or arrived
+
+    def burst(self, a):
+        """One month with hundreds of bookings: card payments and refunds, all with a category -- and some of everything else."""
+        rnd = self.rnd
+        for _ in range(30):
+            d0 = self.edge_day(self.since[a])
+            days = [d for d in (d0.replace(day=1) + timedelta(i) for i in range(month_end(d0).day)) if self.area_alive(a, d)]
+            if days:
+                break
+        else:
+            return
+        keys = [k for k in ("bank", "paypal", "k2") if a + "|" + k in self.accounts]
+        n = rnd.randint(150, 400)
+        self.notes[a].append("%d bookings in %s" % (n, d0.strftime("%Y-%m")))
+        for _ in range(n):
+            d, k = rnd.choice(days), rnd.choice(keys)
+            if not self.alive(a + "|" + k, d):
+                k = "bank"
+            x = rnd.choice(CARD) if rnd.random() < 0.6 else round(rnd.uniform(0.01, 600), 2)
+            self.add(a, k, d, x if rnd.random() < 0.12 else -x, cat=rnd.choice(EXPENSE + MORE_EXPENSE), counts=True)
+        x = rnd.choice(TOPUP)
+        lo, hi = days[0] - timedelta(14), days[-1] + timedelta(14)
+        if a + "|paypal" in self.accounts and rnd.random() < 0.5 and not any(
+                self.accounts[e[1]][1] == a and cents(abs(e[3])) == cents(x) and lo <= e[2] <= hi for e in self.txs):
+            n = rnd.randint(10, 60)     # many top-ups of one amount (nothing else of it nearby), each booked by PayPal on its day
+            self.notes[a].append("%d top-ups of %.2f" % (n, x))
+            for _ in range(n):
+                d = rnd.choice(days)
+                if self.alive(a + "|paypal", d):
+                    self.add(a, "bank", d, -x, cat="Umbuchung", name="PayPal")
+                    self.add(a, "paypal", d, x, cat="Umbuchung", name="PayPal")
+            self.between.setdefault((a + "|paypal", cents(x)), []).extend(days)     # (no other move of the amount near them)
+        for _ in range(rnd.randint(2, 12)):
+            self.happen(a, rnd.choice(days))
+
+    def move(self, a, src, dst, d, x, lag=0, days=2 * report.PAIR_DAYS_IBAN_BOTH):
+        """From one bank account of the area to another (both naming each other) -- an amount no other such move between the two
+        has within four weeks (else one no other booking has; a month apart, each finds its own)."""
+        if not self.fits(a + "|" + src + ">" + dst, d, x, days):
+            x = self.odd()
+        n = len(self.txs)
+        self.add(a, src, d, -x, iban=self.iban(a, dst), cat=self.rnd.choice(["Umbuchung", ""]))
+        self.add(a, dst, min(d + timedelta(lag), self.today), x, iban=self.iban(a, src))
+        if any(not self.alive(e[1], e[2]) for e in self.txs[n:]):
+            del self.txs[n:]
+
+    def close(self, a, key):
+        """The account is closed on its last day: what is left goes back to the bank account -- 0 afterwards, nothing more."""
+        k, last = a + "|" + key, self.life[a + "|" + key][1]
+        bal = round(sum(e[3] for e in self.txs if e[1] == k), 2)
+        if abs(bal) < 0.005:
+            return
+        parts = [bal]
+        while not all(self.fits(a + "|" + key + ">bank", last, x, 2 * report.PAIR_DAYS_IBAN_BOTH) for x in parts):
+            y = self.odd()              # the rest in two moves, each with an amount of its own
+            parts = [y, round(bal - y, 2)]
+        for x in parts:
+            self.add(a, key, last, -x, iban=self.iban(a), cat=self.rnd.choice(["Umbuchung", ""]), purpose="Auflösung")
+            self.add(a, "bank", last, x, iban=self.iban(a, key), purpose="Auflösung")
+
+    def fits(self, key, d, x, days):
+        """No other transfer of this kind with this amount within the days -- noted, if so."""
+        seen = self.between.setdefault((key, cents(x)), [])
+        if any(abs((d - e).days) <= days for e in seen):
+            return False
+        seen.append(d)
+        return True
 
     # -- accounts and bookings ---------------------------------------------------------------------------------------------
     def account(self, area, key, name, role, bank=False):
@@ -121,16 +416,37 @@ class World:
             self.value[area] = round(self.value.get(area, 0.0) + round(amount, 2), 2)
         return tid
 
-    def cat_in(self, area):
+    def cat_in(self, area, d=None):
+        if d and d.month == 12 and area in self.privates and self.profile.get(area) == "seasonal":
+            return "Bonus"
         return INCOME.get(area, "Miete")
+
+    def cat_out(self, area, d):
+        p = self.profile.get(area)
+        if p == "seasonal" and d.month == 12:
+            return "Geschenke"
+        if p == "seasonal" and d.month in SEASON:
+            return "Freizeit\\Urlaub"
+        return self.rnd.choice(EXPENSE if self.classic else EXPENSE + MORE_EXPENSE)
 
     def amount(self):
         return self.rnd.choice(AMOUNTS)
 
+    def amount_for(self, a, d):
+        x = self.rnd.choice(self.pools[a])
+        if self.profile.get(a) == "seasonal" and d.month in SEASON:
+            x = round(x * self.rnd.choice([3, 10]), 2)
+        return x
+
+    def flip(self, a):
+        """Volatile: now and then income booked back, an expense refunded."""
+        return -1 if self.profile.get(a) == "volatile" and self.rnd.random() < 0.3 else 1
+
     def amount_between(self, a, b, d):
         """An amount for a payment between two areas that no other payment between them has within ten days: two such payments
         at the same distance from a booking by hand could each be its other side -- Kontor leaves that open on purpose."""
-        for x in self.rnd.sample(AMOUNTS, len(AMOUNTS)) + [self.odd()]:
+        pool = self.pools.get(a, AMOUNTS)
+        for x in self.rnd.sample(pool, len(pool)) + [self.odd()]:
             days = self.between.setdefault((frozenset((a, b)), int(round(x * 100))), [])
             if all(abs((d - e).days) > 10 for e in days):
                 days.append(d)
@@ -149,53 +465,80 @@ class World:
 
     def odd(self):
         """An amount no other booking has: a value change must not look like the other side of a payment."""
-        return round(self.rnd.uniform(100, 9000), 2) + 0.003 * 0          # (cents at random)
+        while True:
+            x = round(self.rnd.uniform(100, 9000), 2)       # (cents at random)
+            if cents(x) not in self.taken:
+                self.taken.add(cents(x))
+                return x
+
+    def other(self, a, d):
+        """Another area for a payment between two: one that is there on the day (a quiet one seldom)."""
+        if self.classic:
+            return self.rnd.choice([o for o in self.areas if o != a])
+        there = [o for o in self.areas if o != a and self.area_alive(o, d) and (self.profile[o] != "quiet" or self.rnd.random() < 0.2)]
+        return self.rnd.choice(there) if there else None
+
+    def owner_of(self, a):
+        """A company and one of its owners: at random (classic), or one where the area is the one or the other."""
+        if self.classic:
+            c = self.rnd.choice(self.companies)
+            return c, self.rnd.choice(sorted(self.owners[c]))
+        pairs = [(c, o) for c in self.companies for o in sorted(self.owners[c]) if a in (c, o)]
+        return self.rnd.choice(pairs) if pairs else (None, None)
 
     # -- what happens ------------------------------------------------------------------------------------------------------
-    def event(self):
-        rnd, d, x = self.rnd, edge_day(self.rnd), self.amount()
+    def event(self, a=None, d=None):
+        """Something happens: at random (classic) or in the area on the day, with its amounts."""
+        rnd = self.rnd
+        if a is None:
+            d, x = self.edge_day(), self.amount()
+        else:
+            x = self.amount_for(a, d)
         lag = rnd.choice([0, 0, 1, 2, 3])
-        later = min(d + timedelta(lag), TODAY)
-        a = rnd.choice(self.areas)
-        kind = rnd.randrange(13)
+        later = min(d + timedelta(lag), self.today)
+        if a is None:
+            a = rnd.choice(self.areas)
+        kind = rnd.randrange(13 if self.classic else 15)
+        p = self.privates[0]
+        if kind in (6, 7, 8) and not self.classic and a != p:          # the friend and the flat are yours
+            return
         if kind == 0:                                               # income
-            self.add(a, "bank", d, x, cat=self.cat_in(a), counts=True)
+            self.add(a, "bank", d, x * self.flip(a), cat=self.cat_in(a, d), counts=True)
         elif kind == 1:                                             # an expense
-            self.add(a, "bank", d, -x, cat=rnd.choice(EXPENSE), counts=True)
+            self.add(a, "bank", d, -x * self.flip(a), cat=self.cat_out(a, d), counts=True)
         elif kind == 2 and a + "|tg" in self.accounts:              # to the area's own savings account (and back)
             s = rnd.choice([1, -1])
             self.add(a, "bank", d, -s * x, iban=self.iban(a, "tg"), cat=rnd.choice(["Umbuchung", ""]))
             self.add(a, "tg", later, s * x, iban=self.iban(a))
         elif kind == 3 and len(self.areas) > 1:                     # between two areas, bank to bank
-            b = rnd.choice([o for o in self.areas if o != a])
+            b = self.other(a, d)
+            if b is None:
+                return
             x = self.amount_between(a, b, d)
             self.add(a, "bank", d, -x, iban=self.iban(b), cat=rnd.choice(["Umbuchung", ""]), to=b)
-            self.add(b, "bank", min(d + timedelta(rnd.choice([0, 1, 3, 5])), TODAY), x, iban=self.iban(a), cat=rnd.choice(["Umbuchung", ""]), to=a)
+            self.add(b, "bank", min(d + timedelta(rnd.choice([0, 1, 3, 5])), self.today), x, iban=self.iban(a), cat=rnd.choice(["Umbuchung", ""]), to=a)
         elif kind == 4 and self.companies:                          # a contribution into a company, booked on the stake (and the capital account)
-            c = rnd.choice(self.companies)
-            o = rnd.choice(sorted(self.owners[c]))
-            x = self.amount_between(o, c, d)
-            self.add(o, "bank", d, -x, iban=self.iban(c), cat=rnd.choice(["Umbuchung", ""]), purpose="Einlage " + c)
-            self.add(o, "stake:" + c, min(d + timedelta(rnd.choice([0, 0, 1, 2])), TODAY), x, purpose="Einlage " + c)
-            self.add(c, "bank", later, x, iban=self.iban(o), purpose="Einlage")
-            if rnd.random() < 0.6:
-                self.add(c, "kap:" + o, rnd.choice([d, later]), -x, purpose="Einlage")      # on the day paid (mirrored) or arrived
+            c, o = self.owner_of(a)
+            if c is None:
+                return
+            self.contribute(o, c, d, self.amount_between(o, c, d), lag)
         elif kind == 5 and len(self.areas) > 1:                     # a loan between two areas, booked on both sides; part back later
-            b = rnd.choice([o for o in self.areas if o != a])
+            b = self.other(a, d)
+            if b is None:
+                return
             self.account(a, "dar:" + b, "Darlehen an " + b, "receivables")
             self.account(b, "dar:" + a, "Darlehen von " + a, "liabilities")
-            back = min(d + timedelta(rnd.randint(20, 60)), TODAY)
+            back = min(d + timedelta(rnd.randint(20, 60)), self.today)
             x = self.amount_between(a, b, d)
             for day, y in ((d, x), (back, -self.amount_between(a, b, back))):
-                if day > TODAY or (y < 0 and rnd.random() < 0.5):
+                if day > self.today or (y < 0 and rnd.random() < 0.5):
                     continue
-                arrive = min(day + timedelta(rnd.choice([0, 1, 2])), TODAY)
+                arrive = min(day + timedelta(rnd.choice([0, 1, 2])), self.today)
                 self.add(a, "bank", day, -y, iban=self.iban(b), purpose="Darlehen")
                 self.add(a, "dar:" + b, day, y, purpose="Darlehen " + b)
                 self.add(b, "bank", arrive, y, iban=self.iban(a), purpose="Darlehen")
                 self.add(b, "dar:" + a, rnd.choice([day, arrive]), -y, purpose="Darlehen " + a)
         elif kind == 6:                                             # a friend: lent to or borrowed from, booked by hand days later
-            p = self.privates[0]
             if rnd.random() < 0.5:
                 self.add(p, "bank", d, -x, name="Freund")
                 self.add(p, "ford", later, x, name="Freund")
@@ -203,26 +546,39 @@ class World:
                 self.add(p, "bank", d, x, name="Freund")
                 self.add(p, "kredit", later, -x, name="Freund")
         elif kind == 7:                                             # interest on the friend's loan: a cost, booked by hand
-            p, i = self.privates[0], round(x * 0.03, 2) or 0.01
+            i = round(x * 0.03, 2) or 0.01
             self.add(p, "kredit", d, -i, purpose="Zinsen")
         elif kind == 8:                                             # the flat changes in value (by hand, an amount nothing else has)
-            self.add(self.privates[0], "immo", d, rnd.choice([1, -1]) * self.odd(), purpose="Wertanpassung", value=True)
+            self.add(p, "immo", d, rnd.choice([1, -1]) * self.odd(), purpose="Wertanpassung", value=True)
         elif kind == 9 and self.companies:                          # Kontor's value adjustment of a stake
-            c = rnd.choice(self.companies)
-            o = rnd.choice(sorted(self.owners[c]))
+            c, o = self.owner_of(a)
+            if c is None or (not self.classic and o != a):
+                return
             self.add(o, "stake:" + c, d, rnd.choice([1, -1]) * x, purpose="Wertanpassung · #kontor-wert-%s-%d" % (d.strftime("%Y%m%d"), len(self.txs)),
                      value=True)
         elif kind == 10:                                            # an expense in a company or a second income
-            self.add(a, "bank", d, -x if a in self.companies else x, cat=rnd.choice(EXPENSE) if a in self.companies else self.cat_in(a), counts=True)
+            if a in self.companies:
+                self.add(a, "bank", d, -x * self.flip(a), cat=self.cat_out(a, d), counts=True)
+            else:
+                self.add(a, "bank", d, x * self.flip(a), cat=self.cat_in(a, d), counts=True)
         elif kind == 11 and a + "|paypal" in self.accounts:         # to PayPal and back: both sides "Umbuchung", no IBAN, a week apart at most
             s = rnd.choice([1, -1])
             x = self.amount_alone(a, "paypal", d, x)
             self.add(a, "bank", d, -s * x, cat="Umbuchung", name="PayPal")
-            self.add(a, "paypal", min(d + timedelta(rnd.choice([0, 1, 3, 5, 7])), TODAY), s * x, cat="Umbuchung", name="PayPal")
+            self.add(a, "paypal", min(d + timedelta(rnd.choice([0, 1, 3, 5, 7])), self.today), s * x, cat="Umbuchung", name="PayPal")
         elif kind == 12 and len(self.areas) > 1:                    # rent paid to another area: income there, an expense here
-            b = rnd.choice([o for o in self.areas if o != a])
+            b = self.other(a, d)
+            if b is None:
+                return
             self.add(a, "bank", d, -x, iban=self.iban(b), cat="Miete", purpose="Miete", counts=True)
             self.add(b, "bank", later, x, iban=self.iban(a), cat="Miete", purpose="Miete", counts=True)
+        elif kind == 13 and a + "|k2" in self.accounts:             # income or an expense on the second account
+            if rnd.random() < 0.5:
+                self.add(a, "k2", d, x * self.flip(a), cat=self.cat_in(a, d), counts=True)
+            else:
+                self.add(a, "k2", d, -x * self.flip(a), cat=self.cat_out(a, d), counts=True)
+        elif kind == 14 and a + "|k2" in self.accounts:             # between the two bank accounts of the area
+            self.move(a, *rnd.choice([("bank", "k2"), ("k2", "bank")]), d, x, lag=lag)
 
     # -- Kontor's view of it -----------------------------------------------------------------------------------------------
     def ledger(self):
@@ -257,10 +613,12 @@ class World:
     def datasets(self):
         led = self.ledger()
         config, roles = self.config()
-        return {b["name"]: report.build_dataset(led, config, {}, TODAY, b, dict(roles)) for b in core.bereiche_for(led, config)}
+        return {b["name"]: report.build_dataset(led, config, {}, self.today, b, dict(roles)) for b in core.bereiche_for(led, config)}
 
     def describe(self):
-        return "%s; owners %s" % (", ".join(self.areas), {c: {o: round(s, 4) for o, s in v.items()} for c, v in self.owners.items()})
+        areas = ", ".join("%s (%s)" % (a, ", ".join(self.notes[a])) if self.notes.get(a) else a for a in self.areas)
+        return "%s..%s, %d bookings; %s; owners %s" % (self.start, self.today, len(self.txs), areas,
+                                                      {c: {o: round(s, 4) for o, s in v.items()} for c, v in self.owners.items()})
 
 
 def section_total(ds, *names):

@@ -36,6 +36,8 @@ TARGETS = {F.uid(k) for k in (BET, MINE, THEIRS, LOAN)}             # the only a
 
 
 class FuzzTests(unittest.TestCase):
+    today = TODAY                       # the day Kontor runs on (test_rule_worlds: each world its own)
+
     def setUp(self):
         self.dir = tempfile.mkdtemp(prefix="kontor-fuzz-")
         self.store = new_store(self.dir)
@@ -83,7 +85,7 @@ class FuzzTests(unittest.TestCase):
             self.assertEqual(now.get(i), t, "%s: a booking of yours changed" % where)
 
     def run_once(self, cfg, dry, approve=None):
-        r = core.run_once(self.store, cfg, TODAY, dry=dry, force=True, bridge_factory=MockBridge, approve=approve, with_report=False)
+        r = core.run_once(self.store, cfg, self.today, dry=dry, force=True, bridge_factory=MockBridge, approve=approve, with_report=False)
         self.assertEqual(r["status"], "ok", r)
         self.assertFalse([w for w in r["warnings"] if "nach Buchung" in w], r["warnings"])        # balances after booking as planned
         return r
@@ -94,8 +96,8 @@ class FuzzTests(unittest.TestCase):
         if not rows:
             return
         hold = {p["key"] for p in rows if part and rnd.random() < 0.4}
-        led = core.fetch(MockBridge(True), cfg, TODAY)
-        shown = core.plan_pending(led, cfg, self.store.load("state.json") or {}, TODAY, hold)
+        led = core.fetch(MockBridge(True), cfg, self.today)
+        shown = core.plan_pending(led, cfg, self.store.load("state.json") or {}, self.today, hold)
         self.assertFalse(hold & {p["key"] for p in shown})
         before = len(self.txs())
         r = self.run_once(cfg, False, {p["key"]: {"shown": p["amount"]} for p in shown})

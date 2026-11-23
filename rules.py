@@ -399,6 +399,9 @@ def plan_loan(ledger: Ledger, cfg: dict, today: date, config: Optional[dict] = N
     buchungstag = zins.get("booking_day", "ultimo")
     overrides = {str(k): float(v) for k, v in (zins.get("base_override") or {}).items()}
     year_cache: Dict[int, Tuple[float, float, float]] = {}   # year -> (basis, rate, yearly interest)
+    # only the last months read (as ValueSeries): a balance before the first booking read comes from bookings before them --
+    # with everything read, the account did not exist before its first booking (a start balance alone is no base)
+    limited = int(((config or {}).get("balance") or {}).get("months_back", 0) or 0) > 0
 
     def year_basis(y: int) -> Tuple[float, float, float]:
         if y not in year_cache:
@@ -406,7 +409,8 @@ def plan_loan(ledger: Ledger, cfg: dict, today: date, config: Optional[dict] = N
             prev = date(y - 1, 12, 31)
             if str(y) in overrides:
                 base = abs(overrides[str(y)])
-            elif ledger.has_history_before(loan.uuid, prev) or ledger.earliest_tx(loan.uuid) is None:
+            elif ledger.has_history_before(loan.uuid, prev) or ledger.earliest_tx(loan.uuid) is None \
+                    or (limited and abs(ledger.balance_at(loan.uuid, prev)) >= 0.005):   # a balance then: bookings before what was read
                 base = debt_fixed(prev)
             else:
                 base = None

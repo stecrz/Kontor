@@ -14,6 +14,7 @@ from model import Ledger, accounts_from_export, tx_from_export   # noqa: E402
 import core                                                         # noqa: E402
 import report                                                       # noqa: E402
 import fixtures as F                                                # noqa: E402
+import test_worlds as W                                             # noqa: E402  (the module: pytest would run its cases here again)
 
 TODAY = date(2026, 6, 20)
 
@@ -35,9 +36,9 @@ ACCOUNTS = {
 }
 
 
-def build(txs, cfg=None, currency=None):
+def build(txs, cfg=None, currency=None, today=TODAY):
     """A ledger with three areas (groups) and the bookings [(id, key, day, amount, dict(extra))]; balance = sum of the booked."""
-    return datasets(make_ledger(txs, currency), cfg)
+    return datasets(make_ledger(txs, currency), cfg, today)
 
 
 def make_ledger(txs, currency=None):
@@ -65,12 +66,12 @@ def make_ledger(txs, currency=None):
     return Ledger(accounts_from_export(raw), tx_from_export(rows))
 
 
-def datasets(ledger, cfg=None):
+def datasets(ledger, cfg=None, today=TODAY):
     config = core.merged_config(dict({"balance": {"roles": {k: v[2] for k, v in ACCOUNTS.items()}}}, **(cfg or {})))
     roles = {k: v[2] for k, v in ACCOUNTS.items()}
     out = {}
     for b in core.bereiche_for(ledger, config):
-        out[b["name"]] = report.build_dataset(ledger, config, {}, TODAY, b, roles)
+        out[b["name"]] = report.build_dataset(ledger, config, {}, today, b, roles)
     return out
 
 
@@ -1236,83 +1237,166 @@ class MockData(Reconciles):
 
 class CashflowFuzz(Reconciles):
     """Random months of bookings across every kind of account: both checks add up -- with only the reasons that name
-    themselves (money in transit over a month end, the category "Ignore")."""
+    themselves (money in transit over a month end, the category "Ignore").
 
-    def world(self, rnd):
+    A quarter of the runs as before (1 Nov 2025 to 20 Jun 2026, bookings on any day); the others over ten days to four years,
+    ending on any day from 2023 to 2027 (test_worlds.some_today), each in one way of life (test_worlds.PROFILES): normal,
+    quiet (whole months empty), dormant (a year or more without any booking, then bookings again), constant (every month the
+    same salary, rent, savings, repayments, contribution -- on one day of the month), volatile (amounts from a cent to 20
+    million), a burst (one month with 150 to 400 bookings, many of one amount) or seasonal (December and summer). Savings,
+    dollar and children's accounts may open in the middle of the time and be closed again (balance back to 0, nothing after)."""
+    KINDS = 14
+
+    def world(self, rnd, seed=None):
+        """(bookings, the last day read, what is special) -- at random from the seed."""
         txs, n = [], [0]
 
         def add(key, day, amount, **extra):
             n[0] += 1
             txs.append((n[0], key, day, round(amount, 2), extra))
             return n[0]
-        start = date(2025, 11, 1)
-        days = (TODAY - start).days
-        for _ in range(rnd.randint(30, 90)):
-            d = start + timedelta(days=rnd.randrange(days))
-            gap = timedelta(days=rnd.choice([0, 0, 1, 2, 3]))
-            amt = rnd.choice([12.5, 80, 250, 999.99, 1500, 4000])
-            kind = rnd.randrange(14)
-            if kind == 0:
-                add("giro", d, amt * 3, cat="Gehalt")
-            elif kind == 1:
-                add("giro", d, -amt, cat=rnd.choice(["Lebensmittel", "Wohnen\\Miete", ""]))
-            elif kind == 2:                                         # bank to bank, maybe over a month end
-                add("giro", d, -amt, iban="DE12", cat=rnd.choice(["Umbuchung", ""]))
-                add("tg", d + gap, amt, iban="DE11")
-            elif kind == 3:                                         # repayment to the bank loan
-                add("giro", d, -amt, iban="DE13", cat="Umbuchung")
-                add("darl", d + gap, amt, iban="DE11")
-                add("darl", d + gap, -round(amt * 0.2, 2), purpose="Zinsen")
-            elif kind == 4:                                         # Kontor's repayment of an offline loan
-                pid = add("kk", d, -amt, iban="DE99", cat="Umbuchung")
-                add("vd", d, amt, purpose="Annuität · #kontor-tx-%d" % pid, cat="Umbuchung")
-                add("vd", d, -round(amt * 0.3, 2), purpose="Zinsen · #kontor-zins-%s" % d.strftime("%Y-%m"))
-            elif kind == 5:                                         # contribution to the company (and back)
-                s = rnd.choice([1, -1])
-                add("giro", d, -s * amt, iban="DE21", cat=rnd.choice(["Umbuchung", ""]))
-                add("kk", d + gap, s * amt, iban="DE11")
-            elif kind == 6:                                         # Kontor's value adjustment of the participation
-                add("stake", d, rnd.choice([1, -1]) * amt, purpose="Wertanpassung · #kontor-wert-%s-1" % d.strftime("%Y%m%d"),
-                    cat=rnd.choice(["Umbuchung", ""]))
-            elif kind == 7:                                         # by hand into an offline account, paired by amount
-                add("giro", d, -amt, name="Freund")
-                add(rnd.choice(["ford", "kredit", "auto"]), d + gap, amt, name="Freund")
-            elif kind == 8:                                         # a transfer nobody booked on the other side
-                add("giro", d, -amt, cat="Umbuchung")
-            elif kind == 9:
-                add("giro", d, -amt, cat="Lebensmittel", booked=False)
-            elif kind == 10:                                        # to the children's area
-                add("giro", d, -amt, iban="DE31", cat="Umbuchung")
-                add("kind", d + gap, amt, iban="DE11", cat="Umbuchung")
-            elif kind == 11:                                        # foreign currency
-                add("giro", d, -amt, iban="DE14", cat="Umbuchung")
-                add("usd", d + gap, amt * 1.1, iban="DE11")
-            elif kind == 12:
-                add("giro", d, -amt, cat="Privatentnahme")          # ignored category
-            else:
-                add("kk", d, amt * 2, cat="Miete")
-        return txs
+        # as before: a quarter, and what a night found before (test_worlds.LEGACY) -- decided apart from the seed's own draws
+        if seed is None or seed in W.LEGACY or random.Random("cashflow activity %d" % seed).random() < 0.25:
+            start, today = date(2025, 11, 1), TODAY
+            days = (today - start).days
+            for _ in range(rnd.randint(30, 90)):
+                d = start + timedelta(days=rnd.randrange(days))
+                gap = timedelta(days=rnd.choice([0, 0, 1, 2, 3]))
+                self.event(rnd, add, d, rnd.choice([12.5, 80, 250, 999.99, 1500, 4000]), gap=gap)
+            return txs, today, "classic"
+        today = W.some_today(rnd)
+        start = today - timedelta(rnd.choice([rnd.randint(10, 60), rnd.randint(61, 365), rnd.randint(366, 1461), rnd.randint(366, 1461)]))
+        span = (today - start).days
+        way = rnd.choices(list(W.PROFILES), list(W.PROFILES.values()))[0]
+        rest, life, notes = None, {}, ["%s..%s" % (start, today), way]
+        if way == "dormant" and span >= 30:
+            k = rnd.randint(365, min(span - 20, 550)) if span >= 400 else int(span * rnd.uniform(0.4, 0.7))
+            g = start + timedelta(rnd.randint(1, span - k - 5))
+            rest = (g, g + timedelta(k))
+            notes.append("rests %s..%s" % rest)
+        alive = lambda key, d: (start <= d <= today and not (rest and rest[0] <= d <= rest[1])
+                                and (key not in life or (life[key][0] <= d and (life[key][1] is None or d <= life[key][1]))))
+        for key in ("tg", "usd", "kind"):           # opened in the middle of the time, maybe closed again (not while all rests)
+            if span >= 20 and rnd.random() < 0.35:
+                for _ in range(30):
+                    o = start + timedelta(rnd.randint(1, span - 2))
+                    c = o + timedelta(rnd.randint(1, (today - o).days)) if rnd.random() < 0.5 else None
+                    if alive("giro", o) and (c is None or alive("giro", c)):
+                        life[key] = (o, c)
+                        notes.append("%s %s..%s" % (key, o, c or ""))
+                        break
+        pool = [max(0.01, round(10 ** rnd.uniform(-2, 7.3), 2)) for _ in range(6)] if way == "volatile" else [12.5, 80, 250, 999.99, 1500, 4000]
+
+        def happen(d, amt, kind=None):
+            """An event -- only if each of its bookings may be on its day (else nothing)."""
+            k = len(txs)
+            self.event(rnd, add, d, amt, kind)
+            if any(not alive(e[1], e[2]) for e in txs[k:]):
+                del txs[k:]
+
+        def amount(d):
+            x = rnd.choice(pool)
+            return round(x * rnd.choice([3, 10]), 2) if way == "seasonal" and d.month in W.SEASON else x
+        months = max(1.0, (span + 1) / 30.4)
+        count = {"quiet": rnd.randint(0, 5), "constant": rnd.randint(0, 4), "burst": int(months * rnd.uniform(0.3, 2))}.get(
+            way, int(months * rnd.choice([rnd.uniform(0.5, 3), rnd.uniform(3, 10)])) + 1)
+        for _ in range(min(count, 300)):
+            for _ in range(40):
+                d = start + timedelta(days=rnd.randrange(span + 1))
+                if way == "seasonal" and d.month not in W.SEASON and rnd.random() < 0.85:
+                    continue
+                if alive("giro", d):
+                    happen(d, amount(d))
+                    break
+        if way == "constant":                       # every month the same, each on its day (30, 31: or the month's last)
+            plan = [(rnd.choice([1, 15, 28, 31]), rnd.choice(pool), rnd.choice([0, 1, 2, 3, 4, 5, 7, 10, 13])) for _ in range(rnd.randint(2, 5))]
+            notes.append("monthly %s" % plan)
+            for y, m in W.months_of(start, today):
+                for day, amt, kind in plan:
+                    d = date(y, m, min(day, W.month_end(date(y, m, 1)).day))
+                    if alive("giro", d):
+                        happen(d, amt, kind)
+        if way == "burst":                          # a month with hundreds of bookings, many of one amount
+            for _ in range(30):
+                d0 = start + timedelta(days=rnd.randrange(span + 1))
+                days = [d for d in (d0.replace(day=1) + timedelta(i) for i in range(W.month_end(d0).day)) if alive("giro", d)]
+                if days:
+                    break
+            k = rnd.randint(150, 400)
+            notes.append("%d in %s" % (k, d0.strftime("%Y-%m")))
+            for _ in range(k if days else 0):
+                happen(rnd.choice(days), rnd.choice([12.5, 80, 4.99]), rnd.choice([0, 1, 1, 1, 1, 9, 12, 13, 2, 7, 10, 5]))
+        for key, (o, c) in life.items():           # closed: what is left goes back to the giro account
+            bal = round(sum(e[3] for e in txs if e[1] == key and e[4].get("booked", True)), 2)
+            if c and abs(bal) >= 0.005:
+                back = bal if key != "usd" else round(bal / 1.1, 2)
+                add(key, c, -bal, iban="DE11", cat="Umbuchung", purpose="Auflösung")
+                add("giro", c, back, iban={"tg": "DE12", "usd": "DE14", "kind": "DE31"}[key], cat="Umbuchung", purpose="Auflösung")
+        return txs, today, "; ".join(notes)
+
+    def event(self, rnd, add, d, amt, kind=None, gap=None):
+        gap = timedelta(days=rnd.choice([0, 0, 1, 2, 3])) if gap is None else gap
+        kind = rnd.randrange(self.KINDS) if kind is None else kind
+        if kind == 0:
+            add("giro", d, amt * 3, cat="Gehalt")
+        elif kind == 1:
+            add("giro", d, -amt, cat=rnd.choice(["Lebensmittel", "Wohnen\\Miete", ""]))
+        elif kind == 2:                                         # bank to bank, maybe over a month end
+            add("giro", d, -amt, iban="DE12", cat=rnd.choice(["Umbuchung", ""]))
+            add("tg", d + gap, amt, iban="DE11")
+        elif kind == 3:                                         # repayment to the bank loan
+            add("giro", d, -amt, iban="DE13", cat="Umbuchung")
+            add("darl", d + gap, amt, iban="DE11")
+            add("darl", d + gap, -round(amt * 0.2, 2), purpose="Zinsen")
+        elif kind == 4:                                         # Kontor's repayment of an offline loan
+            pid = add("kk", d, -amt, iban="DE99", cat="Umbuchung")
+            add("vd", d, amt, purpose="Annuität · #kontor-tx-%d" % pid, cat="Umbuchung")
+            add("vd", d, -round(amt * 0.3, 2), purpose="Zinsen · #kontor-zins-%s" % d.strftime("%Y-%m"))
+        elif kind == 5:                                         # contribution to the company (and back)
+            s = rnd.choice([1, -1])
+            add("giro", d, -s * amt, iban="DE21", cat=rnd.choice(["Umbuchung", ""]))
+            add("kk", d + gap, s * amt, iban="DE11")
+        elif kind == 6:                                         # Kontor's value adjustment of the participation
+            add("stake", d, rnd.choice([1, -1]) * amt, purpose="Wertanpassung · #kontor-wert-%s-1" % d.strftime("%Y%m%d"),
+                cat=rnd.choice(["Umbuchung", ""]))
+        elif kind == 7:                                         # by hand into an offline account, paired by amount
+            add("giro", d, -amt, name="Freund")
+            add(rnd.choice(["ford", "kredit", "auto"]), d + gap, amt, name="Freund")
+        elif kind == 8:                                         # a transfer nobody booked on the other side
+            add("giro", d, -amt, cat="Umbuchung")
+        elif kind == 9:
+            add("giro", d, -amt, cat="Lebensmittel", booked=False)
+        elif kind == 10:                                        # to the children's area
+            add("giro", d, -amt, iban="DE31", cat="Umbuchung")
+            add("kind", d + gap, amt, iban="DE11", cat="Umbuchung")
+        elif kind == 11:                                        # foreign currency
+            add("giro", d, -amt, iban="DE14", cat="Umbuchung")
+            add("usd", d + gap, amt * 1.1, iban="DE11")
+        elif kind == 12:
+            add("giro", d, -amt, cat="Privatentnahme")          # ignored category
+        else:
+            add("kk", d, amt * 2, cat="Miete")
 
     def test_random_months_add_up(self):
         cfg = {"companies": [{"area": "Muster GbR", "participation": "Beteiligung an Muster GbR"}],
                "cashflow": {"positions": {"Privatentnahme": "ignore"}}}
         for seed in F.fuzz_seeds("Cashflow"):
+            txs, today, how = self.world(random.Random(seed), seed)
             with self.subTest(seed=seed), F.case(seed):
-                txs = self.world(random.Random(seed))
-                data = build(txs, cfg)
+                data = build(txs, cfg, today=today)
                 self.assertAddsUp(data, allow=("ue_unterwegs", "ue_ignoriert"))
                 # income and expenses never pair with anything: their rows are exactly their bookings
                 p, k = rows(data["Privat"]), rows(data["Kinder"])
                 for cat, pos in (("Gehalt", "Arbeitseinkommen"), ("Lebensmittel", "Lebenshaltung"), ("Wohnen\\Miete", "Wohnen")):
                     want = round(sum(e[3] for e in txs if (e[4] or {}).get("cat") == cat and (e[4] or {}).get("booked", True)), 2)
                     got = round(sum(p[pos]["amounts"].values()), 2) if pos in p else 0.0
-                    self.assertAlmostEqual(got, want, 2, cat)
+                    self.assertAlmostEqual(got, want, 2, "seed %d (%s): %s" % (seed, how, cat))
                     det = {d["category"]: d for d in (p[pos].get("details") or [])} if pos in p else {}
                     self.assertAlmostEqual(round(sum(det[cat.replace("\\", " / ")]["amounts"].values()), 2) if det else 0.0, want, 2)
                 # between two areas: what one pays in, the other receives
                 out = round(sum(p["Einlage/Entnahme Kinder"]["amounts"].values()), 2) if "Einlage/Entnahme Kinder" in p else 0.0
                 inn = round(sum(k["Einlage/Entnahme Privat"]["amounts"].values()), 2) if "Einlage/Entnahme Privat" in k else 0.0
-                self.assertAlmostEqual(out, -inn, 2)
+                self.assertAlmostEqual(out, -inn, 2, "seed %d (%s)" % (seed, how))
 
 
 if __name__ == "__main__":

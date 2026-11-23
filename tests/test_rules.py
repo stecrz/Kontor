@@ -168,6 +168,49 @@ class LoanTests(unittest.TestCase):
         res = plan_loan(led, cfg, today)
         self.assertEqual(len([p for p in res.proposals if p.kind == "interest"]), 5)
 
+    def test_base_from_before_what_was_read(self):
+        """Only the last months read (Sync: months_back), and a loan older than that with no booking in the year before the rule
+        starts: its balance at the start of the year comes from bookings before what was read (MoneyMoney's balance less what
+        came later) -- interest from the first month, no warning. Found by test_rule_worlds (a loan quiet for a year): until then
+        none for the whole first year."""
+        today = date(2026, 6, 1)
+        txs = [F.tx("ga.kk", date(y, m, 3), -1000.0, "Verkäufer", F.ANNUITY_TEXT, "", F.SELLER_IBAN)
+               for y, m in ((2025, 11), (2025, 12), (2026, 1), (2026, 2), (2026, 3), (2026, 4), (2026, 5))]
+        led = make_ledger({"ga.vd": -1200000.0}, txs)      # the loan since 2023: none of its bookings read
+        led.since = date(2024, 1, 1)
+        limited = {"balance": {"months_back": 24}}
+        cfg = loan_cfg(from_date="2025-11-01", interest={"model": "yearly_base", "rate_list": [{"from_date": "2023-01-01", "percent": 3.0}],
+                                                         "booking_day": "ultimo"})
+        res = plan_loan(led, cfg, today, limited)
+        self.assertFalse([w for w in res.warnings if "Jahresanfangsbasis" in w], res.warnings)
+        zins = {p.booking_date: p.amount for p in res.proposals if p.kind == "interest"}
+        self.assertEqual(sorted(zins), [date(2025, 11, 30), date(2025, 12, 31), date(2026, 1, 31), date(2026, 2, 28), date(2026, 3, 31),
+                                        date(2026, 4, 30), date(2026, 5, 31)])
+        self.assertAlmostEqual(zins[date(2025, 11, 30)], -3000.0, 2)            # 1.2 million x 3 % / 12
+        self.assertAlmostEqual(zins[date(2025, 12, 31)], -3000.0, 2)
+        # a loan account begun during the year, all of it read, still has no base for that year (test_missing_base_warns)
+        led = make_ledger({"ga.vd": -1200000.0}, txs[2:] + [F.tx("ga.vd", date(2025, 2, 1), -1200000.0, "V", "Start")])
+        res = plan_loan(led, loan_cfg(from_date="2025-11-01", interest=cfg["interest"]), today, limited)
+        self.assertTrue([w for w in res.warnings if "Jahresanfangsbasis" in w and "2025" in w], res.warnings)
+
+    def test_start_balance_is_no_base_with_everything_read(self):
+        """Everything read (months_back 0, the default): an account did not exist before its first booking -- a start balance in
+        MoneyMoney without a booking, or a rest of it beside the payout, is no base for the year: the warning, no interest."""
+        cfg = lambda f: loan_cfg(from_date=f, interest={"model": "yearly_base", "rate_list": [{"from_date": "2025-01-01", "percent": 3.0}],
+                                                       "booking_day": "ultimo"})
+        pay = lambda months: [F.tx("ga.kk", date(2025, m, 3), -1000.0, "Verkäufer", F.ANNUITY_TEXT, "", F.SELLER_IBAN) for m in months]
+        for config in (None, {"balance": {"months_back": 0}}):
+            # opened in July with a start balance of -200,000 and no booking in the loan account
+            led = make_ledger({"ga.vd": -200000.0}, pay(range(7, 12)))
+            res = plan_loan(led, cfg("2025-07-01"), date(2025, 12, 15), config)
+            self.assertTrue([w for w in res.warnings if "Jahresanfangsbasis" in w and "2025" in w], res.warnings)
+            self.assertEqual([p for p in res.proposals if p.kind == "interest"], [])
+            # a payout of -200,000 on 1 March beside a start balance of 0.50
+            led = make_ledger({"ga.vd": -199999.5}, pay(range(3, 12)) + [F.tx("ga.vd", date(2025, 3, 1), -200000.0, "V", "Auszahlung")])
+            res = plan_loan(led, cfg("2025-03-01"), date(2025, 12, 15), config)
+            self.assertTrue([w for w in res.warnings if "Jahresanfangsbasis" in w and "2025" in w], res.warnings)
+            self.assertEqual([p for p in res.proposals if p.kind == "interest"], [])
+
     def test_restschuld_monatlich_model(self):
         today = date(2026, 4, 2)
         txs = [F.tx("ga.vd", date(2025, 12, 1), -120000.0, "Bank", "Auszahlung")]

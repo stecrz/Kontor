@@ -1385,10 +1385,10 @@ class HelpAndTransactions(_Assist):
         self.assertEqual(got["found"][0]["anchor"], "areas")                                                       # a form of the word
         self.assertNotIn("by_meaning", got["found"][0]); self.assertNotIn("by_meaning", got["note"])
         t0 = time.time()
-        while self.a._indexing:                                                                                     # (a run begun by itself: to its end ...)
-            self.assertLess(time.time() - t0, 30); time.sleep(0.05)
-        self.a.help_vecs.drop_all()                                                                                 # ... then none made yet
-        with mock.patch.object(self.a, "index_notes", lambda *a, **k: None):                                         # (nor while asking)
+        with mock.patch.object(self.a, "index_notes", lambda *a, **k: None):                                         # (no run begins from here on ...)
+            while self.a._indexing:                                                                                 # (... one begun by itself: to its end ...)
+                self.assertLess(time.time() - t0, 30); time.sleep(0.05)
+            self.a.help_vecs.drop_all()                                                                             # ... then none made yet
             self.assertEqual(self.tool("search_help", {"query": "Ferien"})["found"], [])                           # not yet made: nothing in common
         self.a.set({"memory": False})
         self.done()
