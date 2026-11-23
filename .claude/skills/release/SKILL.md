@@ -1,6 +1,6 @@
 ---
 name: release
-description: Jede Änderung an Kontor abschließen – betroffene Tests prüfen (auch mit Python 3.9), ein Commit je Version direkt auf main, GitHub Actions abwarten. Am Ende jeder Änderung verwenden, auch bei kleinen.
+description: Jede Änderung an Kontor abschließen – betroffene Tests prüfen (Python 3.9 nur für den Starter), ein Commit je Version direkt auf main, GitHub Actions abwarten. Am Ende jeder Änderung verwenden, auch bei kleinen.
 ---
 
 # Release
@@ -9,11 +9,10 @@ description: Jede Änderung an Kontor abschließen – betroffene Tests prüfen 
    - `node --check web/app.js && node --check web/i18n.js && node --check web/sw.js`
    - `python3 -m pyflakes *.py tests/*.py .claude/hooks/*.py` und `npx eslint -c .github/eslint.config.mjs web` – keine Funde
      (ESLint einmal je Sitzung: `npm install --no-save --no-package-lock eslint@9 globals`)
-   - Betroffene Tests mit beiden Python-Versionen, Ausgabe in eine Datei, nur das Ende lesen:
-     `T=$(python3 tests/affected.py); python3 -m pytest -q $T > /tmp/t.log 2>&1; tail -3 /tmp/t.log` und
-     `TZ=Europe/Berlin ~/py39/bin/python -m pytest -q $T > /tmp/t39.log 2>&1; tail -3 /tmp/t39.log` (beide nebeneinander in einem
-     Befehl mit `&` und `wait`). Fehlt `~/py39`: `uv python install 3.9 && uv venv -q -p 3.9 ~/py39 && VIRTUAL_ENV=~/py39 uv pip
-     install -q pytest cryptography`. Die volle Prüfung macht GitHub (`CLAUDE.md`, Sparsam arbeiten) – lokal alles nur vor einem
+   - Betroffene Tests, Ausgabe in eine Datei, nur das Ende lesen: `T=$(python3 tests/affected.py); python3 -m pytest -q $T > /tmp/t.log 2>&1; tail -3 /tmp/t.log`.
+     Python 3.9 nur für den Starter (Apples Python startet nur `kontor.py` bis `pyboot.ready()` und `pyboot.py`; Nutzer, 2026-11-23), wenn diese
+     berührt sind: `TZ=Europe/Berlin ~/py39/bin/python -m pytest -q tests/test_python.py`. Fehlt `~/py39`: `uv python install 3.9 && uv venv -q -p 3.9 ~/py39 &&
+     VIRTUAL_ENV=~/py39 uv pip install -q pytest cryptography`. Die volle Prüfung macht GitHub (`CLAUDE.md`, Sparsam arbeiten) – lokal alles nur vor einem
      großen Versionssprung.
    - Rechenlogik oder Buchungsregeln geändert: zusätzlich `KONTOR_FUZZ_SEEDS=400 python3 -m pytest -q tests/test_fuzz.py`
 2. **Mitpflegen** – GitHub ist das einzige Gedächtnis (`CLAUDE.md`, Arbeitsweise): ein neuer Chat kennt nur das Repo. Jede

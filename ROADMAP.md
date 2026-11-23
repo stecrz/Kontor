@@ -166,6 +166,16 @@ anhängen – nie löschen.
   Nutzer, 23.11.: kein Rückweg nötig – immer das aktuellste Python. (Der Knopf zurück zum Python des Macs entfällt; geladen wird das
   neueste stabile Python, mit dem Kontors Tests grün sind – heute 3.15.2; neuere bietet ein Update von Kontor an, geladen nach Klick.
   Bleibt: vor dem Umschalten geprüft und probegestartet, sonst wird nicht umgeschaltet; Python 3.9 als Startpython und in CI vorerst.)
+  Nutzer, 23.11. abends: keine Rücksicht mehr auf Python 3.9 – einfach halten, Kontor läuft im eigenen, aktuellen Python, das
+  aktuell bleibt. Apples Python (kommt mit den Kommandozeilen-Werkzeugen, die die Installation für git und Swift ohnehin braucht)
+  startet nur noch den Starter; nur `kontor.py` bis `pyboot.ready()` und `pyboot.py` bleiben 3.9-tauglich, getestet wird 3.9 nur
+  noch dafür (`tests/test_python.py`), alles andere nur im aktuellen Python. Eine Reserve im Python des Macs gibt es damit nicht mehr
+  verlässlich. (umgesetzt in 3.17.37)
+- **Ganzes Bild an den Assistenten** (Nutzer, 2026-11-23): Ein Bild im Chat – hochgeladen oder aus der Zwischenablage, kein
+  Unterschied – geht als ganzes Bild an das Modell, nicht nur sein erkannter Text (wie bei Claude oder ChatGPT). Einfach halten:
+  der Bildteil des Modells wird mit dem Modell geladen, kein eigener Schalter. Zahlen bleiben belegt aus der Texterkennung
+  (Entschieden: Zahlen nie aus einem Modell); das Bild hilft für das, was Text nicht hergibt (Aufbau, Grafik, Stempel, Fotos).
+  Umsetzung und Prüfungen: siehe Offen „Bilder für das Modell“.
 - **Fremdes sichtbar benannt** (Nutzer, 2026-11-23): Alles Fremde, das Kontor nutzt – das neue Python, llama.cpp, die Modelle und
   künftige Bibliotheken –, steht für den Nutzer mit Name, Version, Lizenz, Herkunft und „abgeschirmt ja/nein“ in einer Liste unter
   Einstellungen (Updates → „Verwendete Programme“) und kurz in der Hilfe; so angelegt, dass eine künftige Bibliothek nur einen
@@ -303,7 +313,7 @@ anhängen – nie löschen.
   Demo, nichts geht hinaus; dauert Stunden, der Mac ist so lange belegt). Kontor zeigt das Ergebnis neben dem des bisherigen
   Modells – Punkte je Gruppe, Dauer – und schlägt den Wechsel vor, wenn das neue besser ist; gewechselt wird nur nach Klick, nie
   von selbst. Empfehlung: erst entscheiden, wenn Läufe am Mac zeigen, wie gut der Prüfsatz Modelle unterscheidet.
-- Bilder für das Modell (Wunsch des Nutzers, 2026-11-23: ein Modell, das Bilder lesen kann, soll sie bekommen) – noch nicht
+- Bilder für das Modell (Wunsch des Nutzers, 2026-11-23: ein Modell, das Bilder lesen kann, soll sie bekommen; entschieden: Entschieden „Ganzes Bild an den Assistenten“) – noch nicht
   umgesetzt, Vorschlag: der Bildteil des Modells (zweite Datei „mmproj“, etwa 1 GB) wird wie die Modelldatei geladen und per
   SHA-256 geprüft (heute nur bei den Diktiermodellen), das Modell startet damit, und ein Bild aus dem Chat geht zusätzlich zum
   erkannten Text an das Modell – nur als Daten in der Anfrage, nur im Arbeitsspeicher, gewertet wie der Text eines Belegs. Kontor

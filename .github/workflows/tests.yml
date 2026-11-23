@@ -29,26 +29,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # four parts per Python, each on a machine of its own (one after the other ~25 min, side by side ~8): the pages; the
+        # four parts for Kontor's own Python, each on a machine of its own (Apple's 3.9: only the starter, user 2026-11-23) (one after the other ~25 min, side by side ~8): the pages; the
         # assistant and the tour; the calculations with their random cases (few fixed ones here -- nightly.yml runs 1000 and
         # new ones every night); everything else -- a new test file lands in "everything else" by itself, nothing is left out
         include:
-          - name: "Python 3.9 (wie auf dem Mac) · Chrome · Seiten"
-            python: "3.9"           # the Python of Apple's command line tools on the Mac (its Playwright needs an older image)
+          - name: "Python 3.9 (wie auf dem Mac) · nur der Starter"
+            python: "3.9"           # Apple's Python only starts the starter (kontor.py up to pyboot.ready(), pyboot.py): only that stays 3.9-able
             os: ubuntu-24.04
-            tests: tests/test_e2e.py
-          - name: "Python 3.9 (wie auf dem Mac) · Chrome · Assistent, Rundgang"
-            python: "3.9"
-            os: ubuntu-24.04
-            tests: tests/test_assistant.py tests/test_assistant_eval.py tests/test_memory.py tests/test_tour.py
-          - name: "Python 3.9 (wie auf dem Mac) · Chrome · Rechnen, Zufallsfälle"
-            python: "3.9"
-            os: ubuntu-24.04
-            tests: tests/test_fuzz.py tests/test_cashflow.py tests/test_scenarios.py tests/test_worlds.py tests/test_rule_worlds.py tests/test_rules.py tests/test_categories.py
-          - name: "Python 3.9 (wie auf dem Mac) · Chrome · Übrige"
-            python: "3.9"
-            os: ubuntu-24.04
-            tests: tests --ignore=tests/test_e2e.py --ignore=tests/test_assistant.py --ignore=tests/test_assistant_eval.py --ignore=tests/test_memory.py --ignore=tests/test_tour.py --ignore=tests/test_fuzz.py --ignore=tests/test_cashflow.py --ignore=tests/test_scenarios.py --ignore=tests/test_worlds.py --ignore=tests/test_rule_worlds.py --ignore=tests/test_rules.py --ignore=tests/test_categories.py
+            tests: tests/test_python.py
           - name: "Python 3.15 · Chrome + Safari-Engine · Seiten"
             python: "3.15"
             os: ubuntu-24.04          # not ubuntu-latest: on 26.04 the browser libraries come from a crawling mirror (17+ min)

@@ -1,5 +1,9 @@
 # Änderungen
 
+## 3.17.37 (2026-11-23 23:23)
+- Entwicklung: Python 3.9 nur noch für den Starter – der übrige Code läuft und wird getestet im eigenen, aktuellen Python
+- Entwicklung: Fahrplan – ganzes Bild an den Assistenten (Upload und Zwischenablage gleich) entschieden
+
 ## 3.17.36 (2026-11-23 23:21)
 - Entwicklung: Regeln schlanker – Sicherheit im Detail in docs/rules/security.md (je Abschnitt nur bei Bedarf gelesen), Tests in docs/rules/tests.md
 - Entwicklung: lokal nur betroffene Tests (tests/affected.py), volle Prüfung auf GitHub; auf GitHub in einem Schritt warten

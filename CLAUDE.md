@@ -1,8 +1,8 @@
 # Kontor – Regeln für Claude
 
-Kontor ist ein lokaler Dienst (Python ≥ 3.9, nur Standardbibliothek) mit Web-Oberfläche (`web/`), der auf den Daten von
+Kontor ist ein lokaler Dienst (Python, nur Standardbibliothek) mit Web-Oberfläche (`web/`), der auf den Daten von
 MoneyMoney (macOS) arbeitet. Er läuft als launchd-Dienst beim Nutzer und startet sich selbst neu, sobald sich `VERSION` ändert.
-Er läuft mit dem Python des Macs (Apple, heute 3.9) oder – nach Klick geladen – mit einem eigenen, aktuellen in seinem Ordner (siehe Sicherheit).
+Er läuft in seinem eigenen, aktuellen Python in seinem Ordner (bei der Installation geladen, siehe Sicherheit); Apples Python 3.9 startet nur den Starter – keine Rücksicht mehr auf 3.9 im übrigen Code (Nutzer, 2026-11-23).
 Der Nutzer will Ergebnisse, keine Zwischenstände: selbstständig arbeiten, fragen nur bei echten Produktentscheidungen.
 
 ## Ziel
@@ -33,8 +33,7 @@ Entschiedenes nie löschen, nach der Umsetzung „(umgesetzt in X.Y.Z)“ anhän
 - Leitplanken (`.claude/settings.json`): Sperren für Kontors Datenordner, MoneyMoneys Datenbank, Überweisungen und
   Force-Push; Sperren vor jedem Push (Versionskette, siehe Parallele Chats); Lagebild zu Beginn jeder Aufgabe (was die anderen
   Chats veröffentlicht haben); Erinnerung, wenn eine Änderung nicht abgeschlossen ist.
-- GitHub Actions testet jeden Push (rund 10 min) – Linux: Python 3.9 und neu, Chrome und Safari-Engine, Code-Checks, je
-  Python in vier Teilen nebeneinander (Seiten = `tests/test_e2e.py`; Assistent und Rundgang; Rechnen mit Zufallsfällen – je Push nur 12 feste, nachts 1000 und neue; alles andere – eine neue Testdatei landet dort von selbst); `--durations` nennt die langsamsten Tests; macOS: Apples Python, Swift-Helfer,
+- GitHub Actions testet jeden Push (rund 10 min) – Linux: Kontors eigenes Python, Chrome und Safari-Engine, Code-Checks, in vier Teilen nebeneinander, dazu Python 3.9 nur für den Starter (`tests/test_python.py`) (Seiten = `tests/test_e2e.py`; Assistent und Rundgang; Rechnen mit Zufallsfällen – je Push nur 12 feste, nachts 1000 und neue; alles andere – eine neue Testdatei landet dort von selbst); `--durations` nennt die langsamsten Tests; macOS: Apples Python, Swift-Helfer,
   Mac-App (bauen, Kontor darin laden, Mikrofon ohne Nachfrage; jede Seite in macOS' WebKit mit echtem Rechtsklick), Abschirmung der Modelle (`tests/test_mac_model.py`: kein Netz außer der eigenen Socket-Datei; echtes llama.cpp), MoneyMoney-Brücke, Installation, dazu Kontors eigenes Python (`tests/mac_python.py`: echt laden, falsche Prüfsumme, Quarantäne und Signatur, Selbsttest, Helfer in der Sandbox, Dienst als Kind des Starters, Neustart durch launchd, beschädigt → Apples Python, Deinstallieren, Update von der Version davor); Linux prüft denselben Ablauf mit dem echten Build für Linux. Nachts auf dem neuesten `main` die 1000 festen und so viele jede Nacht neue Zufallsfälle, wie in ~3 h passen, auf
   mehreren Rechnern nebeneinander (`nightly.yml`; rot: siehe Parallele Chats).
 
@@ -54,7 +53,7 @@ Jeder Schritt eines Chats liest den ganzen bisherigen Verlauf neu – Kosten wac
 - Tests: `python3 -m pytest -q tests` (alles, hier ~30 min – lokal nur vor einem großen Versionssprung; sonst `tests/affected.py`;
   Browser-Tests mit Playwright; `sqlcipher` nur für Testdatenbanken).
   Mehr Zufallsläufe: `KONTOR_FUZZ_SEEDS=400 python3 -m pytest -q tests/test_fuzz.py` (feste Fälle 0–399), dazu neue:
-  `KONTOR_FUZZ_RANDOM=<Anzahl>` oder `KONTOR_FUZZ_MINUTES=<Minuten>` (viele: mit Python 3.9); einen Fall aus einer
+  `KONTOR_FUZZ_RANDOM=<Anzahl>` oder `KONTOR_FUZZ_MINUTES=<Minuten>`; einen Fall aus einer
   Fehlermeldung („seed …“) wiederholen: `KONTOR_FUZZ_SEED=<Nummer>`.
 - Code-Checks: `python3 -m pyflakes *.py tests/*.py .claude/hooks/*.py` und `npx eslint -c .github/eslint.config.mjs web`
   (einmal `npm install --no-save --no-package-lock eslint@9 globals`).
@@ -70,7 +69,7 @@ Jeder Schritt eines Chats liest den ganzen bisherigen Verlauf neu – Kosten wac
    einmal) und `CHANGELOG.md` zusammen. Nachricht kurz, englisch: `X.Y.Z: <was sich ändert>`, darunter nur eine Zeile mit
    Modell und Link zur eigenen Sitzung (`Claude Opus 5.5: https://claude.ai/code/session_…`, beides aus den Hinweisen der
    Sitzung) – keine E-Mail, kein `Co-Authored-By`, keine Tags. Zweite Stelle nur bei erheblichen Änderungen und nur nach Rückfrage. Erste Stelle nie.
-3. **Erst geprüft, dann auf `main`:** vor dem Push lokal nur die betroffenen Tests (`tests/affected.py`, siehe Sparsam arbeiten),
+3. **Erst geprüft, dann auf `main`:** vor dem Push lokal nur die betroffenen Tests (`tests/affected.py`, siehe Sparsam arbeiten; mit Python 3.9 nur `tests/test_python.py`, der Starter),
    dann der eine Commit direkt auf `main`. Ein Push kommt ganz oder gar nicht an: eine Version
    erscheint nie halb. GitHub Actions danach für genau diesen Commit abwarten; rot: sofort als nächste Version beheben und dem
    Nutzer in einem Satz Bescheid geben.
@@ -97,7 +96,7 @@ GitHub. Ziel: jeder immer auf dem Stand, Konflikte klein, nichts doppelt.
   der es sieht, behebt es sofort als eigene Version mit „fix nightly“ in der Commit-Nachricht (`X.Y.Z: fix nightly: …`) – daran
   erkennen die anderen Chats, dass es erledigt ist, und lassen es liegen. Ein neuer Fall (Nummer ab 1.000.000) kommt nach der
   Korrektur in `FOUND` (`tests/fixtures.py`), damit jeder Lauf ihn prüft; vor dem Push mit `KONTOR_FUZZ_SEEDS=1000` und dem Fall
-  nachprüfen (beide Python-Versionen). Ein anderer Chat war schneller: die eigene Korrektur verwerfen, soweit sie dasselbe behebt.
+  nachprüfen (aktuelles Python). Ein anderer Chat war schneller: die eigene Korrektur verwerfen, soweit sie dasselbe behebt.
 - **Sperren vor jedem Push nach `main`** – zwei Ebenen, dieselbe Regel: der git-Hook `.githooks/pre-push` (schaltet das
   Lagebild ein; gegen den Stand auf GitHub: `VERSION` höher, keine Changelog-Zeile von `main` verloren) und
   `.claude/hooks/guard.py` vor jedem `git push` (holt `main` selbst: neuester `main` in der eigenen Arbeit, jeder Commit hebt
@@ -176,7 +175,7 @@ einer dort genannten Datei den Abschnitt lesen** (nur ihn, nicht die ganze Datei
 - **Claude als Recherche-Stufe** (`web_search.py (claude_*), web_reader.ask_claude`): Nur mit eigenem API-Schlüssel, immer mit Karte und Klick, Filter gegen eigene Daten, Tagesgrenze. → [docs/rules/security.md#claude-als-recherche-stufe](docs/rules/security.md#claude-als-recherche-stufe)
 - **Gedächtnis** (`memory.py, assistant.py (_notice, _rests_on)`): Notizen schreibt nur Kontor, nur aus den Worten des Nutzers (bzw. gekennzeichnet aus der Antwort), nie Zugangsdaten; Export/Import nur am Mac. → [docs/rules/security.md#gedaechtnis](docs/rules/security.md#gedaechtnis)
 - **Mac-App** (`mac_app.swift, mac_app.py`): Nur ein Fenster um 127.0.0.1, Mikrofon nur für Kontors Seite, keine eigenen Verbindungen. → [docs/rules/security.md#mac-app](docs/rules/security.md#mac-app)
-- **Eigenes Python** (`pyboot.py, pyruntime.py, pyselftest.py`): Fester, geprüfter Build, nur nach Klick; Starter läuft mit 3.9 und fällt nie aus. → [docs/rules/security.md#eigenes-python](docs/rules/security.md#eigenes-python)
+- **Eigenes Python** (`pyboot.py, pyruntime.py, pyselftest.py`): Fester, geprüfter Build, nur nach Klick; nur der Starter läuft mit 3.9 und fällt nie aus, der übrige Code nur im eigenen Python (Nutzer, 2026-11-23). → [docs/rules/security.md#eigenes-python](docs/rules/security.md#eigenes-python)
 - **Fremdes wird benannt** (`components.py, NOTICE`): Alles Fremde mit Version, Lizenz (nachgeschlagen, nie geraten), Herkunft. → [docs/rules/security.md#fremdes-wird-benannt](docs/rules/security.md#fremdes-wird-benannt)
 - **Updates** (`updates.py, update_guard.py`): Kontor nie von selbst installiert; die Prüfung vor dem Update meldet jeden neuen Weg nach außen – Aufrufe nach außen in kleinen, in `CHECKED` eingetragenen Funktionen (höchstens 70 Zeilen). → [docs/rules/security.md#updates](docs/rules/security.md#updates)
 - Keine Passwörter oder Zugangsdaten speichern, protokollieren oder zwischenspeichern; Datenordner verschlüsselt. Einzige Ausnahmen: der

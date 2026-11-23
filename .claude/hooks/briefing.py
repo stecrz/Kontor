@@ -128,7 +128,7 @@ def ci_summary(push, night, since, who):
                              "Version, Commit-Nachricht mit „fix nightly“ (`X.Y.Z: fix nightly: …`), damit die anderen Chats es "
                              "liegen lassen. Fehler: `gh run view %s --log-failed | tail -80`; der Fall („seed …“) einzeln: "
                              "`KONTOR_FUZZ_SEED=<Nummer>`, ein neuer (ab 1000000) danach in FOUND (tests/fixtures.py); nachprüfen: "
-                             "`KONTOR_FUZZ_SEEDS=1000 TZ=Europe/Berlin python3 -m pytest -q %s` (auch mit Python 3.9)"
+                             "`KONTOR_FUZZ_SEEDS=1000 TZ=Europe/Berlin python3 -m pytest -q %s`"
                              % (ver, "" if r["conclusion"] == "failure" else " (%s)" % r["conclusion"], r.get("id"), NIGHT_TESTS))
     if not parts:
         return "", ""
