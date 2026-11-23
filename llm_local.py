@@ -126,6 +126,12 @@ SPEECH: List[Dict[str, Any]] = [
     {"id": "qwen3-asr-0.6b", "name": "Qwen3-ASR 0.6B", "repo": "ggml-org/Qwen3-ASR-0.6B-GGUF", "pick": ["Q8_0", "Q6_K", "Q5_K_M", "Q4_K_M", "F16", "BF16"], "gb": 1, "note": "speech_small"},
 ]
 SPEECH_IDS = tuple(c["id"] for c in SPEECH)
+# A model that answers and reads pictures has its picture part beside it in its repository (a second file, "mmproj-...", about
+# 1 GB): loaded and checked with the model, started with it -- no switch of its own (user, 2026-11-23). Of its variants the
+# first there is (F16 runs on every Mac's graphics chip), else the smallest. A picture costs the model at most PICTURE_TOKENS
+# of its context (llama.cpp scales it down to that); figures never come from a picture -- they come from the text recognition.
+VISION_PICK = ("f16", "bf16", "q8_0", "f32")
+PICTURE_TOKENS = 1536
 # For finding by meaning (the assistant's memory): a small model that turns a text into a row of numbers, its embedding -- texts
 # about the same lie close together, whatever their words. It writes no text; llama.cpp runs it as a third process, on this Mac,
 # without a network, in the same sandbox. query: put before a question (the model is trained so); eos: after every text.
@@ -361,6 +367,16 @@ def whole(files: List[dict]) -> List[dict]:
     return out
 
 
+def vision_part(parts: List[dict]) -> Optional[dict]:
+    """The picture part of a model that answers, among the "mmproj-..." files of its repository (repo_files, projectors):
+    the first of VISION_PICK there is, else the smallest -- None where the repository has none (a model without pictures)."""
+    for p in VISION_PICK:
+        hits = [x for x in parts if re.search(r"(?<![a-z0-9])%s\.gguf$" % re.escape(p), x["file"].lower())]
+        if hits:
+            return min(hits, key=lambda x: (x["size"], x["file"]))
+    return min(parts, key=lambda x: (x["size"], x["file"])) if parts else None
+
+
 def resolve_pick(files: List[dict], pick: Any) -> Optional[dict]:
     """The file of a variant (e.g. UD-Q4_K_M) among a repository's model files; of several variants the first there is."""
     for p in ([pick] if isinstance(pick, str) else list(pick)):
@@ -532,6 +548,7 @@ class LocalAI:
         self.last_used = 0.0
         self.busy = False
         self.tps: Optional[float] = None
+        self.blind: Optional[tuple] = None             # (llama.cpp build, picture part) the model did not start with: started without it
         self._told: tuple = (0, {})                    # what the running model's chat template can do (caps), and which start told it
         self.tail: deque = deque(maxlen=40)
         self._conn: Optional[http.client.HTTPConnection] = None
@@ -581,13 +598,21 @@ class LocalAI:
                 names = part_names(m)
                 if not names or names[0] != m["file"] or not all(os.path.isfile(self.model_path(m["repo"], n)) for n in names):
                     continue
-            pj = m.get("mmproj") if isinstance(m.get("mmproj"), dict) else None       # a speech model's audio part: a second file beside it
-            if pj is not None:
-                if not FILE_RE.fullmatch(str(pj.get("file") or "")) or not os.path.isfile(self.model_path(m["repo"], pj["file"])):
-                    continue
+            pj = m.get("mmproj") if isinstance(m.get("mmproj"), dict) else None       # its audio or picture part: a second file beside it
+            if pj is not None and FILE_RE.fullmatch(str(pj.get("file") or "")) and os.path.isfile(self.model_path(m["repo"], pj["file"])):
                 out[str(mid)] = dict(m, path=path, mmproj_path=self.model_path(m["repo"], pj["file"]))
-            else:
-                out[str(mid)] = dict(m, path=path)
+            elif pj is None or str(mid) not in SPEECH_IDS:        # (a model that answers, its picture part gone: it answers without pictures;
+                out[str(mid)] = dict(m, path=path)              # a speech model hears nothing without its audio part)
+        return out
+
+    def _parts(self, repo: str, data: Optional[dict] = None) -> set:
+        """The second parts (file, SHA-256) the models of this repository on record have (data: models.json as it is about to
+        be saved) -- models of one repository share one file of it: it goes only with the last of them."""
+        out = set()
+        for m in ((self._load("models.json") if data is None else data).get("models") or {}).values():
+            pj = m.get("mmproj") if isinstance(m, dict) and isinstance(m.get("mmproj"), dict) else None
+            if pj and m.get("repo") == repo:
+                out.add((str(pj.get("file") or ""), str(pj.get("sha256") or "")))
         return out
 
     def model_path(self, repo: str, file: str) -> str:
@@ -612,31 +637,42 @@ class LocalAI:
                 return dict(a, tag=str(rel.get("tag_name") or "")[:40])
         raise ValueError(tr("s_ki_kein_build") % asset_tag())
 
-    def repo_files(self, repo: str, projectors: bool = False) -> List[dict]:
-        """The models (GGUF) of a repository at Hugging Face: [{"file", "path", "size", "sha256"}] -- "path": where the file
-        lies there (at the top or one folder down), "file": its name, under which it is kept on this Mac. A model in several
-        files ("...-00001-of-00003.gguf") is one entry with its "parts" (see whole).
-        projectors: instead the audio/vision parts that belong to them ("mmproj-...", at the top)."""
+    def listing(self, repo: str) -> List[Any]:
+        """What Hugging Face lists of a repository (its files and folders, as it says them -- repo_files reads them)."""
         if not REPO_RE.fullmatch(repo or ""):
             raise ValueError(tr("s_ki_repo_ungueltig"))
-        out: Dict[str, dict] = {}
+        out: List[Any] = []
         url: Optional[str] = "https://huggingface.co/api/models/%s/tree/main?recursive=true" % quote(repo, safe="/")
         for _ in range(6):                          # a few pages at most
             if not url:
                 break
             data, headers = _json_get(url, HF)
-            for f in data if isinstance(data, list) else []:
-                path = str(f.get("path") or "")
-                name = path.rsplit("/", 1)[-1]
-                if f.get("type") != "file" or not PATH_RE.fullmatch(path) or name.lower().startswith(NOT_MODELS):
-                    continue
-                if name.lower().startswith("mmproj") != projectors or (projectors and name != path):
-                    continue
-                lfs = f.get("lfs") if isinstance(f.get("lfs"), dict) else {}
-                sha = str(lfs.get("oid") or "").lower()
-                out.setdefault(name, {"file": name, "path": path, "size": int(lfs.get("size") or f.get("size") or 0), "sha256": sha if SHA_RE.fullmatch(sha) else ""})
+            out += data if isinstance(data, list) else []
             m = re.search(r'<([^>]+)>;\s*rel="next"', str(headers.get("Link") or ""))
             url = m.group(1) if m and host_allowed(m.group(1), HF) else None
+        return out
+
+    def repo_files(self, repo: str, projectors: bool = False, listed: Optional[List[Any]] = None) -> List[dict]:
+        """The models (GGUF) of a repository at Hugging Face: [{"file", "path", "size", "sha256"}] -- "path": where the file
+        lies there (at the top or one folder down), "file": its name, under which it is kept on this Mac. A model in several
+        files ("...-00001-of-00003.gguf") is one entry with its "parts" (see whole).
+        projectors: instead the audio/vision parts that belong to them ("mmproj-...", at the top). listed: what listing gave
+        (not asked again)."""
+        if not REPO_RE.fullmatch(repo or ""):
+            raise ValueError(tr("s_ki_repo_ungueltig"))
+        out: Dict[str, dict] = {}
+        for f in self.listing(repo) if listed is None else listed:
+            if not isinstance(f, dict):
+                continue
+            path = str(f.get("path") or "")
+            name = path.rsplit("/", 1)[-1]
+            if f.get("type") != "file" or not PATH_RE.fullmatch(path) or name.lower().startswith(NOT_MODELS):
+                continue
+            if name.lower().startswith("mmproj") != projectors or (projectors and name != path):
+                continue
+            lfs = f.get("lfs") if isinstance(f.get("lfs"), dict) else {}
+            sha = str(lfs.get("oid") or "").lower()
+            out.setdefault(name, {"file": name, "path": path, "size": int(lfs.get("size") or f.get("size") or 0), "sha256": sha if SHA_RE.fullmatch(sha) else ""})
         return sorted(whole(list(out.values())), key=lambda f: f["size"])
 
     def check(self) -> dict:
@@ -651,10 +687,16 @@ class LocalAI:
         cat = {c["id"]: c for c in CATALOG + SPEECH + EMBED}
         for mid, m in self.models().items():
             try:
-                files = self.repo_files(m["repo"])
+                listed = self.listing(m["repo"])
+                files = self.repo_files(m["repo"], listed=listed)
                 f = resolve_pick(files, cat[mid]["pick"]) if mid in cat else next((x for x in files if x["file"] == m["file"]), None)
                 if f and f["sha256"] and m.get("sha256"):
                     news["models"][mid] = {"newer": f["sha256"] != m["sha256"], "size": f["size"]}
+                    if not news["models"][mid]["newer"] and mid not in SPEECH_IDS and mid not in EMBED_IDS:     # the same model: is its picture part new
+                        part = vision_part([x for x in self.repo_files(m["repo"], True, listed) if SHA_RE.fullmatch(x["sha256"] or "")])     # (or one there is, where it has none yet)?
+                        had = m.get("mmproj") if isinstance(m.get("mmproj"), dict) else {}
+                        if part and ((part["file"], part["sha256"]) != (had.get("file"), had.get("sha256")) or "mmproj_path" not in m):
+                            news["models"][mid] = {"newer": True, "size": part["size"]}
             except Exception as e:
                 news.setdefault("error", str(e)[:300])
         self.news = news
@@ -901,31 +943,44 @@ class LocalAI:
             repo, name = entry["repo"], entry["name"]
 
         def work(job: dict) -> None:
-            files = self.repo_files(repo)
+            listed = self.listing(repo)
+            files = self.repo_files(repo, listed=listed)
             f = resolve_pick(files, entry["pick"]) if entry else next((x for x in files if x["file"] == file), None)
             if f is None:
                 raise ValueError(tr("s_ki_datei_fehlt"))
             address = lambda name_: "https://huggingface.co/%s/resolve/main/%s?download=true" % (quote(repo, safe="/"), quote(name_))
             several = f.get("parts") or []                 # a model in several files: each checked, all put in place together
             self._begun(model_id, {"repo": repo, "files": [x["file"] for x in several] or [f["file"]], "size": f["size"]})
+            if not all(SHA_RE.fullmatch(x["sha256"] or "") for x in several or [f]):     # nothing loaded -- not even its second part -- that cannot be checked
+                raise ValueError(tr("s_ki_keine_pruefsumme"))
             part = None
+            before = ((self._load("models.json").get("models") or {}).get(model_id) or {})
             if entry is not None and entry["id"] in SPEECH_IDS:     # a speech model: its audio part first (small), then the model
-                parts = self.repo_files(repo, projectors=True)
+                parts = self.repo_files(repo, True, listed)
                 tag = f["file"].rsplit("-", 1)[-1].lower()
                 part = next((x for x in parts if x["file"].lower().endswith(tag)), None) or (min(parts, key=lambda x: x["size"]) if parts else None)
                 if part is None:
                     raise ValueError(tr("s_ki_datei_fehlt"))
-                part = dict(part, sha256=self._fetch(address(part["file"]), HF, self.model_path(repo, part["file"]), part["size"], part["sha256"], job))
+            elif model_id not in EMBED_IDS:                         # a model that answers: its picture part, where its repository has one
+                part = vision_part([x for x in self.repo_files(repo, True, listed) if SHA_RE.fullmatch(x["sha256"] or "")])     # (one that cannot be checked: the model alone)
+            if part is not None:
+                at = self.model_path(repo, part["file"])
+                if (part["file"], part["sha256"]) in self._parts(repo) and os.path.isfile(at):
+                    part = dict(part)                               # (the same, here already -- of this model or another of its repository)
+                else:
+                    part = dict(part, sha256=self._fetch(address(part["file"]), HF, at, part["size"], part["sha256"], job))
             dest = self.model_path(repo, f["file"])
             staged: List[str] = []
             try:
-                if several:
+                if not several and f["sha256"] and before.get("sha256") == f["sha256"] and before.get("file") == f["file"] \
+                        and not before.get("replacing") and (job.update(done=0, total=f["size"]) or self._is(dest, f, job)):
+                    sha = f["sha256"]                               # the model is here already and right (only its picture part was new): not loaded again
+                elif several:
                     sha, staged = f["sha256"], self._fetch_all(repo, f, address, job)
                 else:
                     sha = self._fetch(address(f["path"]), HF, dest, f["size"], f["sha256"], job)
             except BaseException:
-                known = ((self._load("models.json").get("models") or {}).get(model_id) or {}).get("mmproj") or {}
-                if part and known.get("file") != part["file"]:      # the audio part alone is of no use: it goes again (the model's
+                if part and part["file"] not in {f for f, _ in self._parts(repo)}:      # the audio or picture part alone is of no use: it goes again (the model's
                     try:                                            # own partial file stays, the download goes on from there)
                         os.remove(self.model_path(repo, part["file"]))
                     except OSError:
@@ -949,7 +1004,8 @@ class LocalAI:
             self._save("models.json", data)
             now = set(x["file"] for x in several) or {f["file"]}
             gone = [n for n in (part_names(old) or [old.get("file")]) if n not in now]
-            gone.append((old.get("mmproj") or {}).get("file") if part and (old.get("mmproj") or {}).get("file") != part["file"] else None)
+            old_part = (old.get("mmproj") or {}).get("file")
+            gone.append(old_part if old_part != (part or {}).get("file") and old_part not in {f for f, _ in self._parts(repo)} else None)     # (unless another model uses it)
             for name_ in gone:                             # the variant got other file names: the old files go
                 if name_ and FILE_RE.fullmatch(str(name_)):
                     try:
@@ -1067,6 +1123,7 @@ class LocalAI:
         folders = set()
         if m and REPO_RE.fullmatch(str(m.get("repo") or "")) and FILE_RE.fullmatch(str(m.get("file") or "")):
             pj = str((m.get("mmproj") or {}).get("file") or "") if isinstance(m.get("mmproj"), dict) else ""
+            pj = "" if pj in {f for f, _ in self._parts(m["repo"], data)} else pj       # (a part another model of the repository uses stays)
             for n in (part_names(m) or [m["file"]]) + ([pj] if FILE_RE.fullmatch(pj) else []):
                 path = self.model_path(m["repo"], n)
                 self._drop(path, path + ".part", path + STAGED, path + STAGED + ".part")
@@ -1181,9 +1238,9 @@ class LocalAI:
         self._save("runtime.json", kept)
         return self.runtime()
 
-    def ensure(self, model_id: str, ctx: int, sandbox: str = "strict", cancel: Optional[threading.Event] = None, fallback: bool = True) -> None:
+    def ensure(self, model_id: str, ctx: int, sandbox: str = "strict", cancel: Optional[threading.Event] = None, fallback: bool = True, eyes: bool = True) -> None:
         """The model runs and is ready (started if needed; another model, context size or sandbox: started anew).
-        sandbox: "strict" | "basic" | "off" -- exactly that, or no start at all. A new build that does not start it: _fall_back."""
+        sandbox: "strict" | "basic" | "off" -- exactly that, or no start at all. A new build that does not start it: _fall_back (ended at once with its picture part, also there: then _without_part)."""
         sandbox = sandbox if sandbox in SANDBOXES else "strict"
         with self.lock:
             seal = "" if sandbox == "off" or (not self._can_seal() and sys.platform != "darwin") else sandbox     # (not a Mac: there is no sandbox-exec)
@@ -1209,7 +1266,7 @@ class LocalAI:
                 raise ModelError(tr("s_ki_sandbox_fehlt"))
             self.state, self.error, self.model, self.ctx, self.file = "starting", "", model_id, ctx, (m["path"], str(m.get("sha256") or ""))
             self.tail.clear()
-            extra = ["--mmproj", m["mmproj_path"]] if m.get("mmproj_path") else None
+            extra = self._part_args(rt, m, eyes)            # (a model that answers: its picture part, see eyes)
             if self.role == "embed":                     # the model for finding by meaning: embeddings only, each text in one piece
                 flags = rt.get("flags") or []
                 if "--embedding" not in flags or "--pooling" not in flags:
@@ -1235,22 +1292,46 @@ class LocalAI:
                 if h:
                     self.state, self.since, self.last_used = "ready", time.time(), time.time()
                     log.info("Assistant: model %s ready after %.0f s (sandbox: %s)", model_id, time.time() - t0, self.sealed or "off")
-                    if self.role == "server":                     # the model that answers decides whether a new build holds
+                    if self.role == "server" and eyes:            # the model that answers decides whether a new build holds (not one started blind)
                         self._proven(rt["path"])
                     return
                 reached = reached or h is False                  # it answers "still loading": Kontor reaches it
                 if time.time() - t0 > (START_SECONDS if reached else REACH_SECONDS):
                     break
                 time.sleep(0.3)
-            why = " | ".join(list(self.tail)[-4:])[:500] or "llama-server"
+            why, ended = " | ".join(list(self.tail)[-4:])[:500] or "llama-server", self.proc.poll() is not None      # ended: by itself, not never ready in time
             self._kill()
             self.state, self.sealed = "error", ""
             # never reached inside the sandbox: said so (the rules are yours to change, not tried weaker by itself)
             self.error = (tr("s_ki_sandbox_start") % why) if seal and not reached else why
             log.warning("Assistant: model did not start (sandbox: %s): %s", seal or "off", why[:300])
-            if fallback and self._fall_back(model_id, ctx, sandbox, cancel, self.error):
+            if (fallback and self._fall_back(model_id, ctx, sandbox, cancel, self.error)) or (extra and ended and fallback and self.role == "server" and self._without_part(rt, m, model_id, ctx, sandbox, cancel)):
                 return
             raise ModelError(tr("s_ki_startet_nicht") % self.error)
+
+    def _part_args(self, rt: dict, m: dict, eyes: bool) -> Optional[List[str]]:
+        """ensure: what starts a model with its second part -- a speech model always with its audio part; a model that answers
+        with its picture part, unless it is not to see (eyes) or did not start with it under this build (blind)."""
+        if not m.get("mmproj_path") or (self.role == "server" and (not eyes or self.blind == (rt.get("tag"), m["mmproj_path"]))):
+            return None
+        extra = ["--mmproj", m["mmproj_path"]]
+        if self.role == "server" and "--image-max-tokens" in (rt.get("flags") or []):
+            extra += ["--image-max-tokens", str(PICTURE_TOKENS)]       # a large photo scaled down to this, not the whole context
+        return extra
+
+    def _without_part(self, rt: dict, m: dict, model_id: str, ctx: int, sandbox: str, cancel: Optional[threading.Event]) -> bool:
+        """ensure (in self.lock): the model ended at once with its picture part, and the build before (if there was one) did
+        not start it either -- it starts without it (it answers, sees no pictures; so until Kontor restarts or another build
+        of llama.cpp comes; such a start proves no build). True: it runs; does it not start that way either, the part was
+        not the reason (its error is raised)."""
+        log.warning("Assistant: model %s starts without its picture part", model_id)
+        self.blind = (self.runtime().get("tag"), m["mmproj_path"])
+        try:
+            self.ensure(model_id, ctx, sandbox, cancel, False, eyes=False)
+        except ModelError:
+            self.blind = None                             # (tried with it again next time)
+            raise
+        return True
 
     def _fall_back(self, model_id: str, ctx: int, sandbox: str, cancel: Optional[threading.Event], why: str) -> bool:
         """ensure: a newly installed build of llama.cpp did not start the model that answers -- the build before it tries (in
@@ -1502,16 +1583,17 @@ class LocalAI:
     def status(self) -> dict:
         rt, have, news, begun = self.runtime(), self.models(), self.news, self.begun()
         ram = physical_ram()
+        size = lambda m: int(m["size"]) + (int((m.get("mmproj") or {}).get("size") or 0) if m.get("mmproj_path") else 0)     # with its audio or picture part
         models = []
         for c in CATALOG:
             m, fits = have.get(c["id"]), fit(c["gb"], c["ram"], ram)
             models.append({"id": c["id"], "name": c["name"], "repo": c["repo"], "note": c["note"], "gb": c["gb"], "ram": c["ram"], "fit": fits,
                            "kind": c["kind"], "maker": c["maker"], "licence": c["licence"], "needs": least_ram(c["gb"]) if fits == "big" else 0,
-                           "installed": bool(m), "size": m["size"] if m else 0, "file": m["file"] if m else "", "custom": False,
+                           "installed": bool(m), "size": size(m) if m else 0, "file": m["file"] if m else "", "custom": False,
                            "partial": (begun.get(c["id"]) or {}).get("bytes", 0),
                            "newer": bool(((news.get("models") or {}).get(c["id"]) or {}).get("newer"))})
         speech = [{"id": c["id"], "name": c["name"], "repo": c["repo"], "note": c["note"], "gb": c["gb"], "installed": c["id"] in have,
-                   "size": (have[c["id"]]["size"] + int((have[c["id"]].get("mmproj") or {}).get("size") or 0)) if c["id"] in have else 0,
+                   "size": size(have[c["id"]]) if c["id"] in have else 0,
                    "file": have[c["id"]]["file"] if c["id"] in have else "", "newer": bool(((news.get("models") or {}).get(c["id"]) or {}).get("newer"))} for c in SPEECH]
         embed = [{"id": c["id"], "name": c["name"], "repo": c["repo"], "note": c["note"], "gb": c["gb"], "installed": c["id"] in have,
                   "size": have[c["id"]]["size"] if c["id"] in have else 0, "file": have[c["id"]]["file"] if c["id"] in have else "",
@@ -1521,7 +1603,7 @@ class LocalAI:
                 continue
             if not any(c["id"] == mid for c in CATALOG):
                 models.append({"id": mid, "name": m.get("name") or m["file"], "repo": m["repo"], "note": "", "gb": 0, "ram": 0, "fit": fit(m["size"] / 1e9, None, ram),
-                               "kind": "", "maker": "", "licence": "", "needs": 0, "installed": True, "size": m["size"], "file": m["file"], "custom": True,
+                               "kind": "", "maker": "", "licence": "", "needs": 0, "installed": True, "size": size(m), "file": m["file"], "custom": True,
                                "partial": (begun.get(mid) or {}).get("bytes", 0),
                                "newer": bool(((news.get("models") or {}).get(mid) or {}).get("newer"))})
         for mid, b in begun.items():                        # a model of your own whose download did not arrive whole: to go on with or to remove

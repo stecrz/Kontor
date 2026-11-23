@@ -175,7 +175,7 @@ anhängen – nie löschen.
   Unterschied – geht als ganzes Bild an das Modell, nicht nur sein erkannter Text (wie bei Claude oder ChatGPT). Einfach halten:
   der Bildteil des Modells wird mit dem Modell geladen, kein eigener Schalter. Zahlen bleiben belegt aus der Texterkennung
   (Entschieden: Zahlen nie aus einem Modell); das Bild hilft für das, was Text nicht hergibt (Aufbau, Grafik, Stempel, Fotos).
-  Umsetzung und Prüfungen: siehe Offen „Bilder für das Modell“.
+  Umsetzung und Prüfungen: siehe Offen „Bilder für das Modell“. (umgesetzt in 3.17.40)
 - **Fremdes sichtbar benannt** (Nutzer, 2026-11-23): Alles Fremde, das Kontor nutzt – das neue Python, llama.cpp, die Modelle und
   künftige Bibliotheken –, steht für den Nutzer mit Name, Version, Lizenz, Herkunft und „abgeschirmt ja/nein“ in einer Liste unter
   Einstellungen (Updates → „Verwendete Programme“) und kurz in der Hilfe; so angelegt, dass eine künftige Bibliothek nur einen
@@ -322,6 +322,10 @@ anhängen – nie löschen.
   Grafik) – Empfehlung: ja; den Bildteil mit dem Modell laden oder mit eigenem Klick (etwa 1 GB mehr Arbeitsspeicher) –
   Empfehlung: eigener Klick; PDF-Seiten als Bild erst danach. Vorher am Mac prüfen: zu Qwen3.8 27B gibt es laut Modell-Recherche
   offene Meldungen über Abstürze beim Laden eines Bildes.
+  (umgesetzt in 3.17.40, wie entschieden: Bildteil mit dem Modell, Zahlen nur aus der Texterkennung; ein Bild nur mit seiner Frage,
+  PNG/JPEG/GIF an den ersten Bytes erkannt, höchstens 4 und ein Viertel des Kontexts. Abgefangen: endet das Modell beim Start mit dem
+  Bildteil, startet es ohne; fällt es an einem Bild um, geht die Antwort aus dem Text weiter – beides steht unter der Antwort.
+  Offen: PDF-Seiten als Bild; HEIC wird nicht als Bild gegeben (llama.cpp liest es nicht); am Mac prüfen, wie Qwen3.8 27B mit Bildern läuft.)
 - Modelldienst auf einem zweiten eigenen Rechner (KI-Plattform: „später nur eine andere Auswahl“) – vorbereitet, nicht gebaut:
   Kontor spricht das Modell an genau einer Stelle an (`LocalAI._connect`, OpenAIs Formate; heute fest der Kindprozess auf diesem
   Mac über seine Socket-Datei). Einschalten wäre ein neuer Weg nach außen und braucht vorher, alles zusammen: nur im eigenen

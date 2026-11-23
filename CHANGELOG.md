@@ -1,5 +1,11 @@
 # Änderungen
 
+## 3.17.40 (2026-11-24 00:26)
+- KI-Assistent: Bilder (hochgeladen oder eingefügt) gehen als Ganzes an das Modell – für Aufbau, Stempel, Grafik; Zahlen weiter nur aus der Texterkennung
+- KI-Assistent: Bildteil des Modells (etwa 1 GB) kommt mit dem Modell; bei geladenen Modellen per Aktualisieren, ohne das Modell neu zu laden
+- KI-Assistent: startet ein Modell mit Bildteil nicht oder fällt es an einem Bild um, geht es ohne Bild weiter – Hinweis unter der Antwort
+- Einstellungen: „Verwendete Programme“ nennt den Bildteil beim Modell
+
 ## 3.17.39 (2026-11-24 00:30)
 - Cashflow-Positionen: „Was Kontor von deinen Kategorien braucht“ immer eingeklappt, auch in der Einrichtung.
 

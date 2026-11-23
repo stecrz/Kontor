@@ -112,11 +112,14 @@ class Net:
         self.no_builds = {"tag_name": "v0.7.0", "draft": False, "prerelease": False, "assets": [{"name": "nightly-tag.txt", "browser_download_url": "https://github.com/x/nightly-tag.txt", "size": 6}]}
         self.older = {"tag_name": "b4000", "draft": False, "prerelease": True, "assets": [dict(self.release["assets"][1], name="llama-b4000-bin-%s.tar.gz" % L.asset_tag())]}
         self.model = b"GGUF" + bytes(range(256)) * 40
+        self.eyes = b"GGUF-eyes" + bytes(range(60)) * 3          # the model's picture part (loaded with it)
         self.tree = [{"type": "file", "path": "README.md", "size": 10},
-                     {"type": "file", "path": "mmproj-F16.gguf", "size": 5, "lfs": {"oid": "0" * 64, "size": 5}},
+                     {"type": "file", "path": "mmproj-F16.gguf", "size": len(self.eyes), "lfs": {"oid": hashlib.sha256(self.eyes).hexdigest(), "size": len(self.eyes)}},
                      {"type": "file", "path": "Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf", "size": 9, "lfs": {"oid": "1" * 64, "size": 9}},
                      {"type": "file", "path": QWEN, "size": len(self.model), "lfs": {"oid": hashlib.sha256(self.model).hexdigest(), "size": len(self.model)}}]
         self.files["https://huggingface.co/unsloth/Qwen3.6-35B-A3B-GGUF/resolve/main/" + QWEN] = self.model
+        self.files["https://huggingface.co/unsloth/Qwen3.6-35B-A3B-GGUF/resolve/main/mmproj-F16.gguf"] = self.eyes
+        self.tree.append({"type": "file", "path": "mmproj-F32.gguf", "size": 2 * len(self.eyes), "lfs": {"oid": "6" * 64, "size": 2 * len(self.eyes)}})     # (a larger variant: not taken)
         # a speech model: two files (the model and its audio part), in several variants
         self.speech, self.ears = b"GGUF-speech" + bytes(range(200)) * 9, b"GGUF-ears" + bytes(range(100)) * 5
         lfs = lambda data: {"oid": hashlib.sha256(data).hexdigest(), "size": len(data)}
@@ -647,6 +650,76 @@ class Models(_Open):
         super().tearDown()
         shutil.rmtree(self.dir, ignore_errors=True)
 
+    def test_picture_part_with_the_model(self):
+        """A model that answers comes with its picture part (the F16 one; checked by its SHA-256). One loaded before Kontor
+        knew of it: the look for newer versions names it, and loading it again fetches only the part -- the model's own file
+        is read and checked, not loaded again. A repository without one: the model alone; a speech model's audio part stays as it was."""
+        self.ai.download_model("qwen3.6-35b-a3b"); self.assertEqual(wait_job(self.ai)["state"], "done", self.ai.job)
+        got = [u.split("?")[0].rsplit("/", 1)[-1] for u, _ in self.net.calls if "/resolve/" in u]
+        self.assertEqual(got, ["mmproj-F16.gguf", QWEN])
+        m = self.ai.models()["qwen3.6-35b-a3b"]
+        self.assertEqual((m["mmproj"], open(m["mmproj_path"], "rb").read()), ({"file": "mmproj-F16.gguf", "size": len(self.net.eyes), "sha256": hashlib.sha256(self.net.eyes).hexdigest()}, self.net.eyes))
+        self.ai.check(); self.assertEqual(self.ai.news["models"]["qwen3.6-35b-a3b"]["newer"], False)
+        # as loaded before 3.17.40: without it
+        data = json.load(open(os.path.join(self.dir, "assistant", "models.json")))
+        del data["models"]["qwen3.6-35b-a3b"]["mmproj"]; os.remove(m["mmproj_path"])
+        json.dump(data, open(os.path.join(self.dir, "assistant", "models.json"), "w"))
+        self.assertNotIn("mmproj_path", self.ai.models()["qwen3.6-35b-a3b"])
+        self.ai.check(); self.assertEqual(self.ai.news["models"]["qwen3.6-35b-a3b"], {"newer": True, "size": len(self.net.eyes)})
+        self.net.calls.clear()
+        self.ai.download_model("qwen3.6-35b-a3b"); self.assertEqual(wait_job(self.ai)["state"], "done", self.ai.job)
+        self.assertEqual([u.split("?")[0].rsplit("/", 1)[-1] for u, _ in self.net.calls if "/resolve/" in u], ["mmproj-F16.gguf"])
+        self.assertEqual(sum(1 for u, _ in self.net.calls if "/tree/" in u), 1)              # the repository asked once
+        self.assertIn("mmproj_path", self.ai.models()["qwen3.6-35b-a3b"])
+        # the model's own file damaged meanwhile: loaded again (never kept unchecked)
+        with open(m["path"], "r+b") as fh:
+            fh.write(b"XXXX")
+        self.net.calls.clear()
+        self.ai.download_model("qwen3.6-35b-a3b"); self.assertEqual(wait_job(self.ai)["state"], "done", self.ai.job)
+        self.assertEqual([u.split("?")[0].rsplit("/", 1)[-1] for u, _ in self.net.calls if "/resolve/" in u], [QWEN])
+        self.assertEqual(open(m["path"], "rb").read(), self.net.model)
+        # the repository has no picture part any more: the model alone, the old part goes
+        self.net.tree[:] = [x for x in self.net.tree if not x["path"].startswith("mmproj")]
+        self.ai.download_model("qwen3.6-35b-a3b"); self.assertEqual(wait_job(self.ai)["state"], "done", self.ai.job)
+        self.assertNotIn("mmproj", self.ai.models()["qwen3.6-35b-a3b"]); self.assertFalse(os.path.exists(m["mmproj_path"]))
+        self.ai.check(); self.assertFalse(self.ai.news["models"]["qwen3.6-35b-a3b"]["newer"])
+        # a picture part without a SHA-256: the model alone (as before), nothing unchecked loaded
+        self.net.tree.append({"type": "file", "path": "mmproj-F16.gguf", "size": len(self.net.eyes), "lfs": {"oid": "", "size": len(self.net.eyes)}})
+        self.net.calls.clear()
+        self.ai.download_model("qwen3.6-35b-a3b"); self.assertEqual(wait_job(self.ai)["state"], "done", self.ai.job)
+        self.assertNotIn("mmproj", self.ai.models()["qwen3.6-35b-a3b"]); self.assertNotIn("mmproj", " ".join(u for u, _ in self.net.calls if "/resolve/" in u))
+        self.ai.check(); self.assertFalse(self.ai.news["models"]["qwen3.6-35b-a3b"]["newer"])
+        pick = lambda *names: (L.vision_part([{"file": n, "size": z} for n, z in names]) or {}).get("file")
+        self.assertEqual([pick(("mmproj-BF16.gguf", 2), ("mmproj-F16.gguf", 2), ("mmproj-F32.gguf", 4)), pick(("mmproj-BF16.gguf", 2), ("mmproj-Q8_0.gguf", 1)),
+                          pick(("mmproj-x-q4_k.gguf", 3), ("mmproj-y-q5.gguf", 2)), pick()],
+                         ["mmproj-F16.gguf", "mmproj-BF16.gguf", "mmproj-y-q5.gguf", None])
+
+    def test_two_models_share_one_picture_part(self):
+        """Two variants of one repository share its picture part: loaded once, it goes only with the last of them."""
+        small = b"GGUF-small" + bytes(range(90)) * 4
+        self.net.tree.append({"type": "file", "path": "Qwen3.6-35B-A3B-UD-IQ4_XS.gguf", "size": len(small), "lfs": {"oid": hashlib.sha256(small).hexdigest(), "size": len(small)}})
+        self.net.files["https://huggingface.co/unsloth/Qwen3.6-35B-A3B-GGUF/resolve/main/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf"] = small
+        self.ai.download_model("qwen3.6-35b-a3b"); self.assertEqual(wait_job(self.ai)["state"], "done", self.ai.job)
+        self.net.calls.clear()
+        self.ai.download_model("qwen3.6-35b-a3b-compact"); self.assertEqual(wait_job(self.ai)["state"], "done", self.ai.job)
+        self.assertEqual([u.split("?")[0].rsplit("/", 1)[-1] for u, _ in self.net.calls if "/resolve/" in u], ["Qwen3.6-35B-A3B-UD-IQ4_XS.gguf"])
+        have = self.ai.models()
+        part = have["qwen3.6-35b-a3b"]["mmproj_path"]
+        self.assertEqual(have["qwen3.6-35b-a3b-compact"]["mmproj_path"], part)
+        self.ai.delete_model("qwen3.6-35b-a3b-compact")
+        self.assertTrue(os.path.isfile(part)); self.assertIn("mmproj_path", self.ai.models()["qwen3.6-35b-a3b"])
+        # a cancelled download of the other one leaves it too
+        def slow(url, kind, headers=None, timeout=30):
+            if url.split("?")[0].endswith("UD-IQ4_XS.gguf"):
+                raise L.Cancelled()
+            return self.net.open(url, kind, headers, timeout)
+        L._open = slow
+        self.ai.download_model("qwen3.6-35b-a3b-compact"); wait_job(self.ai)
+        L._open = self.net.open
+        self.assertTrue(os.path.isfile(part)); self.assertIn("mmproj_path", self.ai.models()["qwen3.6-35b-a3b"])
+        self.ai.delete_model("qwen3.6-35b-a3b")
+        self.assertFalse(os.path.exists(part))
+
     def test_download_check_delete(self):
         files = self.ai.repo_files("unsloth/Qwen3.6-35B-A3B-GGUF")
         self.assertEqual([f["file"] for f in files], ["Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf", QWEN])       # model files only, no projector, no README
@@ -899,13 +972,15 @@ class Several(_Open):
         file = lambda path, data: {"type": "file", "path": path, "size": len(data), "lfs": self.lfs(data)}
         self.net.trees[FLASH] = [
             {"type": "file", "path": "README.md", "size": 10}, {"type": "directory", "path": "UD-IQ4_XS", "size": 0},
-            file("imatrix_unsloth.gguf", b"imatrix"), file("dspark-Qwen3.8-Flash-Next-Q8_0.gguf", b"drafter"), file("mmproj-F16.gguf", b"eyes"),
+            file("imatrix_unsloth.gguf", b"imatrix"), file("dspark-Qwen3.8-Flash-Next-Q8_0.gguf", b"drafter"),
             file("MTP/mtp-Qwen3.8-Flash-Next-shared-Q8_0.gguf", b"mtp"), file("engram/Qwen3.8-Flash-Next-engram-Q8_0.gguf_file", b"table"),
             file("deep/er/Qwen3.8-Flash-Next-Q8_0.gguf", b"too deep"), file("UD-Q2_K_XL/Qwen3.8-Flash-Next-UD-Q2_K_XL-00001-of-00002.gguf", b"half"),
             file("UD-Q3_K_XL/Qwen3.8-Flash-Next-UD-Q3_K_XL-00002-of-00002.gguf", b"q3-2"), file("UD-Q3_K_XL/Qwen3.8-Flash-Next-UD-Q3_K_XL-00001-of-00002.gguf", b"q3-1"),
         ] + [file("UD-IQ4_XS/" + n, d) for n, d in zip(self.names, self.parts)]
         for n, d in zip(self.names, self.parts):
             self.net.files[self.url(n)] = d
+        self.net.files["https://huggingface.co/%s/resolve/main/mmproj-F16.gguf" % FLASH] = b"eyes"          # its picture part (at the top; in the tree: with_eyes)
+        self.with_eyes = lambda: self.net.trees[FLASH].append(file("mmproj-F16.gguf", b"eyes"))
         self.place = lambda n: self.ai.model_path(FLASH, n)
 
     def tearDown(self):
@@ -926,6 +1001,7 @@ class Several(_Open):
         return self.ai.job_view()
 
     def test_one_model_in_the_list(self):
+        self.with_eyes()
         files = self.ai.repo_files(FLASH)
         whole = hashlib.sha256("\n".join(hashlib.sha256(d).hexdigest() for d in self.parts).encode()).hexdigest()
         self.assertEqual([(f["file"], f["size"], len(f.get("parts") or [])) for f in files],        # no drafter, no measurements, no projector, nothing deeper, no half model
@@ -946,6 +1022,24 @@ class Several(_Open):
         self.assertEqual(self.ai.repo_files(FLASH, projectors=True)[0]["file"], "mmproj-F16.gguf")
         # the projectors and the plain models of a repository: as before
         self.assertEqual([f["file"] for f in self.ai.repo_files("unsloth/Qwen3.6-35B-A3B-GGUF")], ["Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf", QWEN])
+
+    def test_with_its_picture_part(self):
+        """A model in several files that reads pictures: its picture part comes first (small), then every file; all of it
+        goes when the model goes. A newer picture part alone: only it is loaded again, the files of the model are checked."""
+        self.with_eyes()
+        self.load()
+        self.assertEqual(self.fetched(), ["mmproj-F16.gguf"] + self.names)
+        m = self.ai.models()["qwen3.8-flash-next"]
+        self.assertEqual((m["mmproj"]["file"], open(m["mmproj_path"], "rb").read()), ("mmproj-F16.gguf", b"eyes"))
+        self.net.files["https://huggingface.co/%s/resolve/main/mmproj-F16.gguf" % FLASH] = b"eyes2"
+        self.net.trees[FLASH][-1] = {"type": "file", "path": "mmproj-F16.gguf", "size": 5, "lfs": self.lfs(b"eyes2")}
+        self.ai.check()
+        self.assertEqual(self.ai.news["models"]["qwen3.8-flash-next"], {"newer": True, "size": 5})
+        self.load()
+        self.assertEqual(self.fetched(), ["mmproj-F16.gguf"])
+        self.assertEqual(open(self.ai.models()["qwen3.8-flash-next"]["mmproj_path"], "rb").read(), b"eyes2")
+        self.ai.delete_model("qwen3.8-flash-next")
+        self.assertFalse(os.path.exists(os.path.dirname(m["path"])))
 
     def test_every_file_checked_then_all_in_place(self):
         seen = []
@@ -1204,6 +1298,31 @@ class Server(_Open):
         p = os.path.join(self.bin, name)
         open(p, "w").close() if on else os.remove(p)
 
+    def test_with_its_picture_part_or_without(self):
+        """A model that reads pictures starts with its picture part (one start of this build: the same, also after a stop);
+        does it end at once with it, it starts without -- and so until Kontor restarts or another build comes."""
+        m = self.ai.models()["qwen3.6-35b-a3b"]
+        self.assertEqual((m["mmproj"]["file"], os.path.basename(m["mmproj_path"])), ("mmproj-F16.gguf", "mmproj-F16.gguf"))     # F16, not the larger F32
+        self.mark("record")
+        argv = lambda: json.load(open(os.path.join(self.bin, "started.json")))["argv"]
+        self.ai.ensure("qwen3.6-35b-a3b", 16384, "off")
+        self.assertEqual(argv()[argv().index("--mmproj") + 1], m["mmproj_path"]); self.assertTrue(self.ai.caps["vision"])
+        self.ai.stop(); self.mark("noeyes")
+        with self.assertLogs("kontor.assistant", "WARNING") as cm:
+            self.ai.ensure("qwen3.6-35b-a3b", 16384, "off")
+        self.assertIn("without its picture part", " ".join(cm.output))
+        self.assertEqual((self.ai.state, "--mmproj" in argv(), self.ai.caps["vision"]), ("ready", False, False))
+        self.ai.ensure("qwen3.6-35b-a3b", 16384, "off"); self.assertNotIn("--mmproj", argv())          # running: as it is
+        self.ai.stop()
+        self.ai.ensure("qwen3.6-35b-a3b", 16384, "off"); self.assertNotIn("--mmproj", argv())          # stopped and started: still without (one start, not two)
+        self.ai.stop(); self.mark("noeyes", False)
+        self.ai = L.LocalAI(os.path.join(self.dir, "assistant"), self.dir, self.dir + "-prog")            # Kontor restarted: with it again
+        self.ai.ensure("qwen3.6-35b-a3b", 16384, "off"); self.assertIn("--mmproj", argv())
+        self.ai.stop(); self.mark("refuse")
+        with self.assertRaises(L.ModelError):                                          # neither with nor without: not the picture part --
+            self.ai.ensure("qwen3.6-35b-a3b", 16384, "off")                            # tried with it again next time
+        self.assertIsNone(self.ai.blind)
+
     def test_start_chat_stop(self):
         self.mark("record"); self.mark("slowstart")
         self.ai.ensure("qwen3.6-35b-a3b", 16384, "off")
@@ -1416,7 +1535,7 @@ class Server(_Open):
                 open(log, "w").close()
                 with self.assertRaises(L.ModelError) as cm:
                     self.ai.ensure("qwen3.6-35b-a3b", 8192, "strict")
-                self.assertEqual(profiles(), [strict()])
+                self.assertEqual(profiles(), [L.sandbox_profile(self.dir, self.dir + "-prog", os.path.join(self.dir, "assistant"), sock=socks[-2]), strict()])     # (with its picture part, then without: the same rules)
                 self.assertIn("Abschirmung", str(cm.exception))
                 self.assertEqual((self.ai.status()["server"]["state"], self.ai.proc), ("error", None))
             os.remove(log + ".fails")
@@ -2481,7 +2600,7 @@ class Asking(_Assist):
     def test_a_models_own_levels_of_thinking(self):
         self.assertEqual(self.a.ai.caps, {})                                           # not started: nothing known
         self.ask("Hallo")
-        self.assertEqual(self.a.ai.caps, {"levels": [], "rejected": [], "preserve": False, "vision": False})
+        self.assertEqual(self.a.ai.caps, {"levels": [], "rejected": [], "preserve": False, "vision": True})        # (started with its picture part)
         kw = lambda model, effort="balanced": self.a._effort({"effort": effort, "model": model}).get("chat_template_kwargs")
         self.assertIsNone(kw("qwen3.6-35b-a3b"))                                       # its template knows no levels
         self.assertEqual(kw("qwen3.8-27b"), {"reasoning_effort": "medium"})            # Qwen3.8: without a level it takes its highest
@@ -2493,7 +2612,7 @@ class Asking(_Assist):
         self.a.stop_all()
         self.assertEqual(self.a.ai.caps, {})
         self.ask("Hallo")
-        self.assertEqual(self.a.ai.caps, {"levels": ["low", "medium", "high"], "rejected": ["max"], "preserve": True, "vision": False})
+        self.assertEqual(self.a.ai.caps, {"levels": ["low", "medium", "high"], "rejected": ["max"], "preserve": True, "vision": True})
         self.assertEqual(kw("someone/Model-9-GGUF/model.gguf"), {"reasoning_effort": "medium"})
         self.assertIsNone(kw("someone/Model-9-GGUF/model.gguf", "thorough"))
         self.a.ai.caps = dict(self.a.ai.caps, rejected=["medium"])                    # a level the template refuses is never sent (llama.cpp would answer with an error)
@@ -3766,6 +3885,53 @@ class Receipts(_Assist):
         self.a.take_back(card["id"], True)
         self.assertEqual(self.store.load("receipts.json")["entry_list"], [])
         self.assertFalse(os.path.exists(os.path.join(self.belege, e["path"])))
+
+    PNG = b"\x89PNG\r\n\x1a\n erfundenes Bild"
+
+    def test_a_picture_goes_to_the_model_as_a_whole(self):
+        """A picture (uploaded or pasted: the same way in) goes to a model that reads pictures as a whole, beside its text --
+        only in the request, never in the conversation, a saved one or anything kept; figures only from the text recognition."""
+        rt = os.path.dirname(self.a.ai.runtime()["path"])
+        open(os.path.join(rt, "record"), "w").close()
+        sent = lambda: json.load(open(os.path.join(rt, "request.json")))
+        _, f = self.attach("Bild 2026-11-24 10.00.00.png", self.PNG)
+        _, p = self.attach("Rechnung.pdf")
+        _, j = self.attach("Foto.jpg", b"\xff\xd8 kein JPEG")                       # named a picture, but none llama.cpp reads: its text only
+        r = self.a.ask({"question": "Was zeigt das?", "files": [f["id"], p["id"], j["id"]]})
+        evs = events(self.a, r["job"])
+        self.assertEqual(text_of(evs).count("[1 Bild(er) gesehen]"), 1, evs)
+        first = next(m for m in sent()["messages"] if m["role"] == "user")
+        self.assertEqual(first["content"][0], {"type": "image_url", "image_url": {"url": "data:image/png;base64," + base64.b64encode(self.PNG).decode()}})
+        self.assertEqual([x["type"] for x in first["content"]], ["image_url", "text"])
+        said = first["content"][1]["text"]
+        self.assertIn("shown to you as a picture with this question: %s" % f["id"], said); self.assertIn("never off the picture", said)
+        self.assertNotIn(p["id"] + " = ", said.split("shown to you")[1]); self.assertNotIn(j["id"] + " = ", said.split("shown to you")[1])
+        self.assertTrue(self.a.conv["receipt_text"])                                 # what a picture shows is data: other changes come unticked
+        b64 = base64.b64encode(self.PNG).decode()
+        self.assertNotIn(b64, json.dumps(self.a.conv["messages"])); self.assertNotIn(b64, json.dumps(self.store.load(A.CHAT_FILE % r["conversation"])))
+        self.assertFalse([e for e in evs if e["type"] == "notice"])
+        # the next question of the conversation: the picture is not sent again (its text can be read again)
+        evs = events(self.a, self.a.ask({"question": "Und sonst?", "conversation": r["conversation"]})["job"])
+        self.assertNotIn("Bild(er) gesehen", text_of(evs)); self.assertTrue(all(isinstance(m.get("content"), str) for m in sent()["messages"]))
+        # at most a quarter of the context: a small context takes fewer pictures
+        many = [self.attach("b%d.png" % i, self.PNG)[1]["id"] for i in range(5)]
+        evs = events(self.a, self.a.ask({"question": "Alle?", "files": many})["job"])
+        self.assertIn("[%d Bild(er) gesehen]" % min(A.PICTURES_MAX, self.a.settings()["context"] // 4 // L.PICTURE_TOKENS), text_of(evs))
+        # the model falls over at the picture: started anew, the answer goes on from the text -- the user is told
+        _, f = self.attach("Scan.png", self.PNG)
+        pid = self.a.ai.proc.pid
+        evs = events(self.a, self.a.ask({"question": "absturz?", "files": [f["id"]]})["job"])
+        self.assertEqual(evs[-1]["type"], "done", evs); self.assertIn("Antwort: absturz?", text_of(evs)); self.assertNotIn("gesehen", text_of(evs))
+        self.assertEqual([e["key"] for e in evs if e["type"] == "notice"], ["ki_bild_fehler"]); self.assertNotEqual(self.a.ai.proc.pid, pid)
+        self.assertIn("could not be shown to you after all", sent()["messages"][1]["content"])
+        # a model without its picture part (gone from the disk): it answers, sees no pictures -- said under the answer
+        self.a.stop_all()
+        os.remove(self.a.ai.models()[self.a.settings()["model"]]["mmproj_path"])
+        self.assertNotIn("mmproj_path", self.a.ai.models()[self.a.settings()["model"]])
+        _, f = self.attach("Scan.png", self.PNG)
+        evs = events(self.a, self.a.ask({"question": "Was zeigt das?", "files": [f["id"]]})["job"])
+        self.assertEqual([e["key"] for e in evs if e["type"] == "notice"], ["ki_bild_nur_text"]); self.assertNotIn("gesehen", text_of(evs))
+        self.assertNotIn("--mmproj", json.load(open(os.path.join(rt, "started.json")))["argv"])
 
     def test_filed_once_without_reading_first_names_and_other_changes(self):
         # filed without read_receipt first: the card still says what differs; filed once only
@@ -5110,9 +5276,9 @@ class AutoUpdate(_Assist):
     """What a look finds newer is loaded by itself (user, 2026-11-23): only while the assistant is idle and in the strict
     sandbox, of llama.cpp only a build out for two days, never backwards; a build that does not start the model gives way."""
 
-    def build(self, tag, age=3 * 86400, refuse=False):
-        """A newer build at GitHub, out for age seconds (refuse: it does not start a model)."""
-        arch = runtime_archive([("llama-%s/refuse" % TAG, b"")] if refuse else None)
+    def build(self, tag, age=3 * 86400, refuse=False, noeyes=False):
+        """A newer build at GitHub, out for age seconds (refuse: it does not start a model; noeyes: not with its picture part)."""
+        arch = runtime_archive([("llama-%s/refuse" % TAG, b"")] if refuse else [("llama-%s/noeyes" % TAG, b"")] if noeyes else None)
         name = "llama-%s-bin-%s.tar.gz" % (tag, L.asset_tag())
         url = "https://github.com/ggml-org/llama.cpp/releases/download/%s/%s" % (tag, name)
         self.net.files[url] = arch
@@ -5221,6 +5387,26 @@ class AutoUpdate(_Assist):
             os.rename(model + ".away", model)
         self.assertEqual((ai.runtime()["tag"], ai.bad_builds()), ("b4714", ["b4712"]))
 
+
+    def test_a_build_that_falls_over_at_the_picture_part_gives_way(self):
+        """A new build that ends at once with the picture part, where the one before ran it: back to the one before (with
+        pictures) -- not the new one without them. Only where neither runs it with it: without (and that proves no build)."""
+        ai = self.a.ai
+        ai.ensure("qwen3.6-35b-a3b", 8192, "off"); ai.stop()
+        self.build("b4712", noeyes=True)
+        ai.install_runtime(); self.assertEqual(wait_job(ai)["state"], "done", ai.job)
+        ai.ensure("qwen3.6-35b-a3b", 8192, "off")
+        self.assertEqual((ai.state, ai.runtime()["tag"], ai.caps.get("vision"), ai.bad_builds()), ("ready", TAG, True, ["b4712"]))
+        ai.stop()
+        # the picture part is the trouble with both: the new one stays, runs without it, the one before is kept
+        self.build("b4713")
+        ai.install_runtime(); self.assertEqual(wait_job(ai)["state"], "done", ai.job)
+        prev = ai._load("runtime.json")["previous"]
+        for folder in (os.path.dirname(ai.runtime()["path"]), os.path.dirname(ai._p("runtime", prev["dir"], prev["bin"]))):
+            open(os.path.join(folder, "noeyes"), "w").close()
+        ai.ensure("qwen3.6-35b-a3b", 8192, "off")
+        self.assertEqual((ai.state, ai.runtime()["tag"], ai.caps.get("vision"), ai.bad_builds()), ("ready", "b4713", False, ["b4712"]))
+        self.assertEqual(ai._load("runtime.json")["previous"]["tag"], TAG)          # (a start without it proves no build)
 
     def test_edge_cases_of_giving_way(self):
         ai = self.a.ai

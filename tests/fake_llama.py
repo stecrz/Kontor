@@ -37,10 +37,12 @@ last request to embed.json)
 Like llama.cpp it refuses a conversation it cannot put into the model's template (HTTP 500): a tool call in it whose
 arguments are no JSON object, thoughts (reasoning_content) that are no text, a message without content; a reasoning_effort
 the template refuses (HTTP 400); a picture without a picture part (--mmproj). GET /props tells what the template can do
-(chat_template_caps: no levels of thinking, earlier thoughts not kept; modalities: vision with --mmproj) -- props.json beside
+(chat_template_caps: no levels of thinking, earlier thoughts not kept; modalities: audio with an --mmproj named ...asr..., else vision) -- props.json beside
 it changes that ({"chat_template_caps": {...}}), no-props makes it an older build that does not answer there.
 
 Files beside it tell it more (Kontor starts it with an environment of its own, so nothing else reaches it):
+  noeyes     -> the start fails when it is given a picture part (--mmproj)
+  (a question with "absturz" and a picture in the request: the process ends at once)
   record     -> it writes how it was started (arguments, names of environment variables) to started.json and the last
                 request to request.json (the last look at what to remember: to notice.json)
   refuse     -> the start fails
@@ -131,6 +133,9 @@ def main():
     if os.path.exists(os.path.join(here, "refuse")):       # ... or for a start that fails
         print("error: failed to load model (test)", file=sys.stderr)
         return 1
+    if os.path.exists(os.path.join(here, "noeyes")) and "--mmproj" in sys.argv:       # ... only with its picture part
+        print("error: failed to load mmproj (test)", file=sys.stderr)
+        return 1
     key = os.environ.get("LLAMA_API_KEY", "")
     model = arg("--model") or arg("-m")
     if not model or not os.path.exists(model):
@@ -158,9 +163,10 @@ def main():
 
         def _props(self):
             """What llama.cpp's /props says of the model, as far as Kontor reads it."""
-            sees = "--mmproj" in sys.argv and os.path.exists(arg("--mmproj") or "") and "--embedding" not in sys.argv
+            part = "--mmproj" in sys.argv and os.path.exists(arg("--mmproj") or "") and "--embedding" not in sys.argv
+            hears = part and "asr" in os.path.basename(arg("--mmproj")).lower()       # an audio part (a speech model's) or a picture part
             props = {"default_generation_settings": {"n_ctx": int(arg("--ctx-size", "0") or 0)}, "total_slots": int(arg("--parallel", "1") or 1),
-                     "modalities": {"vision": sees, "audio": False}, "build_info": "b4711-fake",
+                     "modalities": {"vision": part and not hears, "audio": hears}, "build_info": "b4711-fake",
                      "chat_template_caps": {"supports_tools": True, "supports_tool_calls": True, "supports_preserve_reasoning": False,
                                             "supports_reasoning_effort": False, "reasoning_effort_levels": [], "reasoning_effort_rejected": []}}
             if os.path.exists(os.path.join(here, "props.json")):
@@ -224,8 +230,8 @@ def main():
             raw = self.rfile.read(int(self.headers.get("Content-Length") or 0))
             if self.headers.get("Authorization") != "Bearer " + key or not key:
                 return self._json(401, {"error": {"message": "Invalid API Key"}})
-            if self.path == "/v1/audio/transcriptions":            # a recording to write down: only with a model that hears (--mmproj)
-                if "--mmproj" not in sys.argv or not os.path.exists(arg("--mmproj")):
+            if self.path == "/v1/audio/transcriptions":            # a recording to write down: only with a model that hears (--mmproj, an audio part)
+                if not self._props()["modalities"]["audio"]:
                     return self._json(501, {"error": {"message": "The current model does not support audio input."}})
                 mark = self.headers.get("Content-Type", "").split("boundary=")[-1].encode()
                 parts = {}
@@ -303,10 +309,14 @@ def main():
                     json.dump(body, f)
             last = msgs[-1] if msgs else {}
             users = [m for m in msgs if m.get("role") == "user"]
+            pics = 0
             for m in users:                                 # a message of several parts (text beside pictures): its text, and how many pictures
                 if isinstance(m.get("content"), list):
                     seen = sum(1 for x in m["content"] if x.get("type") == "image_url")
+                    pics += seen
                     m["content"] = "".join(str(x.get("text") or "") for x in m["content"] if x.get("type") == "text") + (" [%d Bild(er) gesehen]" % seen if seen else "")
+            if pics and any("absturz" in str(m.get("content") or "") for m in users):
+                os._exit(3)                                 # falls over at a picture (as reported of some models)
             q = str((users[-1] if users else {}).get("content") or "")
             if q.startswith(("[Page: ", "[Seite: ")) and "]\n" in q:           # Kontor's line before the question: where the user is
                 q = q.split("]\n", 1)[1]

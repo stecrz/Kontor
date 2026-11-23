@@ -209,7 +209,7 @@ CHECKED: Dict[str, Tuple[str, ...]] = {
 # at where the request comes from, and what it hands on is the approval the page sent.
 for _rel, _names in (("service.py", ("_is_local", "_loopback", "_update_install", "restored_config", "_proxied", "PROXIED", "_at_mac")),
                      ("auth.py", ("is_loopback",)),
-                     ("llm_local.py", ("_fetch", "pick_asset", "repo_files", "latest_runtime", "RUNTIME_REPO", "RELEASES_URL")),
+                     ("llm_local.py", ("_fetch", "pick_asset", "listing", "repo_files", "latest_runtime", "RUNTIME_REPO", "RELEASES_URL")),
                      # Kontor's own Python (3.17.12): the one build that is loaded and from where, with its size and SHA-256; that
                      # it is compared with its archive and tried before the switch, in this order; which program the starter
                      # takes for the service and which one launchd starts; who may ask for it (only at the Mac)
@@ -287,7 +287,7 @@ RULE_GROUPS: Tuple[Tuple[str, str, Dict[str, Tuple[str, ...]]], ...] = (
     # what the language model is shut out of (judged by its rules)
     ("model_shield", "shield", {"llm_local.py": ("sandbox_profile",)}),
     # where the assistant's programs and models come from and that each file is checked
-    ("downloads", "risk", {"llm_local.py": ("host_allowed", "_safe_join", "_fetch", "pick_asset", "repo_files", "latest_runtime", "RUNTIME_REPO", "RELEASES_URL")}),
+    ("downloads", "risk", {"llm_local.py": ("host_allowed", "_safe_join", "_fetch", "pick_asset", "listing", "repo_files", "latest_runtime", "RUNTIME_REPO", "RELEASES_URL")}),
     # Kontor's own Python: which build is loaded from where and that it is checked, compared and tried before anything is
     # switched; which program runs the service -- a change can load, start or keep another program. A newer build changes
     # the lines that name it: asked about as well, as one entry

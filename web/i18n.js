@@ -2714,6 +2714,8 @@ const I18N = {
 "ki_w_f_c_last":["Anthropic ist gerade überlastet oder gestört – später noch einmal.", "Anthropic is overloaded or has a fault right now – try again later."],
 "ki_w_f_c_websuche":["Die Websuche ist für deine Organisation bei Anthropic ausgeschaltet (in der Console).", "Web search is switched off for your organization at Anthropic (in the Console)."],
 "ki_w_f_c_anfrage":["Anthropic nimmt die Anfrage nicht an – ist das Modell für deinen Schlüssel verfügbar?", "Anthropic does not take the request – is the model available for your key?"],
+"ki_bild_nur_text":["Das Modell sieht keine Bilder – es arbeitet nur mit dem erkannten Text.", "The model does not see pictures – it works only with the recognized text."],
+"ki_bild_fehler":["Das Bild ließ sich dem Modell nicht zeigen – es arbeitet nur mit dem erkannten Text.", "The picture could not be shown to the model – it works only with the recognized text."],
 "ki_w_keine_daten":["Kontor hat deine Daten noch nicht gelesen und kann Suchwörter nicht gegen sie prüfen – keine Internetsuche, bis MoneyMoney gelesen ist.", "Kontor has not read your data yet and cannot check search words against it – no internet search until MoneyMoney has been read."],
 "ki_w_keine_aenderungen":["In dieser Unterhaltung steht Text aus dem Internet – Änderungen nur in einer neuen Unterhaltung.", "This conversation contains text from the internet – changes only in a new conversation."],
 "ki_tool_web_search":["Sucht im Internet", "Searches the internet"],

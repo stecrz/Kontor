@@ -8,7 +8,7 @@ Einstellungen → Updates zeigt den Überblick vor den einzelnen Versionen; die 
 - KI-Assistent kennt jede Stelle jeder Seite (Rechtsklick: was eine Zahl ist) und sucht Ursachen über Konten, Umsätze und Beteiligungen hinweg
 - Updates fragen nur bei echtem Risiko – je Fund in klaren Worten erklärt, mit den betroffenen Zeilen
 - Planung: Regeln je Bereich, Position und Kategorie, Modelle mit einem Klick, jede Planzahl erklärt; Sparquote, Reichweite, Zinslast
-- KI-Assistent: Modellauswahl nach Zweck mit Hersteller, Lizenz, Speicher; fragt auf Wunsch Claude (Anthropic) – jede Frage vorher auf einer Karte
+- KI-Assistent: Modelle nach Zweck, sieht Bilder als Ganzes; fragt auf Wunsch Claude (Anthropic) – jede Frage vorher auf einer Karte
 - iPhone: eigener Face-ID-Schlüssel je Gerät, jede Änderung mit Face ID bestätigt, Geräte am Mac entfernbar; Tailscale wird geprüft
 - Sicherheit: eigenes, aktuelles Python statt Apples Python 3.9 – nach Klick geladen, geprüft und erst nach bestandener Probe in Gebrauch
 

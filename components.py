@@ -56,7 +56,7 @@ def model_licence(entry: Optional[dict], repo: str) -> str:
 
 
 def _item(kind: str, name: str, version: str, licence: str, site: str, path: str, shield: str, use: str, **more: Any) -> dict:
-    return dict({"kind": kind if kind in KINDS else "system", "name": str(name)[:120], "version": str(version)[:60], "licence": str(licence)[:60],
+    return dict({"kind": kind if kind in KINDS else "system", "name": str(name)[:120], "version": str(version)[:200], "licence": str(licence)[:60],
                  "site": site if site in SITES else "", "path": str(path)[:200], "shielded": shield if shield in SHIELDS else "no", "use": use}, **more)
 
 
@@ -81,7 +81,8 @@ def assistant_items(ai: Any, sandbox: str) -> List[dict]:
     for mid, m in sorted((ai.models() or {}).items(), key=lambda kv: str(kv[1].get("name") or kv[0]).lower()):
         c = named.get(mid)
         use = "vp_wofuer_diktat" if mid in llm_local.SPEECH_IDS else "vp_wofuer_bedeutung" if mid in llm_local.EMBED_IDS else "vp_wofuer_modell"
-        out.append(_item("model", str((c or {}).get("name") or m.get("name") or m.get("file") or mid), str(m.get("file") or ""), model_licence(c, str(m.get("repo") or "")),
+        part = str((m.get("mmproj") or {}).get("file") or "") if m.get("mmproj_path") else ""     # its audio or picture part: from the same repository
+        out.append(_item("model", str((c or {}).get("name") or m.get("name") or m.get("file") or mid), str(m.get("file") or "") + (" + " + part if part else ""), model_licence(c, str(m.get("repo") or "")),
                          "huggingface", str(m.get("repo") or ""), shield, use))
     return out
 

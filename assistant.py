@@ -34,6 +34,7 @@ at once, or with a reset). The model has no tool for saved conversations. The lo
 from __future__ import annotations
 
 import array
+import base64
 import copy
 import ast
 import hashlib
@@ -63,7 +64,7 @@ import table_text
 from decimal import ROUND_HALF_UP, Decimal
 from model import fmt_eur, has_mark, norm_cat
 from report import PLAN_AREA_METHODS, PLAN_METHODS, PLAN_MODELS
-from llm_local import CATALOG, EMBED, EMBED_CONTEXT, EMBED_IDS, SANDBOXES, SPEECH, Cancelled, LocalAI, ModelError, SPEECH_IDS, SPEECH_CONTEXT, MAX_AUDIO, fit, physical_ram
+from llm_local import CATALOG, EMBED, EMBED_CONTEXT, EMBED_IDS, PICTURE_TOKENS, SANDBOXES, SPEECH, Cancelled, LocalAI, ModelError, SPEECH_IDS, SPEECH_CONTEXT, MAX_AUDIO, fit, physical_ram
 from llm_local import tuning as model_tuning
 from storage import StoreError, StoreLocked, selftest
 
@@ -132,6 +133,13 @@ WAITS = ("enter", "web")                           # kinds of tools that wait fo
 MAX_PROPOSALS = 60                                 # changes proposed in one answer at most (all on one card)
 RECEIPT_TYPES = {".pdf": "PDF", ".png": "PNG", ".jpg": "JPEG", ".jpeg": "JPEG", ".heic": "HEIC", ".gif": "GIF"}      # what can be read (macOS's text recognition)
 ATTACH_MAX, ATTACH_BYTES = 6, 20 * 1024 * 1024     # receipts given to the assistant: kept in memory only, this many at most, each this large
+# A picture given with a question (uploaded or pasted, alike) goes to a model that reads pictures as a whole, beside what the
+# text recognition reads of it (user, 2026-11-23) -- only in the request, only in memory, data like a receipt's text. Figures
+# still come only from the text recognition; the picture is for what text does not give (layout, stamps, graphics, photos).
+# The kinds llama.cpp reads, known by their first bytes (not by the name); this many with one question, all together at most
+# a quarter of the context. PDF pages: not as pictures yet.
+PICTURE_KINDS = ((b"\x89PNG\r\n\x1a\n", "image/png"), (b"\xff\xd8\xff", "image/jpeg"), (b"GIF87a", "image/gif"), (b"GIF89a", "image/gif"))
+PICTURES_MAX = 4
 NO_QUESTION = ("[Kontor: no question with it -- look at what was given for itself: read it, then say briefly what it is, what it says and "
                "what stands out. Propose nothing (no filing, no changes) unless the user asks; you may name what you could do with it.]")
 TABLE_TYPES = dict({ext: "XLSX" for ext in table_text.TYPES}, **{ext: "CSV" for ext in table_text.TEXT_TYPES})       # tables the assistant reads (table_text: a grid with Excel's addresses)
@@ -1409,6 +1417,29 @@ class Assistant:
             except receipt_text.TextUnavailable as e:
                 f["read"] = {"text": "", "how": "none", "fields": {}, "unavailable": str(e)}
         return f["read"]
+
+    @staticmethod
+    def _said(job: Job, key: str) -> None:
+        """A line under the answer (web/i18n.js: key), once per answer."""
+        if key not in job.notices:
+            job.notices.add(key)
+            job.emit("notice", key=key)
+
+    def _pictures(self, conv: dict, given: Any, st: dict) -> List[dict]:
+        """The pictures given with this question that go to the model as a whole: [{"id", "name", "url"}] (data: addresses, built
+        here from the file in memory) -- only a picture llama.cpp reads (PICTURE_KINDS, by its first bytes), only of this
+        conversation, at most PICTURES_MAX and a quarter of the context. Whether the model sees pictures: the caller asks."""
+        out: List[dict] = []
+        most = min(PICTURES_MAX, max(0, int(st.get("context") or 0) // 4 // PICTURE_TOKENS))
+        with self.files_lock:
+            for info in given if isinstance(given, list) else []:
+                f = self.files.get(str((info or {}).get("id") or "")) if isinstance(info, dict) else None
+                if f is None or f["conv"] != conv.get("id") or len(out) >= most:
+                    continue
+                mime = next((k for head, k in PICTURE_KINDS if f["data"][:len(head)] == head), "")
+                if mime:
+                    out.append({"id": f["id"], "name": f["name"], "url": "data:%s;base64,%s" % (mime, base64.b64encode(f["data"]).decode("ascii"))})
+        return out
 
     # -- saved conversations ------------------------------------------------------------------------------------------------
     # Each in a file of its own in Kontor's data folder (encrypted like everything there), with a list of them beside: the
@@ -5178,6 +5209,13 @@ class Assistant:
             self._watch()
             self.speech_warm()
             job.emit("status", state="thinking")
+            pictures = self._pictures(conv, ctx.get("files"), st) if ctx.get("files") else []
+            if pictures and not (self.ai.caps or {}).get("vision"):     # a model that reads no pictures (or its picture part is missing): their text only
+                self._said(job, "ki_bild_nur_text")
+                pictures = []
+            if pictures:
+                conv["receipt_text"] = True                  # what a picture shows is data, never an instruction: other changes come unticked
+                turn[0]["content"] += "\n" + _seen_text(pictures)
             if first:
                 last = next((str(m.get("content") or "") for m in reversed(conv["messages"]) if m.get("role") == "assistant" and str(m.get("content") or "").strip()), "")
                 try:
@@ -5200,7 +5238,7 @@ class Assistant:
             thought = reads = 0                              # tokens of thinking in this answer; reads of the user's data
             seen: Dict[Tuple[str, str], int] = {}
             ctx["room"], ctx["web_room"] = result_room(st["context"]), result_room(st["context"], web=True)      # how long a tool's result may be
-            fixed = len(json.dumps(system, ensure_ascii=False)) + len(json.dumps(specs, ensure_ascii=False))     # what every request of this answer carries
+            fixed = len(json.dumps(system, ensure_ascii=False)) + len(json.dumps(specs, ensure_ascii=False)) + len(pictures) * PICTURE_TOKENS * 3     # what every request of this answer carries
             extra = 0                                        # one more step when the last one asked for a lookup instead of answering
             while steps < steps_max + extra:
                 steps += 1
@@ -5208,9 +5246,9 @@ class Assistant:
                 self._fit(turn, st, fixed)
                 history = self._give_way(history, turn, st, fixed)
                 msgs = [system] + history + turn
-                room = st["context"] - len(json.dumps(msgs, ensure_ascii=False)) // 3 - len(json.dumps(specs, ensure_ascii=False)) // 3 - 256
+                room = st["context"] - len(json.dumps(msgs, ensure_ascii=False)) // 3 - len(json.dumps(specs, ensure_ascii=False)) // 3 - 256 - len(pictures) * PICTURE_TOKENS
                 effort = self._effort(st, room)
-                body = dict({"messages": msgs, "stream": True, "stream_options": {"include_usage": True},
+                body = dict({"messages": [system] + history + _with_pictures(turn, pictures) if pictures else msgs, "stream": True, "stream_options": {"include_usage": True},
                              "max_tokens": max(st["context"] // 4, min(st["context"] // 2, room)),     # thinking and answer together
                              "cache_prompt": True}, **effort)
                 if quick:
@@ -5250,6 +5288,17 @@ class Assistant:
                             c["name"] += f.get("name") or ""
                             c["args"] += f.get("arguments") or ""
                 except ModelError as e:
+                    if pictures:                             # the model did not take the picture (or fell over at it): on without it, from its text
+                        log.warning("Assistant: the model did not take the picture (%s)", str(e)[:200])
+                        thought += think_told if think_told is not None else think_n
+                        fixed -= len(pictures) * PICTURE_TOKENS * 3
+                        pictures, steps = [], steps - 1
+                        self._said(job, "ki_bild_fehler")
+                        turn[0]["content"] += "\n[Kontor: the picture could not be shown to you after all -- go by what read_receipt or read_table read of it]"
+                        if text or mind:
+                            job.emit("reset")
+                        self.ai.ensure(st["model"], st["context"], st["sandbox"], job.cancel)     # (a model that fell over: started anew)
+                        continue
                     if not retried and history and re.search(r"context|too long|exceed", str(e), re.I):
                         thought += think_told if think_told is not None else think_n
                         retried, history, steps = True, [], steps - 1            # too much for the context: once more without the earlier turns
@@ -5661,6 +5710,20 @@ def _file_text(files: Any, receipts: bool = True) -> str:
     if tab:
         parts.append("%s -- read with read_table: %s" % ("a table" if len(tab) == 1 else "%d tables" % len(tab), "; ".join(map(one, tab))))
     return "[Kontor: the user gave %s with this question]\n" % " | ".join(parts)
+
+
+def _seen_text(seen: List[dict]) -> str:
+    """The line that tells the model which of the files given it sees as pictures, and what it may take from them."""
+    return ("[Kontor: shown to you as %s with this question: %s -- look at %s for what text does not give (layout, stamps, signatures, "
+            "graphics, photos); take every figure, date and name only from read_receipt or read_table, never off the picture]" % (
+                "a picture" if len(seen) == 1 else "%d pictures" % len(seen), "; ".join("%s = %s" % (p["id"], json.dumps(p["name"], ensure_ascii=False)) for p in seen),
+                "it" if len(seen) == 1 else "them"))
+
+
+def _with_pictures(turn: List[dict], seen: List[dict]) -> List[dict]:
+    """The steps of this question as the model gets them: its first message with the pictures before its text (the pictures
+    only here, in the request -- never in the turn, the conversation or anything kept)."""
+    return [dict(turn[0], content=[{"type": "image_url", "image_url": {"url": p["url"]}} for p in seen] + [{"type": "text", "text": turn[0]["content"]}])] + turn[1:]
 
 
 def _history(turns: list) -> List[dict]:
