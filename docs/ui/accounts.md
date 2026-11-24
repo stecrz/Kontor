@@ -92,20 +92,19 @@ Where each category of MoneyMoney counts in the cash flow (the same outline for 
 transactions in the user's areas are listed. Choices count after "Speichern"; the cash flow is then recalculated. MoneyMoney's
 categories are never changed; Kontor creates none.
 
-### accounts.positions.needs — Was Kontor von deinen Kategorien braucht
-A folded card (also during setup); its title shows "X von Y vorhanden" (Y: the recommended rows plus those "bei Bedarf" that are present). The
-recommended category tree for MoneyMoney – one category per position –, grouped like the position menu (Einnahmen, Ausgaben,
+### accounts.positions.needs — Empfohlene Kategorien
+A folded card (also during setup), for information only – no count or score, since not every row applies to everyone (no
+business: no Umsatzerlöse). The recommended category tree for MoneyMoney – one category per position –, grouped like the position menu (Einnahmen, Ausgaben,
 Investitionen, Finanzierung, Sonstiges, "Je Immobilie"), each group with one line on how it is best set up.
 A first line gives the rule: one tree for every kind of area (private, sole trader, GbR, GmbH …) – the account decides the
 area, the category only the purpose; a name meaning different things by side (receiving or paying a salary) needs two. All rows
-always show, without tags; rows of a kind the user has no area of (Gehalt, Lebenshaltung … for companies only; Umsatzerlöse,
-Wareneinkauf, Personal, Betriebskosten, Umsatzsteuer, Gesellschafter for private only) are "bei Bedarf". A name that differs by
+always show, without tags, whatever kinds of area the user has. A name that differs by
 kind is shown as both ("Wohnen / Raumkosten", "Sparen & Anlegen / Investitionen").
-"Je Immobilie" always (every rented property, private or a company's, by its own linked category; "bei Bedarf" until one is linked). Investitionen and Finanzierung: best every investment and every loan
+"Je Immobilie" always (every rented property, private or a company's, by its own linked category). Investitionen and Finanzierung: best every investment and every loan
 as an account in MoneyMoney; then Kontor splits by the account's kind (and shows payout, repayment and interest per loan) with no
-category – their rows are "bei Bedarf". Column **Empfohlen in MoneyMoney**: the category to create, its subcategories after "›".
-Column **Bei dir**: ✓ = at least one of the user's categories counts there (named, "und N weitere"; "fehlt noch: …" when only part
-is covered); ○ with "fehlt" or "bei Bedarf" = none yet. It follows the table below live.
+category. Column **Empfohlen in MoneyMoney**: the category to create, its subcategories after "›".
+Column **Bei dir**: ✓ = at least one of the user's categories counts there (named, "und N weitere"; "keine für …" when only part
+is covered); ○ with "keine" = none of the user's categories counts there – neutral, no warning. It follows the table below live.
 
 ### accounts.positions.table — Kategorien und Positionen
 One row per category, indented under its parent (parents in bold).

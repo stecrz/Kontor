@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.17.46 (2026-11-24 02:03)
+- Konten & Regeln: Empfohlene Kategorien nur zur Orientierung – keine Zählung „X von Y vorhanden“, kein „fehlt“, je Zeile neutral „keine“
+
 ## 3.17.45 (2026-11-24 01:55)
 - Automatische Buchungen: eigener Darlehensname in Anführungszeichen (Darlehen „Darlehen Immo A“), auch in Prüfhinweisen
 - Entwicklung: Versionskette prüft die Changelog-Uhrzeit gegen die Commit-Zeit

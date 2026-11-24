@@ -278,6 +278,9 @@ anhängen – nie löschen.
   Abschluss mit `.claude/tools/release.py` in einem Aufruf; kein Warten auf GitHub – rot behebt der nächste Chat („fix ci“). Große Dateien
   nur in Bereichen lesen. Ein Grund für diese Regeln: das Wochenkontingent war mit „extra hoch“ in wenigen Stunden verbraucht.
   (umgesetzt in 3.17.42)
+- **Empfohlene Kategorien nur zur Orientierung** (Nutzer, 2026-11-24): keine Zählung „X von Y vorhanden“, kein „fehlt“ – nicht jede
+  Zeile gilt für jeden (ohne Geschäft keine Umsatzerlöse). Die Karte zeigt je Zeile neutral, welche seiner Kategorien dort zählt, sonst „keine“.
+  (umgesetzt in 3.17.46)
 
 ## Offen (Entscheidung steht aus – mit Empfehlung vorlegen, wenn der Punkt dran ist)
 - Umsatzsteuer-Voranmeldung direkt an ELSTER senden (ELSTERs Programmbibliothek ERiC, Anmeldung als Hersteller, Zertifikat und

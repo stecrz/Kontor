@@ -5820,25 +5820,25 @@ async function vPositionen() {
   });
   return h + '</tbody></table></div>' + vAnlageEmpfaenger() + '</div>';
 }
-// what Kontor needs from your categories in MoneyMoney: the recommended tree -- one category per position, grouped like the
-// positions' menu, each group with how it is best set up; one tree for all areas (rows of kinds you lack: if needed); per row
-// whether one of yours counts there (and which) -- updated as you change a position below
-// [key (texts kb_<key>, kb_<key>_sub, kb_<key>_tip; a company's: kb_<key>_g …), group, positions, only if needed, for ('p' yours,
-// 'f' a company's, '' both)]; a rented property: always by its own category (Je Immobilie) -- only if needed until one is linked
-const KB_TREE = [['work_income', 'einnahmen', ['work_income'], 0, 'p'], ['revenue', 'einnahmen', ['revenue'], 0, 'f'],
-  ['capital_income', 'einnahmen', ['capital_income'], 0, ''], ['refunds', 'einnahmen', ['refunds'], 1, ''],
-  ['goods', 'ausgaben', ['goods'], 0, 'f'], ['staff', 'ausgaben', ['staff'], 0, 'f'], ['housing', 'ausgaben', ['housing'], 0, ''],
-  ['operations', 'ausgaben', ['operations'], 0, 'f'], ['living', 'ausgaben', ['living'], 0, 'p'], ['mobility', 'ausgaben', ['mobility'], 0, ''],
-  ['insurance', 'ausgaben', ['insurance'], 0, ''], ['health', 'ausgaben', ['health'], 0, 'p'], ['leisure', 'ausgaben', ['leisure'], 0, 'p'],
-  ['administration', 'ausgaben', ['administration'], 0, ''],
-  ['taxes', 'ausgaben', ['taxes'], 0, ''], ['vat', 'ausgaben', ['vat'], 0, 'f'], ['donations', 'ausgaben', ['donations'], 1, 'p'],
-  ['saving', 'sek_investitionen', ['saving'], 1, ''], ['loans', 'finanzierung', ['repayment', 'loan_interest'], 1, ''],
-  ['partners', 'finanzierung', ['partners'], 1, 'f'], ['transfer', 'sonstiges', ['transfer'], 0, ''],
-  ['property', 'kb_g_property', ['property'], 0, ''], ['property_buy', 'kb_g_property', ['property_saving'], 1, '']];
+// the recommended categories in MoneyMoney -- for information only, no score: one category per position, grouped like the
+// positions' menu, each group with how it is best set up; one tree for all areas; per row which of yours count there (or "keine"
+// -- not every row applies to everyone: no business, no revenue) -- updated as you change a position below
+// [key (texts kb_<key>, kb_<key>_sub, kb_<key>_tip; a company's: kb_<key>_g …), group, positions]; a rented property: always by
+// its own category (Je Immobilie)
+const KB_TREE = [['work_income', 'einnahmen', ['work_income']], ['revenue', 'einnahmen', ['revenue']],
+  ['capital_income', 'einnahmen', ['capital_income']], ['refunds', 'einnahmen', ['refunds']],
+  ['goods', 'ausgaben', ['goods']], ['staff', 'ausgaben', ['staff']], ['housing', 'ausgaben', ['housing']],
+  ['operations', 'ausgaben', ['operations']], ['living', 'ausgaben', ['living']], ['mobility', 'ausgaben', ['mobility']],
+  ['insurance', 'ausgaben', ['insurance']], ['health', 'ausgaben', ['health']], ['leisure', 'ausgaben', ['leisure']],
+  ['administration', 'ausgaben', ['administration']],
+  ['taxes', 'ausgaben', ['taxes']], ['vat', 'ausgaben', ['vat']], ['donations', 'ausgaben', ['donations']],
+  ['saving', 'sek_investitionen', ['saving']], ['loans', 'finanzierung', ['repayment', 'loan_interest']],
+  ['partners', 'finanzierung', ['partners']], ['transfer', 'sonstiges', ['transfer']],
+  ['property', 'kb_g_property', ['property']], ['property_buy', 'kb_g_property', ['property_saving']]];
 const KB_SAME_TIP = ['mobility', 'insurance', 'health', 'leisure', 'taxes'];      // one reason for these (kb_more_tip)
 let KB_KINDS = ['private'];
 function kbCard() {                                          // folded by default, also during setup (only looked up when wanted)
-  return `<details class="card kb" data-keep="kp-kb" data-ex="accounts.positions.needs"${keepOpen('kp-kb')}><summary>${t('kb_titel')} <span class="kb-sum small muted" id="kb-sum"></span></summary><div id="kb-body"></div></details>`;
+  return `<details class="card kb" data-keep="kp-kb" data-ex="accounts.positions.needs"${keepOpen('kp-kb')}><summary>${t('kb_titel')}</summary><div id="kb-body"></div></details>`;
 }
 // eff: [{path, eff (its position now), obj (a property's)}] -- from the table as it stands
 function kbRefresh(eff) {
@@ -5846,29 +5846,24 @@ function kbRefresh(eff) {
   const at = new Map();
   for (const r of eff) { const k = r.obj ? (r.eff === 'saving' ? 'property_saving' : ['repayment', 'loan_interest', 'partners', 'ignore'].includes(r.eff) ? r.eff : 'property') : r.eff;
     if (k) { if (!at.has(k)) at.set(k, []); at.get(k).push(r.path); } }
-  const props = ((S.CFG || {}).real_estate || []).length > 0 || eff.some(r => r.obj);
   const hasF = KB_KINDS.includes('company'), hasP = !hasF || KB_KINDS.includes('private');
   // one tree for every kind of area (private, sole trader, GbR, GmbH …): a name that differs by kind shows both (" / "); a tip
-  // in the kinds you have. Rows of a kind you do not have stay visible as "bei Bedarf" -- no tags, the account decides the area
+  // in the kinds you have -- no tags, the account decides the area
   const kt = key => { const p = I18N[key] ? t(key) : '', f = I18N[key + '_g'] ? t(key + '_g') : p;
     return key.endsWith('_tip') ? (hasP && hasF && p !== f ? `${p} ${f}` : hasF ? f : p) : p !== f ? [p, f].filter(Boolean).join(' / ') : p; };
-  let ok = 0, all = 0, grp = '', rows = '';
-  for (const [k, g, ps, o, only] of KB_TREE) {
-    const opt = o || (g === 'kb_g_property' && !props) || (only === 'p' && !hasP) || (only === 'f' && !hasF);
+  let grp = '', rows = '';
+  for (const [k, g, ps] of KB_TREE) {
     const mine = ps.flatMap(p => at.get(p) || []), have = mine.length > 0, miss = ps.filter(p => !(at.get(p) || []).length);
-    if (have) ok++;
-    if (have || !opt) all++;
     if (g !== grp) { grp = g; const how = kt(`kb_how_${g}`);
       rows += `<tr class="kb-sec"><td colspan="3"><b>${esc(t(g))}</b>${how ? ` <span class="small muted">${esc(how)}</span>` : ''}</td></tr>`; }
     const names = mine.slice(0, 2).map(CP).join(', ') + (mine.length > 2 ? ' ' + t('kb_und_n', mine.length - 2) : '');
-    const part = have && miss.length && ps.length > 1 ? ` · <span class="kb-miss">${esc(t('kb_fehlt_noch', miss.map(p => posLabel(p)).join(', ')))}</span>` : '';
+    const part = have && miss.length && ps.length > 1 ? ` · <span class="muted">${esc(t('kb_ohne', miss.map(p => posLabel(p)).join(', ')))}</span>` : '';
     const sub = kt(`kb_${k}_sub`), tip = kt(`kb_${KB_SAME_TIP.includes(k) ? 'more' : k}_tip`) + (have ? '' : ' ' + t('kb_anlegen'));
-    rows += `<tr class="${have ? 'kb-ok' : opt ? 'kb-opt' : ''}"><td class="kb-mark">${have ? '✓' : '○'}</td>`
+    rows += `<tr class="${have ? 'kb-ok' : ''}"><td class="kb-mark">${have ? '✓' : '○'}</td>`
       + `<td>${esc(kt(`kb_${k}`))}${sub ? ` <span class="muted">› ${esc(sub)}</span>` : ''}<span class="hq" tabindex="0" data-tip="${esc(tip)}">?</span></td>`
-      + `<td>${have ? esc(names) + part : esc(t(opt ? 'kb_bei_bedarf' : 'kb_fehlt'))}</td></tr>`;
+      + `<td>${have ? esc(names) + part : esc(t('kb_keine'))}</td></tr>`;
   }
   body.innerHTML = `<p class="small kb-rule">${esc(t('kb_regel'))}</p><table class="plain kb-table"><thead><tr><th></th><th>${t('kb_empfohlen')}</th><th>${t('kb_bei_dir')}</th></tr></thead><tbody>${rows}</tbody></table>`;
-  const sum = $('#kb-sum'); if (sum) sum.textContent = t('kb_n_von', ok, all);
 }
 // the target account a saving category gets by itself (from the recipients in the cash flow): not needed (transfers to your
 // own accounts), found, or missing -- shown in its menu, so it is clear whether to choose

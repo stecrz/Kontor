@@ -4812,14 +4812,15 @@ class BrowserTest(unittest.TestCase):
                     pg.select_option('.kp-table tr[data-p="%s"] .kp-pos' % par, opt[0]); pg.wait_for_timeout(100)
                     self.assertIn(opt[1], first(kid))
                     pg.select_option('.kp-table tr[data-p="%s"] .kp-pos' % par, ""); pg.wait_for_timeout(100); self.assertEqual(first(par), "Je Unterkategorie (automatisch)")
-                # what Kontor needs: present or missing, following a change in the table at once
+                # the recommended categories: for information only (no count, nothing "missing"), following a change in the table at once
                 pg.evaluate("document.querySelector('details.kb').open = true")
-                n0 = pg.inner_text("#kb-sum"); self.assertRegex(n0, r"^\d+ von \d+ vorhanden$")
+                self.assertEqual(pg.inner_text("details.kb > summary").strip(), "Empfohlene Kategorien"); self.assertEqual(pg.locator("#kb-sum").count(), 0)
+                n0 = pg.locator(".kb-table tr.kb-ok").count()
                 kb = pg.inner_text(".kb-table"); self.assertIn("Finanzierung", kb); self.assertIn("Am besten jedes Darlehen", kb); self.assertIn("Empfohlen in MoneyMoney", kb); self.assertIn("Umsatzerlöse", kb); self.assertIn("Gesellschafter", kb)   # rows of the companies too
                 self.assertIn("erkennt Kontor am Konto", pg.inner_text("#kb-body")); self.assertEqual(pg.locator(".kb-table .tag").count(), 0)   # the rule; one tree, no tags
                 pg.select_option('.kp-table tr[data-p="Umbuchung"] .kp-pos', "living"); pg.wait_for_timeout(100)
-                self.assertNotEqual(pg.inner_text("#kb-sum"), n0); self.assertIn("fehlt", pg.inner_text(".kb-table"))
-                pg.select_option('.kp-table tr[data-p="Umbuchung"] .kp-pos', ""); pg.wait_for_timeout(100); self.assertEqual(pg.inner_text("#kb-sum"), n0)
+                self.assertEqual(pg.locator(".kb-table tr.kb-ok").count(), n0 - 1); kb = pg.inner_text(".kb-table"); self.assertIn("keine", kb); self.assertNotIn("fehlt", kb); self.assertNotIn("bei Bedarf", kb)
+                pg.select_option('.kp-table tr[data-p="Umbuchung"] .kp-pos', ""); pg.wait_for_timeout(100); self.assertEqual(pg.locator(".kb-table tr.kb-ok").count(), n0)
                 # a count opens its payments in the side panel
                 pg.click(".kp-table tr[data-p='Umbuchung'] a.kp-tx >> nth=0"); pg.wait_for_selector("#drawer.open tbody tr")
                 self.assertTrue(pg.inner_text("#drawer h2").startswith("Umbuchung")); pg.keyboard.press("Escape"); pg.wait_for_timeout(200)
