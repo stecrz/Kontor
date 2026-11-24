@@ -22,7 +22,7 @@ from model import UUID_RE, Account, Ledger, Tx, accounts_from_export, add_months
 import mm_categories
 import realestate
 import categorize
-from report import COST_WORDS, POS, ROLES, account_roles, build_dataset, equity_ratio, holding_key, my_positions
+from report import COST_WORDS, POS, PROPERTY_CONTEXT, ROLES, account_roles, build_dataset, equity_ratio, holding_key, my_positions
 import rules
 from rules import Proposal, parse_start, plan_all
 from storage import Store
@@ -1299,6 +1299,7 @@ def positions_overview(ledger: Ledger, config: dict, categories: List[dict], tod
     bookings, sum of the last 12 months, Kontor's proposal, what you chose, the property it belongs to, the account saving goes
     into, transfer category."""
     from report import POSITIONS, category_totals, propose_position, transfer_check
+    config = with_property_categories(config, ledger)
     bereiche = bereiche_for(ledger, config)
     keep = {a.uuid for b in bereiche for a in b["leaves"]}
     firm = {a.uuid for b in bereiche if b.get("kind") == "company" for a in b["leaves"]}
@@ -1483,11 +1484,56 @@ def merge_holdings(state: dict, built: dict) -> None:
         state.setdefault("sec_names", {}).update(built["sec_names"])
 
 
+# a property's category when you set none: the one MoneyMoney category under a rental context (Vermietung, Immobilien, Objekt,
+# Miete) that a word of its name names ("Vermietung \\ Parkweg" for "Parkweg 12"; a house
+# number, where both have one, must agree) -- so a property set up in Kontor and one categorised in MoneyMoney are recognised alike
+def auto_property_categories(config: dict, ledger: Optional[Ledger]) -> Dict[str, str]:
+    """property id -> the category Kontor links it to by itself (only properties without one of yours; a category that would
+    fit several properties links none)."""
+    from report import fold_text, property_marks, marks_fit
+    if ledger is None:
+        return {}
+    paths: Set[str] = set()
+    for c in {t.category_path for t in ledger.txs if t.category_path}:
+        p = norm_cat(c)
+        if p and p not in categorize.STANDARD:
+            parts = p.split(" / ")
+            paths.update(" / ".join(parts[:i]) for i in range(1, len(parts) + 1))
+    props = [im for im in config.get("real_estate") or [] if isinstance(im, dict)]
+    taken = [norm_cat(str(im.get("category"))) for im in props if im.get("category")]
+    free = sorted(p for p in paths if not any(p == c or p.startswith(c + " / ") or c.startswith(p + " / ") for c in taken))
+    claims: Dict[str, List[str]] = defaultdict(list)
+    for im in props:
+        if im.get("category"):
+            continue
+        mine = property_marks(str(im.get("name") or ""))
+        if not mine[0]:
+            continue
+        hits = [p for p in free if marks_fit(mine, property_marks(p.split(" / ")[-1]))
+                and any(w in fold_text(p) for w in PROPERTY_CONTEXT)]
+        hits = [p for p in hits if not any(p.startswith(q + " / ") for q in hits)]            # the topmost
+        if len(hits) == 1:
+            claims[hits[0]].append(str(im.get("id")))
+    return {ids[0]: p for p, ids in claims.items() if len(ids) == 1}
+
+
+def with_property_categories(config: dict, ledger: Optional[Ledger]) -> dict:
+    """The settings as the figures use them: each property without a category of yours with the one Kontor found (marked)."""
+    auto = auto_property_categories(config, ledger)
+    if not auto:
+        return config
+    cfg = dict(config)
+    cfg["real_estate"] = [dict(im, category=auto[str(im.get("id"))].replace(" / ", "\\"), category_auto=True)
+                          if isinstance(im, dict) and str(im.get("id")) in auto else im for im in config.get("real_estate") or []]
+    return cfg
+
+
 def build_report(store: Store, ledger: Ledger, config: dict, state: dict, today: date, warnings: List[str],
                  categories: Optional[List[dict]] = None, progress: Optional[Callable[[float, str], None]] = None) -> dict:
     # Fortschritt grob nach Laufzeit eines Laufs ohne Zwischenergebnisse gewichtet: Kategorien 5-25 %, Bereiche 25-75 % (nach
     # Umsatzzahl), Steuer bis 85 %, Kategorienstatistik und Umsatzliste bis 95 %, Speichern
     step = progress or (lambda f, t: None)
+    config = with_property_categories(config, ledger)
     step(0.05, tr("s_schritt_kategorien"))
     kat = prepare_categories(store, ledger, config, categories, lambda f, t: step(0.05 + 0.2 * f, t))
     if kat.get("_sig_of") is not kat.get("rules"):          # the learned patterns (cash flow estimates; "_..." is not stored)
@@ -1533,7 +1579,7 @@ def build_report(store: Store, ledger: Ledger, config: dict, state: dict, today:
     for im in config.get("real_estate") or []:
         r = immo_res.get(str(im.get("id")))
         entry = {"id": im.get("id"), "name": im.get("name"), "area": im.get("area"), "in_planning": bool(im.get("in_planning")),
-                 "category": im.get("category"), "property_account": im.get("property_account"), "loan_accounts": im.get("loan_accounts") or {},
+                 "category": im.get("category"), "category_auto": bool(im.get("category_auto")), "property_account": im.get("property_account"), "loan_accounts": im.get("loan_accounts") or {},
                  "calcs": [{"id": k.get("id"), "name": k.get("name"), "active": bool(k.get("active")), "created": k.get("created")} for k in im.get("calcs") or []],
                  "documents": im.get("documents") or [], "notes": im.get("notes") or ""}
         if r and "error" not in r:

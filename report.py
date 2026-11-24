@@ -1034,6 +1034,26 @@ def fold_text(s: str) -> str:
     return (s or "").lower().replace("ä", "ae").replace("ö", "oe").replace("ü", "ue").replace("ß", "ss")
 
 
+# words that name a property (its street, its place) -- not the common words every rental category or booking has
+PROPERTY_STOP = {"wohnung", "wohnungen", "haus", "immobilie", "immobilien", "objekt", "objekte", "vermietung", "miete", "mieten", "kosten",
+                 "gbr", "egbr", "gmbh", "strasse", "einnahmen", "ausgaben", "privat", "eigentum", "eigentumswohnung", "grundstueck",
+                 "garage", "stellplatz", "ferienwohnung", "buero", "laden", "gewerbe", "halle", "lager", "zimmer", "januar", "februar",
+                 "maerz", "april", "juni", "juli", "august", "september", "oktober", "november", "dezember", "nebenkosten", "kaltmiete",
+                 "warmmiete", "mieter", "mieterin", "dauerauftrag", "ueberweisung", "gutschrift", "lastschrift", "sepa", "vorauszahlung"}
+PROPERTY_CONTEXT = ("vermiet", "immobil", "objekt", "miete")
+
+
+def property_marks(text: str) -> Tuple[Set[str], Set[str]]:
+    """(words of at least four letters, numbers) that may name a property."""
+    toks = re.findall(r"[a-z0-9]+", fold_text(text))
+    return ({w for w in toks if len(w) >= 4 and not w.isdigit() and w not in PROPERTY_STOP}, {w for w in toks if w.isdigit() and len(w) <= 3})
+
+
+def marks_fit(prop: Tuple[Set[str], Set[str]], other: Tuple[Set[str], Set[str]]) -> bool:
+    """A word of the property's name is in the other text -- and where both carry numbers (house numbers), one agrees."""
+    return bool(prop[0] & other[0]) and (not prop[1] or not other[1] or bool(prop[1] & other[1]))
+
+
 def guess_position(t: Tx, company: bool, by_name: bool = True) -> Optional[str]:
     """Kontor's estimate for a booking without a category, by the words in its name, purpose and booking text (or None).
     by_name=False: the name says nothing (the other side is one of your own areas) -- purpose and booking text only."""
@@ -1151,11 +1171,11 @@ def transfer_check(config: dict) -> Callable[[str], bool]:
 
 def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], config: dict, months: List[Tuple[int, int]],
              verlauf: Dict[str, str], areas: Optional[Dict[str, str]] = None, company: bool = False,
-             objekte: Optional[Dict[str, str]] = None, learned: Optional[dict] = None, area_id: str = ""):
+             objekte: Optional[Dict[str, str]] = None, learned: Optional[dict] = None, area_id: str = "", props: Tuple[str, ...] = ()):
     """Cash flow rows of an area. Every booking of its accounts counts once: a transfer within the area (both bookings found)
     as one row that leaves the net worth unchanged, everything else with its amount. areas: account -> name of its area (all
     areas; transfers between areas are contributions/withdrawals); company: this area is a company; objekte: category ->
-    property (its own rows); learned: the patterns learned from your categories (categorize) -- a booking without a category
+    property (its own rows); props: the names of the area's properties (its only one takes estimated rent and costs); learned: the patterns learned from your categories (categorize) -- a booking without a category
     counts in the position they suggest, else in Kontor's estimate by its words (marked as estimated). Returns (rows, inbound
     per account and month, warnings); rows.pairs: transfers within the area (for money in transit at month end), rows.reasons:
     amounts left out on purpose (category "Ignore"), rows.saving_recipients: saving without a booking on the other side, by recipient
@@ -1475,6 +1495,21 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
             undone.add(o.id)
             cands.remove(n)
     loan_no_account: Dict[str, float] = defaultdict(float)     # taken up and repaid by category: the debt is in no account
+    prop_marks = [(n, property_marks(n)) for n in props]
+    generic: List[bool] = []
+
+    def generic_rent() -> bool:
+        """You book rent or a property's costs under a category of their own that belongs to no property: estimates stay beside
+        it (the property's calculation would plan them a second time)."""
+        if not generic:
+            generic.append(any(c and place(c)[0] in ("rental", "property_costs") and not place(c)[1] for c in totals))
+        return generic[0]
+
+    def estimated_property(t: Tx) -> Optional[str]:
+        """The property a booking without a category belongs to: the one its name or purpose names, else the area's only one."""
+        text = property_marks(" ".join((t.name or "", t.purpose or "", t.booking_text or "")))
+        named = [n for n, m in prop_marks if m[0] and marks_fit(m, text)]
+        return named[0] if len(named) == 1 else props[0] if len(props) == 1 and not named else None
 
     for t in in_root:
         R.cur = t.id                                     # every row added for it holds it (a click shows the bookings behind a figure)
@@ -1596,6 +1631,8 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
             pos, obj = place(cat)
         else:
             pos, obj = guess or guess_position(t, company), None
+            if props and ((pos == "rental" and t.amount > 0) or (pos == "property_costs" and t.amount < 0)) and not generic_rent():
+                obj = estimated_property(t)          # rent and costs of a property, estimated like the rest
             if pos == "housing" and company and objekte and t.amount < 0:    # a landlord: costs of the building
                 pos = "property_costs"
         # an estimate only ever counts as income or expense (or interest) -- never as saving, repayment, transfer or left out
@@ -1605,7 +1642,7 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
         det = cat if mine else ""                        # "" = without a category in MoneyMoney (estimated)
         if obj:
             # rent or costs: by the category's sum (a subcategory such as "Hausgeld"); on the property's own category by the booking
-            inc = (t.amount > 0) if cat in objekte else totals.get(cat, 0.0) > 0
+            inc = (t.amount > 0) if (cat in objekte or not cat) else totals.get(cat, 0.0) > 0
             sec = "income" if inc else "expenses"
             row = "%s · %s" % (obj, "Miete" if inc else "Kosten")
             R.add(sec, row, row, mk, t.amount, ord=POS["rental" if inc else "property_costs"][2] + 0.5, property_name=obj, detail=det,
@@ -1847,15 +1884,17 @@ def build_dataset(ledger: Ledger, config: dict, state: dict, today: date, bereic
         learned_sig = learned.get("_sig") or hashlib.sha1(json.dumps(learned.get("rules") or [], sort_keys=True, default=str).encode()).hexdigest()
     objekte = {str(im.get("category")): str(im.get("name") or "") for im in config.get("real_estate") or []
                if isinstance(im, dict) and im.get("category") and str(im.get("area") or "") == str(bereich.get("id"))}
+    props = tuple(sorted(str(im.get("name") or "") for im in config.get("real_estate") or []
+                         if isinstance(im, dict) and str(im.get("area") or "") == str(bereich.get("id"))))
     ckey = (getattr(ledger, "_kat_sig", None), str(bereich.get("id") or ""), back <= 0, tuple(a.uuid for a in leaves), json.dumps(roles, sort_keys=True),
             json.dumps(config.get("cashflow") or {}, sort_keys=True, default=str), tuple(months[0]) if months else None,
-            tuple(months[-1]) if months else None, len(months), tuple(sorted(quelle.items())), company, learned_sig, tuple(sorted(objekte.items())),
+            tuple(months[-1]) if months else None, len(months), tuple(sorted(quelle.items())), company, learned_sig, tuple(sorted(objekte.items())), props,
             json.dumps([sorted(areas.items()), config.get("companies"), config.get("account_mirrors")], sort_keys=True, default=str))
     cache = ledger.__dict__.setdefault("_classify_cache", {})
     if ckey in cache:
         R, inbound, warn_c = copy.deepcopy(cache[ckey])        # Bereich unveraendert (z. B. Verlauf eines anderen Bereichs geaendert)
     else:
-        R, inbound, warn_c = classify(ledger, leaves, roles, config, months, quelle, areas, company, objekte, learned, str(bereich.get("id") or ""))
+        R, inbound, warn_c = classify(ledger, leaves, roles, config, months, quelle, areas, company, objekte, learned, str(bereich.get("id") or ""), props)
         if len(cache) > 24:
             cache.clear()
         cache[ckey] = copy.deepcopy((R, inbound, warn_c))
@@ -2473,9 +2512,10 @@ def apply_plan(dataset: dict, plan: dict, config: dict, fremd_nw: Optional[Dict[
         costs = {mk: reihen.get("costs", {}).get(mk, 0.0) + reihen.get("reserve", {}).get(mk, 0.0) for mk in future}
         # the property's own rows (its categories, classify: objekt) take the calculation; without actual figures new rows
         for sec_name, row, series, key in (("income", "%s · Miete" % name, rent, "cf_objekt_miete"), ("expenses", "%s · Kosten" % name, costs, "cf_objekt_kosten")):
-            if not im.get("category"):
+            has_rows = any(z.get("property_name") == name for z in sec_by_name[sec_name]["rows"])
+            if not im.get("category") and not has_rows:          # no category: only its own rows (estimated rent) take it
                 continue
-            if any(z.get("property_name") == name for z in sec_by_name[sec_name]["rows"]):
+            if has_rows:
                 for z in sec_by_name[sec_name]["rows"]:
                     if z.get("property_name") == name:
                         immo_rows[(sec_name, z["row"])] = series

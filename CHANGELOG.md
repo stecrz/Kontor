@@ -1,5 +1,11 @@
 # Änderungen
 
+## 3.17.56 (2026-11-24 03:30)
+- Immobilien: ohne Vermietungskategorie verknüpft Kontor die passende Kategorie unter Vermietung/Immobilien selbst (Wort aus dem Namen, Hausnummer muss passen)
+- Immobilien: Miete und Objektkosten ohne Kategorie zählen geschätzt zur Immobilie, die der Verwendungszweck nennt, sonst zur einzigen des Bereichs; auch in der Planung
+- Cashflow-Positionen: Kategorien-Karte zeigt Vermietung/Objektkosten ohne angelegte Immobilie unter „Je Immobilie“
+- Entwicklung: Test der Update-Prüfung vergleicht mit 3.17.12 statt dem wachsenden Stand
+
 ## 3.17.55 (2026-11-24 03:15)
 - Entwicklung: Sperre für Claude in Chrome und Claude Docs aufgehoben – kaum Ersparnis, nichts soll später fehlen
 

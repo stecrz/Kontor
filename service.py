@@ -64,7 +64,7 @@ import webauthn
 from receipts import Belege, file_status, pattern_problem
 import receipt_text
 from mm_bridge import Bridge, MoneyMoneyError, MoneyMoneyLocked, MoneyMoneyNotRunning, is_running
-from core import (REPORT_LOCK, assign_skipped, check_file_version, positions_overview, save_positions, category_tree, follow_categories, prune_account_settings, account_sig, account_tree, bank_accounts, bereiche_for, build_report, abruf_arten, check_config, diagnose, earliest_needed, export_package, fetch, freeze_assignments, immo_for_plan, merge_snapshots, record_snapshot,
+from core import (REPORT_LOCK, with_property_categories, assign_skipped, check_file_version, positions_overview, save_positions, category_tree, follow_categories, prune_account_settings, account_sig, account_tree, bank_accounts, bereiche_for, build_report, abruf_arten, check_config, diagnose, earliest_needed, export_package, fetch, freeze_assignments, immo_for_plan, merge_snapshots, record_snapshot,
                      immo_results, import_package, ledger_fp, merge_holdings, merged_config, not_booked_entry, plan_pending, refresh_accounts, rule_accounts, run_once, unavailable_text, version, version_on_disk, MM_HISTORY_FILE)
 from model import Ledger, Tx, accounts_from_export, ledger_from_bytes, ledger_to_bytes
 from report import ROLES, account_balance_series, account_months, account_roles, apply_plan, role_label
@@ -1970,7 +1970,8 @@ class App:
         if raw is None or "areas" not in raw:
             return {"empty": True, "setup": not self.config_has_rules(), "version": version()}
         ds = copy.deepcopy(raw)
-        immo_res = immo_results(self.config, date.today())
+        cfg = with_property_categories(self.config, self.ledger)
+        immo_res = immo_results(cfg, date.today())
         resolve = self.ledger.resolve if self.ledger is not None else None
         bereiche = ds.get("areas") or {}
 
@@ -1979,7 +1980,7 @@ class App:
             if "error" in b:
                 return
             try:
-                apply_plan(b, self.plan_for(bid), self.config, fremd_nw=fremd, immo=immo_for_plan(self.config, bid, immo_res), ledger_resolve=resolve)
+                apply_plan(b, self.plan_for(bid), cfg, fremd_nw=fremd, immo=immo_for_plan(cfg, bid, immo_res), ledger_resolve=resolve)
             except Exception as e:  # pragma: no cover - fehlerhafte Plandaten duerfen die Anzeige nicht stoppen
                 log.exception("Planning for area %s", bid)
                 b["error"] = tr("s_planung_fehlgeschlagen") % e
@@ -2622,7 +2623,8 @@ def _plan_run(app: "App", bereich: str, plan: dict) -> Optional[dict]:
     if bereich not in raw or "error" in raw[bereich]:
         return None
     b = copy.deepcopy(raw[bereich])
-    apply_plan(b, plan, app.config, immo=immo_for_plan(app.config, bereich, immo_results(app.config, date.today())),
+    cfg = with_property_categories(app.config, app.ledger)
+    apply_plan(b, plan, cfg, immo=immo_for_plan(cfg, bereich, immo_results(cfg, date.today())),
                ledger_resolve=app.ledger.resolve if app.ledger is not None else None)
     return b
 

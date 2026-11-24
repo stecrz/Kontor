@@ -920,6 +920,52 @@ class Positions(Reconciles):
         self.assertEqual(g["Neubau · Miete"]["amounts"]["2026-02"], 900.0)
         self.assertEqual(g["Zinsen"]["amounts"]["2026-02"], -300.0)                                      # financing stays financing
 
+    def test_a_property_without_its_category_is_linked_by_its_name(self):
+        """A property set up in Kontor without a category: the one MoneyMoney category named by a word of its name links it --
+        recognised as if you had chosen it; two that both fit, or none: nothing guessed."""
+        txs = [(1, "kk", date(2026, 1, 3), 9500.0, {"cat": "Vermietung\\Parkweg\\Mieteinnahmen"}),
+               (2, "kk", date(2026, 2, 3), 9500.0, {"cat": "Vermietung\\Parkweg\\Mieteinnahmen"}),
+               (3, "kk", date(2026, 2, 4), -800.0, {"cat": "Vermietung\\Parkweg\\Hausgeld"}),
+               (4, "giro", date(2026, 2, 5), -40.0, {"cat": "Wohnen\\Wohnung"})]
+        led = make_ledger(txs)
+        cfg = {"real_estate": [{"id": "i1", "name": "Wohnung Parkweg 12", "area": "g-Muster GbR"}]}
+        self.assertEqual(core.auto_property_categories(cfg, led), {"i1": "Vermietung / Parkweg"})
+        g = rows(datasets(led, core.with_property_categories(cfg, led))["Muster GbR"])
+        self.assertEqual((g["Wohnung Parkweg 12 · Miete"]["amounts"]["2026-02"], g["Wohnung Parkweg 12 · Kosten"]["amounts"]["2026-02"]), (9500.0, -800.0))
+        own = {"real_estate": [dict(cfg["real_estate"][0], category="Vermietung")]}
+        self.assertEqual(core.auto_property_categories(own, led), {})                         # yours counts
+        two = make_ledger(txs + [(5, "kk", date(2026, 2, 6), 100.0, {"cat": "Parkweg Garage"})])
+        self.assertEqual(core.auto_property_categories(cfg, two), {"i1": "Vermietung / Parkweg"})   # under a rental context first
+        two = make_ledger([(1, "kk", date(2026, 2, 3), 1.0, {"cat": "Parkweg"}), (2, "kk", date(2026, 2, 3), 1.0, {"cat": "Garten\\Parkweg"})])
+        self.assertEqual(core.auto_property_categories(cfg, two), {})                                   # two apart: nothing guessed
+        self.assertEqual(core.auto_property_categories({"real_estate": [{"id": "i1", "name": "Wohnung"}]}, led), {})   # no word of its own
+        # only under a rental context (not your own home, car or holidays); house numbers must agree; one category, two properties: none
+        home = make_ledger([(1, "giro", date(2026, 2, 3), -900.0, {"cat": "Wohnen\\Lindenweg"}), (2, "giro", date(2026, 2, 4), -50.0, {"cat": "Auto\\Garage Feldstraße"})])
+        self.assertEqual(core.auto_property_categories({"real_estate": [{"id": "i1", "name": "Wohnung Lindenweg 3"}, {"id": "i2", "name": "Garage Feldstraße"}]}, home), {})
+        nr = make_ledger([(1, "kk", date(2026, 2, 3), 900.0, {"cat": "Vermietung\\Parkweg 12\\Miete"})])
+        both = {"real_estate": [{"id": "i1", "name": "Parkweg 14"}, {"id": "i2", "name": "Parkweg 12"}]}
+        self.assertEqual(core.auto_property_categories(both, nr), {"i2": "Vermietung / Parkweg 12"})
+        self.assertEqual(core.auto_property_categories(both, make_ledger([(1, "kk", date(2026, 2, 3), 900.0, {"cat": "Vermietung\\Parkweg"})])), {})
+
+    def test_rent_without_a_category_counts_for_the_only_property(self):
+        cfg = {"real_estate": [{"id": "i1", "name": "Altbau", "area": "g-Muster GbR"}]}
+        data = build([(1, "kk", date(2026, 1, 3), 1200.0, {"name": "Mieter Meier", "purpose": "Miete Januar"}),
+                      (2, "kk", date(2026, 2, 3), 1200.0, {"name": "Mieter Meier", "purpose": "Miete Februar"}),
+                      (3, "kk", date(2026, 2, 9), -300.0, {"name": "Hausverwaltung Nord", "purpose": "Hausgeld Februar"})], cfg)
+        self.assertAddsUp(data)
+        g = rows(data["Muster GbR"])
+        self.assertEqual((g["Altbau · Miete"]["amounts"]["2026-02"], g["Altbau · Miete"]["details"][0]["category"]), (1200.0, ""))   # estimated
+        self.assertEqual(g["Altbau · Kosten"]["amounts"]["2026-02"], -300.0)
+        two = {"real_estate": cfg["real_estate"] + [{"id": "i2", "name": "Neubau", "area": "g-Muster GbR"}]}
+        g = rows(build([(1, "kk", date(2026, 2, 3), 1200.0, {"name": "Mieter Meier", "purpose": "Miete Februar"})], two)["Muster GbR"])
+        self.assertEqual(g["Vermietung"]["amounts"]["2026-02"], 1200.0)                        # two properties: which one is unknown
+        g = rows(build([(1, "kk", date(2026, 2, 3), 1200.0, {"name": "Mieter Meier", "purpose": "Miete Neubau Whg 3"})], two)["Muster GbR"])
+        self.assertEqual(g["Neubau · Miete"]["amounts"]["2026-02"], 1200.0)                    # the one its purpose names
+        # rent booked under a category of its own beside it: estimates stay beside it (the calculation would plan them twice)
+        g = rows(build([(1, "kk", date(2026, 1, 3), 1200.0, {"cat": "Mieteinnahmen"}), (2, "kk", date(2026, 2, 3), 1200.0, {"name": "Mieter Meier", "purpose": "Miete Februar"})], cfg)["Muster GbR"])
+        self.assertEqual(g["Vermietung"]["amounts"]["2026-02"], 1200.0)
+        self.assertNotIn("Altbau · Miete", g)
+
     def test_budget_per_position(self):
         led = make_ledger([(1, "giro", date(2026, 1, 3), -100.0, {"cat": "Wohnen\\Strom/Gas"}), (2, "giro", date(2026, 1, 4), -900.0, {"cat": "Wohnen\\Miete"}),
                            (3, "giro", date(2026, 1, 5), -50.0, {"cat": "Lebensmittel\\Supermarkt"})])

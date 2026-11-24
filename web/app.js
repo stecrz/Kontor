@@ -5150,7 +5150,7 @@ function vImmobilie(id) {
   <div class="card" style="margin-bottom:12px" data-ex="properties.object"><div class="immo-form">
     <label>${t('name')}</label><input type="text" id="im-name" value="${esc(im.name)}">
     <label>${t('bereich_0', hq('area'))}</label><select id="im-bereich">${Object.entries((S.DATA && S.DATA.area_names) || {}).map(([bid, n]) => `<option value="${esc(bid)}" ${im.area === bid ? 'selected' : ''}>${esc(n)}</option>`).join('') || (S.CFG.areas || []).map(b => `<option value="${esc(b.id)}" ${im.area === b.id ? 'selected' : ''}>${esc(b.name)}</option>`).join('')}</select>
-    <label>${t('vermietungskategorie_0', hq('immo_kategorie'))}</label><input type="text" id="im-kat" list="im-kats" value="${esc(im.category || '')}" placeholder="${t('vermietung_objekt')}"><datalist id="im-kats">${kats.map(c => `<option value="${esc(c.raw)}">`).join('')}</datalist>
+    <label>${t('vermietungskategorie_0', hq('immo_kategorie'))}</label><input type="text" id="im-kat" list="im-kats" value="${esc(im.category || '')}" placeholder="${esc(!im.category && d.category_auto && d.category ? t('automatisch_0', d.category) : t('vermietung_objekt'))}"><datalist id="im-kats">${kats.map(c => `<option value="${esc(c.raw)}">`).join('')}</datalist>
     <label>${t('objektkonto_wert_0', hq('immo_objektkonto'))}</label><select id="im-konto">${acctOptions(im.property_account, x => !x.group)}</select>
     <label>${t('in_planung_uebernehmen_0', hq('immo_planung'))}</label><label class="switch"><input type="checkbox" id="im-plan" ${im.in_planning ? 'checked' : ''}><i></i>${im.in_planning ? t('aktiv') : t('aus')}</label>
     <label>${t('notizen')}</label><input type="text" id="im-notiz" value="${esc(im.notes || '')}">
@@ -5834,7 +5834,7 @@ const KB_TREE = [['work_income', 'einnahmen', ['work_income']], ['revenue', 'ein
   ['taxes', 'ausgaben', ['taxes']], ['vat', 'ausgaben', ['vat']], ['donations', 'ausgaben', ['donations']],
   ['saving', 'sek_investitionen', ['saving']], ['loans', 'finanzierung', ['repayment', 'loan_interest']],
   ['partners', 'finanzierung', ['partners']], ['transfer', 'sonstiges', ['transfer']],
-  ['property', 'kb_g_property', ['property']], ['property_buy', 'kb_g_property', ['property_saving']]];
+  ['property', 'kb_g_property', ['property', 'rental', 'property_costs']], ['property_buy', 'kb_g_property', ['property_saving']]];
 const KB_SAME_TIP = ['mobility', 'insurance', 'health', 'leisure', 'taxes'];      // one reason for these (kb_more_tip)
 let KB_KINDS = ['private'];
 function kbCard() {                                          // folded by default, also during setup (only looked up when wanted)
@@ -5857,7 +5857,7 @@ function kbRefresh(eff) {
     if (g !== grp) { grp = g; const how = kt(`kb_how_${g}`);
       rows += `<tr class="kb-sec"><td colspan="3"><b>${esc(t(g))}</b>${how ? ` <span class="small muted">${esc(how)}</span>` : ''}</td></tr>`; }
     const names = mine.slice(0, 2).map(CP).join(', ') + (mine.length > 2 ? ' ' + t('kb_und_n', mine.length - 2) : '');
-    const part = have && miss.length && ps.length > 1 ? ` · <span class="muted">${esc(t('kb_ohne', miss.map(p => posLabel(p)).join(', ')))}</span>` : '';
+    const part = have && miss.length && ps.length > 1 && k !== 'property' ? ` · <span class="muted">${esc(t('kb_ohne', miss.map(p => posLabel(p)).join(', ')))}</span>` : '';
     const sub = kt(`kb_${k}_sub`), tip = kt(`kb_${KB_SAME_TIP.includes(k) ? 'more' : k}_tip`) + (have ? '' : ' ' + t('kb_anlegen'));
     rows += `<tr class="${have ? 'kb-ok' : ''}"><td class="kb-mark">${have ? '✓' : '○'}</td>`
       + `<td>${esc(kt(`kb_${k}`))}${sub ? ` <span class="muted">› ${esc(sub)}</span>` : ''}<span class="hq" tabindex="0" data-tip="${esc(tip)}">?</span></td>`

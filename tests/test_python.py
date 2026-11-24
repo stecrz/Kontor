@@ -1407,13 +1407,13 @@ class Guard(unittest.TestCase):
         """The update that brought Kontor's own Python, as the version before it (3.17.5) read it: the new place files are
         loaded from, the programs started, the check itself -- asked about, as the changelog says."""
         from test_update_guard import _commit, _files_at, entries
-        if not _commit("ab4c520"):
+        if not _commit("ab4c520") or not _commit("c837237"):
             self.skipTest("the history before this version is not here (GitHub checks out the newest commit only)")
         import types
         old = _files_at("ab4c520")
         before = types.ModuleType("update_guard_before")
         exec(compile(old["update_guard.py"].decode("utf-8"), "update_guard.py", "exec"), before.__dict__)
-        found = before.compare(old, self.files, limit=5000)
+        found = before.compare(old, _files_at("c837237"), limit=5000)    # that update (3.17.12) -- not today's files, which keep growing
         asks = entries(before.asking(found))
         crit = {t for t, xs in asks.items() if any(x["level"] == "critical" for x in xs)}
         self.assertTrue({"check", "address:astral-sh/python-build-standalone", "new_program:pyboot.py", "new_program:pyruntime.py", "new_program:xattr",

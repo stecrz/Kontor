@@ -14,7 +14,7 @@ Bruttorendite = yearly net cold rent ÷ purchase price) – or "keine Kalkulatio
 
 ## properties.object — Objektangaben
 The object's settings, no figures: Name; Bereich (whose balance sheet and planning it belongs to); Vermietungskategorie (its
-MoneyMoney category, e.g. Vermietung \ Objekt – used for Soll/Ist, the planning and the AfA under Steuer); Objektkonto (Wert) (the
+MoneyMoney category, e.g. Vermietung \ Objekt – used for Soll/Ist, the planning and the AfA under Steuer; empty: "… (automatisch)" names the category under a rental context Kontor linked by a word of the name; without any, rent and property costs without a category count as estimates for the property their purpose names, else the area's only one); Objektkonto (Wert) (the
 offline account that carries its value in the balance sheet); "In Planung übernehmen" (on: rent, costs, interest, repayment,
 remaining debt, value and distributions of the active scenario are planned for the area); Notizen. Tabs below: Kalkulation,
 Jahrestabelle, Soll/Ist, Dokumente (N = documents linked).
