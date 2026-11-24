@@ -1,5 +1,9 @@
 # Änderungen
 
+## 3.17.58 (2026-11-24 03:46)
+- Updates: geänderte Hooks der Entwicklung (.githooks) nicht mehr als Fund gemeldet
+- Entwicklung: Update-Prüfung behandelt .githooks wie .claude (Kontors Git läuft ohne Hooks)
+
 ## 3.17.57 (2026-11-24 03:32)
 - Entwicklung: Einrichtung nutzt die Playwright-Version des Servers – vorhandene Browser passen ohne Download
 

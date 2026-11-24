@@ -2305,17 +2305,16 @@ def ignored(rel: str, patterns: Iterable[str]) -> bool:
 
 def beside(rel: str, data: bytes, patterns: Iterable[str] = ()) -> Optional[str]:
     """A file of a git clone that is no part of the program: None when it is an ordinary file of the repository's tests and
-    development (text with an ordinary ending in one of those folders -- Kontor never runs it), else what it is (shown).
-    Never ordinary: what a program or helper makes (caches, translated Python, apps, the helpers' folders, whatever the
-    repository's own list of such files takes in), anything that is no text, git's own hooks."""
+    development (text with an ordinary ending in one of those folders, in .githooks any text -- Kontor never runs it, its own
+    git runs without hooks), else what it is (shown). Never ordinary: what a program or helper makes (caches, translated
+    Python, apps, the helpers' folders, whatever the repository's own list of such files takes in), anything that is no text.
+    The development's hooks (.githooks, .claude/hooks) run only where a developer turns them on, never by Kontor."""
     parts = rel.split("/")
     if ignored(rel, MADE_HERE.splitlines()) or ignored(rel, patterns):
         return "%s (%s)" % (rel, "made by a program")
-    if parts[0] == ".githooks":
-        return rel
     if not (parts[0] in BESIDE and len(parts) > 1 or rel in BESIDE_FILES):
         return rel
-    if rel not in BESIDE_FILES and not parts[-1].lower().endswith(BESIDE_ENDS):
+    if rel not in BESIDE_FILES and not parts[-1].lower().endswith(BESIDE_ENDS) and not (parts[0] == ".githooks" and len(parts) == 2):
         return rel
     try:
         text = data.decode("utf-8")

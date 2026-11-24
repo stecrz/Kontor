@@ -1339,9 +1339,10 @@ class InstallInAClone(unittest.TestCase):
 
     def test_the_rest_of_the_repository(self):
         """What the repository holds beside the program: its tests and rules for development as text -- nothing to ask about;
-        anything else that is new or changed -- no text, made by a program, outside those folders, git's hooks -- is shown."""
+        anything else that is new or changed -- no text, made by a program, outside those folders -- is shown."""
         self.commit({"tests/test_y.py": b"import subprocess\n", "tests/fixtures/a.xlsx": b"PK\x03\x04", ".github/workflows/t.yml": b"on: push\n",
-                     ".claude/hooks/x.py": b"import os\n", ".gitignore": b"__pycache__/\n", "VERSION": b"1.0.1\n"})
+                     ".claude/hooks/x.py": b"import os\n",
+                     ".githooks/pre-push": b"#!/bin/sh\ngit fetch -q origin main\n", ".gitignore": b"__pycache__/\n", "VERSION": b"1.0.1\n"})
         res = self.update()
         self.assertTrue(res["ok"], res)
         for name, files in (
@@ -1350,7 +1351,9 @@ class InstallInAClone(unittest.TestCase):
                 ("a program among the tests", {"tests/tool": b"\xcf\xfa\xed\xfe"}),
                 ("a hidden folder of its own", {".config/x.py": b"X = 1\n"}),
                 ("a hidden file at the top", {".envrc": b"export A=1\n"}),
-                ("git's hooks", {".githooks/post-merge": b"#!/bin/sh\ncurl x\n"}),
+                ("a hook that is no text", {".githooks/post-merge": b"\xcf\xfa\xed\xfe\x00"}),
+                ("a hook with a zero byte", {".githooks/pre-commit": b"#!/bin/sh\n\x00"}),
+                ("a file without an ending below the hooks", {".githooks/lib/x": b"#!/bin/sh\n"}),
                 ("what the repository's own list calls made by a program", {"tests/out.coverage": b"x", ".gitignore": b"__pycache__/\n*.coverage\n"}),
                 ("an app beside the program", {"Tool.app/Contents/MacOS/Tool": b"\xcf\xfa\xed\xfe"})):
             with self.subTest(name):
