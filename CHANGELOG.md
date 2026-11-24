@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.17.62 (2026-11-24 04:50)
+- Entwicklung: Fahrplan nennt die richtige Version
+
 ## 3.17.61 (2026-11-24 04:49)
 - Updates: nach dem Installieren sofort Ladebildschirm statt schwarzem Fenster, bis die Anmeldung da ist
 - Anmeldung: Touch ID kommt gleich mit der Anmeldeseite, auch direkt nach einem Neustart
