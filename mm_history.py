@@ -511,6 +511,8 @@ def _portfolios(db: "MemDB", plain: List[str], keys: List[int], info: Callable[[
             by_isin = {str(i or "").strip(): str(n or "").strip() for i, n in db.rows("SELECT %s, %s FROM %s" % (_q(icol), _q(tn), _q(t)))}
             names = {sk: (by_isin.get(i, "") or n, i) for sk, (n, i) in names.items()}
             break
+    # series whose key is a row of the securities table (a security; a total entry often is none, e.g. Trade Republic)
+    in_table = {r[0] for r in by_key("1")} if cols else set()
     cur = "%04d-%02d" % (today.year, today.month)
     for k, per in recs.items():
         bal = info(k).get("balance_amount") or 0.0
@@ -540,8 +542,11 @@ def _portfolios(db: "MemDB", plain: List[str], keys: List[int], info: Callable[[
                 hits = sum(1 for x in devs if x <= 0.05)
                 check = "total entry matches the other securities at %d %% of its points" % round(100.0 * hits / len(pts))
                 mean = sum(devs[:hits]) / max(1, hits)                  # closeness over the matching points
-                if hits >= 0.7 * len(pts) and (best is None or (hits, -mean) > best):
-                    total_key, best = sk, (hits, -mean)
+                # a portfolio of a single security: it and the total entry match each other equally -- then the series that is no
+                # row of the securities table is the total (otherwise the security, with its ISIN, would count as the total)
+                key = (hits, -round(mean, 3), sk not in in_table)
+                if hits >= 0.7 * len(pts) and (best is None or key > best):
+                    total_key, best = sk, key
         art = "total" if total_key is not None else "level" if fits(level_now) else "delta" if fits(delta_now) else None
         if art is None:
             pct = lambda x: "%d %%" % round(100.0 * x / bal) if abs(bal) >= 1.0 else "-"

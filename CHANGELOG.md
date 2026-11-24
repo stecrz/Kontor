@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.17.48 (2026-11-24 02:31)
+- Bilanz: Depot mit einem Wertpapier – Verlauf zeigt das Wertpapier mit Namen und ISIN statt „Unbenannt 1“ (Kontostände neu einlesen)
+
 ## 3.17.47 (2026-11-24 02:16)
 - Entwicklung: Sperre vor dem Push nach Herkunft – bewusst geänderte Zeilen dürfen, beim Konflikt verlorene Zeilen paralleler Chats sperren; Konflikt nennt die neuere Version; kein git reset auf fremden Stand
 

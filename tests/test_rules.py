@@ -850,6 +850,20 @@ class PortfolioHistoryTests(unittest.TestCase):
         self.assertEqual(sorted(wp), ["Titel 1", "Titel 3"]); self.assertEqual(wp["Titel 1"]["isin"], "XX0000000001")
         self.assertEqual(wp["Titel 1"]["amounts"]["2026-10"], 1000.0); self.assertEqual(wp["Titel 3"]["amounts"], {"2026-10": 0.3})
 
+    def test_single_security_beside_its_total_entry(self):
+        # a portfolio holding one fund; MoneyMoney records the fund (row with ISIN) and the portfolio total (no row), both equal:
+        # the total entry is the one without a row -> the breakdown shows the fund with its ISIN, not an unnamed series
+        import mm_history as H
+        from datetime import date as D, timedelta as TD
+        chart, d, v = [], D(2026, 8, 7), 7900.0
+        while d <= D(2026, 11, 8):
+            chart += [(d, v, 1), (d, v, 9)]
+            d, v = d + TD(days=3), round(v + 2.5, 2)
+        db = self._db(chart, [(1, 3, 0)])
+        r = H._portfolios(db, ["portfolio_chart", "securities"], [1], lambda k: {"balance_amount": round(v - 2.5, 2)}, D(2026, 11, 8))[1]
+        self.assertEqual([(w["name"], w["isin"]) for w in r["securities"]], [("Titel 1", "XX0000000001")])
+        self.assertEqual(r["securities"][0]["amounts"]["2026-09"], r["amounts"]["2026-09"])
+
     def test_names_from_moneymoneys_short_columns(self):
         # MoneyMoney's securities table has no "name" column: the name is the value of ident/symbol/wpn that reads like a name
         # (not a ticker in capitals, not a WKN or an ISIN)
