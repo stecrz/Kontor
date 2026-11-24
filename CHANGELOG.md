@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.17.51 (2026-11-24 03:04)
+- Entwicklung: GitHub-Werkzeuge (MCP) in Kontor-Sitzungen gesperrt – Code und Veröffentlichen laufen über git
+
 ## 3.17.50 (2026-11-24 02:42)
 - Entwicklung: Claude Docs in Kontor-Sitzungen gesperrt – weniger Grundlast je Schritt
 
