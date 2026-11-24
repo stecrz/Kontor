@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.17.54 (2026-11-24 03:11)
+- Entwicklung: Sitzungszweige werden nie hochgeladen; Löschen auf GitHub geht aus einer Sitzung nicht
+
 ## 3.17.53 (2026-11-24 03:10)
 - Entwicklung: GitHub-Werkzeuge wieder frei (kosteten keinen Kontext); übrig gebliebene Sitzungszweige werden nach dem Veröffentlichen gelöscht
 
