@@ -284,6 +284,22 @@ class PushGuard(unittest.TestCase):
         self.assertEqual(self.guard(self.dir, "cd %s && git push origin HEAD:main" % self.a), (0, ""))   # pushed from elsewhere: that repository
         self.assertEqual(self.guard(self.a, 'grep -n "git push" CLAUDE.md')[0], 0)  # the words in a text are no push
 
+    def test_only_main_on_github(self):
+        """The cloud session names a branch claude/… to push to; Kontor keeps it local (one commit per version on main) --
+        removing an old branch stays possible without the version check, main itself never."""
+        self.version(self.a, "1.0.1", {"app.js": "two\n"})
+        for push in ("git push -u origin claude/some-name-x1", "git push origin HEAD:claude/x", "git push origin HEAD:refs/heads/claude/x"):
+            code, out = self.guard(self.a, push)
+            self.assertEqual(code, 2, push); self.assertIn("nur auf main", out)
+        self.git(self.b, "pull", "-q", "origin", "main"); self.version(self.b, "1.0.1", {"app.js": "b\n"})
+        self.git(self.b, "push", "-q", "origin", "HEAD:main")                       # a is behind now: a push to main is locked ...
+        self.assertEqual(self.guard(self.a)[0], 2)
+        for drop in ("git push origin --delete claude/old-x1 ci/test", "git push origin :claude/old-x1"):
+            self.assertEqual(self.guard(self.a, drop), (0, ""), drop)              # ... removing a branch is not a version
+        self.assertEqual(self.guard(self.a, "git push origin :claude/old HEAD:main")[0], 2)   # unless main goes along
+        self.assertIn("main nie löschen", self.guard(self.a, "git push origin --delete main")[1])
+        self.assertIn("Force-Push", self.guard(self.a, "git push -f origin HEAD:main")[1])
+
     def test_old_state_put_on_top_with_reset_soft_is_locked(self):
         self.version(self.a, "1.0.1", {"tax.py": "mine\n"})                     # own work on the old main
         self.version(self.b, "1.0.1", {"app.js": "two\n"}); self.git(self.b, "push", "-q", "origin", "HEAD:main")

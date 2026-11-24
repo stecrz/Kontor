@@ -285,6 +285,10 @@ anhängen – nie löschen.
   darf überschrieben werden, ein Konflikt in denselben Teilen einer Datei soll erkannt und abgewogen werden (welcher Stand der neuere
   ist). Umgesetzt: `release.py` merkt sich den eigenen Ausgangsstand; nur Zeilen von Versionen danach sperren; Konflikt-Meldung nennt
   die fremde Version; `git reset` auf einen fremden Stand gesperrt (`docs/rules/parallel.md`). (umgesetzt in 3.17.47)
+- **Nur nötige MCP-Dienste, nur `main` auf GitHub** (Nutzer, 2026-11-24 – Credits für hohe Denkstufen statt für Kontext): Claude in
+  Chrome, Claude Docs und `github` gesperrt (Code über Klon, `git` und `gh`); `claude-code-remote` bleibt, weil es die Plattform selbst
+  ist (Umgebung, Netz, Schlüssel). Der Zweig `claude/…` jeder Cloud-Sitzung bleibt lokal, der Guard sperrt den Push dorthin;
+  übrig gebliebene Zweige werden gelöscht. (umgesetzt in 3.17.49–3.17.52)
 
 ## Offen (Entscheidung steht aus – mit Empfehlung vorlegen, wenn der Punkt dran ist)
 - Umsatzsteuer-Voranmeldung direkt an ELSTER senden (ELSTERs Programmbibliothek ERiC, Anmeldung als Hersteller, Zertifikat und

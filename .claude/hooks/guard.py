@@ -30,6 +30,9 @@ RULES = [
      "Kein Force-Push."),
     (False, False, r"git\s+push\b[^\n;&|]*((\s--delete|\s-d)\b[^\n;&|]*\bmain\b|\s:(refs/heads/)?main\b)",
      "main nie löschen."),
+    (False, False, r"git\s+push\b(?![^\n;&|]*\s(--delete|-d)\b)[^\n;&|]*\s(\S+:)?(refs/heads/)?claude/",
+     "Kontor veröffentlicht nur auf main (release.py); der Zweig claude/…, den die Cloud-Sitzung vorgibt, bleibt lokal – "
+     "auf GitHub gibt es nur main."),
 ]
 
 
@@ -189,6 +192,11 @@ def push_check(command: str, cwd: str, seen: str = "") -> str:
     """Before a push to Kontor's main: the newest main fetched (at most 5 s; else the last one fetched) and in the work pushed;
     every commit on top of it one proper version; no line of a newer version lost (seen: the main the work was built on, from
     release.py -- see lost_lines). Returns why not, or "" (also for other repositories)."""
+    m = re.search(PUSH + r"([^\n;&|]*)", command)
+    words = (m.group(1) if m else "").split()
+    if ("--delete" in words or "-d" in words or any(w.startswith(":") for w in words)) and \
+            not any(w == "main" or w.endswith((":main", ":refs/heads/main")) for w in words):
+        return ""                                       # removing a branch (main itself: RULES): nothing goes to main
     repo = _push_repo(command, cwd)
     top = _git(repo, "rev-parse", "--show-toplevel").stdout.strip()
     if not top or not (os.path.isfile(os.path.join(top, "VERSION")) and os.path.isfile(os.path.join(top, "CHANGELOG.md"))):

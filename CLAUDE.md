@@ -34,7 +34,8 @@ Entschiedenes nie löschen – auch Abgelehntes, immer mit dem Grund –, nach d
 - Leitplanken (`.claude/settings.json`, `.claude/hooks/`): Sperren für Kontors Datenordner, MoneyMoneys Datenbank, Überweisungen,
   Force-Push und das Ganzlesen großer Dateien; MCP-Dienste Claude in Chrome, Claude Docs und `github` gesperrt (`deniedMcpServers`,
   Nutzer 2026-11-24 – Kontor braucht sie nicht: Code über Klon, Shell und `git`, Testergebnisse über `gh`/das Lagebild; ihre
-  Werkzeuge kosteten nur Kontext; braucht eine Aufgabe einen davon, dort den Eintrag entfernen); Versionskette vor jedem Push; Lagebild zu Beginn jeder Aufgabe; Erinnerung, wenn
+  Werkzeuge kosteten nur Kontext; braucht eine Aufgabe einen davon, dort den Eintrag entfernen; `claude-code-remote` bleibt – die
+  Plattform selbst: Umgebung, Netz, Schlüssel, Doku-Karten); Versionskette vor jedem Push; Lagebild zu Beginn jeder Aufgabe; Erinnerung, wenn
   eine Änderung nicht abgeschlossen ist.
 
 ## Sparsam arbeiten (Nutzer, 2026-11-23/24: Credits nur, wo sie etwas bringen – ohne Abstriche bei Sicherheit und Korrektheit)
@@ -66,7 +67,8 @@ Rückfrage (Skill `major`), erste nie. Den Mac aktualisiert der Nutzer selbst �
 
 ## Parallele Chats
 Mehrere Chats arbeiten gleichzeitig, jeder in seinem Klon, abgestimmt nur über GitHub, ein Commit je Version direkt auf `main`
-(keine Zweige). Einzelheiten und Vorgeschichte: `docs/rules/parallel.md`.
+(keine Zweige; Nutzer, 2026-11-24: auf GitHub nur `main`). Den Zweig `claude/…`, den die Cloud-Sitzung zum Pushen vorgibt, nie
+pushen – er bleibt lokal, `release.py` pusht `HEAD:main`, der Guard sperrt den Push dorthin. Einzelheiten: `docs/rules/parallel.md`.
 - **Lagebild** (`.claude/hooks/briefing.py`) zu Beginn jeder Aufgabe: was andere veröffentlicht haben, Überschneidungen, Tests auf
   GitHub. Früh daraufsetzen (`git pull --rebase origin main`), genannte Dateien vor dem Ändern neu lesen; klein veröffentlichen.
 - **Rot auf GitHub** – eine Version oder der Nachtlauf: der nächste Chat, der es im Lagebild sieht, behebt es zuerst, als eigene
