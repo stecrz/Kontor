@@ -443,7 +443,7 @@ pre.log .lg-debug { color:var(--muted); } pre.log .lg-warning { color:var(--warn
 .drawer.open { right:0; box-shadow:-10px 0 40px rgba(0,0,0,.15); }          /* its shadow only while it is open (closed, it would darken the page's right edge) */
 main { transition:margin-right .22s ease; }
 @media (min-width:1280px) { body.dock main { margin-right:400px; } }          /* the side panel beside the page; narrower: over it (the page would be too narrow) */
-.drawer h2 { margin-top:0; }
+.drawer h2 { margin-top:0; padding-right:30px; overflow-wrap:anywhere; }          /* a long title: beside the ✕, never under it */
 /* the bookings behind a figure: fit the panel's width -- date and amount fixed, name and purpose wrap (also long references) */
 .drawer table.dr-tx { table-layout:fixed; width:100%; min-width:0; } .dr-tx col.c-d { width:92px; } .dr-tx col.c-a { width:104px; } .dr-tx td:first-child { white-space:nowrap; overflow-wrap:normal; }
 .drawer td { overflow-wrap:anywhere; } .drawer .dr-wrap { overflow-x:hidden; }

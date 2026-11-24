@@ -166,7 +166,7 @@ class NightJobs(unittest.TestCase):
     """The night's jobs (nightly.yml): every random test draws new cases for the whole of KONTOR_FUZZ_MINUTES, counted from
     when that test begins. Two of them in one job take twice the time -- past the job's limit, GitHub cancels it: the cash
     flow's file has two (cash flow, plans), its job was cancelled after 240 minutes night after night, the night never green,
-    and of the plans' cases only the first ran (found 3.17.80). So: one random test per job, every random test in a job, and
+    and of the plans' new cases none ever ran (fixed 3.17.81). So: one random test per job, every random test in a job, and
     its time within the job's limit."""
     PROBES = ("Seeds.test_fixed_found_and_new",)        # tests the drawing itself, with a time of its own (a tenth of a second)
     SLACK = 45                                          # minutes for the setup, the browsers and the fixed 1000 before the new ones
@@ -212,7 +212,7 @@ class NightJobs(unittest.TestCase):
         for bad in ("tests/test_a.py -k 'cash or plans'", "tests/test_a.py -x", "-k plans"):
             with self.assertRaises(ValueError, msg=bad):
                 chosen(bad, d)
-        # the night as it was until 3.17.79: both of the cash flow's random tests in one job
+        # the night as it was until 3.17.80: both of the cash flow's random tests in one job
         jobs, limit = night_jobs('    timeout-minutes: 240\n      matrix:\n        include:\n'
                                  '          - {name: "Cashflow · feste + neue Fälle", tests: tests/test_cashflow.py, fixed: "1000"}\n'
                                  '          - {name: "Seiten", tests: "tests/test_data_worlds.py -k Pages", fixed: "0", browsers: true, minutes: "150"}\n'

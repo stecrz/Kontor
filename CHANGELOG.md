@@ -1,5 +1,11 @@
 # Änderungen
 
+## 3.17.84 (2026-11-24 21:25)
+- Oberfläche: eine wieder geöffnete Seite steht genau dort, wo sie verlassen wurde – auch wenn Diagramme oder Vorschauen erst danach erscheinen (Bilanz, Cashflow, Übersicht, Hilfe, Buchungsregeln)
+- Bilanz: die Zeitraum-Knöpfe eines Diagramms stimmen auch, wenn der gewählte Zeitraum keine Werte hat
+- Seitenfenster: ein langer Titel steht neben dem ✕
+- Entwicklung: Klickpfade der Nacht – übrige Fehlalarme behoben (Diagrammformen dort anklicken, wo sie gezeichnet sind; „…“ in Knöpfen; Stelle einer Seite nur gegen ihre zuletzt verlassene Ansicht; Demo ohne Einstellungen); neuer Test hält die Funde fest
+
 ## 3.17.83 (2026-11-24 21:10)
 - Cashflow: Gewinnausschüttung zählt immer als Kapitalertrag, auch von deiner eigenen GmbH oder GbR – der gesunkene Wert der Beteiligung steht als Wertänderung daneben (Ausnahme aus 3.17.77 zurückgenommen)
 - Cashflow-Positionen: auch „Gewinnanteil“ als Kapitalertrag erkannt

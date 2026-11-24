@@ -16,7 +16,7 @@ Teil von `CLAUDE.md` (Aufbau). Neue Testdatei oder neuer Prüfbereich: hier eint
   auf mehreren Rechnern nebeneinander; dazu Klickpfade durch die Oberfläche (`tests/test_clickpaths.py`, 40 feste und neue, in
   Chromium und der Safari-Engine) – je Push laufen davon 3 feste mit (im Teil „Übrige“).
   Jeder Zufallstest zieht neue Fälle, bis `KONTOR_FUZZ_MINUTES` seit **seinem** Beginn um sind – zwei in einem Job brauchen die
-  doppelte Zeit und GitHub bricht den Job an seiner Grenze ab (bis 3.17.79 der Cashflow-Job, Nacht für Nacht: Cashflow und
+  doppelte Zeit und GitHub bricht den Job an seiner Grenze ab (bis 3.17.80 der Cashflow-Job, Nacht für Nacht: Cashflow und
   Planung in einer Datei; die neuen Planungsfälle liefen nie). Deshalb je Zufallstest ein eigener Job, bei zwei in einer Datei
   mit `-k` getrennt (`test_workflows.NightJobs` prüft es bei jedem Push).
   Dazu die Datenwelten (`test_data_worlds`): Zahlen, Anfragen, Assistent und – mit Chrome – jede Seite, die festen Welten in jeder
@@ -61,7 +61,15 @@ Teil von `CLAUDE.md` (Aufbau). Neue Testdatei oder neuer Prüfbereich: hier eint
   (`KONTOR_CLICK_SEEDS`), nachts so viele, wie passen; Gefundenes nach der Korrektur in `FOUND_CLICKS`. Den Weg eines
   bestandenen Falls zeigt `KONTOR_CLICK_LOG=1` mit `-s`; was sie fanden, hält `FoundTest` fest: Menü am iPhone mit esc und
   Tipp auf die offene Seite, über der Assistenten-Seite, Demo ohne Wertpapiersuche; Skala auch für einen gleichbleibenden,
-  nicht runden Wert (sonst `NaN`), Zahlen der Übersicht neben dem Assistenten in ihren Karten, Kopf der ersten Bilanzspalte am iPhone)
+  nicht runden Wert (sonst `NaN`), Zahlen der Übersicht neben dem Assistenten in ihren Karten, Kopf der ersten Bilanzspalte am iPhone;
+  `FoundAtNightTest` (erste ganze Nacht, 3.17.71): eine wieder geöffnete Seite steht, wo sie verlassen wurde – auch wenn Diagramme
+  ihre Höhe erst danach bekommen oder Teile nachkommen (Vorschauen der Buchungsregeln); Karte der Übersicht und Suchwort der Hilfe
+  führen weiter an ihre Stelle; Bereichsknöpfe eines Diagramms auch ohne Werte im Zeitraum; Seitenfenster nach Klick daneben
+  sofort wieder zu öffnen; langer Titel neben dem ✕. Was die Nacht fälschlich meldete, prüft der Lauf seitdem richtig: nur
+  Sichtbares wird angeklickt (Inhalt zugeklappter Karten hat in Chromium Maße), Formen eines Diagramms dort, wo sie gezeichnet
+  sind, ein mit „…“ gekürzter Text in einem Knopf gilt nicht als abgeschnitten, die Stelle einer Seite wird nur mit ihrer zuletzt
+  verlassenen Ansicht verglichen, gespeicherte Regeln machen jeden gemerkten Zustand ungültig, die Demo führt Links zu
+  Einstellungen/Einrichtung/Protokoll zur Übersicht)
 - `test_findable` (auffindbar: je Abschnitt der Hilfe Suchwörter, wie der Nutzer sie sagt, in `tests/search_words.json` – die Suche der Hilfe-Seite (unter den ersten drei, springt zum besten) und `search_help` (unter den vier Treffern) finden ihn; jeder Abschnitt und Anker der Hilfe ist Ziel eines „?“ oder Links aus Kontor; beide Suchen falten gleich (Füllwörter aus `memory.STOP`, Endungen). Fehlt ein Treffer: das Wort des Nutzers in den Abschnitt schreiben, nicht die Suche verbiegen; neuer Abschnitt der Hilfe: dort zwei, drei Suchwörter eintragen)
 - `test_fuzz`, `test_privacy`, `test_security` (Sperre, Datenschlüssel, Belegordner; `NothingGoesOut`: welche Teile ins Netz können, zu welchen Hosts, welche Programme sie starten – ein neuer Weg nach außen wird dort eingetragen)
 - `test_update_guard` (Prüfung vor dem Update: untergeschobene Änderungen werden gefunden, gewöhnliche nicht; Einstufung – Untergeschobenes bleibt kritisch, Geändertes an bestehenden Wegen und der Filter der Internetsuche zu prüfen, nachweislich Strengeres ohne Freigabe; Erklärung und Zeilen je Eintrag; Warten und Freigabe, Archiv und Git-Klon)

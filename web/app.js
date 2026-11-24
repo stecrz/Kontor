@@ -1353,10 +1353,11 @@ function ovGo(k) {
   if (hash === '#cashflow') { S.cfZeit = '12m'; S.cfBrZoom = S.cfWbZoom = null; }
   S.ovGo = sel; go(hash);
 }
-function ovArrive(main) {          // after the page is drawn: its chart in view
-  const sel = S.ovGo; S.ovGo = null; if (!sel) return;
-  const el = $(sel, main); if (!el) return;
+function ovArrive(main) {          // after the page is drawn: its chart in view (true: the page is led to a place of its own)
+  const sel = S.ovGo; S.ovGo = null; if (!sel) return false;
+  const el = $(sel, main); if (!el) return false;
   setTimeout(() => { pageTo(el.getBoundingClientRect().top - pageTop() + pageY() - 12); el.classList.add('ov-hit'); setTimeout(() => el.classList.remove('ov-hit'), 1600); }, 60);
+  return true;
 }
 function bindOverview(main) {
   const grid = $('.ov-grid', main); if (!grid) return;
@@ -3174,6 +3175,11 @@ function lcDraw(id) {
     const n = inWin.length, max = n <= 6 ? 18 : n <= 9 ? 12 : n <= 15 ? 9 : 7, at = Math.min(i1, ist);
     const ord = inWin.slice().sort((a, b) => Math.abs(b.vals[at] || 0) - Math.abs(a.vals[at] || 0)), sn = shortNames(ord.map(x => x.label), max);
     lg.innerHTML = ord.map((x, k) => `<label class="lc-chip" title="${esc(x.full || x.label)}"><input type="checkbox" data-k="${esc(x.key)}" ${off.has(x.key) ? '' : 'checked'}><i style="${swatch(x.color, x.hatch)}"></i><span class="nm">${esc(sn[k])}</span></label>`).join(''); } }
+  // a range button is marked whenever the range has its length (also after zooming back); below it the length in words --
+  // first of all: a range without any value draws nothing below, its buttons still say which range it is
+  const span = st.i1 - st.i0;
+  $$(`.lc-rb[data-lc="${id}"] button`).forEach(b => b.classList.toggle('on', +b.dataset.m === (st.btn != null ? st.btn : span)));
+  const spEl = $(`#lc-${id}-span`); if (spEl) spEl.textContent = spanText(span);
   if (!vis.length) { svg.innerHTML = ''; svg.setAttribute('viewBox', `0 0 ${W} ${H}`); svg.setAttribute('width', W); svg.setAttribute('height', H); ($(`#lc-${id}-val`) || {}).textContent = id === 'sel' && !st.title ? t('lc_nichts_gewaehlt') : t('keine_werte'); return; }
   let max = Math.max(...vis), min = Math.min(...vis);
   const ups = [], dns = [];
@@ -3242,10 +3248,6 @@ function lcDraw(id) {
       + cell(t('lc_high'), `${F0(d.vals[hi])} €`, ML(d.months[hi])) + cell(t('lc_low'), `${F0(d.vals[lo])} €`, ML(d.months[lo]));
   }
   // the period the value (end) and the change (start) refer to: the actual months in view; compact, top right
-  // a range button is marked whenever the range has its length (also after zooming back); below it the length in words
-  const span = st.i1 - st.i0;
-  $$(`.lc-rb[data-lc="${id}"] button`).forEach(b => b.classList.toggle('on', +b.dataset.m === (st.btn != null ? st.btn : span)));
-  const spEl = $(`#lc-${id}-span`); if (spEl) spEl.textContent = spanText(span);
   lcBindPlot(id);
 }
 // the length of a range in words: months up to 2 years, beyond that years and months ("2 Jahre 8 Mon.", half a year as "2 ½ Jahre")
@@ -6906,6 +6908,7 @@ async function route() {
   }
   const raw = (location.hash || '#overview').slice(1), [path, qs] = raw.split('?'), [tab, sub] = path.split('/');
   const y0 = pageY();
+  freePlace();
   if (SCROLL.key) SCROLL.pos[SCROLL.key] = y0;                 // Position des bisherigen Reiters merken
   S.tab = TITLES[tab] && !(demoOn() && DEMO_OFF.has(tab)) ? tab : 'overview'; S.sub = S.tab === tab ? sub || '' : '';
   if (S.tab !== tab && location.hash && demoOn()) history.replaceState(null, '', '#overview');
@@ -6948,28 +6951,51 @@ async function route() {
     main.style.paddingBottom = '';               // room left by routeKeeping
     main.innerHTML = sameTab ? `<div>${h}</div>` : `<div class="fade">${h}</div>`;          // the same page again (a row opened): in place, no fade-in (it moves it)
     SCROLL.key = key; SCROLL.keepX = keepX;
-    pageTo(sameTab ? y0 : (SCROLL.pos[key] || 0));      // eigener Reiter: bleibt; anderer Reiter: dessen letzte Position, sonst oben
+    const y1 = sameTab ? y0 : (SCROLL.pos[key] || 0);   // eigener Reiter: bleibt; anderer Reiter: dessen letzte Position, sonst oben
+    pageTo(y1);
     bind(main);
     guardDirty(main);
     vbPoll(); mmhPoll();
     if (S.tab === 'properties') bindImmo(main);
     if (S.tab === 'cashflow') bindCfCharts(main);
     if (S.tab === 'overview') bindOverview(main);
-    ovArrive(main);
+    // led to a place of its own -- a card's chart, a section of the help, the help's first hit of the words still searched --
+    // and not to where the page was left
+    const led = ovArrive(main) || (S.tab === 'help' && (!!S.sub || !!HELP.q));
     if (S.tab === 'categories') { bindZuordnen(main); bindRegelVorschlaege(main); bindEingetragen(main); }
     if (S.tab === 'accounts' && S.sub === 'positions') bindPositionen(main);
     if (S.tab === 'settings' && S.sub === 'access') bindZugang(main);
     if (S.tab === 'settings' && S.sub === 'assistant') bindAssistent(main);
     if (S.tab === 'help') bindHilfe(main);
     keysShow();
-    // the same page again: what was drawn just now (the charts) changed heights above -- a browser that keeps what is in view
-    // in place (scroll anchoring) moves the page along with it; it stays where it was
-    if (sameTab && pageY() !== y0) pageTo(y0);
+    // what was drawn just now (the charts) changed heights above, or the page was still too short for its place -- a browser
+    // that keeps what is in view in place (scroll anchoring) moves the page along with it: the same page again stays where it
+    // was, another page stands where it was left (unless it was led to a place of its own, or put the cursor into one of its
+    // fields while it was drawn -- the browser brought that field into view)
+    const own = led || main.contains(document.activeElement);
+    if ((sameTab || !own) && pageY() !== y1) pageTo(y1);
+    if (!sameTab && !own) holdPlace(y1);
   } catch (e) { clearTimeout(slow); if (ROUTE_SEQ === myRoute && e.message !== t('nicht_angemeldet')) main.innerHTML = `<div class="banner err">${esc(e.message)} <button class="small secondary" id="route-retry">${t('erneut_versuchen')}</button></div>`; const rb = $('#route-retry', main); if (rb) rb.addEventListener('click', () => route()); }
 }
 let ROUTE_SEQ = 0;
 const softRoute = () => DIRTY.on ? statusMini() : route();      // redraw unless something on the page is not saved yet
 const SCROLL = {key: '', pos: {}};
+// A page opened again stands where it was left -- also when parts of it arrive after it is drawn (the previews of the booking
+// rules, pictures): they change heights above that place, or only they make the page long enough for it. Until the user
+// scrolls, taps or types (or a few seconds pass) the page is held there; freePlace() where it is led elsewhere (a reference).
+const STAY = {off: null};
+function freePlace() { const off = STAY.off; STAY.off = null; if (off) off(); }
+function holdPlace(y) {
+  freePlace();
+  const box = $('#main').firstElementChild;
+  if (!(y > 0) || !box || typeof ResizeObserver !== 'function') return;
+  const evs = ['wheel', 'touchstart', 'pointerdown', 'keydown'];
+  const ro = new ResizeObserver(() => { if (Math.abs(pageY() - y) > 1) pageTo(y); });
+  const tm = setTimeout(freePlace, 5000);
+  STAY.off = () => { ro.disconnect(); clearTimeout(tm); evs.forEach(e => removeEventListener(e, freePlace, true)); };
+  evs.forEach(e => addEventListener(e, freePlace, {capture: true, passive: true}));
+  ro.observe(box);
+}
 // Ungespeicherte Aenderungen: Formulare auf Seiten mit Speichern-Knopf melden Aenderungen; Wegnavigieren fragt nach
 const DIRTY = {on: false, hash: location.hash};
 // the settings as the open page was drawn from them: sent along when it saves, so the service keeps what another window or device
@@ -8547,6 +8573,7 @@ async function asMark(mark) {
   clearTimeout(AS.markT);
   if (!hit) return {found: false};
   hit.els.forEach(el => el.classList.add('as-mark'));
+  freePlace();
   (hit.scroll || hit.els[0]).scrollIntoView({block: 'center', inline: 'center', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'});
   AS.markT = setTimeout(() => $$('.as-mark').forEach(x => x.classList.remove('as-mark')), 12000);
   return {found: true, what: hit.what, label: hit.label, column: hit.column};
@@ -8802,6 +8829,7 @@ function refMarkFig(fig) {          // the figure itself, in its marked card (or
   if (!el) return false;
   $$('.as-mark, .as-mark-svg').forEach(x => x.classList.remove('as-mark', 'as-mark-svg')); clearTimeout(AS.markT);
   el.classList.add(el instanceof SVGElement ? 'as-mark-svg' : 'as-mark');
+  freePlace();
   el.scrollIntoView({block: 'center', inline: 'nearest', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'});
   if (el.dataset.cftip != null) setTimeout(() => cfShowTip(el), 400);
   AS.markT = setTimeout(() => $$('.as-mark, .as-mark-svg').forEach(x => x.classList.remove('as-mark', 'as-mark-svg')), 12000);
@@ -8941,6 +8969,7 @@ function refMarkCol(col) {          // a column by its heading: the heading and 
     const h = head && [...head.cells].find(c => refSeen(c) && asNorm(refLabel(c)) === want); if (!h) continue;
     $$('.as-mark').forEach(x => x.classList.remove('as-mark')); clearTimeout(AS.markT);
     h.classList.add('as-mark'); [...tbl.tBodies].flatMap(b => [...b.rows]).forEach(r => { const c = [...r.cells].find(x => refOver(x, h)); if (c) c.classList.add('as-mark'); });
+    freePlace();
     h.scrollIntoView({block: 'nearest', inline: 'center', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'});
     AS.markT = setTimeout(() => $$('.as-mark').forEach(x => x.classList.remove('as-mark')), 12000);
     return true;

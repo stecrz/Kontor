@@ -44,6 +44,9 @@ FOUND_CLICKS = [24, 25, 29, 132684508, 520936342, 879068245, 447175332]     # ca
                                 # head on the iPhone wider than its column, a net worth of one figure throughout drawn as NaN
                                 # 3.17.80 (a night): the side window closed beside it stayed shut when its figure was pressed again
                                 # at once (click, Enter); links and cells in a folded <details> taken for visible (covered)
+                                # 3.17.84 (that night's other cases; the rest of them: FoundAtNightTest): the balance sheet on the iPhone
+                                # opened again stood 28 px from where it was left
+FOUND_CLICKS += [220413250]
 KINDS = ["test", "random", "demo", "empty"]
 WORLD_NAMES = {"test": "Testwelt", "random": "Zufallswelt", "demo": "Demo", "empty": "leeres Kontor"}
 MAC_SIZES = [(1440, 900), (1512, 945), (1280, 800)]          # a 14-inch MacBook, the window nearly full screen (and a bit smaller)
@@ -64,9 +67,10 @@ VIEW_KEY = r"""(() => {
 RESTING = r"""(() => document.getAnimations().some(a => a.playState === 'running' && isFinite(a.effect.getComputedTiming().endTime)) ? Math.random() :
   ['.side', '#drawer', '#assist', '.dlg', '#ctx'].map(q => { const el = document.querySelector(q); if (!el) return ''; const r = el.getBoundingClientRect(); return [r.left, r.top, r.width].map(Math.round).join(','); }).join('|'))()"""
 # the marked element in view and free to click: "ok"; "layer" (a column or heading that stays, a bar, a panel lies above it on
-# purpose: a user clicks elsewhere), "away" (not to be brought into view), "covered <what>" (something of its own layer on it)
+# purpose: a user clicks elsewhere), "away" (not to be brought into view), "covered <what>" (something of its own layer on it),
+# "gone" (the page was drawn anew since it was marked)
 FREE = r"""(() => {
-  const el = document.querySelector('[data-cp]'); if (!el.closest('#main, #drawer')) return 'ok';
+  const el = document.querySelector('[data-cp]'); if (!el) return 'gone'; if (!el.closest('#main, #drawer')) return 'ok';
   if (el.checkVisibility && !el.checkVisibility()) return 'away';                 // (in a folded <details>: not to be seen)
   const bar = document.querySelector('.topbar'), top = bar && !bar.closest('#drawer') ? bar.getBoundingClientRect().bottom : 0;
   const hit = () => { const r = el.getBoundingClientRect(), x = r.left + r.width / 2, y = r.top + r.height / 2;
@@ -78,12 +82,21 @@ FREE = r"""(() => {
   for (let a = h; a && a !== document.body; a = a.parentElement) { const p = getComputedStyle(a).position; if (p === 'sticky' || p === 'fixed') return 'layer'; }
   return 'covered ' + h.tagName.toLowerCase() + (h.id ? '#' + h.id : '') + (typeof h.className === 'string' && h.className ? '.' + h.className.trim().split(/\s+/)[0] : '') + ' „' + (h.textContent || '').trim().slice(0, 30) + '“';
 })()"""
+# a point on the marked shape of a chart, from its box's top left (the middle of a ring's part lies in the ring's hole, that of
+# a bar under its label): where a user clicks it; null: none found
+POINT = r"""(() => {
+  const el = document.querySelector('[data-cp]'); if (!el) return null;
+  const r = el.getBoundingClientRect(), f = [0.5, 0.25, 0.75, 0.12, 0.88];
+  for (const b of f) for (const a of f) { const x = r.left + r.width * a, y = r.top + r.height * b, e = document.elementFromPoint(x, y);
+    if (e && (e === el || el.contains(e))) return {x: x - r.left, y: y - r.top}; }
+  return null;
+})()"""
 DRAWER_READY = "document.querySelector('#drawer').classList.contains('open') && !document.querySelector('#drawer .spin') && !document.querySelector('#drawer').textContent.includes(t('wird_geladen'))"
 SNAP = r"""(root => {
   const box = document.querySelector(root); if (!box) return null;
   // (seen: also not in a folded <details> -- Chromium keeps its contents' boxes, only checkVisibility() knows: 3.17.80)
   const vis = el => el.getClientRects().length > 0 && getComputedStyle(el).visibility !== 'hidden' && (!el.checkVisibility || el.checkVisibility());
-  const who = el => el.id ? '#' + el.id : el.tagName.toLowerCase() + Object.entries(el.dataset).filter(([k]) => k !== 'cp').map(([k, v]) => `[${k}=${v}]`).join('') + ' „' + (el.textContent || '').trim().slice(0, 24) + '“';
+  const who = el => el.id ? '#' + el.id : el.tagName.toLowerCase() + Object.entries(el.dataset).filter(([k]) => k !== 'cp' && k !== 'cftip').map(([k, v]) => `[${k}=${v}]`).join('') + ' „' + (el.textContent || '').trim().slice(0, 24) + '“';
   const on = [...box.querySelectorAll('button.on, [aria-pressed="true"], [aria-selected="true"], input[type="checkbox"]:checked, input[type="radio"]:checked')].filter(vis).map(who);
   const rows = [...box.querySelectorAll('tr')].filter(vis).length;
   const open = root === '#drawer' ? [...box.querySelectorAll('details[open]')].map(who) : [];
@@ -128,7 +141,9 @@ LAYOUT = r"""(() => {
     if (done.has(p)) continue;
     const fs = parseFloat(cs(p).fontSize) || 13;
     const face = p.closest('button, .pill, .chip');          // (a face that clips its words: below, "…" allowed)
-    if (face && !face.closest('svg') && face.clientWidth > 4 && !clips(cs(face).overflowX)) {
+    // (so is a label inside the face that clips its own words -- the reference before the question: page, then "long label…")
+    const inner = el => { for (let a = el; a && a !== face; a = a.parentElement) if (clips(cs(a).overflowX)) return true; return false; };
+    if (face && !face.closest('svg') && face.clientWidth > 4 && !clips(cs(face).overflowX) && !inner(p)) {
       const b = face.getBoundingClientRect();
       if (r.left < b.left - 1 || r.right > b.right + 1) { done.add(p); out.cut.push('über den Rand: ' + desc(p) + ' „' + s0.trim().slice(0, 30) + '“'); continue; }
     }
@@ -249,6 +264,7 @@ class Walk:
         self.t, self.c, self.pg, self.rnd, self.store = test, case, pg, case.rnd, store
         self.log, self.problems, self.errors = [], [], []
         self.snaps, self.last_hash, self.n, self.plain = {}, None, 0, False
+        self.latest = {}                    # page -> the view of it noted last (Kontor remembers one place per page)
         self.count = {"Zustände verglichen": 0, "Seitenfenster": 0, "wieder geöffnet": 0, "Rechtsklicks": 0, "Bezüge": 0, "Dialoge": 0, "⌘S": 0}
         self.mobile = case.device == "iphone"
         self.ref = None                     # a reference waiting in the assistant's panel: where it points to
@@ -323,6 +339,18 @@ class Walk:
         # in view first, as a user scrolls to it (else the click scrolls the page itself -- the page is then left elsewhere than
         # the state noted last); what the page shows now is its state when it is left
         free = self.js(FREE)
+        if free == "gone":
+            self.note("nicht mehr da (die Seite wurde neu gezeichnet), übersprungen")
+            return False
+        at = {}
+        if self.js("document.querySelector('[data-cp]') instanceof SVGElement"):
+            # a shape of a chart: clicked where it is drawn; with keys nothing needs to be free
+            pos = self.js(POINT) if how != "enter" else None
+            if how != "enter" and not pos:
+                self.note("kein freier Punkt der Form, übersprungen")
+                return False
+            at = {"position": pos} if pos else {}
+            free = "ok" if free.startswith("covered") else free
         if free != "ok":
             if free.startswith("covered"):
                 self.problem("überlappt: zum Klicken liegt darauf %s" % free[8:])
@@ -334,11 +362,11 @@ class Walk:
             if how == "enter":
                 loc.focus(timeout=4000); self.pg.keyboard.press("Enter")
             elif button == "right":
-                loc.click(button="right", timeout=4000)
+                loc.click(button="right", timeout=4000, **at)
             elif self.mobile:
-                loc.tap(timeout=4000)
+                loc.tap(timeout=4000, **at)
             else:
-                loc.click(timeout=4000)
+                loc.click(timeout=4000, **at)
             return True
         except Exception as e:
             msg = str(e).split("\n")
@@ -359,7 +387,9 @@ class Walk:
     def note_state(self):
         """The page's state as it is now (before a click leaves it)."""
         if self.stable():
-            self.snaps[self.view()] = self.js(SNAP, "#main")
+            key = self.view()
+            self.snaps[key] = self.js(SNAP, "#main")
+            self.latest[self.js("location.hash")] = key
 
     # -- checks after every step -----------------------------------------------------------------------------------------
     def check(self):
@@ -369,6 +399,9 @@ class Walk:
             self.problem(e)
         self.errors.clear()
         r = self.js(LAYOUT)
+        if r["outside"]:          # still sliding in (a busy machine draws no frame between two looks, so it seemed at rest): looked at once more
+            self.pg.wait_for_timeout(400)
+            r = self.js(LAYOUT)
         if r["wide"]:
             self.problem("waagrechte Scrollleiste: %s" % r["wide"])
         for x in r["outside"]:
@@ -386,13 +419,17 @@ class Walk:
         if h != self.last_hash and key in self.snaps and snap is not None:
             self.count["Zustände verglichen"] += 1
             was = self.snaps[key]
-            # where it stands: only when it was opened from the menu or a tab (a figure or a card leads to its place on purpose)
+            # where it stands: only when it was opened from the menu or a tab (a figure or a card leads to its place on purpose),
+            # and only against the view it was left in (one place per page: scrolled later beside the assistant's panel, the
+            # page is not where its view without the panel was)
+            placed = plain and self.latest.get(h) == key
             diff = {k: (was[k], snap[k]) for k in snap if was.get(k) != snap[k] and k != "mid"
-                    and not (k == "y" and (not plain or abs(was[k] - snap[k]) <= 2 or was["mid"] == snap["mid"]))}
+                    and not (k == "y" and (not placed or abs(was[k] - snap[k]) <= 2 or was["mid"] == snap["mid"]))}
             if diff:
                 room = self.js("(() => { const sc = pageScroller(); return 'Seite ' + sc.scrollHeight + ' hoch, ' + sc.clientHeight + ' sichtbar, gemerkt ' + JSON.stringify(SCROLL.pos); })()") if "y" in diff else ""
                 self.problem("Zustand beim erneuten Öffnen von %s nicht wie zuvor: %s%s" % (h, json.dumps(diff, ensure_ascii=False)[:600], " (%s)" % room if room else ""))
         self.snaps[key] = snap
+        self.latest[h] = key
         self.last_hash = h
 
     # -- the steps ---------------------------------------------------------------------------------------------------------
@@ -456,8 +493,12 @@ class Walk:
             self.note("Menü " + what)
             if not self.press():
                 return
-        self.plain = True
-        if not self.until("location.hash.split('?')[0] === %s || S.tab === %s.slice(1).split('/')[0]" % (json.dumps(what), json.dumps(what)), 6):
+        self.plain = not what.startswith("#help/")          # (a section of the help: the link leads to it, wherever the help was left)
+        if self.c.kind == "demo" and self.js("w => DEMO_OFF.has(w.slice(1).split('/')[0])", what):
+            # the demo has no settings, no setup and no log (about this Mac and the real Kontor): a link there leads to the overview
+            if not self.until("S.tab === 'overview' && location.hash === '#overview'", 6):
+                self.problem("Demo: %s führt nicht zur Übersicht (steht auf %s)" % (what, self.js("location.hash")))
+        elif not self.until("location.hash.split('?')[0] === %s || S.tab === %s.slice(1).split('/')[0]" % (json.dumps(what), json.dumps(what)), 6):
             self.problem("Seite %s nicht erreicht (steht auf %s)" % (what, self.js("location.hash")))
         if self.settle():
             self.check()
@@ -707,6 +748,7 @@ class Walk:
             return
         if not self.until("v => (S.CFG.companies || [])[0] && String((S.CFG.companies || [])[0].threshold) === v", 10, v):
             self.problem("⌘S: die Schwelle ist nicht gespeichert")
+        self.snaps.clear(); self.latest.clear()          # other rules: other bookings and proposals -- no page shows what it showed
         if self.settle():
             self.check()
 
@@ -938,6 +980,116 @@ class FoundTest(_Kontor, unittest.TestCase):
             shutil.rmtree(d, ignore_errors=True)
 
 
+class FoundAtNightTest(_Kontor, unittest.TestCase):
+    """What the first whole night of click paths found (3.17.71, fixed 3.17.84; the side window: 3.17.82), held fast on the world that showed it: a page
+    opened again stands where it was left -- also when its charts get their height only after the place is set, and when parts
+    arrive later (the previews of the booking rules); a card of the overview still leads to its chart. A chart's range buttons
+    say which range it shows, also when the range holds no value. A side window closed by a click beside it opens again at
+    the next click on its figure, however soon (the click that closes it on its own figure still does not reopen it). A long
+    title of the side window stands beside its ✕."""
+
+    def test_places_ranges_and_the_side_window(self):
+        from playwright.sync_api import sync_playwright
+        c = Case(0, False)
+        c.kind, c.world_seed, c.assistant, c.lang = "random", 269211242, False, "de"
+        d = tempfile.mkdtemp(prefix="kontor-found-")
+        app, store, day = self.world(c, d)
+        srv = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(app))
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        base = "http://127.0.0.1:%d/" % srv.server_address[1]
+        try:
+            with sync_playwright() as p:
+                b = p.chromium.launch()
+                errors = []
+
+                def go(h):
+                    pg.evaluate("h => { location.hash = h; }", h)
+                    T.until(pg, "location.hash === %s && SCROLL.key === S.tab + '/' + S.sub && !document.querySelector('#main .loading')" % json.dumps(h))
+                    TT.settle(pg)
+                # 1. the balance sheet on the iPhone, left further down: there again (its charts are drawn after the place is set
+                #    and moved it by 29 px; on the Mac this world's charts did not)
+                ctx = b.new_context(**TT.DEVICES["iphone"]); ctx.clock.install(time=datetime.datetime(day.year, day.month, day.day, 10, 0))
+                pg = ctx.new_page()
+                pg.on("pageerror", lambda e: errors.append(str(e)))
+                self.sign_in(pg, base, c)
+                for y in (300, 500):
+                    go("#balance"); pg.evaluate("y => pageTo(y)", y)
+                    self.assertEqual(pg.evaluate("pageY()"), y)
+                    go("#transactions"); go("#balance")
+                    self.assertAlmostEqual(pg.evaluate("pageY()"), y, delta=1)
+                ctx.close()
+                ctx = b.new_context(viewport={"width": 1440, "height": 900}); ctx.clock.install(time=datetime.datetime(day.year, day.month, day.day, 10, 0))
+                pg = ctx.new_page()
+                pg.on("pageerror", lambda e: errors.append(str(e)))
+                self.sign_in(pg, base, c)
+                go("#balance")
+                pg.evaluate("pageTo(Math.min(60, pageScroller().scrollHeight - pageScroller().clientHeight))"); y = pg.evaluate("pageY()")
+                self.assertGreater(y, 40)
+                go("#transactions"); go("#balance")
+                self.assertAlmostEqual(pg.evaluate("pageY()"), y, delta=1)
+                # ... held there until the user scrolls himself; then it is his
+                self.assertTrue(pg.evaluate("!!STAY.off"))
+                pg.mouse.move(700, 500); pg.mouse.wheel(0, 120); T.until(pg, "!STAY.off")
+                # 2. a month clicked: the three charts show it -- none of their range buttons stays marked, also not the
+                #    position's, which has no value in that month (it drew nothing and left its button as it was)
+                pg.evaluate("pageTo(0)")
+                pg.locator("#main th", has_text="Jul 24").first.click(); TT.settle(pg)
+                self.assertEqual(pg.evaluate("LC.pos.d.vals.slice(LC.pos.i0, LC.pos.i1 + 1).filter(v => v != null).length"), 0)          # (the case)
+                self.assertEqual(pg.evaluate("['nw', 'sel', 'pos'].map(id => [S.lcRange[id].slice(0, 2).join('..'), document.querySelectorAll('.lc-rb[data-lc=\"' + id + '\"] button.on').length])"),
+                                 [["2024-06..2024-07", 0]] * 3)
+                self.assertEqual(pg.evaluate("document.querySelector('#lc-pos-span').textContent"), pg.evaluate("document.querySelector('#lc-nw-span').textContent"))
+                # 3. the booking rules: their previews arrive after the page is drawn and make it longer -- left at its end, it
+                #    stands there again
+                go("#accounts/rules"); T.quiet(pg)
+                pg.evaluate("pageTo(pageScroller().scrollHeight)"); y = pg.evaluate("pageY()")
+                self.assertGreater(y, 100)
+                go("#overview"); go("#accounts/rules"); T.quiet(pg); TT.settle(pg)
+                self.assertAlmostEqual(pg.evaluate("pageY()"), y, delta=1)
+                # 4. a card of the overview leads to its place (the balance sheet's table), wherever that page was left
+                go("#balance"); pg.evaluate("pageTo(60)")
+                go("#overview"); pg.evaluate("ovGo('table')")
+                T.until(pg, "location.hash === '#balance' && SCROLL.key === 'balance/' && !!document.querySelector('.wrap.bil-tbl')"); pg.wait_for_timeout(400); TT.settle(pg)
+                top, at, end = pg.evaluate("[document.querySelector('.wrap.bil-tbl').getBoundingClientRect().top, pageY(), pageScroller().scrollHeight - pageScroller().clientHeight]")
+                self.assertTrue(at > 61 and (0 <= top < 200 or at >= end - 1), (top, at, end))          # at the table, or as near as the page goes
+                self.assertFalse(pg.evaluate("!!STAY.off"))
+                # ... so does the help while words are still searched: their first hit again; without: where it was left
+                go("#help"); pg.fill("#help-q", "Tilgung"); T.until(pg, "!!document.querySelector('mark.hm.on')")
+                pg.evaluate("pageTo(pageScroller().scrollHeight)")
+                go("#overview"); go("#help"); T.until(pg, "!!document.querySelector('mark.hm.on')"); TT.settle(pg)
+                self.assertTrue(pg.evaluate("(() => { const r = document.querySelector('mark.hm.on').getBoundingClientRect(); return r.top > 0 && r.bottom < innerHeight; })()"))
+                pg.fill("#help-q", ""); T.until(pg, "!document.querySelector('mark.hm')")
+                pg.evaluate("pageTo(2400)"); y = pg.evaluate("pageY()")
+                self.assertGreater(y, 1000)
+                go("#overview"); go("#help"); TT.settle(pg)
+                self.assertAlmostEqual(pg.evaluate("pageY()"), y, delta=1)
+                # 5. the side window: opened by a figure, closed by a click beside it, opened again by the next click on the figure
+                #    at once (within 0.8 s nothing opened); a click on its own figure closes it and does not open it again
+                go("#cashflow"); pg.evaluate("pageTo(0)")
+                pg.evaluate("""() => { const c = [...document.querySelectorAll('#main table.cf-tbl td.tx')].find(el => el.getClientRects().length && getComputedStyle(el).cursor === 'pointer' && /\\d/.test(el.textContent)
+                    && el.getBoundingClientRect().top > 120 && el.getBoundingClientRect().bottom < innerHeight - 20 && el.getBoundingClientRect().right < innerWidth - 440 && document.elementFromPoint(el.getBoundingClientRect().left + 8, el.getBoundingClientRect().top + 8) === el); c.dataset.fig = '1'; }""")
+                fig, ready, shut = pg.locator("[data-fig='1']"), DRAWER_READY, "!document.querySelector('#drawer').classList.contains('open')"
+                fig.click(); T.until(pg, ready)
+                pg.locator("#page-title").click(position={"x": 4, "y": 4}); T.until(pg, shut)
+                fig.click(); T.until(pg, ready, 4)
+                fig.click(); T.until(pg, shut); pg.wait_for_timeout(400)
+                self.assertTrue(pg.evaluate(shut))
+                fig.click(); T.until(pg, ready, 4)                                                    # and again by the next click
+                pg.locator("#page-title").click(position={"x": 4, "y": 4}); T.until(pg, shut)
+                fig.focus() if pg.evaluate("document.querySelector('[data-fig]').tabIndex >= 0") else None
+                # 6. its title, long: beside the ✕
+                fig.click(); T.until(pg, ready, 4); TT.settle(pg)
+                pg.evaluate("document.querySelector('#drawer h2').textContent = 'Einlagen & Entnahmen der Gesellschafter · Beispiel Vermögensverwaltung · Jan 25'")
+                over = pg.evaluate("""(() => { const h = document.querySelector('#drawer h2'), x = document.querySelector('#drawer .close').getBoundingClientRect(), r = document.createRange(); r.selectNodeContents(h);
+                    return [...r.getClientRects()].filter(q => q.right > x.left && q.left < x.right && q.bottom > x.top && q.top < x.bottom).length; })()""")
+                self.assertEqual(over, 0)
+                self.assertEqual(errors, [])
+                b.close()
+        finally:
+            srv.shutdown(); srv.server_close()
+            app.assistant_stop(); app.stop.set()
+            shutil.rmtree(d, ignore_errors=True)
+
+
 class CheckerTest(unittest.TestCase):
     """The layout check finds what it looks for, on a page made of mistakes -- and lets pass what is meant so."""
 
@@ -949,6 +1101,8 @@ class CheckerTest(unittest.TestCase):
           <div style="width:80px;overflow:auto;white-space:nowrap">ein langer Text, der scrollt</div>
           <button style="width:40px;white-space:nowrap" id="spill">Speichern und prüfen</button>
           <button style="width:40px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Speichern und prüfen</button>
+          <button style="width:90px;display:inline-flex;white-space:nowrap"><b>Seite</b><span style="min-width:0;overflow:hidden;text-overflow:ellipsis">ein langer Bezug mit Auslassung</span></button>
+          <button style="width:90px;display:inline-flex;white-space:nowrap"><b>Seite</b><span id="label" style="min-width:0;overflow:hidden">ein langer Bezug ohne Auslassung</span></button>
           <div style="position:relative;height:40px"><span style="position:absolute;left:0;top:0">Erster</span>
             <span id="cover" style="position:absolute;left:0;top:0;background:#fff">Zweiter</span></div>
           <div style="position:relative;height:40px"><span>Unter dem Durchsichtigen</span><div style="position:absolute;inset:0"></div></div>
@@ -960,8 +1114,9 @@ class CheckerTest(unittest.TestCase):
             pg.set_content(page)
             r = pg.evaluate(LAYOUT)
             b.close()
-        self.assertEqual(len(r["cut"]), 2, r["cut"])
-        self.assertIn("div#cut", r["cut"][0]); self.assertIn("über den Rand: button#spill", r["cut"][1])
+        # (a label inside a button that ends in "…" is meant so -- 3.17.84: the reference before the question was taken as cut)
+        self.assertEqual(len(r["cut"]), 3, r["cut"])
+        self.assertIn("div#cut", r["cut"][0]); self.assertIn("über den Rand: button#spill", r["cut"][1]); self.assertIn("span#label", r["cut"][2])
         self.assertEqual(len(r["over"]), 1, r["over"]); self.assertIn("span „Erster“ unter div › span#cover", r["over"][0])
         self.assertEqual(len(r["outside"]), 1, r["outside"]); self.assertIn("div#ctx", r["outside"][0])
         self.assertIsNone(r["wide"])
