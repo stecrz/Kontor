@@ -539,6 +539,8 @@ class World:
                 self.add(b, "bank", arrive, y, iban=self.iban(a), purpose="Darlehen")
                 self.add(b, "dar:" + a, rnd.choice([day, arrive]), -y, purpose="Darlehen " + a)
         elif kind == 6:                                             # a friend: lent to or borrowed from, booked by hand days later
+            # (two loans of one amount days apart, each booked days later: which booking is whose is open -- seed 212434630)
+            x = self.amount_alone(p, "freund", d, x)
             if rnd.random() < 0.5:
                 self.add(p, "bank", d, -x, name="Freund")
                 self.add(p, "ford", later, x, name="Freund")
@@ -747,6 +749,16 @@ class RandomWorlds(unittest.TestCase):
         w.add("Partnerin", "bank", d, -250.0, iban=w.iban("Privat"), purpose="Darlehen")
         data = w.datasets(); self.check(w, data, "PayPal and a loan from the partner")
         self.assertEqual(rows(data, "Privat"), {"Einlage/Entnahme Partnerin / Darlehen von Partnerin / Aufnahme": 250.0})
+        # borrowed from the partner, booked on "Darlehen von Partnerin" two days before her payment came; a friend's loan of the
+        # same amount the day before, booked on "Darlehen von Freund" the next day: the friend's payment, nearer, is no rival --
+        # its own booking names him (up to 3.17.77 it took the partner's booking, the friend's stayed a change in value)
+        w = World(0, ["Privat", "Partnerin"])
+        w.account("Privat", "dar:Partnerin", "Darlehen von Partnerin", "liabilities"); w.account("Partnerin", "dar:Privat", "Darlehen an Privat", "receivables")
+        w.add("Privat", "dar:Partnerin", d, -999.99, purpose="Darlehen Partnerin")
+        w.add("Privat", "bank", d + timedelta(2), 999.99, iban=w.iban("Partnerin"), purpose="Darlehen")
+        w.add("Partnerin", "bank", d, -999.99, iban=w.iban("Privat"), purpose="Darlehen"); w.add("Partnerin", "dar:Privat", d, 999.99, purpose="Darlehen Privat")
+        w.add("Privat", "bank", d - timedelta(1), 999.99, name="Freund"); w.add("Privat", "kredit", d, -999.99, name="Freund")
+        self.check(w, w.datasets(), "a loan from the partner beside a friend's of one amount")
         # a contribution to the company, booked on the participation the next day, beside a top-up to PayPal on the day (PayPal
         # books it a week later) and an insurance of the same amount: the insurance pays for something and pairs with nothing --
         # it must not let the top-up take the participation's booking (up to 3.17.24 it did: the top-up "without partner")

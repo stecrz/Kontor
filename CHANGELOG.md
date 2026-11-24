@@ -1,5 +1,9 @@
 # Änderungen
 
+## 3.17.79 (2026-11-24 19:39)
+- Cashflow: Darlehen eines Freundes nimmt nicht mehr die Gegenbuchung einer Zahlung an einen anderen Bereich
+- Entwicklung: Nachtlauf (Welten) behoben
+
 ## 3.17.78 (2026-11-24 19:11)
 - Beteiligungen: Wert auf den Cent genau, auch nach einer nachträglichen Monatsbuchung
 - Entwicklung: Nachtlauf (Regelwelten) behoben

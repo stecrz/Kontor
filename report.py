@@ -1363,6 +1363,20 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
     for t in in_root:
         if says(t):
             marked_tr[int(round(t.amount * 100))].append(t)
+    # (nor a rival that names its counterparty, which this booking does not, while another booking close by does -- a friend's
+    # payment beside "Einlage Gamma KG", "Darlehen an Freund" three days later: that one is its other side)
+    def names(o: Tx, who: List[str]) -> bool:
+        text = " ".join(fold_text(x or "") for x in (ledger.accounts[o.account_uuid].name, o.name, o.purpose))
+        return any(re.search(r"(?<!\w)" + re.escape(w) + r"(?!\w)", text) for w in who)
+    by_cents: Dict[int, List[Tx]] = defaultdict(list)
+    for o in in_root:
+        if claimable(o):
+            by_cents[int(round(o.amount * 100))].append(o)
+
+    def own_other(t: Tx, o: Tx) -> bool:
+        who = [w for w in re.split(r"[\s,./-]+", fold_text(t.name)) if len(w) >= 3]
+        return bool(who) and not names(o, who) and any(u.id != o.id and abs((u.booking_date - t.booking_date).days) <= PAIR_DAYS
+                                                       and names(u, who) for u in by_cents.get(-int(round(t.amount * 100)), ()))
     kept: Set[int] = set()
     wants: List[Tuple[int, int, int]] = []               # (days apart, payment, booking): the booking may be kept for that payment
     for o in in_root:
@@ -1374,7 +1388,7 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
                                                for u in marked_tr.get(-k, ())))
         # (only a payment that may pair with it by amount at all -- a transfer or pairable, never one paid for something: an
         # insurance of that amount on the day must not let a top-up take the contribution's counter-booking)
-        near = min((gap(t) for t in by_amount.get(k, ()) if (says(t) or pairable(t)) and rival(t)), default=COUNTER_DAYS)
+        near = min((gap(t) for t in by_amount.get(k, ()) if (says(t) or pairable(t)) and rival(t) and not own_other(t, o)), default=COUNTER_DAYS)
         wants.extend((gap(t), t.id, o.id) for t, name in to_area[k] if gap(t) <= min(near, COUNTER_DAYS) and tied_word(o, name))
     # one booking per payment to the area, the closest first: of two bookings by hand beside one such payment (lent by transfer
     # and the same amount in cash on that day) only one is kept -- the other still pairs by amount with the payment without
