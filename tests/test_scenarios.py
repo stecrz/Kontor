@@ -240,14 +240,15 @@ def loan_to_a_friend(d, lag, k, i):
 
 
 def bill_booked_when_due(d, lag, k, i):
-    """A repair bill booked when it is due (you owe it: a liability), paid weeks later: the cost counts when due, the payment only
-    pays the debt."""
+    """A repair bill booked when it is due (you owe it: a liability), paid weeks later: the cost counts when due, under its
+    category (a category counts in every account), the debt taken up then; the payment only pays the debt."""
     x = 800 * k
     d2 = d + timedelta(25)
     return Sc([(i, "werkst", d, -x, {"purpose": "Rechnung Reparatur", "cat": "Auto"}),
                (i + 1, "giro", d2, -x, {"iban": "DE93", "name": "Werkstatt"}), (i + 2, "werkst", d2, x, {"purpose": "bezahlt"})],
               nw={"Privat": -x}, due_month_nw=("Privat", d, -x),
-              rows=[("Privat", "financing", "Verbindlichkeit Werkstatt / Tilgung", -x, False)])
+              rows=[("Privat", "financing", "Verbindlichkeit Werkstatt / Tilgung", -x, False),
+                    ("Privat", "financing", "Verbindlichkeit Werkstatt / Aufnahme", x, False), ("Privat", "expenses", "Mobilität", -x, True)])
 
 
 def laid_out_for_the_partnership(d, lag, k, i):

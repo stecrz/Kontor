@@ -1501,20 +1501,66 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
         R.add(sec, row=row, mk=mk, amount=t.amount, account=ca.uuid, kind=kind, nw=False, lbl=("cf_einlage_auf", other, ca.name), **grp)
         R.ids[(sec, row)][mk].append(cb.id)
 
-    def own_row(t: Tx, acc: Account, role: str, mk: str) -> None:
-        """A booking of an account that is no bank account (loan, receivable, asset): interest or a change of its value."""
-        nonlocal unclear
-        if role == "liabilities" and _is_cost(t, cost_words):
-            R.add("financing", row=acc.name + " / Zinsen", mk=mk, amount=t.amount, account=acc.uuid, kind="interest", nw=True, lbl=("cf_name", acc.name), **_grp(FIN_GROUPS, "interest"))
-            R.add("financing", row=acc.name + " / Tilgung", mk=mk, amount=-t.amount, account=acc.uuid, kind="repayment", nw=False, lbl=("cf_name", acc.name), tx=-1, **_grp(FIN_GROUPS, "repayment"))      # its other side: the booking is listed with the interest
-        elif role == "receivables" and _is_cost(t, cost_words):
-            R.add("investing", row=acc.name + " / Zinsen", mk=mk, amount=t.amount, account=acc.uuid, kind="interest", nw=True, lbl=("cf_zinsen", acc.name), **_grp(INVEST_GROUPS, "receivables"))
-            R.add("investing", row=acc.name + " / Rückzahlung", mk=mk, amount=-t.amount, account=acc.uuid, kind="payback", nw=False, lbl=("cf_name", acc.name), tx=-1, **_grp(INVEST_GROUPS, "receivables"))
-        elif role in ("liabilities", "receivables") or role in ASSET_LIKE:
-            R.add("valuation", acc.name, acc.name, mk, t.amount, account=acc.uuid, kind="account", nw=True)
+    def property_row(t: Tx, cat: str, obj: str, mk: str, det: str) -> None:
+        """Rent or costs of a property: by the category's sum (a subcategory such as "Hausgeld"); on the property's own category
+        by the booking."""
+        inc = (t.amount > 0) if (cat in objekte or not cat) else totals.get(cat, 0.0) > 0
+        sec = "income" if inc else "expenses"
+        row = "%s · %s" % (obj, "Miete" if inc else "Kosten")
+        R.add(sec, row, row, mk, t.amount, ord=POS["rental" if inc else "property_costs"][2] + 0.5, property_name=obj, detail=det,
+              lbl=("cf_objekt_miete" if inc else "cf_objekt_kosten", obj))
+
+    counter_ids = {o.id for o in reserved.values()}      # counter-bookings of payments between your areas (counter_row)
+
+    def own_category(t: Tx) -> Tuple[Optional[str], Optional[str]]:
+        """(position, property) of the category of a booking in an account that is no bank account: a category counts in every
+        account (only without one does Kontor work it out) -- not a transfer's, nor on Kontor's own bookings or on the
+        counter-booking of a payment (the payment counts)."""
+        cat = norm_cat(t.category_path)
+        if not cat or is_transfer(cat) or marks_in(t.text) or t.id in counter_ids:
+            return None, None
+        return place(cat)
+
+    def category_row(t: Tx, pos: Optional[str], obj: Optional[str], mk: str) -> bool:
+        """Income or an expense by the category, as a bank booking would count (a property's in its rows) -- e.g. what a landlord
+        kept of a deposit for damage, booked out of the receivable. Saving, a repayment, a contribution or "leave out" need a
+        payment: not here."""
+        if obj:
+            property_row(t, norm_cat(t.category_path), obj, mk, norm_cat(t.category_path))
+        elif pos in POS and POS[pos][0] in ("income", "expenses"):
+            row, key = position_row(pos, company)
+            R.add(POS[pos][0], row, row, mk, t.amount, ord=POS[pos][2], lbl=(key,), detail=norm_cat(t.category_path))
         else:
+            return False
+        return True
+
+    def own_row(t: Tx, acc: Account, role: str, mk: str) -> None:
+        """A booking of an account that is no bank account (loan, receivable, asset): interest, income or an expense by its
+        category, or a change of its value. Interest and the category come with the account's other side -- the debt repaid,
+        the receivable paid back, the asset sold -- which lists no booking (it is listed with the interest or the category)."""
+        nonlocal unclear
+        loan = role in ("liabilities", "receivables")
+        if not loan and role not in ASSET_LIKE:
             R.add("unclear", "Konto ohne Position", acc.name + " (Position unbekannt)", mk, t.amount, kind="unclear", tx=t.id,
                   lbl=("cf_position_unbekannt", acc.name), glbl=("cf_konto_ohne_position",)); unclear += 1
+            return
+        pos, obj = own_category(t)
+        interest = loan and (_is_cost(t, cost_words) or (not obj and (pos == "loan_interest" or (role == "receivables" and pos == "capital_income"))))
+        if interest and role == "liabilities":
+            R.add("financing", row=acc.name + " / Zinsen", mk=mk, amount=t.amount, account=acc.uuid, kind="interest", nw=True, lbl=("cf_name", acc.name), **_grp(FIN_GROUPS, "interest"))
+        elif interest:
+            R.add("investing", row=acc.name + " / Zinsen", mk=mk, amount=t.amount, account=acc.uuid, kind="interest", nw=True, lbl=("cf_zinsen", acc.name), **_grp(INVEST_GROUPS, "receivables"))
+        elif not category_row(t, pos, obj, mk):
+            R.add("valuation", acc.name, acc.name, mk, t.amount, account=acc.uuid, kind="account", nw=True)
+            return
+        if role == "liabilities" and not interest and t.amount < 0:      # a bill booked as owed: a debt taken up (never a negative repayment)
+            R.add("financing", row=acc.name + " / Aufnahme", mk=mk, amount=-t.amount, account=acc.uuid, kind="drawdown", nw=False, lbl=("cf_name", acc.name), tx=-1, **_grp(FIN_GROUPS, "drawdown"))
+        elif role == "liabilities":
+            R.add("financing", row=acc.name + " / Tilgung", mk=mk, amount=-t.amount, account=acc.uuid, kind="repayment", nw=False, lbl=("cf_name", acc.name), tx=-1, **_grp(FIN_GROUPS, "repayment"))
+        elif role == "receivables":
+            R.add("investing", row=acc.name + " / Rückzahlung", mk=mk, amount=-t.amount, account=acc.uuid, kind="payback", nw=False, lbl=("cf_name", acc.name), tx=-1, **_grp(INVEST_GROUPS, "receivables"))
+        else:
+            R.add("investing", row=acc.name, mk=mk, amount=-t.amount, account=acc.uuid, kind="account", nw=False, tx=-1, **_grp(INVEST_GROUPS, role))
 
     # money back under a category that undoes a payment of the same amount within ten days (a returned debit): no loan taken up
     neg_by: Dict[Tuple[str, int], List[Tx]] = defaultdict(list)
@@ -1675,12 +1721,7 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
             continue
         det = cat if mine else ""                        # "" = without a category in MoneyMoney (estimated)
         if obj:
-            # rent or costs: by the category's sum (a subcategory such as "Hausgeld"); on the property's own category by the booking
-            inc = (t.amount > 0) if (cat in objekte or not cat) else totals.get(cat, 0.0) > 0
-            sec = "income" if inc else "expenses"
-            row = "%s · %s" % (obj, "Miete" if inc else "Kosten")
-            R.add(sec, row, row, mk, t.amount, ord=POS["rental" if inc else "property_costs"][2] + 0.5, property_name=obj, detail=det,
-                  lbl=("cf_objekt_miete" if inc else "cf_objekt_kosten", obj))
+            property_row(t, cat, obj, mk, det)
             continue
         psec, prow, pord = POS[pos]
         if pos == "ignore":

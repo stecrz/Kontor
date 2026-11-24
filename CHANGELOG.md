@@ -1,5 +1,9 @@
 # Änderungen
 
+## 3.17.75 (2026-11-24 17:23)
+- Cashflow: Kategorie zählt auf jedem Konto, auch auf manuellen – etwa der einbehaltene Teil einer Kaution; ohne Kategorie weiter Wertänderung
+- Cashflow: als Verbindlichkeit gebuchte Rechnung zählt bei Fälligkeit in ihrer Kategorie, die Schuld als Aufnahme
+
 ## 3.17.74 (2026-11-24 16:31)
 - Cashflow-Positionen: Empfohlene Kategorien – Gruppe „Vermietung“ nur für Miete und Kosten je Immobilie
 - Cashflow-Positionen: Kauf jeder Anlage (Immobilie, Firmenanteile) samt Notar und Grunderwerbsteuer unter Sparen & Anlegen

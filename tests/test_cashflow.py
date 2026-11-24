@@ -349,6 +349,40 @@ class CashflowCases(Reconciles):
         self.assertEqual(r["Lebenshaltung"]["amounts"]["2026-02"], -700.0)
         self.assertEqual(r["Auto"]["amounts"]["2026-02"], 700.0)
 
+    def test_deposit_kept_counts_in_its_category(self):
+        # a rent deposit as a manual receivable: paid, then paid back less what the landlord kept for service charges -- booked
+        # out of the receivable by hand under the category it paid for. The same for a tenant's deposit held (a debt).
+        data = build([(1, "giro", date(2025, 12, 5), 3000.0, {"cat": "Gehalt"}),
+                      (2, "giro", date(2026, 1, 10), -1500.0, {"cat": "Umbuchung"}),
+                      (3, "ford", date(2026, 1, 10), 1500.0, {"purpose": "Mietkaution"}),
+                      (4, "giro", date(2026, 4, 2), 1300.0, {"cat": "Umbuchung"}),
+                      (5, "ford", date(2026, 4, 2), -1300.0, {"purpose": "Rückzahlung Mietkaution"}),
+                      (6, "ford", date(2026, 4, 2), -200.0, {"purpose": "Einbehalt Nebenkosten", "cat": "Wohnen / Nebenkosten"}),
+                      (7, "ford", date(2026, 4, 3), -50.0, {"purpose": "Einbehalt"}),                          # no category: a change of value
+                      (8, "ford", date(2026, 4, 4), -30.0, {"purpose": "Wert · #kontor-wert-20260404-1", "cat": "Wohnen"}),   # Kontor's own
+                      (9, "ford", date(2026, 4, 5), -20.0, {"cat": "Umbuchung"}),                             # a transfer keeps its way
+                      (10, "giro", date(2026, 1, 15), 1000.0, {"cat": "Umbuchung"}),
+                      (11, "kredit", date(2026, 1, 15), -1000.0, {"purpose": "Kaution Mieter"}),
+                      (12, "kredit", date(2026, 5, 6), 150.0, {"purpose": "Einbehalt Schaden", "cat": "Sonstige Einnahmen"}),
+                      (13, "kredit", date(2026, 5, 30), -40.0, {"purpose": "Q2", "cat": "Darlehen / Zinsen"}),         # interest by its category
+                      (14, "auto", date(2026, 3, 1), 9000.0, {"purpose": "Kaufpreis"}),
+                      (15, "auto", date(2026, 6, 2), -300.0, {"purpose": "Hagelschaden", "cat": "Mobilität"})])      # any account
+        self.assertAddsUp(data)
+        p = data["Privat"]
+        r = rows(p)
+        self.assertEqual(r["Wohnen"]["amounts"]["2026-04"], -200.0)
+        self.assertEqual({m: v for m, v in r["Darlehen an Freund / Rückzahlung"]["amounts"].items() if v}, {"2026-01": -1500.0, "2026-04": 1500.0})
+        self.assertEqual(rows(p, "valuation")["Darlehen an Freund"]["amounts"]["2026-04"], -100.0)
+        self.assertEqual(r["Sonstige Einnahmen"]["amounts"]["2026-05"], 150.0)
+        self.assertFalse(r["Privatkredit / Tilgung"]["nw"])
+        self.assertEqual(r["Privatkredit / Zinsen"]["amounts"]["2026-05"], -40.0)
+        self.assertEqual(r["Privatkredit / Tilgung"]["amounts"]["2026-05"], -110.0)
+        self.assertNotIn("Privatkredit", rows(p, "valuation"))
+        self.assertEqual((r["Mobilität"]["amounts"]["2026-06"], rows(p, "investing")["Auto"]["amounts"]["2026-06"]), (-300.0, 300.0))
+        self.assertEqual(rows(p, "valuation")["Auto"]["amounts"]["2026-06"], 0.0)
+        # a click on the expense shows the booking; the receivable's side does not list it a second time
+        self.assertEqual(p["cashflow"]["cf_ids"]["expenses\u001fWohnen"]["2026-04"], [6])
+
     def test_pending_refund_and_missing_counterpart(self):
         data = build([(1, "giro", date(2026, 1, 5), 3000.0, {"cat": "Gehalt"}),
                       (2, "giro", date(2026, 2, 3), -100.0, {"cat": "Lebensmittel"}),

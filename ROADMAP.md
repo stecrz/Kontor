@@ -345,6 +345,14 @@ anhängen – nie löschen.
   abgemeldet. Ursache des doppelten Logins: die Antwort einer Sitzungsprüfung von vor der Anmeldung (Fokus kehrt beim Schließen des
   Touch-ID-Fensters zurück; nach einem Start antwortete der Dienst je Anfrage bis 2 s verzögert) sperrte wieder. Seitdem verwirft die
   Seite solche Antworten, und die Wartezeit auf den ersten Tailscale-Blick zählt ab dem Start, nicht je Anfrage. (umgesetzt in 3.17.61)
+- **Eine Kategorie zählt auf jedem Konto** (Nutzer, 2026-11-24, beim Ausbuchen des einbehaltenen Teils einer Mietkaution im
+  manuellen Kautionskonto unter „Wohnungsausstattung“): Was kategorisiert ist, zählt in seiner Position, unabhängig vom Konto;
+  erkennen muss Kontor nur, wo keine Kategorie ist oder sie nicht genau genug ist. Umgesetzt: Buchungen in Forderungen,
+  Verbindlichkeiten und Sachwerten zählen mit einer Kategorie für Einnahmen oder Ausgaben dort (die Gegenseite des Kontos unter
+  Investitionen/Finanzierung), mit einer Zins-Kategorie als Zinsen; ohne Kategorie bleiben sie eine Wertänderung. Ausgenommen,
+  weil sonst doppelt oder ohne Zahlung gezählt: die Gegenseite einer Umbuchung (auch die Gegenbuchung einer Einlage im
+  Kapitalkonto), Kontors eigene Buchungen, Kategorien für Umbuchung, Sparen, Tilgung, Einlagen und „Nicht berücksichtigen“.
+  (umgesetzt in 3.17.75)
 
 ## Offen (Entscheidung steht aus – mit Empfehlung vorlegen, wenn der Punkt dran ist)
 - Umsatzsteuer-Voranmeldung direkt an ELSTER senden (ELSTERs Programmbibliothek ERiC, Anmeldung als Hersteller, Zertifikat und

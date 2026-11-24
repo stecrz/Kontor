@@ -109,7 +109,8 @@ Geldanlagen, Tilgung, Darlehensaufnahme).
 
 ### cashflow.table.valuation — Wertänderungen
 Changes of net worth without a payment: prices of portfolios (change of the depot's value minus what was paid in), balance
-corrections of accounts kept by balances ("<Konto> / Korrektur Kontostand"), bookings of non-bank accounts, the value of a
+corrections of accounts kept by balances ("<Konto> / Korrektur Kontostand"), bookings of non-bank accounts without a category (with a category for income or an expense they count in its position and
+the account's other side stands under Investitionen/Finanzierung: "<Konto> / Rückzahlung", "<Konto> / Tilgung", "<Konto> / Aufnahme" for a bill booked as owed, or the asset's row), the value of a
 participation beyond the money paid in, "Anfangssaldo <Konto>" (an account starting with a balance), "Anlage ohne Zielkonto" (saving
 whose account is unknown – it offsets the rise of the depot it went into; link "Ziel festlegen"), "Darlehen ohne Konto" (a loan
 taken up or repaid by category: its debt is in none of the user's accounts, so the net worth Kontor sees moves by that amount). One row per account; a depot
