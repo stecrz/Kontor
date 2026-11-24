@@ -304,6 +304,10 @@ anhängen – nie löschen.
   darf überschrieben werden, ein Konflikt in denselben Teilen einer Datei soll erkannt und abgewogen werden (welcher Stand der neuere
   ist). Umgesetzt: `release.py` merkt sich den eigenen Ausgangsstand; nur Zeilen von Versionen danach sperren; Konflikt-Meldung nennt
   die fremde Version; `git reset` auf einen fremden Stand gesperrt (`docs/rules/parallel.md`). (umgesetzt in 3.17.47)
+- **Fremdes nie nach eigenem Abwägen ersetzen** (Nutzer, 2026-11-24, nach 3.17.65 – die Sperre war dort mit `KONTOR_PUSH_OK=1`
+  übergangen worden, obwohl nichts verloren war): Es soll nicht zu Überschreibungen kommen, die Sperre nicht routinemäßig umgangen
+  werden. Umgesetzt: Die Sperre prüft, was eine fremde Version in eine Zeile schrieb (ihre Wörter mit Kontext), nicht die ganze Zeile –
+  ein zusammengeführter Absatz geht ohne Ausnahme; `KONTOR_PUSH_OK=1` für fremde Zeilen nur nach dem Ja des Nutzers im Chat. (umgesetzt in 3.17.69)
 - **Nur nötige MCP-Dienste, nur `main` auf GitHub** (Nutzer, 2026-11-24 – Credits für hohe Denkstufen statt für Kontext): Claude in
   Chrome, Claude Docs und `github` gesperrt (Code über Klon, `git` und `gh`); `claude-code-remote` bleibt, weil es die Plattform selbst
   ist (Umgebung, Netz, Schlüssel). Der Zweig `claude/…` jeder Cloud-Sitzung bleibt lokal, der Guard sperrt den Push dorthin;

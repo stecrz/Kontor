@@ -72,8 +72,9 @@ pushen – er bleibt lokal, `release.py` pusht `HEAD:main`, der Guard sperrt den
   Version mit „fix ci“ bzw. „fix nightly“ im Betreff – daran lassen die anderen es liegen. War ein anderer schneller: die eigene
   Korrektur verwerfen. Fällt nur die Umgebung aus (Download, Spiegel): `gh run rerun <id> --failed`.
 - **Sperren vor jedem Push** (`.claude/hooks/guard.py`, `.githooks/pre-push`, auf GitHub Job „Versionskette“): neuester `main` in der
-  eigenen Arbeit, jede Version höher, keine Zeile einer Version verloren, die nach dem eigenen Ausgangsstand kam (bewusst Geändertes
-  aus ihm darf); kein `git reset` auf einen fremden Stand. Nie umgehen, nie Force-Push, `main` nie löschen.
+  eigenen Arbeit, jede Version höher, nichts verloren, was eine Version nach dem eigenen Ausgangsstand in eine Zeile schrieb (bewusst
+  Geändertes aus ihm darf); kein `git reset` auf einen fremden Stand. Nie umgehen, nie Force-Push, `main` nie löschen; fremde Zeilen
+  ersetzen (`KONTOR_PUSH_OK=1`) nur nach dem Ja des Nutzers im Chat (Nutzer, 2026-11-24).
 - Konflikte: beide Seiten erhalten, Fremdes nie verwerfen; Unvereinbares dem Nutzer mit Empfehlung vorlegen.
 
 ## Was wo gepflegt wird

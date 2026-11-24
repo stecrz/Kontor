@@ -528,7 +528,7 @@ class ReleaseScript(unittest.TestCase):
         self.assertEqual(self.main_file("VERSION"), "1.0.2")
         # weighed, and its change replaces the other on purpose: said so, then it goes
         code, out = self.release(self.a, "drei", "Bilanz: drei", env={"KONTOR_PUSH_OK": "1"})
-        self.assertEqual(code, 0, out); self.assertIn("bewusst ersetzt", out); self.assertIn("1.0.3 veröffentlicht", out)
+        self.assertEqual(code, 0, out); self.assertIn("der Nutzer hat zugestimmt", out); self.assertIn("1.0.3 veröffentlicht", out)
         self.assertEqual(self.main_file("app.py"), "A = 1\nB = 1\nLABEL = 'drei'")
         self.assertFalse(os.path.exists(os.path.join(self.a, ".git", "kontor-seen")))
         # both kept instead: no lock, no exception needed
@@ -543,6 +543,46 @@ class ReleaseScript(unittest.TestCase):
         subprocess.run(["git", "rebase", "--continue"], cwd=self.a, env=dict(ENV, GIT_EDITOR="true"), check=True, capture_output=True)
         code, out = self.release(self.a, "vier", "Bilanz: vier")
         self.assertEqual(code, 0, out); self.assertEqual(self.main_file("app.py"), "A = 1\nB = 1\nLABEL = 'drei und fünf'\nNOTE = 'vier'")
+
+    def test_a_long_line_both_changed_merged_goes_without_exception(self):
+        """A paragraph of text is one line: two chats change different parts of it. Merged with both parts, nothing of the other
+        chat is lost -- it goes without KONTOR_PUSH_OK (3.17.65 needed it); the other chat's words left out: locked."""
+        line = "TEXT = 'Kürzel: ⌘K blendet ein, ⌘S speichert, ⌘F sucht in der Hilfe, ⌘P druckt.%s'\n"
+        self.write(self.a, {"app.py": "A = 1\nB = 1\n" + line % ""})
+        self.assertEqual(self.release(self.a, "eins", "Hilfe: eins", "--by", "Claude X: l")[0], 0)
+        self.git(self.b, "pull", "-q", "--rebase", "origin", "main")
+        self.write(self.b, {"app.py": "A = 1\nB = 1\n" + line % " Esc schließt, was offen ist."})
+        self.assertEqual(self.release(self.b, "esc", "Hilfe: esc", "--by", "Claude Y: l")[0], 0)
+        mine = line.replace("sucht in der Hilfe", "sucht Wort für Wort in der Hilfe")
+        self.write(self.a, {"app.py": "A = 1\nB = 1\n" + mine % ""})
+        code, out = self.release(self.a, "suche", "Hilfe: suche")
+        self.assertEqual(code, 3, out)
+        # resolved by keeping only its own side: the other chat's sentence is gone -- locked
+        self.write(self.a, {"app.py": "A = 1\nB = 1\n" + mine % ""})
+        self.git(self.a, "add", "app.py")
+        subprocess.run(["git", "rebase", "--continue"], cwd=self.a, env=dict(ENV, GIT_EDITOR="true"), check=True, capture_output=True)
+        code, out = self.release(self.a, "suche", "Hilfe: suche")
+        self.assertEqual(code, 4, out); self.assertIn("1.0.2 app.py: TEXT", out); self.assertIn("Zustimmung des Nutzers", out)
+        # both parts in the line: goes, no exception
+        self.write(self.a, {"app.py": "A = 1\nB = 1\n" + mine % " Esc schließt, was offen ist."})
+        code, out = self.release(self.a, "suche", "Hilfe: suche")
+        self.assertEqual(code, 0, out); self.assertNotIn("KONTOR_PUSH_OK", out)
+        self.assertEqual(self.main_file("app.py"), "A = 1\nB = 1\n" + (mine % " Esc schließt, was offen ist.").rstrip("\n"))
+
+
+class AddedParts(unittest.TestCase):
+    """What a version put into a line, as the lock looks for it in the work pushed (guard._added_parts)."""
+
+    def test_parts(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("guard", GUARD)
+        g = importlib.util.module_from_spec(spec); spec.loader.exec_module(g)
+        self.assertEqual(g._added_parts([], "a brand new line"), ["a brand new line"])                         # new: all of it
+        self.assertEqual(g._added_parts(["MINUTES = 30  # idle"], "MINUTES = 45  # idle"), ["MINUTES = 45  # idle"])   # a figure: with words around it
+        self.assertEqual(g._added_parts(["x = 1"], "something else entirely, long"), ["something else entirely, long"])  # not alike: a new line
+        long = "Kontor liest die Daten aus MoneyMoney und rechnet daraus die Bilanz je Bereich"
+        self.assertEqual(g._added_parts([long], long + " und den Cashflow."), ["Bereich und den Cashflow."])
+        self.assertEqual(g._added_parts([long], long.replace("die Daten ", "")), ["Kontor liest aus MoneyMoney"])    # taken out: the words that meet
 
 
 if __name__ == "__main__":

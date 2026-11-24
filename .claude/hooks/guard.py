@@ -10,6 +10,7 @@ By hand / on GitHub: python3 .claude/hooks/guard.py chain <before> <after> -- th
 The chain also checks the top changelog heading's time against the commit's own time: chats have no clock and guessed it, up
 to 29 minutes ahead (3.17.30) -- release.py writes it from the clock."""
 import datetime
+import difflib
 import json
 import os
 import re
@@ -105,31 +106,63 @@ def chain_problems(repo: str, before: str, after: str):
     return out
 
 
+def _added_parts(removed, line):
+    """What a version put into a line: the words it added or changed, each with words around it (at least 12 characters: a
+    changed figure "= 45", not just "45"), compared with the line it replaced -- the most alike line the same change removed;
+    words it took out: the words that now meet. A new line: all of it."""
+    best = max(removed, key=lambda o: difflib.SequenceMatcher(None, o, line, autojunk=False).ratio(), default=None)
+    if best is None or difflib.SequenceMatcher(None, best, line, autojunk=False).ratio() < 0.5:
+        return [line.strip()]
+    spans = [m.span() for m in re.finditer(r"\S+", line)]
+    words = [line[a:b] for a, b in spans]
+    out = []
+    for op, i1, i2, j1, j2 in difflib.SequenceMatcher(None, best.split(), words, autojunk=False).get_opcodes():
+        if op == "equal" or not spans:
+            continue
+        lo, hi = (j1, j2) if op != "delete" else (j1 - 1, j1 + 1)          # taken out: the words on both sides of the gap
+        lo, hi = max(lo - 1, 0), min(hi + 1, len(spans))                   # a word of context on each side ...
+        while spans[hi - 1][1] - spans[lo][0] < 12 and (lo > 0 or hi < len(spans)):
+            lo, hi = max(lo - 1, 0), min(hi + 1, len(spans))               # ... more, until it says something
+        out.append(line[spans[lo][0]:spans[hi - 1][1]])
+    return out or [line.strip()]
+
+
 def lost_lines(repo: str, base: str, ref: str, recent: int = 8, seen: str = ""):
     """Lines the newest versions on main added (code, tests, texts -- not VERSION or CHANGELOG.md, nor HIGHLIGHTS.md, whose lines
     the next versions condense on purpose) that main still has and the work pushed no longer has: an older tree set on top of
     main loses them while VERSION and CHANGELOG look right (3.16.35 lost the code of 3.16.32 that way). [(commit, file, line)].
-    seen: the main the work was built on (release.py knows it) -- a line already in it the work changed on purpose (Git carried
-    the change onto the newer main, a conflict where another version touched the same place); only lines of versions that
-    came after it count: lost while resolving a conflict, or an older tree. Without it (a push by hand) every line counts."""
+    A line counts as lost only when what that version put into it is gone (_added_parts): a long line of text another chat
+    extended, merged with an own change to another part of it, keeps the other chat's words (3.17.65 had to be let through for
+    that by hand). seen: the main the work was built on (release.py knows it) -- a line already in it the work changed on
+    purpose (Git carried the change onto the newer main, a conflict where another version touched the same place); only lines of
+    versions that came after it count: lost while resolving a conflict, or an older tree. Without it (a push by hand) every line
+    counts."""
     out, have, ours = [], {}, {}
-    show = lambda c, f: set(_git(repo, "show", "%s:%s" % (c, f)).stdout.split("\n"))
+    show = lambda c, f: _git(repo, "show", "%s:%s" % (c, f)).stdout      # noqa: E731
     for c in _git(repo, "rev-list", "-n", str(recent), base).stdout.split():
         if not _git(repo, "rev-parse", "--verify", "-q", c + "^").stdout.strip():
             continue                                    # the first commit: nothing before it
         if seen and _git(repo, "merge-base", "--is-ancestor", c, seen).returncode == 0:
             continue                                    # the work was built on it: its lines changed on purpose
-        cur = None
+        cur, removed = None, []
         for line in _git(repo, "diff", "-U0", c + "^", c, "--", ".", ":(exclude)VERSION", ":(exclude)CHANGELOG.md",
                          ":(exclude)HIGHLIGHTS.md").stdout.split("\n"):
             if line.startswith("+++ "):
                 cur = line[6:] if line.startswith("+++ b/") else None
                 continue
+            if line.startswith("@@"):
+                removed = []                            # a new place in the file: what it replaced starts anew
+                continue
+            if line.startswith("-") and not line.startswith("--- "):
+                removed.append(line[1:])
+                continue
             if not cur or not line.startswith("+") or len(line.strip()) < 8:
                 continue
             if cur not in have:
-                have[cur], ours[cur] = show(base, cur), show(ref, cur)
-            if line[1:] in have[cur] and line[1:] not in ours[cur]:
+                text = show(ref, cur)
+                have[cur], ours[cur] = set(show(base, cur).split("\n")), (set(text.split("\n")), text)
+            if line[1:] in have[cur] and line[1:] not in ours[cur][0] and \
+                    any(part not in ours[cur][1] for part in _added_parts(removed, line[1:])):
                 out.append((c[:7], cur, line[1:].strip()))
     return out
 
@@ -219,14 +252,14 @@ def push_check(command: str, cwd: str, seen: str = "") -> str:
                 "verloren?\n- " % built + "\n- ".join("%s %s: %s" % (_subject(top, c), f, l[:90]) for c, f, l in lost[:8])
                 + ("\n- … und %d weitere" % (len(lost) - 8) if len(lost) > 8 else "")
                 + "\nDie fremde Version ist der neuere, schon veröffentlichte Stand; deine Arbeit kannte sie nicht. Beide Absichten "
-                "zusammenführen (die Zeilen wieder aufnehmen, deine Änderung darauf anwenden), dann denselben Befehl erneut. Nur wenn "
-                "deine Änderung sie nach dem Abwägen bewusst ersetzt: KONTOR_PUSH_OK=1 davor; Unvereinbares dem Nutzer vorlegen.")
+                "zusammenführen (die Zeilen wieder aufnehmen, deine Änderung darauf anwenden), dann denselben Befehl erneut. Fremde Zeilen "
+                "ersetzen nur mit Zustimmung des Nutzers: die Zeilen mit Empfehlung im Chat vorlegen; erst nach seinem Ja KONTOR_PUSH_OK=1 davor.")
     if lost:
         return ("Dein Stand löscht Zeilen, die die neuesten Versionen auf main gebracht haben – er beruht auf einem älteren Baum "
                 "(wie 3.16.35):\n- " + "\n- ".join("%s %s: %s" % (c, f, l[:90]) for c, f, l in lost[:8])
                 + ("\n- … und %d weitere" % (len(lost) - 8) if len(lost) > 8 else "")
                 + "\nEigene Änderungen auf den frisch geholten main setzen (`git pull --rebase origin main`), nie `reset --soft` auf einen "
-                "fremden Stand. Nur wenn du genau diese Zeilen bewusst geändert hast: KONTOR_PUSH_OK=1.")
+                "fremden Stand. Fremde Zeilen ersetzen nur mit Zustimmung des Nutzers (dann KONTOR_PUSH_OK=1).")
     if problems and all("Uhrzeit im CHANGELOG" in p for p in problems):
         return "Changelog-Zeit stimmt nicht:\n- " + "\n- ".join(problems)
     if problems:

@@ -37,9 +37,14 @@ wenn `git log origin/main..origin/<zweig>` leer ist oder sein Inhalt nachweislic
   `main` und löschte fremde Versionen; 3.16.35 setzte bei richtiger Kette den Code von 3.16.32 zurück.
 - Anlass der Herkunft (Nutzer, 2026-11-24): 3.17.46 änderte bewusst die Karte, die 3.17.38–3.17.41 gebaut hatten – die alte Sperre
   hielt das für einen alten Baum, weil sie jede Zeile der letzten acht Versionen zählte.
-- Abgelehnt: nie umgehen, sondern holen, daraufsetzen, neu nummerieren. `KONTOR_PUSH_OK=1` nur für eine bewusste Ausnahme: ein
-  Tippfehler in einem alten Changelog-Eintrag, oder nach einem Konflikt ersetzt die eigene Änderung eine neuere fremde nach dem
-  Abwägen bewusst (`KONTOR_PUSH_OK=1 python3 .claude/tools/release.py …`; Unvereinbares vorher dem Nutzer vorlegen).
+- Fein statt zeilenweise (Nutzer, 2026-11-24, nach 3.17.65): Eine Zeile gilt nur als verloren, wenn fehlt, was die fremde Version in
+  sie geschrieben hat – ihre hinzugefügten oder geänderten Wörter samt Wörtern drumherum (mindestens 12 Zeichen, `_added_parts`), eine
+  neue Zeile ganz. Wer einen langen Absatz zusammenführt, den beide geändert haben, behält den fremden Teil und wird nicht gesperrt;
+  ein zurückgedrehter Wert (`= 45` → `= 30`) oder ein weggelassener Satz sperrt weiter.
+- Abgelehnt: nie umgehen, sondern holen, daraufsetzen, neu nummerieren. `KONTOR_PUSH_OK=1` nur für zwei Ausnahmen: ein Tippfehler in
+  einem alten Changelog-Eintrag (`.githooks/pre-push`), oder der Nutzer hat im Chat zugestimmt, dass die eigene Änderung genau diese
+  fremden Zeilen ersetzt – vorher die gemeldeten Zeilen mit Empfehlung vorlegen, nie nach eigenem Abwägen (Nutzer, 2026-11-24: es soll
+  nicht zu Überschreibungen kommen; 3.17.65 ging so durch, obwohl nichts verloren war – die Sperre war zu grob).
 
 ## Konflikte
 `release.py` nennt je Datei die neuere Version, die dieselbe Stelle geändert hat, und den eigenen Ausgangsstand. Zwischen

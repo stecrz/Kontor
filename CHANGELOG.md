@@ -1,5 +1,9 @@
 # Änderungen
 
+## 3.17.69 (2026-11-24 12:39)
+- Entwicklung: Push-Sperre prüft fein, was eine fremde Version in eine Zeile schrieb – zusammengeführte Absätze gehen ohne Ausnahme
+- Entwicklung: fremde Zeilen ersetzen nur noch nach Zustimmung des Nutzers
+
 ## 3.17.68 (2026-11-24 11:02)
 - Cashflow: neue Positionen „Rente & Sozialleistungen“, „Unterhalt & Geschenke“, „Bildung & Betreuung“; „Geschenke & Spenden“ heißt „Unterhalt, Geschenke & Spenden“
 - Cashflow-Positionen: bessere Vorschläge nach dem Namen – Minijob, Taschengeld, Sauna, Friseur; Essen auch auswärts unter Lebenshaltung; private Rentenversicherung unter Sparen & Anlegen

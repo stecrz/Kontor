@@ -281,7 +281,7 @@ def guard():
 
 def guard_says(seen):
     """The lock before the push, knowing the main the work was built on: lines of versions already in it the work changed on
-    purpose (named, so it can be traced); lines of versions after it lost lock it -- unless KONTOR_PUSH_OK=1 after weighing."""
+    purpose (named, so it can be traced); lines of versions after it lost lock it -- unless KONTOR_PUSH_OK=1, which only the user's yes in the chat allows."""
     g = guard()
     why = g.push_check("git push origin HEAD:main", ROOT, seen=seen)
     if not why:
@@ -290,7 +290,7 @@ def guard_says(seen):
             say("Bewusst geändert: %d Zeile(n) aus %s – standen schon in deinem Ausgangsstand %s."
                 % (len(mine), ", ".join(sorted({g._subject(ROOT, c) for c, f, l in mine})), out("show", seen + ":VERSION") or seen[:7]))
     elif os.environ.get("KONTOR_PUSH_OK") == "1" and why.startswith("Dein Stand löscht Zeilen von Versionen"):
-        say("KONTOR_PUSH_OK=1 – nach dem Abwägen bewusst ersetzt:\n" + why.split("\nDie fremde Version")[0])
+        say("KONTOR_PUSH_OK=1 – fremde Zeilen ersetzt, der Nutzer hat zugestimmt:\n" + why.split("\nDie fremde Version")[0])
         return ""
     return why
 

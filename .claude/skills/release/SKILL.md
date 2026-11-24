@@ -27,8 +27,10 @@ description: Jede Änderung an Kontor abschließen – mitpflegen, mit .claude/t
    - Während der Arbeit beliebig oft nur prüfen: `python3 .claude/tools/release.py --check [--tests …]`.
    - „Prüfung läuft noch“ (Ausgang 5): denselben Befehl erneut – die Prüfung läuft im Hintergrund weiter.
    - Rot (1): beheben, denselben Befehl erneut. Konflikt (3): beide Seiten erhalten, `git add`, `git rebase --continue`, erneut.
-     Gesperrt (4): die Meldung sagt, was zu tun ist – nie umgehen. `KONTOR_PUSH_OK=1` nur, wenn eine neuere fremde Änderung
-     nach dem Abwägen bewusst ersetzt wird (Unvereinbares: dem Nutzer vorlegen); `docs/rules/parallel.md`.
+     Gesperrt (4): die Meldung sagt, was zu tun ist – nie umgehen. Meist fehlt beim Lösen eines Konflikts ein fremder Teil: ihn
+     wieder aufnehmen, eigene Änderung darauf, erneut. Soll die eigene Änderung fremde Zeilen wirklich ersetzen: die gemeldeten
+     Zeilen dem Nutzer mit Empfehlung vorlegen und auf sein Ja warten – erst dann `KONTOR_PUSH_OK=1`, nie nach eigenem Abwägen
+     (`docs/rules/parallel.md`).
 4. **Nicht auf GitHub warten.** Ein roter Lauf erscheint im Lagebild des nächsten Chats, der ihn behebt („fix ci“). Nach dem Push
    nichts nachschieben – eine Korrektur ist eine neue Version. Nur Regeln, Tests oder CI geändert: mit der nächsten Version
    mitnehmen, außer es muss sofort für die anderen Chats gelten.
