@@ -13,7 +13,9 @@ the size of the group's sum (largest absolute sum first), at most 300 groups. On
 pending), on accounts with the position Bankguthaben, not Kontor's own bookings (#kontor marks), not a transfer between two accounts
 of the same area (counter IBAN of an own account in the same area, or paired with a counter-booking by the cash flow). Payments
 between two of the user's areas do appear (a contribution, withdrawal, salary or rent needs a category).
-Filters above the list: area chips (only ticked areas are listed and counted; the others' positions the cash flow estimates), year
+Filters above the list: area chips (only ticked areas are listed and counted; the others' positions the cash flow estimates),
+"Ignorieren vor" (optional day, saved in the settings as assign_ignore_before: transactions booked before it are neither listed nor
+counted here nor in the overview's "Offen" -- the cash flow keeps estimating them; empty: all), year
 (booking year; "alle Jahre"), "ab … €" (only transactions whose absolute amount is at least this). The note "N Umsätze ohne
 Kategorie in MoneyMoney" counts the transactions matching these filters (not the groups). A blue banner counts assignments made
 from another device that wait to be written at the next sync at the Mac (they already count in Kontor). "Alle Vorschläge übernehmen

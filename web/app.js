@@ -6072,7 +6072,9 @@ async function vZuordnen() {
   // the areas you categorise: the others (a company with countless bookings, say) stay out of the list and of the count
   const ohne = new Set(off.skipped || S.CFG.assign_without || []), areas = Object.keys(S.DATA.areas || {});
   const chips = areas.length > 1 ? `<div class="kz-areas" role="group" aria-label="${esc(t('kz_bereiche'))}" title="${esc(t('kz_bereiche_tip'))}">${areas.map(k => `<label class="lc-chip"><input type="checkbox" data-area="${esc(k)}" ${ohne.has(String(k)) ? '' : 'checked'}>${esc(BN(k))}</label>`).join('')}</div>` : '';
+  const vor = off.ignore_before || '';
   let h = `<div class="toolbar">${chips}
+    <label class="chk small" title="${esc(t('kz_ignorieren_vor_tip'))}">${t('kz_ignorieren_vor')} <input type="date" id="kz-vor" value="${esc(vor)}" aria-label="${esc(t('kz_ignorieren_vor'))}"></label>
     <select id="kz-jahr"><option value="">${t('alle_jahre')}</option>${years.map(y => `<option ${KZ.year === y ? 'selected' : ''}>${y}</option>`).join('')}</select>
     <label class="chk small">${t('ab')} <input type="number" id="kz-min" value="${esc(KZ.min)}" placeholder="0" style="width:80px"> €</label>
     <span class="sp"></span>${can && mitVorschlag.length ? `<button id="kz-alle" class="secondary small">${t('alle_vorschlaege_n', mitVorschlag.length)}</button>` : ''}</div>
@@ -6099,6 +6101,11 @@ function bindZuordnen(main) {
     const ohne = $$('input[data-area]', ka).filter(i => !i.checked).map(i => i.dataset.area);
     if (ohne.length === $$('input[data-area]', ka).length) { toast(t('kz_ein_bereich')); route(); return; }       // at least one stays
     try { const r = await api('/api/categories/areas', {without: ohne, wait: true}); S.CFG = r.config; KZ.aus = {}; await loadAll(); route(); } catch (e) { toast(e.message, 5000); }
+  });
+  // older transactions you do not categorise: left out here and in the count (saved on change; empty: all)
+  const kv = $('#kz-vor', main); if (kv) kv.addEventListener('change', async () => {
+    if (kv.value && !/^\d{4}-\d{2}-\d{2}$/.test(kv.value)) return;
+    try { const r = await api('/api/categories/areas', {ignore_before: kv.value, wait: true}); S.CFG = r.config; KZ.aus = {}; await loadAll(); route(); } catch (e) { toast(e.message, 5000); }
   });
   $$('.kz-toggle', main).forEach(b => b.addEventListener('click', e => { const k = e.target.closest('.kz-group').dataset.key; KZ.expanded[k] = !KZ.expanded[k]; route(); }));
   // einzelne Umsätze einer Gegenpartei abwählen (z. B. ein Händler, bei dem du Verschiedenes kaufst) -- ohne neu zu laden

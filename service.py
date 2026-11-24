@@ -64,7 +64,7 @@ import webauthn
 from receipts import Belege, file_status, pattern_problem
 import receipt_text
 from mm_bridge import Bridge, MoneyMoneyError, MoneyMoneyLocked, MoneyMoneyNotRunning, is_running
-from core import (REPORT_LOCK, with_property_categories, assign_skipped, check_file_version, positions_overview, save_positions, category_tree, follow_categories, prune_account_settings, account_sig, account_tree, bank_accounts, bereiche_for, build_report, abruf_arten, check_config, diagnose, earliest_needed, export_package, fetch, freeze_assignments, immo_for_plan, merge_snapshots, record_snapshot,
+from core import (REPORT_LOCK, with_property_categories, assign_cutoff, assign_skipped, check_file_version, positions_overview, save_positions, category_tree, follow_categories, prune_account_settings, account_sig, account_tree, bank_accounts, bereiche_for, build_report, abruf_arten, check_config, diagnose, earliest_needed, export_package, fetch, freeze_assignments, immo_for_plan, merge_snapshots, record_snapshot,
                      immo_results, import_package, ledger_fp, merge_holdings, merged_config, not_booked_entry, plan_pending, refresh_accounts, rule_accounts, run_once, unavailable_text, version, version_on_disk, MM_HISTORY_FILE)
 from model import Ledger, Tx, accounts_from_export, ledger_from_bytes, ledger_to_bytes
 from report import ROLES, account_balance_series, account_months, account_roles, apply_plan, role_label
@@ -126,7 +126,8 @@ def open_category_items(app: "App", year: Optional[int], area: Optional[str], mi
     kat = categorize.load(app.store)
     areas = bereiche_for(app.ledger, app.config)
     bereich_of = {a.uuid: b["id"] for b in areas for a in b["leaves"]}
-    return categorize.open_items(kat, app.ledger, bereich_of, year, area, minimum, limit, bank_accounts(account_roles(app.ledger, app.config)), assign_skipped(app.config, areas))
+    return categorize.open_items(kat, app.ledger, bereich_of, year, area, minimum, limit, bank_accounts(account_roles(app.ledger, app.config)), assign_skipped(app.config, areas),
+                                  assign_cutoff(app.config))
 
 
 def assign_categories(app: "App", ids: List[int], pfad: str, modus: str = "auto", local: bool = True, confirmed: Optional[dict] = None,
@@ -3620,6 +3621,8 @@ def make_handler(app: App):
                 res = open_category_items(app, int(q["year"]) if q.get("year") else None, q.get("area") or None, float(q.get("min") or 0),
                                           max(1, min(5000, int(q.get("limit") or 300))))
                 res["skipped"] = sorted(assign_skipped(app.config, areas))
+                cut = assign_cutoff(app.config)
+                res["ignore_before"] = cut.isoformat() if cut else ""
                 if getattr(app.ledger, "_paired", None) is None:
                     app.request_rebuild("assigning")              # which bookings are transfers comes with the report (page reloads then)
                 # your category for transfers in MoneyMoney (for a contribution or withdrawal between two areas)
@@ -4912,12 +4915,26 @@ def make_handler(app: App):
                 log.info("Cash flow positions saved: %d chosen", len(app.config["cashflow"].get("positions") or {}))
                 return self._json(200, {"ok": True, "report": ok, "config": app.config})
             if path == "/api/categories/areas":
-                # the areas you categorise (the others are left out under Kategorien; the cash flow estimates them as before)
-                ohne = body.get("without")
-                if not isinstance(ohne, list) or not all(isinstance(x, str) for x in ohne):
+                # the areas you categorise and the day before which nothing is (the rest is left out under Kategorisieren; the
+                # cash flow estimates it as before) -- each optional, at least one of them
+                ohne, vor = body.get("without"), body.get("ignore_before")
+                if ohne is None and vor is None:
                     raise ValueError("without")
+                if ohne is not None and (not isinstance(ohne, list) or not all(isinstance(x, str) for x in ohne)):
+                    raise ValueError("without")
+                if vor is not None:
+                    if not isinstance(vor, str):
+                        raise ValueError("ignore_before")
+                    if vor:
+                        try:
+                            vor = date.fromisoformat(vor).isoformat()
+                        except ValueError:
+                            raise ValueError(tr("s_datum_ungueltig"))
                 cfg = copy.deepcopy(app.config)
-                cfg["assign_without"] = sorted(set(ohne))
+                if ohne is not None:
+                    cfg["assign_without"] = sorted(set(ohne))
+                if vor is not None:
+                    cfg["assign_ignore_before"] = vor
                 app.save_config(cfg)
                 ok, _err = app.rebuild_report(wait=bool(body.get("wait")), grund="assigning") if app.ledger is not None else (False, None)
                 return self._json(200, {"ok": True, "report": ok, "config": app.config})

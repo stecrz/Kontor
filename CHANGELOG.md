@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.17.80 (2026-11-24 20:15)
+- Entschieden: Alte Jahre nicht nachträglich kategorisieren
+
 ## 3.17.79 (2026-11-24 19:39)
 - Cashflow: Darlehen eines Freundes nimmt nicht mehr die Gegenbuchung einer Zahlung an einen anderen Bereich
 - Entwicklung: Nachtlauf (Welten) behoben

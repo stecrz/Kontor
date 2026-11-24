@@ -16,7 +16,7 @@
  "balance-sheet-charts": ["einzelne Grafiken", "Höchststand Tiefststand Nettovermögen", "liquides Vermögen"],
  "cash-flow": ["Cashflow", "Kapitalfluss", "freier Cashflow", "Einnahmen und Ausgaben"],
  "cash-flow-charts": ["Diagramme Cashflow", "Grafiken Cashflow"],
- "categories": ["Kategorisieren", "Umsätze zuordnen", "Kategorie vergeben", "unkategorisiert"],
+ "categories": ["Kategorisieren", "Umsätze zuordnen", "Kategorie vergeben", "unkategorisiert", "alte Jahre nicht kategorisieren"],
  "categories-rules": ["Regeln für MoneyMoney", "Kategorieregel"],
  "categories-write-back": ["rückgängig machen Kategorie", "eingetragen zurücknehmen"],
  "categories-positions": ["Cashflow-Positionen", "Kategorie Position zuordnen"],

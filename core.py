@@ -40,6 +40,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "loans": [], "companies": [], "account_mirrors": [],
     "assign_without": None,        # areas whose transactions you do not categorise (their ids): left out under Kategorisieren;
                                    # None: not chosen yet -- all but the private areas (assign_skipped)
+    "assign_ignore_before": "",    # transactions before this day (ISO) left out under Kategorisieren and in its count; "": none
     "areas": [],
     "real_estate": [],
     "balance": {"months_back": 0, "roles": {}, "history_source": {}, "illiquid_roles": ["participations", "real_estate", "tangibles"],
@@ -148,6 +149,8 @@ def _shape(cfg: dict) -> dict:
                 g[f] = text(g[f])
         if "threshold" in g:
             g["threshold"] = number(g["threshold"], 0.01)
+    if "assign_ignore_before" in cfg:
+        cfg["assign_ignore_before"] = day(cfg["assign_ignore_before"])
     if cfg.get("assign_without") is not None:
         cfg["assign_without"] = [str(x) for x in cfg["assign_without"] if isinstance(x, (str, int)) and not isinstance(x, bool)] if isinstance(cfg["assign_without"], list) else []
     if "account_mirrors" in cfg:
@@ -220,6 +223,16 @@ def assign_skipped(config: dict, bereiche: List[dict]) -> Set[str]:
         return {str(x) for x in v}
     keep = {str(b["id"]) for b in bereiche if b.get("kind") == "private"} or {str(b["id"]) for b in bereiche if b.get("main_area")}
     return {str(b["id"]) for b in bereiche if str(b["id"]) not in keep}
+
+
+def assign_cutoff(config: dict) -> Optional[date]:
+    """Your choice under Kategorisieren: transactions booked before this day are left out there (the list, its count, the
+    overview) -- the cash flow estimates them as before. None: nothing left out."""
+    v = config.get("assign_ignore_before")
+    try:
+        return date.fromisoformat(v) if isinstance(v, str) and v else None
+    except ValueError:
+        return None
 
 
 def version_on_disk() -> str:
@@ -1622,8 +1635,8 @@ def build_report(store: Store, ledger: Ledger, config: dict, state: dict, today:
         "real_estate": immobilien,
         "budgets": budgets,
         "warnings": warnings,
-        "categories": dict((step(0.86, "Kategorienstatistik"), _cached(ledger, "_katstats_cache", (ledger._kat_sig, tuple(sorted(bank_accounts(roles))), transfer_sig, tuple(sorted(assign_skipped(config, bereiche)))),
-                                                                                  lambda: categorize.stats(kat, ledger, bank_accounts(roles), area_of, assign_skipped(config, bereiche))))[1],
+        "categories": dict((step(0.86, "Kategorienstatistik"), _cached(ledger, "_katstats_cache", (ledger._kat_sig, tuple(sorted(bank_accounts(roles))), transfer_sig, tuple(sorted(assign_skipped(config, bereiche))), assign_cutoff(config)),
+                                                                                  lambda: categorize.stats(kat, ledger, bank_accounts(roles), area_of, assign_skipped(config, bereiche), assign_cutoff(config))))[1],
                            positions=len(my_positions(config))),
         "accounts_new": neu,
     }

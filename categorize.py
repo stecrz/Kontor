@@ -18,6 +18,7 @@ import threading
 import time
 import unicodedata
 from collections import Counter, defaultdict
+from datetime import date
 from functools import lru_cache
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
@@ -276,10 +277,12 @@ def transfers(ledger: Ledger, area_of: Optional[Dict[str, str]] = None) -> set:
 
 
 def open_items(d: dict, ledger: Ledger, bereich_of: Dict[str, str], jahr: Optional[int] = None, bereich: Optional[str] = None,
-               min_betrag: float = 0.0, limit: int = 400, banks: Optional[set] = None, hidden: Optional[set] = None) -> Dict[str, Any]:
+               min_betrag: float = 0.0, limit: int = 400, banks: Optional[set] = None, hidden: Optional[set] = None,
+               before: Optional[date] = None) -> Dict[str, Any]:
     """Transactions without a category (in MoneyMoney, nothing waiting), grouped by counterparty, with a suggestion.
     banks: the accounts a category matters for (bank accounts); None: all. Transfers between your accounts are left out, and
-    so are the areas you do not categorise (hidden: their ids -- the cash flow estimates their positions)."""
+    so are the areas you do not categorise (hidden: their ids) and what was booked before the day you chose (before) -- the
+    cash flow estimates their positions."""
     groups: Dict[str, dict] = {}
     total = 0
     skip = transfers(ledger, bereich_of)
@@ -291,6 +294,8 @@ def open_items(d: dict, ledger: Ledger, bereich_of: Dict[str, str], jahr: Option
         if path:
             continue
         if jahr and t.booking_date.year != jahr:
+            continue
+        if before and t.booking_date < before:
             continue
         if bereich and bereich_of.get(t.account_uuid) != bereich:
             continue
@@ -332,9 +337,9 @@ def open_items(d: dict, ledger: Ledger, bereich_of: Dict[str, str], jahr: Option
 
 
 def stats(d: dict, ledger: Ledger, banks: Optional[set] = None, area_of: Optional[Dict[str, str]] = None,
-          hidden: Optional[set] = None) -> Dict[str, Any]:
+          hidden: Optional[set] = None, before: Optional[date] = None) -> Dict[str, Any]:
     """How many transactions have which kind of category (MoneyMoney, waiting, none) -- the areas you do not categorise
-    (hidden) left out."""
+    (hidden) and what was booked before the day you chose (before) left out."""
     c: Counter = Counter()
     years: Dict[int, Counter] = defaultdict(Counter)
     skip = transfers(ledger, area_of)
@@ -342,6 +347,8 @@ def stats(d: dict, ledger: Ledger, banks: Optional[set] = None, area_of: Optiona
         if not needs_category(t, banks):
             continue
         if hidden and area_of is not None and str(area_of.get(t.account_uuid)) in hidden:
+            continue
+        if before and t.booking_date < before:
             continue
         path, q = effective(d, t)
         if not path and t.id in skip:                  # a transfer between your accounts: no category needed

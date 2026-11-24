@@ -1188,6 +1188,45 @@ class AppTests(_AppBase):
         part_n = CZ.stats(CZ.load(self.store), led, None, area, {hide})["total"].get("without", 0)
         self.assertLess(part_n, all_n)
 
+    def test_old_transactions_left_out_of_categorising(self):
+        """"Ignorieren vor": transactions booked before the day are neither listed nor counted under Kategorisieren (nor in the
+        overview's count) -- kept in the settings, empty again lists all; a day that is none is refused and changes nothing; the
+        areas you chose stay as they are."""
+        self.login(); self.run_and_wait()
+        led = self.app.ledger
+        by_id = {t.id: t for t in led.txs}
+        self.call("/api/categories/areas", {"without": [], "wait": True})
+        code, off = self.call("/api/categories/unassigned")
+        self.assertEqual(off["ignore_before"], "")
+        days = sorted(by_id[i].booking_date for g in off["groups"] for i in g["ids"])
+        self.assertGreater(len(set(days)), 2)
+        cut = days[len(days) // 2]
+        if cut == days[0]:
+            cut = next(d for d in days if d > days[0])
+        n_all = self.store.load("dataset.json")["categories"]["total"].get("without", 0)
+        code, r = self.call("/api/categories/areas", {"ignore_before": cut.isoformat(), "wait": True})
+        self.assertEqual((code, r["config"]["assign_ignore_before"], r["config"]["assign_without"]), (200, cut.isoformat(), []))
+        code, off2 = self.call("/api/categories/unassigned")
+        left = [by_id[i].booking_date for g in off2["groups"] for i in g["ids"]]
+        self.assertEqual(off2["ignore_before"], cut.isoformat())
+        self.assertEqual(sorted(left), [d for d in days if d >= cut])                                    # exactly those from the day on
+        self.assertEqual(off2["open"], len(left))
+        n_cut = self.store.load("dataset.json")["categories"]["total"].get("without", 0)
+        self.assertLess(n_cut, n_all)                                                                    # the overview's count follows
+        years = self.store.load("dataset.json")["categories"]["years"]
+        self.assertTrue(all(int(y) >= cut.year for y in years))
+        for bad in ("2024-02-30", "gestern", 5):
+            self.assertEqual(self.call("/api/categories/areas", {"ignore_before": bad})[0], 400)
+        self.assertEqual(self.app.config["assign_ignore_before"], cut.isoformat())
+        self.assertEqual(self.call("/api/categories/areas", {})[0], 400)                                 # neither given
+        self.call("/api/categories/areas", {"ignore_before": "", "wait": True})                          # empty: all again
+        self.assertEqual(self.app.config["assign_ignore_before"], "")
+        self.assertEqual(len([i for g in self.call("/api/categories/unassigned")[1]["groups"] for i in g["ids"]]), len(days))
+        self.assertEqual(self.store.load("dataset.json")["categories"]["total"].get("without", 0), n_all)
+        # a value edited by hand that is no day: nothing left out
+        self.assertIsNone(core.assign_cutoff({"assign_ignore_before": "kein Tag"}))
+        self.assertIsNone(core.assign_cutoff({}))
+
     def test_kategorien_zurueckschreiben(self):
         """MoneyMoney ist massgeblich: Zuordnen traegt dort ein (geprueft), eigene Kategorie ohne Rueckfrage aenderbar, ein in
         MoneyMoney geaenderter Umsatz wird nicht beschrieben; von unterwegs gemerkt und beim naechsten Abgleich eingetragen;

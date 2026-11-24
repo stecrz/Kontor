@@ -361,6 +361,12 @@ anhängen – nie löschen.
   weil sonst doppelt oder ohne Zahlung gezählt: die Gegenseite einer Umbuchung (auch die Gegenbuchung einer Einlage im
   Kapitalkonto), Kontors eigene Buchungen, Kategorien für Umbuchung, Sparen, Tilgung, Einlagen und „Nicht berücksichtigen“.
   (umgesetzt in 3.17.75)
+- **Alte Jahre nicht nachträglich kategorisieren** (Nutzer, 2026-11-24, auf die Frage, ob das problematisch ist): Für Bilanz,
+  Nettovermögen und die Summen im Cashflow nicht – Kontor schätzt Umsätze ohne Kategorie; nur die Aufteilung alter Jahre und der
+  Vorjahresvergleich im ersten kategorisierten Jahr sind ungenauer, die Planung braucht nur die letzten 13 Monate. Störend war, dass
+  alte Umsätze ohne Kategorie dauerhaft unter „Offen“ und in der Übersicht standen. Entschieden: eine optionale Einstellung unter
+  Kategorisieren, als „Ignorieren vor dem …“ gedacht (nicht „Kategorisieren ab“) – ältere Umsätze erscheinen dort nicht und zählen
+  nicht als offen, der Cashflow schätzt sie weiter; leer heißt alle. (umgesetzt in 3.17.80)
 
 ## Offen (Entscheidung steht aus – mit Empfehlung vorlegen, wenn der Punkt dran ist)
 - Umsatzsteuer-Voranmeldung direkt an ELSTER senden (ELSTERs Programmbibliothek ERiC, Anmeldung als Hersteller, Zertifikat und
