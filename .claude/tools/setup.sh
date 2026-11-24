@@ -18,7 +18,9 @@ if [ -x ~/kontor-venv/bin/python ]; then ok "Python (~/kontor-venv)" "da"
 elif try uv venv -q -p "$PYV" ~/kontor-venv || try uv venv -q -p python3 ~/kontor-venv; then ok "Python (~/kontor-venv)" "$(~/kontor-venv/bin/python -V 2>&1)"
 else ok "Python (~/kontor-venv)" "FEHLT (siehe $LOG)"; fi
 if [ -x ~/kontor-venv/bin/python ]; then
-  if VIRTUAL_ENV=~/kontor-venv try uv pip install -q pytest playwright cryptography pyflakes; then ok "pytest, playwright, pyflakes" "ok"
+  # Playwright in the version the machine already has: then its browsers (e.g. /opt/pw-browsers) fit without a download
+  PWV="$(python3 -m pip show playwright 2>/dev/null | sed -n 's/^Version: //p')"
+  if VIRTUAL_ENV=~/kontor-venv try uv pip install -q pytest "playwright${PWV:+==$PWV}" cryptography pyflakes; then ok "pytest, playwright, pyflakes" "ok"
   else ok "pytest, playwright, pyflakes" "FEHLT (siehe $LOG)"; fi
 fi
 

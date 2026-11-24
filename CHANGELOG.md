@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.17.57 (2026-11-24 03:32)
+- Entwicklung: Einrichtung nutzt die Playwright-Version des Servers – vorhandene Browser passen ohne Download
+
 ## 3.17.56 (2026-11-24 03:30)
 - Immobilien: ohne Vermietungskategorie verknüpft Kontor die passende Kategorie unter Vermietung/Immobilien selbst (Wort aus dem Namen, Hausnummer muss passen)
 - Immobilien: Miete und Objektkosten ohne Kategorie zählen geschätzt zur Immobilie, die der Verwendungszweck nennt, sonst zur einzigen des Bereichs; auch in der Planung
