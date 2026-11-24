@@ -5859,8 +5859,9 @@ async function vPositionen() {
 // [key (texts kb_<key>, kb_<key>_sub, kb_<key>_tip; a company's: kb_<key>_g …), group, positions, side ('p' private only,
 // 'f' business only, '' both), 1 = a subcategory of the row above]. Every row with positions is a category to create (✓/○); a
 // row without is only their parent (Darlehen: repayment and interest are two positions, so two categories); the grey names after
-// "›" are examples of finer subcategories, never needed. A rented property: always by its own category (Je Immobilie, after the
-// expenses: its rent and costs count there, in rows of their own -- its purchase under investing, its loan under financing).
+// "›" are examples of finer subcategories, never needed. A rented property: always by its own category (Vermietung, after the
+// expenses: its rent and costs run through your own accounts and count there, in rows of their own per property). Buying and
+// financing it is as with any investment (a company's shares alike): Sparen & Anlegen, Darlehen -- no row of its own.
 // One side at a time (Privat | Geschäftlich, remembered), each with its own names and tips and the categories of yours on that side
 const KB_TREE = [['work_income', 'einnahmen', ['work_income'], 'p'], ['revenue', 'einnahmen', ['revenue'], 'f'],
   ['benefits', 'einnahmen', ['benefits'], ''], ['capital_income', 'einnahmen', ['capital_income'], ''],
@@ -5872,7 +5873,7 @@ const KB_TREE = [['work_income', 'einnahmen', ['work_income'], 'p'], ['revenue',
   ['administration', 'ausgaben', ['administration'], ''],
   ['taxes', 'ausgaben', ['taxes'], ''], ['vat', 'ausgaben', ['vat'], 'f'], ['donations', 'ausgaben', ['donations'], 'p'],
   ['advances', 'ausgaben', ['advances'], ''],
-  ['property', 'kb_g_property', ['property', 'rental', 'property_costs'], ''], ['property_buy', 'kb_g_property', ['property_saving'], '', 1],
+  ['property', 'kb_g_property', ['property', 'rental', 'property_costs'], ''],
   ['saving', 'sek_investitionen', ['saving'], ''],
   ['loans', 'finanzierung', [], ''], ['repayment', 'finanzierung', ['repayment'], '', 1], ['loan_interest', 'finanzierung', ['loan_interest'], '', 1],
   ['partners', 'finanzierung', ['partners'], 'f'], ['transfer', 'sonstiges', ['transfer'], '']];
@@ -5892,7 +5893,7 @@ function kbRefresh(eff) {
   if (eff) KB_EFF = eff; else eff = KB_EFF;
   const side = kbSide(), at = new Map();
   for (const r of eff) { if (!!r.firma !== (side === 'f')) continue;
-    const k = r.obj ? (r.eff === 'saving' ? 'property_saving' : ['repayment', 'loan_interest', 'partners', 'ignore'].includes(r.eff) ? r.eff : 'property') : r.eff;
+    const k = r.obj ? (['saving', 'repayment', 'loan_interest', 'partners', 'ignore'].includes(r.eff) ? r.eff : 'property') : r.eff;
     if (k) { if (!at.has(k)) at.set(k, []); at.get(k).push(r.path); } }
   // one tree for every kind of area (private, sole trader, GbR, GmbH …), shown one side at a time: on the business side a
   // company's name and tip (kb_<key>_g) where there is one -- the account decides the area

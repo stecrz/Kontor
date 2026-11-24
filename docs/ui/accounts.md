@@ -96,19 +96,19 @@ categories are never changed; Kontor creates none.
 ### accounts.positions.needs — Empfohlene Kategorien
 A folded card (also during setup), for information only – no count or score, since not every row applies to everyone (no
 business: no Umsatzerlöse). The recommended category tree for MoneyMoney – one category per position –, grouped like the position menu (Einnahmen, Ausgaben,
-"Je Immobilie", Investitionen, Finanzierung, Sonstiges), each group with one line on how it is best set up.
+"Vermietung", Investitionen, Finanzierung, Sonstiges), each group with one line on how it is best set up.
 A first line gives the rule: one tree for every kind of area (private, sole trader, GbR, GmbH …) – the account decides the
 area, the category only the purpose; a name meaning different things by side (receiving or paying a salary) needs two. A
 switch **Privat | Geschäftlich** shows one side at a time (remembered; at first Geschäftlich only for someone with companies
-alone): rows for both (Kapitalerträge, Versicherungen, Steuern, Auslagen, Darlehen, Umbuchung, Je Immobilie …) on each side, private-only
+alone): rows for both (Kapitalerträge, Versicherungen, Steuern, Auslagen, Darlehen, Umbuchung, Vermietung …) on each side, private-only
 rows (Gehalt, Sonstige Einnahmen › Verkäufe, Lebenshaltung, Gesundheit, Freizeit, Unterhalt …) and business-only rows (Umsatzerlöse, Wareneinkauf, Personal,
 Betriebskosten, Umsatzsteuer, Gesellschafter) only on theirs, each side with its own names ("Wohnen" / "Raumkosten", "Sparen &
 Anlegen" / "Investitionen") and tips; "Bei dir" names the user's categories of that side (a category counts as business when
 most of its bookings are in a company's accounts).
-"Je Immobilie" (every rented property, by its own linked category) right after Ausgaben: rent counts under Einnahmen, costs
-under Ausgaben (own rows per property, by the sign of each booking; a subcategory by its total), its purchase ("Kauf", indented)
-under Investitionen, its loan under Finanzierung – so a group of its own. Investitionen and Finanzierung: best every investment
-and loan as an account in MoneyMoney; then no category is needed. Darlehen: a parent row without a mark, Tilgung and Zinsen
+"Vermietung" (every rented property, by its own linked category) right after Ausgaben: its rent and costs run through the
+user's own accounts and count under Einnahmen and Ausgaben (own rows per property, by the sign of each booking; a subcategory by
+its total). Buying and financing it is as with any investment (company shares alike): purchase with costs under Sparen &
+Anlegen, loan under Darlehen. Investitionen and Finanzierung: best every investment and loan as an account in MoneyMoney. Darlehen: a parent row without a mark, Tilgung and Zinsen
 indented below it (two positions, two categories; only for loans without an account).
 Column **Empfohlen in MoneyMoney** (tooltip): every row with ✓ or ○ is one category to create when needed; indented rows are
 subcategories counting in another position; grey names after "›" are only examples of finer subcategories, never required.

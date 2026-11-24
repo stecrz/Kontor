@@ -319,6 +319,12 @@ anhängen – nie löschen.
   darunter. Der Nutzer fragte, ob „Je Immobilie“ unter Finanzierung oder Investitionen gehört: nein, weil Miete und Kosten Einnahmen
   und Ausgaben sind (nur Kauf und Darlehen zählen dort) – eigene Gruppe, jetzt direkt nach den Ausgaben, ihre Zeile nennt, wohin jeder
   Teil zählt. (umgesetzt in 3.17.72)
+  Geändert 2026-11-24 (Nutzer fragte nach: Kauf, Darlehen und Notarkosten gibt es auch beim Firmenkauf – warum dann eine eigene Gruppe
+  für Immobilien?): Richtig, Kauf und Darlehen sind bei jeder Anlage gleich. Besonders an einer vermieteten Immobilie sind nur Miete und
+  Kosten: Sie laufen über die eigenen Konten, gemischt mit allem anderen, und Kontor zeigt sie je Immobilie. Eine Firma hat eigene Konten
+  (eigener Bereich), beim Nutzer kommen nur Ausschüttungen oder Entnahmen an. Deshalb heißt die Gruppe „Vermietung“ und enthält nur die
+  Kategorie je Immobilie; „Kauf“ steht nicht mehr darunter – der Kauf jeder Anlage (Immobilie, Firmenanteile) samt Nebenkosten (Notar,
+  Grunderwerbsteuer, Makler) gehört unter „Sparen & Anlegen“, das Darlehen unter „Darlehen“. (umgesetzt in 3.17.74)
 - **Sperre vor dem Push nach Herkunft** (Nutzer, 2026-11-24): bewusst geänderte Zeilen sollen gehen, nichts eines parallelen Chats
   darf überschrieben werden, ein Konflikt in denselben Teilen einer Datei soll erkannt und abgewogen werden (welcher Stand der neuere
   ist). Umgesetzt: `release.py` merkt sich den eigenen Ausgangsstand; nur Zeilen von Versionen danach sperren; Konflikt-Meldung nennt

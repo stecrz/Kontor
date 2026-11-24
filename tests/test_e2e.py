@@ -4851,7 +4851,8 @@ class BrowserTest(unittest.TestCase):
                 self.assertIn("Auslagen", kb); self.assertNotIn("Sonstige Einnahmen", kb)
                 pg.click(".kb-side button[data-side='p']"); self.assertIn("Lebenshaltung", pg.inner_text(".kb-table"))   # rows of the companies too
                 # every category to create is a row of its own (✓/○): Darlehen only their parent, Tilgung and Zinsen indented below it
-                # (two positions, two categories); the property's purchase indented below it; the grey names after "›" only examples
+                # (two positions, two categories); the grey names after "›" only examples. Vermietung (rent and costs of each rented
+                # property) right after the expenses, with no purchase of its own: buying is as with any investment (Sparen & Anlegen)
                 kr = pg.evaluate("""[...document.querySelectorAll('.kb-table tbody tr')].map(r => ({sec: r.classList.contains('kb-sec'),
                     mark: r.cells[0].textContent.trim(), name: r.cells.length > 1 ? r.cells[1].childNodes[0].textContent.trim() : r.textContent.trim(),
                     below: !!r.querySelector('td.kb-below'), mine: r.cells.length > 2 ? r.cells[2].textContent.trim() : ''}))""")
@@ -4859,10 +4860,11 @@ class BrowserTest(unittest.TestCase):
                 self.assertEqual((kr[at]["mark"], kr[at]["below"], kr[at]["mine"]), ("", False, ""))
                 self.assertEqual([(r["name"], r["below"], r["mark"] in "✓○" and r["mark"] != "") for r in kr[at + 1:at + 3]], [("Tilgung", True, True), ("Zinsen", True, True)])
                 secs = [r["name"] for r in kr if r["sec"]]
-                self.assertLess(secs.index(next(x for x in secs if x.startswith("Ausgaben"))), secs.index(next(x for x in secs if x.startswith("Je Immobilie"))))
-                self.assertLess(secs.index(next(x for x in secs if x.startswith("Je Immobilie"))), secs.index(next(x for x in secs if x.startswith("Investitionen"))))
+                self.assertLess(secs.index(next(x for x in secs if x.startswith("Ausgaben"))), secs.index(next(x for x in secs if x.startswith("Vermietung"))))
+                self.assertLess(secs.index(next(x for x in secs if x.startswith("Vermietung"))), secs.index(next(x for x in secs if x.startswith("Investitionen"))))
                 im = next(i for i, r in enumerate(kr) if r["name"] == "Immobilie ‹Name›")
-                self.assertEqual((kr[im]["below"], kr[im + 1]["name"], kr[im + 1]["below"]), (False, "Kauf", True))
+                self.assertEqual((kr[im]["below"], kr[im + 1]["sec"]), (False, True)); self.assertFalse(any(r["name"] == "Kauf" for r in kr))
+                self.assertIn("Immobilie", pg.evaluate("[...document.querySelectorAll('.kb-table tr')].find(r => r.cells[1] && r.cells[1].childNodes[0].textContent.trim() === 'Sparen & Anlegen').querySelector('.hq').dataset.tip"))   # its purchase there
                 self.assertTrue(all(r["mark"] for r in kr if not r["sec"] and r["name"] != "Darlehen"))    # every other row: a category
                 self.assertNotIn("keine für", pg.inner_text(".kb-table"))
                 self.assertEqual(pg.get_attribute(".kb-table thead .hq", "data-help"), "categories-tree")

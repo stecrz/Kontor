@@ -1,5 +1,9 @@
 # Änderungen
 
+## 3.17.74 (2026-11-24 16:31)
+- Cashflow-Positionen: Empfohlene Kategorien – Gruppe „Vermietung“ nur für Miete und Kosten je Immobilie
+- Cashflow-Positionen: Kauf jeder Anlage (Immobilie, Firmenanteile) samt Notar und Grunderwerbsteuer unter Sparen & Anlegen
+
 ## 3.17.73 (2026-11-24 16:04)
 - Cashflow: neue Position „Auslagen“ – was du für andere zahlst und erstattet bekommst (etwa Tanken für die Firma), hebt sich auf
 - Cashflow-Positionen: erhaltene Gewinnausschüttung als Kapitalertrag vorgeschlagen; private Verkäufe (Kleinanzeigen, eBay) als Sonstige Einnahmen, in einer Firma Umsatzerlöse; Nebeneinkünfte als Arbeitseinkommen
