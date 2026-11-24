@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.17.55 (2026-11-24 03:15)
+- Entwicklung: Sperre für Claude in Chrome und Claude Docs aufgehoben – kaum Ersparnis, nichts soll später fehlen
+
 ## 3.17.54 (2026-11-24 03:11)
 - Entwicklung: Sitzungszweige werden nie hochgeladen; Löschen auf GitHub geht aus einer Sitzung nicht
 

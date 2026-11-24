@@ -50,13 +50,5 @@
         ]
       }
     ]
-  },
-  "deniedMcpServers": [
-    {
-      "serverName": "claude-in-chrome"
-    },
-    {
-      "serverName": "claude.ai Claude Docs"
-    }
-  ]
+  }
 }
