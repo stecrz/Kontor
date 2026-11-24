@@ -5,13 +5,18 @@ is made up. A section can be opened directly ("#help/<anchor>"); the "?" beside 
 there.
 
 ## help.search — Hilfe durchsuchen
-A search field above the article: shows only the chapters (from one main heading to the next, with all their sections) that
-contain the typed text exactly (upper/lower case ignored, no other word forms), marks each hit and hides the other chapters and
-their entries in the table of contents. Beside it "i von N · M Abschnitte": the current hit (shown stronger and scrolled into view; the first at once, Enter/⌘G the next, Shift the previous) of all marked hits, and how many chapters contain the text; "Nicht gefunden" without any. Empty field: everything.
+A search field above the article, word by word: each typed word counts in its forms (an ending left off: "einrichten" finds
+"Einrichtung", ä also as ae), words like "und", "wie" do not count, upper/lower case ignored; the name Kontor is no "Konto". It
+shows the sections (a main heading or a sub-heading up to the next) that contain all the words – none does: those with the most –
+with the heading of the chapter above a sub-section found, marks the words and hides the rest and their entries in the table of
+contents. The section that fits best (a word in few sections weighs more than one in many; in the heading most) comes first: the
+first marked hit lies there; Enter/⌘G goes to the next hit, Shift to the previous, section by section in that order. Beside it
+"i von N · M Abschnitte": the current hit of all marked hits, and how many sections were found; "Nicht gefunden" without any.
+Empty field: everything. The assistant's search_help ranks the same way.
 
 ## help.toc — Inhaltsverzeichnis
 The chapters of the manual (its main headings) as links in the order of the article – from "Übersicht", "Was MoneyMoney macht
-und was Kontor macht" and "Einrichtung" through the pages to "Sicherheit", "Für Fortgeschrittene" and "Wenn etwas nicht klappt";
+und was Kontor macht" and "Einrichtung" through the pages to "Sicherheit", "Für Fortgeschrittene" and "Fehler und Probleme";
 a click scrolls to the chapter. The last entry "Protokoll" opens the log page.
 
 ## help.article — Artikel

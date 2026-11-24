@@ -81,9 +81,9 @@ Jede Sache steht an genau einer Stelle, die anderen verweisen darauf:
 
 | Was | Wo | Für wen, wie | Wann |
 |---|---|---|---|
-| Texte der Oberfläche, Tooltips | `web/i18n.js` (`t()`/`tr()`; Tooltips `h_*` über `hq()`, Sprung in die Hilfe über `HELP_AT`) | Nutzer am Element: ein, zwei Sätze | jede Version, de + en |
+| Texte der Oberfläche, Tooltips | `web/i18n.js` (`t()`/`tr()`; Tooltips `h_*` über `hq()`, Sprung in die Hilfe über `HELP_AT`) | Nutzer am Element: ein, zwei Sätze; jedes Bedienelement hat Tooltip oder „?“ (`test_tour`) | jede Version, de + en |
 | Was jede Stelle zeigt | `docs/ui/<seite>.md`, am Element `data-ex="<seite>.<stelle>"` (Aufbau: `docs/rules/ui.md`) | der Assistent (Rechtsklick, Fragen zur Seite, `search_help`): was jede Zahl ist, wie gerechnet – keine Bedienung | jede neue oder geänderte Stelle, Zahl oder Berechnung |
-| Hilfe | `docs/help.de.md` + `docs/help.en.md` (gleiche Anker) | Nutzer: wie es geht, warum, was es bewirkt, Sicherheit; der Assistent sucht darin | deutsch: wenn sich Bedienung oder Verhalten ändert, nur der Abschnitt; englisch: beim großen Sprung (neuer Abschnitt: im Englischen gleich Überschrift, Anker und ein Satz – `ReferenceTests`) |
+| Hilfe | `docs/help.de.md` + `docs/help.en.md` (gleiche Anker) | Nutzer: wie es geht, warum, was es bewirkt, Sicherheit; der Assistent sucht darin | deutsch: wenn sich Bedienung oder Verhalten ändert, nur der Abschnitt; englisch: beim großen Sprung (neuer Abschnitt: im Englischen gleich Überschrift, Anker und ein Satz – `ReferenceTests`; dazu ein „?“ oder Link dorthin und Suchwörter in `tests/search_words.json` – `test_findable`) |
 | README | `README.md` | Überblick, nur große Themen | großer Sprung |
 | Änderungen | `CHANGELOG.md` (schreibt `release.py`), `HIGHLIGHTS.md` (Überblick je Hauptversion) | Nutzer in der Update-Anzeige | Changelog jede Version; Highlights beim großen Sprung |
 | Fahrplan | `ROADMAP.md` | Nutzer und Chats: Entscheidungen, Offenes | jede Version, die einen Punkt berührt |

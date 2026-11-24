@@ -141,7 +141,7 @@ body.mac-chrome .side { padding-top:calc(var(--lb) + 12px); }
 .login .err { text-align:center; }
 .login .demo-link { position:absolute; left:50%; bottom:calc(12px + env(safe-area-inset-bottom)); transform:translateX(-50%); background:none; color:var(--muted); opacity:.5; font-weight:400; font-size:11px; padding:4px 10px; }
 .login .demo-link:hover { opacity:.85; filter:none; } .login .demo-link:active { transform:translateX(-50%) scale(.98); }
-.demo-badge { font-size:10px; font-weight:600; letter-spacing:.02em; color:var(--muted); border:1px solid var(--line); border-radius:6px; padding:1px 6px; margin-left:2px; }
+.demo-badge { font-size:10px; font-weight:600; letter-spacing:.02em; color:var(--muted); border:1px solid var(--line); border-radius:6px; padding:1px 6px; margin-left:2px; cursor:help; }
 .err { color:var(--err-fg); min-height:18px; margin-top:8px; font-size:13px; }
 
 /* Cards / grids */

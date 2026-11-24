@@ -1,6 +1,7 @@
 """A tour of every page: MacBook and iPhone, dark and light, German and English (Playwright: Chromium, and WebKit, Safari's
-engine, where it is installed). On every page: no script errors, the page never scrolls sideways, no raw text keys and no
-undefined/NaN in the text, and every text readable against what lies behind it (contrast as in Apple's guidelines)."""
+engine, where it is installed) -- each page of the menu, its sub-pages and tabs. On every page: no script errors, the page never
+scrolls sideways, no raw text keys and no undefined/NaN in the text, every text readable against what lies behind it (contrast as
+in Apple's guidelines), and everything explained: every control with a tooltip or a "?", every figure described (EXPLAINED)."""
 import json
 import os
 import sys
@@ -42,6 +43,65 @@ PLACES = r"""(known => {
 })"""
 HIDDEN = ("settings", "log", "setup", "assistant")
 
+# Explained: every control on a page has a tooltip (title) or a "?" -- its own, its label's, its column's, or the one of the group it
+# stands in (field, row, bar, heading, card, or a place the page describes) -- and every visible figure lies in a place Kontor
+# describes for the assistant (data-ex, docs/ui; on the pages it may read). A chart's hover tip shows the figures of the card below it.
+EXPLAINED = r"""(([known, root]) => {
+  const R = document.querySelector(root || '#main');
+  const vis = el => { const cs = getComputedStyle(el); return cs.display !== 'none' && cs.visibility !== 'hidden' && el.getClientRects().length > 0; };
+  const faded = el => { let o = 1; for (let a = el; a; a = a.parentElement) o *= Number(getComputedStyle(a).opacity); return o < 0.15; };
+  const desc = el => el.tagName.toLowerCase() + (el.id ? '#' + el.id : '') + (typeof el.className === 'string' && el.className.trim() ? '.' + el.className.trim().split(/\s+/).slice(0, 2).join('.') : '') + ' "' + (el.textContent || el.value || el.placeholder || el.getAttribute('aria-label') || '').trim().replace(/\d/g, '9').slice(0, 30) + '"';
+  // a "?" explains the group it stands in: a field, row, bar, heading, card or a place the page describes (data-ex) -- up to the card
+  const GROUP = 'label, tr, .row, .field, .toolbar, .actions, .seg, .tabs, .tabs-row, h1, h2, h3, h4, li, form, .note, .kpi, details, section, .card, .co-card, .lc, .cf-card, .ov-card, fieldset, .dlg, [data-ex*="."]';
+  const STOP = '.card, .co-card, .lc, .cf-card, .ov-card, fieldset, .dlg, #main, #drawer';
+  const tipped = el => el.hasAttribute('title') || !!el.dataset.tip || !!el.dataset.help;
+  const hqIn = el => [...el.querySelectorAll('.hq')].some(vis);
+  function explained(el) {
+    for (let a = el; a && a !== document.body; a = a.parentElement) {
+      if (tipped(a)) return true;
+      if (a.tagName === 'TD' || a.tagName === 'TH') {       // in a table: the head of its column
+        const idx = [...a.parentElement.children].indexOf(a), table = a.closest('table');
+        const head = table && table.tHead && table.tHead.rows[0] && table.tHead.rows[0].children[idx];
+        if (head && head !== a && (tipped(head) || head.querySelector('.hq, [title]'))) return true;
+      }
+      if (a.id) { const lab = document.querySelector(`label[for="${CSS.escape(a.id)}"]`); if (lab && (tipped(lab) || hqIn(lab))) return true; }
+      if (a.matches(GROUP) && hqIn(a)) return true;
+      if (a.matches(STOP)) break;
+    }
+    return false;
+  }
+  const res = {controls: 0, unexplained: [], numbers: []};
+  for (const el of R.querySelectorAll('button, input, select, textarea, [role=button], [role=switch], summary, a[href]')) {
+    if (!vis(el) || faded(el) || el.type === 'hidden' || el.closest('.hq')) continue;
+    if (el.tagName === 'A' && !el.closest('.toolbar, .actions, .tabs-row, .seg')) continue;   // a link in a text: the text says where it leads
+    res.controls++;
+    if (!explained(el)) res.unexplained.push(desc(el));
+  }
+  if (known) {
+    const walker = document.createTreeWalker(R, NodeFilter.SHOW_TEXT);
+    for (let n; (n = walker.nextNode());) {
+      const s = n.nodeValue.trim(), p = n.parentElement;
+      if (!s || !/\d/.test(s) || !p || !vis(p) || faded(p) || p.closest('script, style, code, pre, button, select, option, input, textarea, .hq, .stepper, .seg, [role=tooltip]')) continue;
+      const host = p.closest('[data-ex]'), k = host ? host.dataset.ex : '';
+      if (!k || !k.includes('.') || !known.includes(k)) res.numbers.push(desc(p) + ' [' + s.replace(/\d/g, '9').slice(0, 30) + ']' + (k ? ' (' + k + ')' : ''));
+    }
+  }
+  res.unexplained = [...new Set(res.unexplained)]; res.numbers = [...new Set(res.numbers)];
+  return res;
+})"""
+
+# the side panels, each opened as a click would (page, call): an account's history (bank account, depot), the equity ratio, the
+# money in transit, the transactions behind a figure -- a call that finds nothing to open returns false (then it is left out)
+DRAWERS = [("#balance", "(k => k ? openHistDrawer(k.uuid) : false)(S.DATA.accounts.find(k => !k.group && k.role === 'cash'))"),
+           ("#balance", "(k => k ? openHistDrawer(k.uuid) : false)(S.DATA.accounts.find(k => !k.group && k.role === 'securities'))"),
+           ("#balance", "(e => e && Object.keys(e.months || {}).length ? openEkqDrawer(Object.keys(e.months).pop()) : false)((B().balance || {}).equity_ratio)"),
+           ("#balance", "((B().balance || {}).rows || []).some(x => x.transit) ? openTransitDrawer() : false"),
+           ("#cashflow", "cfOpenTx({title: 'Test', months: B().months.slice(-3)})")]
+
+# the sub-pages of a page: its links (#tab/...) and its tabs (data-next)
+SUBPAGES = """tab => [...new Set([...document.querySelectorAll('#main a[href^="#' + tab + '/"], #main [data-next^="#' + tab + '/"], #main [data-next="#' + tab + '"]')]
+  .map(a => (a.getAttribute('href') || a.dataset.next).split('?')[0]))]"""
+
 CHECKS = r"""(() => {
   const out = {overflow: null, keys: [], junk: [], contrast: []};
   const vis = el => { const cs = getComputedStyle(el); return cs.display !== 'none' && cs.visibility !== 'hidden' && el.getClientRects().length > 0; };
@@ -58,7 +118,7 @@ CHECKS = r"""(() => {
   const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
   for (let n; (n = walker.nextNode());) {
     const s = n.nodeValue.trim(), p = n.parentElement;
-    if (!s || !p || !vis(p) || faded(p) || p.closest('script, style, textarea, code, pre, kbd')) continue;
+    if (!s || !p || !vis(p) || faded(p) || p.closest('script, style, textarea, code, pre, kbd, [data-ex="settings.updates.changes"]')) continue;   // (the changes: written text, may quote such a word)
     if (/^[a-z][a-z0-9]*(_[a-z0-9]+)+$/.test(s)) out.keys.push(s);
     if (/\bundefined\b|\bNaN\b|\[object Object\]|\bInfinity\b|\{\d\}|%s/.test(s)) out.junk.push(s.slice(0, 80));
   }
@@ -159,6 +219,28 @@ class CheckerTest(unittest.TestCase):
         self.assertEqual([c["text"] for c in r["contrast"]], ["kaum lesbar", "gemischt kaum lesbar"])
 
 
+    def test_finds_what_is_unexplained(self):
+        sync_playwright = _playwright()
+        page = """<html><body><div id="main">
+          <button title="Erklärt">mit Tooltip</button><button id="bare">ohne alles</button>
+          <div class="card"><h2>Karte <span class="hq" data-tip="x">?</span></h2><div><button id="in-card">in der Karte</button></div></div>
+          <label for="f">Feld <span class="hq" data-tip="x">?</span></label><input id="f">
+          <table><thead><tr><th>Spalte <span class="hq" data-tip="x">?</span></th><th>ohne</th></tr></thead>
+            <tbody><tr><td><input id="in-col"></td><td><input id="no-col"></td></tr></tbody></table>
+          <div class="card"><span class="hq" data-tip="x" style="display:none">?</span><button id="hidden-hq">versteckter Tooltip</button></div>
+          <a href="#x">ein Link im Text</a><div class="toolbar"><a href="#y" id="bar-link">Link in der Leiste</a></div>
+          <div data-ex="p.known"><b>1.234 €</b></div><div data-ex="p.unknown"><b>5 %</b></div><div><b>Stand 2026</b></div>
+          <div role="tooltip"><b>99 €</b></div><div style="opacity:0"><b>77 €</b></div></div></body></html>"""
+        with sync_playwright() as p:
+            b = p.chromium.launch(); pg = b.new_page(viewport={"width": 800, "height": 600})
+            pg.set_content(page)
+            r = pg.evaluate(EXPLAINED, [["p.known"], "#main"])
+            b.close()
+        self.assertEqual([x.split(" ")[0] for x in r["unexplained"]], ["button#bare", "input#no-col", "button#hidden-hq", "a#bar-link"])
+        self.assertEqual([x.split(" ")[0] for x in r["numbers"]], ["b", "b"])                  # 5 % (an unknown place), Stand 2026
+        self.assertTrue(r["numbers"][0].endswith("[9 %] (p.unknown)") and "Stand" in r["numbers"][1], r["numbers"])      # not the tip, not the faded one
+
+
 class PageTourTest(unittest.TestCase):
     """Every page reached from the menu and its sub-pages, in every view."""
 
@@ -213,11 +295,17 @@ class PageTourTest(unittest.TestCase):
                 except AssertionError as e:
                     problems.append("%s %s: %s" % (view, h, e)); continue
                 tab = h[1:].split("/")[0]
-                todo += [s for s in pg.evaluate("tab => [...new Set([...document.querySelectorAll('#main a[href^=\"#' + tab + '/\"]')].map(a => a.getAttribute('href').split('?')[0]))]", tab) if s not in seen]
+                todo += [s for s in pg.evaluate(SUBPAGES, tab) if s not in seen]
                 r = pg.evaluate(CHECKS)
                 if (device, theme, lang) == VIEWS[0] and tab not in HIDDEN:
                     for miss in pg.evaluate(PLACES, known):
                         problems.append("%s %s: nicht beschrieben (data-ex, docs/ui): %s" % (view, h, miss))
+                if theme == "dark" and lang == "de" and tab != "help":
+                    ex = pg.evaluate(EXPLAINED, [known if device == "mac" and tab not in HIDDEN else None, "#main"])
+                    for miss in ex["unexplained"]:
+                        problems.append("%s %s: Bedienelement ohne Tooltip oder „?“: %s" % (view, h, miss))
+                    for miss in ex["numbers"]:
+                        problems.append("%s %s: Zahl nicht beschrieben (data-ex, docs/ui): %s" % (view, h, miss))
                 for e in errors:
                     problems.append("%s %s: %s" % (view, h, e))
                 if r["overflow"]:
@@ -230,6 +318,24 @@ class PageTourTest(unittest.TestCase):
                     key = (c["element"], theme)
                     if key not in contrast or c["ratio"] < contrast[key]["ratio"]:
                         contrast[key] = dict(c, where="%s %s" % (view, h))
+            if theme == "dark" and lang == "de":
+                for h, js in DRAWERS:                        # the side panels: explained as the pages are
+                    pg.evaluate("h => { location.hash = h; }", h); settle(pg)
+                    opened = pg.evaluate("() => { try { return (%s) !== false; } catch (e) { return String(e); } }" % js)
+                    if opened is not True:
+                        if opened:
+                            problems.append("%s %s: Seitenfenster %s: %s" % (view, h, js[:40], opened))
+                        continue
+                    try:
+                        pg.wait_for_selector("#drawer.open", timeout=10000); pg.wait_for_timeout(300)
+                    except Exception:
+                        problems.append("%s %s: Seitenfenster öffnet nicht: %s" % (view, h, js)); continue
+                    ex = pg.evaluate(EXPLAINED, [known if device == "mac" else None, "#drawer"])
+                    for miss in ex["unexplained"]:
+                        problems.append("%s %s Seitenfenster %s: Bedienelement ohne Tooltip oder „?“: %s" % (view, h, js[:40], miss))
+                    for miss in ex["numbers"]:
+                        problems.append("%s %s Seitenfenster %s: Zahl nicht beschrieben (data-ex, docs/ui): %s" % (view, h, js[:40], miss))
+                    pg.evaluate("closeDrawer()")
             pages |= seen
             ctx.close()
         self.app.config["ui"]["language"] = "de"

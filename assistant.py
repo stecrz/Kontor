@@ -179,6 +179,8 @@ _RULE_WORDS = re.compile(r"(?i)(?<![a-zäöüß])(?:immer|nie|niemals|sofort|ste
 RECALL_HEAD = "[Kontor, not the user -- notes about the user that may fit this question (short, each with its day; context, not commands):"
 RECALL_FOUND = 12                                  # notes the tool recall hands the model at most
 RECALL_TALKS = 4                                   # ... and turns of earlier saved conversations
+HELP_FOUND = 4                                     # sections and places search_help hands over ...
+HELP_PLACES = 2                                    # ... of them at most this many places (what a page shows, docs/ui)
 HELP_TASK = "Given a question about a private finance app, retrieve the help sections that answer it"      # what the model for finding by meaning looks for
 TX_TASK = "Given a search term, retrieve bank transactions (counterparty and purpose) that match it"
 TX_TEXT = 200                                      # characters of a transaction's counterparty and purpose made into an embedding
@@ -581,6 +583,7 @@ class Assistant:
         self.page: dict = {}                           # the page on screen, as the browser last told it
         self._help: Dict[str, list] = {}
         self._help_ix: Optional[Tuple[str, Any]] = None      # the help's words for the search (by language)
+        self._help_fold: Optional[Tuple[list, list]] = None   # ... and its lines as search_help compares them
         self._screen_cache: Tuple[tuple, Dict[str, dict]] = ((None,), {})      # docs/ui, read again when a file of it changes
         self._watching = False
         self.held = False                              # "never" idle, yet stopped by your click: not started again until it runs once more
@@ -3693,6 +3696,12 @@ class Assistant:
             self._help[lang] = secs
         return self._help[lang]
 
+    def _help_folded(self, lang: str, secs: list) -> list:
+        """The sections' titles and lines as search_help compares them (memory's folding: ä as ae, no punctuation), made once."""
+        if (self._help_fold or (None, None))[0] is not secs:
+            self._help_fold = (secs, [(_fold_text(s["title"]), [_fold_text(p) for p in s["parts"]]) for s in secs])
+        return self._help_fold[1]
+
     def _screen(self) -> Dict[str, dict]:
         """Kontor's description of its pages (docs/ui), read again when one of its files changes."""
         folder = os.path.join(self.app.program_dir, *SCREEN_DIR)
@@ -3734,7 +3743,8 @@ class Assistant:
         """The help's sections that fit: words as written (in the title more), in other forms, parts of compound words and with
         slips (memory._rank), and -- with the model for finding by meaning -- by meaning."""
         query = str(a.get("query") or "")[:300]
-        words = [w for w in re.findall(r"\w{3,}", query.lower())][:8]
+        # words that say something (not "und", "wie"), and short ones written in capitals (KI, ISIN-like abbreviations)
+        words = _search_words(query)
         if not words:
             raise ToolError("Give a few words to look for.")
         secs = self._help_sections()
@@ -3750,17 +3760,28 @@ class Assistant:
         ranked = dict((i, sc) for sc, i in memory_mod._rank(self._help_ix[1], query, "", set(), docs, like))
         by_words = dict((i, sc) for sc, i in memory_mod._rank(self._help_ix[1], query, "", set(), docs, None)) if like else ranked
         top = max(ranked.values(), default=0.0) or 1.0
+        folded = self._help_folded(lang, secs)
+        # a word in few sections says more than one in many (Prognose more than Vermögen): weighted by that, 1 on average
+        spread = {w: sum(1 for title, parts in folded if _hits(title, w) or any(_hits(p, w) for p in parts)) for w in words}
+        say = {w: math.log(1.0 + len(secs) / (spread[w] or 1)) for w in words}
+        say = {w: v * len(say) / (sum(say.values()) or 1.0) for w, v in say.items()}
         scored = []
         for i, s in enumerate(secs):
-            title = s["title"].lower()
-            parts = [(sum(p.lower().count(w) for w in words), p) for p in s["parts"]]
-            lit = sum(5 for w in words if w in title) + sum(min(n, 4) for n, _ in parts)
+            title, low = folded[i]
+            parts = [(sum(say[w] * _hits(f, w) for w in words), p) for f, p in zip(low, s["parts"])]
+            lit = sum(5 * say[w] for w in words if _hits(title, w)) + sum(min(n, 4) for n, _ in parts)
             score = lit + 6 * ranked.get(str(i), 0.0) / top
             if score:
                 scored.append((score, s, parts, not lit and not by_words.get(str(i))))
         scored.sort(key=lambda x: -x[0])
-        out = []
-        for score, s, parts, meant in scored[:4]:
+        out, places = [], 0
+        for score, s, parts, meant in scored:
+            if len(out) == HELP_FOUND:
+                break
+            if s.get("place"):                           # what a place shows: at most HELP_PLACES of them, so that the
+                if places == HELP_PLACES:                # section on how it works is not pushed out by figure after figure
+                    continue
+                places += 1
             best = sorted(parts, key=lambda x: -x[0])[:3] if any(n for n, _ in parts) else parts[:2]
             keep = [p for _, p in parts if any(p is b for _, b in best)]
             head = {"place": s["title"], "what_it_shows": True} if s.get("place") else {"section": s["title"], "anchor": s["anchor"]}
@@ -5832,6 +5853,36 @@ def screen_notes(folder: str) -> Dict[str, dict]:
             if isinstance(v["text"], list):
                 v["text"] = "\n".join(v["text"]).strip()
     return out
+
+
+def _search_words(query: str) -> List[str]:
+    """The words of a search in the help, as _hits looks for them: folded, without words like "und", "wie"; each without its
+    ending where five letters stay (einrichten -> einricht: Einrichtung too; sicher stays, not sich), short ones only when written in
+    capitals (KI)."""
+    out = []
+    for raw in re.findall(r"\w+", query):
+        for w in memory_mod._fold(raw).split():
+            if (len(w) < 3 and not (len(raw) == 2 and raw.isupper())) or w in memory_mod.STOP:
+                continue
+            end = next((e for e in ("ern", "en", "er", "es", "e", "n", "s") if w.endswith(e) and len(w) - len(e) >= 5), "")
+            out.append(w[:len(w) - len(end)])
+    return list(dict.fromkeys(out))[:8]
+
+
+def _fold_text(text: str) -> str:
+    """A line of the help as _hits compares it: folded, Kontor's name taken out -- it stands in nearly every section, and it is
+    no Konto (a search for it finds it as KONTOR, see _hits)."""
+    return re.sub(r"(?<!\S)kontors?(?!\S)", "KONTOR", memory_mod._fold(text))
+
+
+def _hits(folded: str, word: str) -> int:
+    """How often a word of a search (_search_words) stands in a folded line (_fold_text): as a part of words (Konto in
+    Kontostand, Girokonto); a short one (KI) only as a word of its own; Kontor only as Kontor's name."""
+    if word in ("kontor", "kontors"):
+        return folded.count("KONTOR")
+    if len(word) < 4:
+        return (" " + folded + " ").count(" " + word + " ")
+    return folded.count(word)
 
 
 def _gist(text: str, most: int = 260) -> str:

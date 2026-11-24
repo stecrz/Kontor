@@ -1,5 +1,11 @@
 # Änderungen
 
+## 3.17.65 (2026-11-24 06:04)
+- Hilfe: Suche Wort für Wort wie man es sagt – findet Wortformen, springt in den passendsten Abschnitt
+- KI-Assistent: findet Hilfe-Abschnitte zu Alltagswörtern zuverlässiger (Kredit, Backup, Handy …)
+- Oberfläche: fehlende Tooltips und „?“ ergänzt (Tabellen, kleine Grafiken, Zeitraum, Steuer, Umsatzfilter, Reiter, Schließen)
+- Entwicklung: Tests – jedes Bedienelement erklärt, jede Hilfe-Stelle erreichbar, Suchwörter je Funktion
+
 ## 3.17.64 (2026-11-24 05:35)
 - Menü (iPhone, schmales Fenster): esc schließt es, ein Tipp auf die offene Seite auch; auf der Seite des Assistenten liegt es nicht mehr darunter
 - Entwicklung: zufällige Klickpfade jede Nacht – Seiten, Dialoge, Seitenfenster, Bezüge; hell/dunkel, Mac/iPhone, Chromium/WebKit, wechselnde Welten; je Push 3 feste

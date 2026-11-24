@@ -250,6 +250,9 @@ const H = {
   package: t('einstellungspaket_regeln_bereiche_posi'),
   bch: t('bch_hinweis'),
   geld_unterwegs: t('geld_unterwegs_tip'),
+  tabellen: t('h_tabellen'), lc_grafiken: t('h_lc_grafiken'), cf_zeitraum: t('h_cf_zeitraum'), steuer_auswahl: t('h_steuer_auswahl'), afa_manuell: t('h_afa_manuell'),
+  umsatzfilter: t('h_umsatzfilter'), wp_namen: t('h_wp_namen'), steuer_verm: t('h_steuer_verm'), steuer_darlehen: t('h_steuer_darlehen'), steuer_pos: t('h_steuer_pos'),
+  mm_kontor: t('h_mm_kontor'), ki_sicher: t('h_ki_sicher'), aenderungen: t('h_aenderungen'), daten_ordner: t('h_daten_ordner'), deinstallieren: t('h_deinstallieren'),
 };
 const HELP_AT = {als_app: 'app', berechtigung: 'setup', immo_abrechnung: 'properties', immo_abziehbar: 'properties', immo_afa: 'properties', immo_aussch: 'properties', immo_darlehen_art: 'properties', immo_darlehen_konten: 'properties', immo_faellig: 'properties', immo_geb: 'properties', immo_ges: 'properties', immo_index: 'properties', immo_kategorie: 'properties', immo_kosten: 'properties', immo_nk: 'properties', immo_objektkonto: 'properties', immo_ruecklage: 'properties', immo_sonder: 'properties', immo_uebergang: 'properties', immo_verkauf: 'properties', immo_wert: 'properties', immo_zinsbindung: 'properties',
   area: 'areas', main_area: 'areas', share: 'areas', gruppenwahl: 'areas', anzeige: 'accounts', position_kurz: 'accounts', position: 'accounts',
@@ -281,6 +284,7 @@ const SUB_LABEL = {settings: {'': 'allgemein', moneymoney: 'einst_mm', access: '
 const pageHq = (tab, sub) => { const k = (tab + '/' + sub) in PAGE_HELP ? tab + '/' + sub : tab, id = PAGE_HELP[k]; if (id == null) return '';
   const lab = (SUB_LABEL[tab] || {})[sub || ''], txt = t(`page_${k.replace('/', '_')}`);
   return `<span class="hq page-hq" tabindex="0" data-tip="${esc(lab ? t('tab_zu', t(lab), txt) : txt)}"${id ? ` data-help="${id}"` : ''}>?</span>`; };
+const CLOSE_BTN = `<button class="close icon" title="${esc(t('schliessen'))}" aria-label="${esc(t('schliessen'))}">✕</button>`;          // a side panel's ✕
 const ICON = {
   pencil: '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9l-4-4L4 16v4zM14 6l4 4"/></svg>',
   check: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
@@ -314,6 +318,9 @@ document.addEventListener('click', e => {
   e.preventDefault(); if (a.getAttribute('href') !== location.hash) go(a.getAttribute('href'));
 });
 HELP_AT.ki_gedaechtnis = 'assistant-memory';
+Object.assign(HELP_AT, {tabellen: 'tables', lc_grafiken: 'balance-sheet-charts', cf_zeitraum: 'cash-flow-charts', steuer_auswahl: 'tax', afa_manuell: 'tax',
+  umsatzfilter: 'receipts', wp_namen: 'balances', steuer_verm: 'tax', steuer_darlehen: 'tax', steuer_pos: 'tax', mm_kontor: 'kontor-and-moneymoney',
+  ki_sicher: 'assistant-safety', aenderungen: 'updates', daten_ordner: 'advanced', deinstallieren: 'install'});
 HELP_AT.geraete = HELP_AT.pk_nur = 'iphone-devices';
 const hq = k => H[k] ? `<span class="hq" tabindex="0" data-tip="${esc(H[k])}"${HELP_AT[k] ? ` data-help="${HELP_AT[k]}"` : ''}>?</span>` : '';
 document.addEventListener('click', e => {
@@ -499,7 +506,7 @@ async function faceConfirm(method, path, bodyText) {
 }
 // a file from Kontor itself: only one of its own addresses (/api/...), never another place
 function download(url) { if (!/^\/(?!\/)/.test(String(url))) return; const a = document.createElement('a'); a.href = url; a.download = ''; document.body.appendChild(a); a.click(); a.remove(); }
-const xlsxBtn = (was, extra = '') => `<button class="xlsx small" data-xlsx="${was}" ${extra}>Excel</button>`;
+const xlsxBtn = (was, extra = '') => `<button class="xlsx small" data-xlsx="${was}" ${/\btitle=/.test(extra) ? extra : `${extra} title="${esc(t('excel_tip'))}"`}>Excel</button>`;
 
 // ---------------------------------------------------------------- Offline (PWA am iPhone, Mac nicht erreichbar)
 const OFFLINE = {mode: false, as_of: null, idle: null};
@@ -910,6 +917,8 @@ async function lockNow() { AUTH.n++; try { await api('/api/lock', {}); } catch (
 // the demo: Kontor with made-up data, to show it -- opened with the same sign-in (the link below the card switches the sign-in to it)
 const demoOn = () => !!(SESSION && SESSION.demo);
 $('#demo-btn').title = t('demo_link_tip');
+$('#demo-badge').title = t('demo_badge_tip');
+$('#demo-badge').addEventListener('click', e => { e.stopPropagation(); go('#help/demo'); });
 $('#demo-btn').addEventListener('click', () => {
   LOGIN.demo = !LOGIN.demo; $('#login-err').textContent = ''; showLogin();
   // a Touch ID window open: confirmed, it opens what is chosen now -- it closes, and the page asks anew (its window says which)
@@ -1136,7 +1145,7 @@ function fmtZeit(ts) {
 }
 function viewCtl() {
   // columns of the tables: months (with yearly sums) or years only
-  return `<div class="seg" id="modus-seg">${[['months', t('monate'), t('monate_tip')], ['years', t('jahre'), '']].map(([k, l, tip]) => `<button data-m="${k}" class="${S.mode === k ? 'on' : ''}"${tip ? ` title="${tip}"` : ''}>${l}</button>`).join('')}</div>`;
+  return `<div class="seg" id="modus-seg">${[['months', t('monate'), t('monate_tip')], ['years', t('jahre'), t('jahre_tip')]].map(([k, l, tip]) => `<button data-m="${k}" class="${S.mode === k ? 'on' : ''}" title="${tip}">${l}</button>`).join('')}</div>${hq('tabellen')}`;
 }
 const swCtl = (id, on, label, tip) => `<label class="switch"${tip ? ` title="${esc(tip)}"` : ''}><input type="checkbox" id="${id}" ${on ? 'checked' : ''}><i></i>${label}</label>`;
 // balance sheet: show hidden and empty accounts (with their number); cash flow / planning: show empty rows
@@ -1665,7 +1674,7 @@ async function mmhNames(openList) {
   const n = r.open.length, had = r.found + r.without > 0, list = r.list || [];
   el.classList.toggle('hidden', !n && !list.length); el.classList.toggle('done', !n && list.length > 0);
   const base = x => x.mm || x.looked_up || '';
-  el.innerHTML = `<div class="b"><b>${t('wp_suche_titel')} <span class="pill neutral">${t('optional')}</span></b>`
+  el.innerHTML = `<div class="b"><b>${t('wp_suche_titel')} <span class="pill neutral">${t('optional')}</span>${hq('wp_namen')}</b>`
     + (list.length ? `<div class="small muted">${t('wp_aus_mm', r.from_mm, list.length)}</div>` : '')
     + (n ? `<div>${t('wp_suche_text', n === 1 ? t('wp_suche_eins') : t('wp_suche_n', n))}</div><details class="small"><summary>${t('wp_suche_liste')}</summary><div class="mono">${r.open.map(esc).join(', ')}</div></details>` : '')
     + (had ? `<div class="small muted">${t('wp_suche_stand', r.found, r.without, esc(fmtZeit(r.time)))}</div>` : '')
@@ -1903,7 +1912,7 @@ async function openHistDrawer(uuid, vorschau) {
   const d = $('#drawer');
   HD.uuid = uuid; HD.live = r.live;
   // (data-ex: what each part shows, in Kontor's description of the side panels -- docs/ui/drawer.md)
-  d.innerHTML = `<button class="close icon">✕</button><h2>${esc(k.name || r.name)}</h2><div data-ex="drawer.hist">${holdingsBox(uuid)}
+  d.innerHTML = `${CLOSE_BTN}<h2>${esc(k.name || r.name)}</h2><div data-ex="drawer.hist">${holdingsBox(uuid)}
     <div data-ex="drawer.hist.source"><div class="row tight"><span class="small muted">${t('verlauf_aus_0', hq('history_source'))}</span><div class="seg" id="hq-seg"><button class="hq-q" data-q="transactions">${t('umsaetzen')}</button><button class="hq-q" data-q="balances">${t('kontostaenden')}</button></div></div>
     <div class="small muted" id="hq-erkl" style="margin:4px 0 8px"></div>
     <div id="hq-hinweis"></div><div id="hq-pending"></div></div>
@@ -2061,7 +2070,7 @@ function openWpDrawer(id) {
   for (const r of D.balance.rows) { const x = (r.securities || []).find(p => p.id === id); if (x) { acc = r; w = x; break; } }
   if (!w) return;
   const d = $('#drawer'), pts = D.months.filter(m => w.amounts[m] != null).map(m => [m, w.amounts[m]]);
-  d.innerHTML = `<button class="close icon">✕</button><h2>${esc(w.name)}</h2><div data-ex="drawer.security"><div class="small muted">${esc(acc.name)}${w.isin ? ' · ISIN ' + esc(w.isin) : ''}</div>
+  d.innerHTML = `${CLOSE_BTN}<h2>${esc(w.name)}</h2><div data-ex="drawer.security"><div class="small muted">${esc(acc.name)}${w.isin ? ' · ISIN ' + esc(w.isin) : ''}</div>
     ${w.rest ? '' : `<div class="small muted">${esc(w.orig ? t('wp_in_mm', w.orig) : t('wp_in_mm_ohne'))}${w.source === 'own_name' ? ' · ' + t('wp_eigener_name') : w.source === 'lookup' ? ' · ' + t('wp_nachgeschlagen') : ''}</div>`}
     <div class="h-chart" id="h-chart" data-ex="drawer.chart">${histChart(pts)}</div>
     <h3>${t('monatsstaende')}</h3><div class="hist-grid" id="h-grid">${pts.map(([mk, v]) => `<label>${ML(mk)}<input type="text" class="auto" value="${F(v)}" disabled></label>`).join('')}</div></div>`;
@@ -2084,7 +2093,7 @@ function openEkqDrawer(mk) {
   h += row(t('ekq_schulden'), e.debts, 'total') + row(t('ekq_vermoegen'), e.equity_value + e.debts)
     + `<tr class="total"><td>${t('ekq_quote')}</td><td class="num">${e.quote == null ? t('unbekannt') : pctQ(e.quote)}</td></tr>`;
   const ohne = EQ.without_lookthrough || [];
-  d.innerHTML = `<button class="close icon">✕</button><h2>${t('ekq')} ${alphaTag()}</h2><div data-ex="drawer.ekq"><div class="muted">${MONATE_LANG[+mk.slice(5) - 1]} ${mk.slice(0, 4)}</div>
+  d.innerHTML = `${CLOSE_BTN}<h2>${t('ekq')} ${alphaTag()}</h2><div data-ex="drawer.ekq"><div class="muted">${MONATE_LANG[+mk.slice(5) - 1]} ${mk.slice(0, 4)}</div>
     <div class="note">${t('ekq_note')}</div><div class="wrap auto"><table class="plain small ekq-tbl"><tbody>${h}</tbody></table></div>
     <div class="note">${t('ekq_regeln')}</div>`
     + (ohne.length ? `<div class="note warn">${t(ohne.length === 1 ? 'ekq_ohne_1' : 'ekq_ohne_n', ohne.map(esc).join(', '))}</div>` : '')
@@ -2100,7 +2109,7 @@ function openTransitDrawer(m) {
   const end = m ? monthEnd(m) : null, open = u => (u.out_date <= end) !== (u.in_date <= end);
   const list = (r.transfers || []).slice().reverse().filter(u => !m || open(u)), d = $('#drawer');
   const head = m ? `<div class="note"><b>${esc(t('transit_ende', MLL(m)))}</b> ${F((r.amounts || {})[m] || 0)} · <a href="#" id="tr-all">${t('alle_zeigen')}</a></div>` : '';
-  d.innerHTML = `<button class="close icon">✕</button><h2>${esc(r.name)}</h2><div data-ex="drawer.transit">${head}<div class="note">${t('geld_unterwegs_tip')}</div>
+  d.innerHTML = `${CLOSE_BTN}<h2>${esc(r.name)}</h2><div data-ex="drawer.transit">${head}<div class="note">${t('geld_unterwegs_tip')}</div>
     <div class="wrap auto"><table class="plain small"><thead><tr><th>${t('abgebucht')}</th><th>${t('gutgeschrieben')}</th><th class="num">${t('betrag')}</th></tr></thead><tbody>`
     + list.map(u => `<tr><td>${FD(u.out_date)}<div class="muted">${esc(u.from_account)}</div></td><td>${FD(u.in_date)}<div class="muted">${esc(u.to_account)}</div></td><td class="num">${F(u.amount)}</td></tr>`).join('')
     + (list.length ? '' : `<tr><td colspan="3" class="muted">${t('transit_keine')}</td></tr>`) + `</tbody></table></div></div>`;
@@ -3121,7 +3130,7 @@ function vBilanzLines(D) {
   const {avail, sel} = lcSelection(D);
   const rb = bchRanges(false);          // small charts: range in the top right corner
   const typeOf = {nw: 'nw', sel: 'sel', pos: 'pos', bil: 'balance'};
-  const head = (id, title, extra, noVal) => `<div class="lc-head"><b class="lc-title">${title}</b><button class="lc-big" data-big="${typeOf[id]}" title="${t('lc_gross')}">${ICON.expand}</button><div class="seg small lc-rb" data-lc="${id}">${rb.map(([m, l]) => `<button data-m="${m}">${l}</button>`).join('')}</div></div>${noVal ? '' : `<div class="lc-row2" data-ex="balance.value">${extra || ''}<span class="lc-val" id="lc-${id}-val"></span><span class="lc-span" id="lc-${id}-span" title="${t('lc_span_tip')}"></span></div>`}`;
+  const head = (id, title, extra, noVal) => `<div class="lc-head"><b class="lc-title">${title}${hq('lc_grafiken')}</b><button class="lc-big" data-big="${typeOf[id]}" title="${t('lc_gross')}">${ICON.expand}</button><div class="seg small lc-rb" data-lc="${id}">${rb.map(([m, l]) => `<button data-m="${m}">${l}</button>`).join('')}</div></div>${noVal ? '' : `<div class="lc-row2" data-ex="balance.value">${extra || ''}<span class="lc-val" id="lc-${id}-val"></span><span class="lc-span" id="lc-${id}-span" title="${t('lc_span_tip')}"></span></div>`}`;
   const plot = id => `<div class="bch-plot lc-plot" id="lc-${id}-plot"><svg class="bch-svg" id="lc-${id}-svg"></svg><div class="bch-tip hidden" id="lc-${id}-tip"></div></div>`;
   const chips = avail.map(r => `<label class="lc-chip"><input type="checkbox" data-r="${r}" ${sel.includes(r) ? 'checked' : ''}><i style="background:${ROLE[r][1]}"></i>${esc(ROLE[r][0])}</label>`).join('');
   const card = {
@@ -3919,7 +3928,7 @@ function vCfCharts(D) {
   let h = `<div class="cf-charts" data-ex="cashflow.charts"><div class="toolbar cf-period"><span class="cf-range"><button class="cf-shift icon" data-shift="-1" title="${esc(t('cf_monat_zurueck'))}" aria-label="${esc(t('cf_monat_zurueck'))}" ${pick.indexOf(cur[0]) <= 0 ? 'disabled' : ''}>‹</button>`
     + `<span class="cf-range-in" title="${esc(t('cf_zeitraum_tip'))}">${mb('cf-von', cur[0], t('cf_von'))}<span class="muted">–</span>${mb('cf-bis', cur[cur.length - 1], t('cf_bis'))}</span>`
     + `<button class="cf-shift icon" data-shift="1" title="${esc(t('cf_monat_vor'))}" aria-label="${esc(t('cf_monat_vor'))}" ${pick.indexOf(cur[cur.length - 1]) >= pick.length - 1 ? 'disabled' : ''}>›</button></span>`
-    + `<div class="seg small" id="cf-zeit">${per.map(([k, l]) => `<button data-z="${k}" class="${S.cfZeit === k ? 'on' : ''}">${l}</button>`).join('')}</div>`
+    + `<div class="seg small" id="cf-zeit">${per.map(([k, l]) => `<button data-z="${k}" class="${S.cfZeit === k ? 'on' : ''}">${l}</button>`).join('')}</div>${hq('cf_zeitraum')}`
     + (cfOrderOwn() ? `<span class="view-btns"><button class="small secondary" id="cf-order-reset" title="${esc(t('cf_ansicht_reset_tip'))}">${ICON.reset}<span class="lbl">${t('ansicht_reset')}</span></button></span>` : '') + `</div>`;
   if (!['income', 'expenses', 'investing', 'financing', 'unclear'].some(n => cur.some(m => Math.abs((D.cashflow.sums || {})[m]?.[n] ?? 0) >= 0.005)))
     return h + `<div class="card cf-empty muted small">${t('cf_keine_zahlungen')}</div></div>`;          // nothing to draw
@@ -4745,7 +4754,7 @@ function cfOpenTx(o, page = false) {
   const key = 'cftx|' + (o.title || '') + '|' + q.toString();          // the same figure clicked again closes the panel
   if (drawerAgain(key)) return;
   // what it shows (docs/ui/drawer.md): the check against the balance sheet with its reasons, or the bookings behind a figure
-  const head = `<button class="close icon">✕</button><h2>${esc(o.title || '')}</h2>`, ex = o.kopf ? 'data-ex="drawer.check"' : 'data-ex="drawer.tx"';
+  const head = `${CLOSE_BTN}<h2>${esc(o.title || '')}</h2>`, ex = o.kopf ? 'data-ex="drawer.check"' : 'data-ex="drawer.tx"';
   const body = inner => `<div ${ex}>${o.kopf || ''}${inner}</div>`;
   d.innerHTML = head + body(o.cfRows && !o.cfRows.length ? '' : `<div class="muted small">${t('wird_geladen')}</div>`);
   d.classList.add('open'); $('.close', d).onclick = closeDrawer;
@@ -4765,7 +4774,7 @@ function cfOpenTx(o, page = false) {
 function txPanel(title, f) {
   const d = $('#drawer'), q = umsQuery(f); q.set('limit', '500');
   const key = 'tx|' + title + '|' + q.toString(); if (drawerAgain(key)) return;
-  const head = `<button class="close icon">✕</button><h2>${esc(title)}</h2>`;
+  const head = `${CLOSE_BTN}<h2>${esc(title)}</h2>`;
   d.innerHTML = head + `<div class="muted small">${t('wird_geladen')}</div>`; d.classList.add('open'); $('.close', d).onclick = closeDrawer;
   api('/api/transactions?' + q.toString()).then(r => { if (DRW.key !== key) return;
     d.innerHTML = head + `<div data-ex="drawer.tx"><div class="note">${tn('cf_tx_n', r.hits, F(r.sum))} · <a href="#" id="tx-page">${t('cf_tx_seite')}</a></div>`
@@ -5047,14 +5056,14 @@ function vBuchungen(runs) {
   const pending = l && l.dry_run && (l.proposals || []).length ? l.proposals.length : 0;
   const artL = {repayment: t('art_tilgung'), interest: t('art_zins'), value: t('art_wert'), mirror: t('art_spiegel')};
   let h = `<div class="toolbar">
-    ${pending ? `<button id="run-live" class="ico" ${local ? '' : t('disabled_title_nur_am_mac')}>${ICON.check}<span>${t('jetzt_buchen')} (<span id="sel-n">${bkChosen(l)}</span>)</span></button>` : ''}
+    ${pending ? `<button id="run-live" class="ico" ${local ? `title="${esc(t('jetzt_buchen_tip'))}"` : t('disabled_title_nur_am_mac')}>${ICON.check}<span>${t('jetzt_buchen')} (<span id="sel-n">${bkChosen(l)}</span>)</span></button>` : ''}
     ${ask ? `<button id="bk-refresh" class="secondary ico" title="${esc(t('freigabe_aktualisieren_tip'))}" ${OFFLINE.mode ? 'disabled' : ''}>${ICON.refresh}<span>${t('aktualisieren')}</span></button>` : ''}
-    <span class="sp"></span><a class="small" href="#accounts/rules">${t('zu_den_regeln')}</a>
+    <span class="sp"></span><a class="small" href="#accounts/rules" title="${esc(t('zu_den_regeln_tip'))}">${t('zu_den_regeln')}</a>
     <a class="mode-chip${ask ? '' : ' auto'}" href="#accounts/rules" title="${t(ask ? 'auto_buchen_aus' : 'auto_buchen_an')}">${ask ? ICON.hand : ICON.bolt}${t(ask ? 'modus_freigabe' : 'modus_automatisch')}</a>
   </div>`;
   if (l) {
     const head = pending ? `${t('wartet_freigabe')} <span class="x">${pending}</span>` : `${t('zuletzt_geprueft')} <span class="x">${esc(fmtZeit(l.time))} · ${l.written} ${t('gebucht')}</span>`;
-    h += `<h2>${head}${l.error ? ' <span class="pill err">' + esc(l.error) + '</span>' : ''}</h2>`;
+    h += `<h2 data-ex="bookings.list">${head}${l.error ? ' <span class="pill err">' + esc(l.error) + '</span>' : ''}</h2>`;
     if ((l.proposals || []).length) {
       const pick = pending && local, ed = pending;          // choose and change only while waiting; booking only at the Mac
       // a new list: what carries a note (a possible counterpart entered by hand) starts not chosen -- you tick it yourself
@@ -5066,7 +5075,7 @@ function vBuchungen(runs) {
         const off = new Set([...BOOK.off].filter(k => keys.has(k)).concat(noted)), edits = Object.fromEntries(Object.entries(BOOK.edits).filter(([k]) => keys.has(k)));
         Object.assign(BOOK, {time: l.time, notes, edits, off, calc: null, extra: {}, editing: new Set(), needCalc: off.size > 0 || Object.keys(edits).length > 0}); }
       const plain = txt => String(txt || '').replace(/\s*·?\s*#kontor-[a-z]+-[A-Za-z0-9-]+/g, '').trim();
-      h += `<div class="wrap auto" data-ex="bookings.list"><table class="plain bk-table"><thead><tr>${pick ? `<th class="c"><input type="checkbox" id="bk-all" ${BOOK.off.size || bkRows(l).some(r => r.gone) ? '' : 'checked'} aria-label="${esc(t('alle'))}"></th>` : ''}<th>${t('datum')}</th><th>${t('konto_2')}</th><th>${t('art')}</th><th class="num">${t('betrag')}</th><th>${t('text')}</th>${ed ? '<th></th>' : ''}</tr></thead><tbody>`
+      h += `<div class="wrap auto" data-ex="bookings.list"><table class="plain bk-table"><thead><tr>${pick ? `<th class="c"><input type="checkbox" id="bk-all" title="${esc(t('bk_alle_tip'))}" ${BOOK.off.size || bkRows(l).some(r => r.gone) ? '' : 'checked'} aria-label="${esc(t('alle'))}"></th>` : ''}<th>${t('datum')}</th><th>${t('konto_2')}</th><th>${t('art')}</th><th class="num">${t('betrag')}</th><th>${t('text')}</th>${ed ? '<th></th>' : ''}</tr></thead><tbody>`
         + bkRows(l).map(({v, k, off, e, gone, waits, b, new: neu, adjusted}) => {
           const d = e.date ?? v.date, z = e.purpose ?? plain(v.text), changed = Object.keys(e).length > 0, loan = v.kind === 'repayment' || v.kind === 'interest';
           const pills = (changed ? ` <span class="pill info">${t('geaendert')}</span>` : '') + (adjusted ? ` <span class="pill info" title="${esc(t('angepasst_tip'))}">${t('angepasst')}</span>` : '')
@@ -5081,7 +5090,7 @@ function vBuchungen(runs) {
       if (l.dry_run && l.proposals.some(v => !v.key)) h += `<div class="note">${t('einmal_sync_fuer_auswahl')}</div>`;
     } else h += `<div class="note" data-ex="bookings.list">${t('keine_buchungen_noetig')}</div>`;
     if (l.warnings && l.warnings.length) h += `<h3>${t('hinweise')}</h3><div data-ex="bookings.notes">` + l.warnings.map(x => `<div class="banner">${esc(x)}</div>`).join('') + '</div>';
-    if (l.hints && l.hints.length) h += `<details class="calc" data-keep="bk-calc" data-ex="bookings.calc"${keepOpen('bk-calc')}><summary>${t('rechenwege')} (${l.hints.length})</summary>` + l.hints.map(x => `<div class="small muted">${esc(x)}</div>`).join('') + '</details>';
+    if (l.hints && l.hints.length) h += `<details class="calc" data-keep="bk-calc" data-ex="bookings.calc"${keepOpen('bk-calc')}><summary title="${esc(t('rechenwege_tip'))}">${t('rechenwege')} (${l.hints.length})</summary>` + l.hints.map(x => `<div class="small muted">${esc(x)}</div>`).join('') + '</details>';
   }
   // not booked: the proposals you chose not to book (kept in the settings) -- "Propose again" takes one off the list
   const rej = runs.not_book || [];
@@ -5091,12 +5100,12 @@ function vBuchungen(runs) {
       + `<td><button class="secondary small re-book" data-key="${esc(v.key)}" title="${esc(t('wieder_vorschlagen_tip'))}">${t('wieder_vorschlagen')}</button></td></tr>`).join('') + '</tbody></table></div></details>';
   // what Kontor made in MoneyMoney: the bookings carrying its mark
   const ang = runs.created_at || [];
-  h += `<h2>${t('angelegt_titel')} <span class="x">${ang.length}</span></h2>`
+  h += `<h2 data-ex="bookings.created">${t('angelegt_titel')} <span class="x">${ang.length}</span></h2>`
     + (ang.length ? `<div class="wrap auto" style="max-height:420px" data-ex="bookings.created"><table class="plain"><thead><tr><th>${t('datum')}</th><th>${t('konto_2')}</th><th>${t('art')}</th><th class="num">${t('betrag')}</th><th>${t('text')}</th><th>${t('markierung')}</th></tr></thead><tbody>`
       + ang.slice(0, 300).map(v => `<tr><td style="white-space:nowrap">${FD(v.date)}</td><td>${acctCell(v.account, v.account_id)}</td><td>${esc(artL[v.kind] || v.kind)}</td><td class="num ${v.amount < 0 ? 'neg' : 'pos'}">${F(v.amount)}</td><td class="small">${esc(v.purpose || v.counterparty)}</td><td class="small muted" style="white-space:nowrap">${esc(v.mark)}</td></tr>`).join('')
       + `</tbody></table></div>` : `<div class="muted small" data-ex="bookings.created">${t('keine_angelegt')}</div>`);
   // history: only the checks (when, how many proposed and booked, errors) -- the bookings themselves are listed above
-  h += `<details class="calc" data-keep="bk-hist" data-ex="bookings.history"${keepOpen('bk-hist')}><summary>${t('verlauf_2')} (${(runs.history_source || []).length})</summary><div class="wrap auto"><table class="plain"><thead><tr><th>${t('zeit')}</th><th class="num">${t('vorschlaege')}</th><th class="num">${t('gebucht_2')}</th><th>${t('fehler_2')}</th></tr></thead><tbody>`
+  h += `<details class="calc" data-keep="bk-hist" data-ex="bookings.history"${keepOpen('bk-hist')}><summary title="${esc(t('bk_verlauf_tip'))}">${t('verlauf_2')} (${(runs.history_source || []).length})</summary><div class="wrap auto"><table class="plain"><thead><tr><th>${t('zeit')}</th><th class="num">${t('vorschlaege')}</th><th class="num">${t('gebucht_2')}</th><th>${t('fehler_2')}</th></tr></thead><tbody>`
     + (runs.history_source || []).map(v => `<tr><td style="white-space:nowrap">${esc(fmtZeit(v.time))}</td><td class="num">${v.proposals ?? ''}</td><td class="num">${v.written}</td><td>${esc(v.error || '')}</td></tr>`).join('') + '</tbody></table></div></details>';
   return h;
 }
@@ -5111,7 +5120,7 @@ function vSteuer() {
   const ent = ents.find(e => e.uuid === S.steuerEnt) || ents[0];
   let h = `<div class="toolbar"><label>${t('jahr_2')} <select id="st-jahr">${years.map(y => `<option ${String(y) === S.steuerJahr ? 'selected' : ''}>${y}</option>`).join('')}</select></label>
     <label>${t('entitaet')} <select id="st-ent">${ents.map(e => `<option value="${esc(e.uuid)}" ${e.uuid === ent.uuid ? 'selected' : ''}>${esc(e.name)} (${e.kind === 'private' ? t('privat') : e.kind === 'company' ? t('gesellschaft') : esc(({gbr: 'GbR', gmbh: 'GmbH'})[e.kind] || String(e.kind || ''))}${e.share ? t('anteil_2') + FN(e.share * 100, 0) + ' %' : ''})</option>`).join('')}</select></label>
-    <span class="sp"></span><button id="st-belege" class="secondary small">${t('belege_0_exportieren', esc(S.steuerJahr))}</button>${xlsxBtn('tax')}</div>`;
+    <span class="sp"></span><button id="st-belege" class="secondary small">${t('belege_0_exportieren', esc(S.steuerJahr))}</button>${xlsxBtn('tax')}${hq('steuer_auswahl')}</div>`;
   const J = ent.years[S.steuerJahr]; if (!J) return h + `<div class="note">${t('keine_daten_fuer_dieses_jahr')}</div>`;
   const objs = Object.keys(J.properties_list);
   h += `<div class="cards" data-ex="tax.cards"><div class="card"><div class="l">${t('einnahmen_kategorisiert')}</div><div class="v">${F0(J.sum_income)} €</div></div><div class="card"><div class="l">${t('ausgaben_kategorisiert')}</div><div class="v">${F0(J.sum_expenses)} €</div></div><div class="card"><div class="l">${t('schuldzinsen')}</div><div class="v">${F0(Object.values(J.debt_interest).reduce((a, b) => a + b, 0))} €</div></div><div class="card"><div class="l">${t('ohne_kategorie')}</div><div class="v">${J.uncategorized_flag.count ? '<span class="pill warn">' + J.uncategorized_flag.count + ` ${t('buchungen')}</span>` : `<span class="pill ok">${t('keine')}</span>`}</div><div class="d">${F(J.uncategorized_flag.amount)} € – <a href="#transactions?uncategorized=1&year=${S.steuerJahr}&entity=${encodeURIComponent(ent.uuid)}">${t('kategorisieren')}</a></div></div></div>`;
@@ -5123,10 +5132,10 @@ function vSteuer() {
     h += `<tr class="total"><td>${t('werbungskosten_ohne_zinsen_afa')}</td>${objs.map(o => `<td class="num neg">${F(J.properties_list[o].deductible_costs)}</td>`).join('')}</tr>`;
     const loans = [...new Set(objs.flatMap(o => Object.keys(J.properties_list[o].debt_interest)))];
     for (const l of loans) h += `<tr><td class="ind1">${t('schuldzinsen_0', esc(l))}</td>${objs.map(o => `<td class="num">${F(J.properties_list[o].debt_interest[l] ?? 0)}</td>`).join('')}</tr>`;
-    h += `<tr><td class="ind1">${t('afa_manuell')}</td>${objs.map(o => `<td class="num"><input type="number" step="0.01" class="depreciation" data-obj="${esc(o)}" value="${J.properties_list[o].depreciation_source === 'manual' ? J.properties_list[o].depreciation : ''}" placeholder="${J.properties_list[o].depreciation_source === 'calc' ? esc(F(J.properties_list[o].depreciation)) : ''}" style="width:110px"></td>`).join('')}</tr>`;
+    h += `<tr><td class="ind1">${t('afa_manuell')}${hq('afa_manuell')}</td>${objs.map(o => `<td class="num"><input type="number" step="0.01" class="depreciation" data-obj="${esc(o)}" value="${J.properties_list[o].depreciation_source === 'manual' ? J.properties_list[o].depreciation : ''}" placeholder="${J.properties_list[o].depreciation_source === 'calc' ? esc(F(J.properties_list[o].depreciation)) : ''}" style="width:110px"></td>`).join('')}</tr>`;
     h += `<tr class="total"><td>${t('ergebnis_ueberschuss_verlust')}</td>${objs.map(o => `<td class="num ${J.properties_list[o].result < 0 ? 'neg' : 'pos'}">${F(J.properties_list[o].result)}</td>`).join('')}</tr>`;
     if (ent.share) h += `<tr class="total"><td>${t('davon_anteil_0', (ent.share * 100).toFixed(0))}</td>${objs.map(o => `<td class="num">${F(J.properties_list[o].share_result)}</td>`).join('')}</tr>`;
-    h += `</tbody></table></div><div class="actions"><button id="afa-save" class="small">${t('afa_speichern')}</button></div>`;
+    h += `</tbody></table></div><div class="actions"><button id="afa-save" class="small" title="${esc(t('afa_speichern_tip'))}">${t('afa_speichern')}</button></div>`;
   } else h += `<div class="note">${t('keine_vermietungskategorien_fuer_diese', esc(T.rental_category))}</div>`;
   h += `<h2>${ent.kind === 'private' ? t('steuerpositionen') : t('oberkategorien')}</h2><div class="wrap auto" data-ex="tax.positions"><table class="plain"><thead><tr><th>${t('position')}</th><th>${t('kategorie')}</th><th class="num">${t('betrag')}</th><th class="num">${t('buchungen')}</th></tr></thead><tbody>`;
   for (const [pos, p] of Object.entries(J.positions)) {
@@ -5143,7 +5152,7 @@ const immoData = id => ((S.DATA && S.DATA.real_estate) || []).find(x => String(x
 function vImmobilien(id) {
   if (id) return vImmobilie(id);
   const list = S.CFG.real_estate || [];
-  let h = `<div class="toolbar"><span class="muted small">${t('kalkulationen_je_objekt_mehrere_szenar')}</span><span class="sp"></span><button id="im-new" class="small">${t('neues_objekt')}</button></div>`;
+  let h = `<div class="toolbar"><span class="muted small">${t('kalkulationen_je_objekt_mehrere_szenar')}</span><span class="sp"></span><button id="im-new" class="small" title="${esc(t('immo_neu_tip'))}">${t('neues_objekt')}</button></div>`;
   if (!list.length) return h + `<div class="card" data-ex="properties.list"><div class="v s">${t('noch_keine_immobilie')}</div><div class="d">${t('lege_ein_objekt_an_und')}</div></div>`;
   h += '<div class="cards k3" data-ex="properties.list">' + list.map(im => { const d = immoData(im.id) || {}; const K = d.figures || {}; const j1 = (d.years || []).find(j => j.months === 12) || (d.years || [])[0];
     return `<div class="card clickable" data-im="${esc(im.id)}" style="cursor:pointer"><div class="l">${esc(BN(im.area) || im.area || '–')}${im.in_planning ? `<span class="tag">${t('in_planung')}</span>` : ''}</div><div class="v s">${esc(im.name)}</div>
@@ -5365,7 +5374,7 @@ async function vUmsaetze() {
     <select id="uf-ent"><option value="">${t('alle_bereiche')}</option>${Object.keys(S.DATA.areas).map(k => `<option value="${esc(k)}" ${f.entity === k ? 'selected' : ''}>${esc(BN(k))}</option>`).join('')}</select>
     <select id="uf-jahr"><option value="">${t('alle_jahre')}</option>${UMS.years.map(y => `<option ${f.year === y ? 'selected' : ''}>${y}</option>`).join('')}</select>
     <select id="uf-konto"><option value="">${t('alle_konten')}</option>${konten.map(k => `<option value="${k.uuid}" ${f.account === k.uuid ? 'selected' : ''}>${esc(k.name)}</option>`).join('')}</select>
-    <input type="search" id="uf-q" data-find placeholder="${t('suche_name_zweck_kategorie_betrag')}" value="${esc(f.q)}" style="min-width:220px">
+    <input type="search" id="uf-q" data-find placeholder="${t('suche_name_zweck_kategorie_betrag')}" value="${esc(f.q)}" style="min-width:220px">${hq('umsatzfilter')}
   </div><div class="toolbar">
     <div class="seg"><button data-r="" class="${!f.direction ? 'on' : ''}">${t('alle_2')}</button><button data-r="aus" class="${f.direction === 'aus' ? 'on' : ''}">${t('ausgaben')}</button><button data-r="ein" class="${f.direction === 'ein' ? 'on' : ''}">${t('einnahmen')}</button></div>
     <label class="switch"><input type="checkbox" id="uf-ob" ${f.ohne_beleg ? 'checked' : ''}><i></i>${t('ohne_beleg_2')}</label>
@@ -5381,10 +5390,10 @@ async function vUmsaetze() {
   </div></div>
   <div class="toolbar"><span class="muted small ums-hits" data-ex="transactions.hits">${t('0_treffer_1_von_2', UMS.hits, UMS.hits > UMS.transactions.length ? ' (erste ' + UMS.transactions.length + t('angezeigt_filter_verfeinern') : '', UMS.total)}</span><span class="sp"></span>
     <button id="bl-folder" class="secondary small" ${st.local ? '' : t('disabled_title_nur_am_mac')}>${t('belegordner_oeffnen')}</button>
-    <button id="bl-export" class="secondary small">${t('belege_exportieren_zip')}</button>
+    <button id="bl-export" class="secondary small">${t('belege_exportieren_zip')}</button>${hq('belege_ordner')}
     ${xlsxBtn('transactions', `title="${esc(t('uf_excel_tip'))}"`)}</div>`;          // the transactions as filtered (all matches, not only those shown)
   if (S.sel.size) h += `<div class="banner info" data-ex="transactions.table" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">${t('0_ausgewaehlt_1', S.sel.size, `<input type="text" id="bulk-cat" list="bulk-kats" placeholder="${t('kategorie')}" style="min-width:240px">${katList('bulk-kats')}<button id="bulk-cat-btn" class="small">${t('kategorie_zuweisen')}</button>`)}<button id="bulk-clear" class="small secondary">${t('auswahl_aufheben')}</button></div>`;
-  h += `<div class="wrap" data-ex="transactions.table"><table class="plain" id="ums-table"><thead><tr><th style="width:28px"><input type="checkbox" id="sel-all"></th><th>${t('datum')}</th><th>${t('konto_2')}</th><th>${t('name')}</th><th>${t('verwendungszweck')}</th><th class="num">${t('betrag')}</th><th>${t('kategorie')}</th><th class="num">${t('belege')}</th></tr></thead><tbody>`
+  h += `<div class="wrap" data-ex="transactions.table"><table class="plain" id="ums-table"><thead><tr><th style="width:28px"><input type="checkbox" id="sel-all" title="${esc(t('sel_alle_tip'))}"></th><th>${t('datum')}</th><th>${t('konto_2')}</th><th>${t('name')}</th><th>${t('verwendungszweck')}</th><th class="num">${t('betrag')}</th><th>${t('kategorie')}</th><th class="num">${t('belege')}</th></tr></thead><tbody>`
     + UMS.transactions.map(u => `<tr class="clickable ${S.sel.has(u.id) ? 'sel' : ''}" data-id="${u.id}"><td><input type="checkbox" class="sel" ${S.sel.has(u.id) ? 'checked' : ''}></td><td class="small" style="white-space:nowrap">${FD(u.date)}</td><td class="small">${esc(u.account_name)}</td><td>${esc(u.name)}</td><td class="small muted" style="max-width:360px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(u.purpose)}</td><td class="num ${u.amount < 0 ? 'neg' : 'pos'}">${F(u.amount)}</td><td class="small" title="${QUELLE_TIP[u.source] || ''}">${u.category ? esc(CP(u.category)) + (u.source === 'waiting' ? ' <span class="muted">⏳</span>' : '') : u.needs === false || u.transfer ? '<span class="muted">–</span>' : `<span class="pill warn">${t('ohne')}</span>`}</td><td class="num">${u.receipts ? `<span class="pill ok">${u.receipts}</span>` : `<button class="ghost small add-beleg" title="${t('beleg_hinzufuegen')}">＋</button>`}</td></tr>`).join('')
     + '</tbody></table></div>';
   return h;
@@ -5395,7 +5404,7 @@ async function openDrawer(txId) {
   const mine = bl.entry_list.filter(e => e.tx_id === txId), free = bl.files.filter(d => !d.linked);
   const st = S.STATUS;
   const d = $('#drawer');
-  d.innerHTML = `<button class="close icon">✕</button><h2>${esc(u.name)}</h2><div data-ex="transactions.detail">
+  d.innerHTML = `${CLOSE_BTN}<h2>${esc(u.name)}</h2><div data-ex="transactions.detail">
     <div class="kv"><div>${t('datum')}</div><div>${FD(u.date)}</div><div>${t('betrag')}</div><div class="${u.amount < 0 ? 'neg' : 'pos'}" style="font-weight:600;color:var(--${u.amount < 0 ? 'neg' : 'pos'})">${F(u.amount)} €</div><div>${t('konto_2')}</div><div>${esc(u.account_name)} · ${esc(BN(u.entity))}</div><div>${t('zweck')}</div><div>${esc(u.purpose) || '–'}</div><div>${t('kategorie')}</div><div>${u.category ? esc(CP(u.category)) : u.needs === false || u.transfer ? '–' : `<span class="pill warn">${t('ohne')}</span>`}${u.source ? ' <span class="small muted">· ' + (QUELLE_TIP[u.source] || '') + '</span>' : ''}</div><div>${t('status')}</div><div>${u.booked_count ? t('gebucht') : t('vorgemerkt')}${u.checkmark ? t('abgehakt') : ''}</div><div>${t('id')}</div><div class="mono small">${u.id}</div></div>
     ${u.needs !== false ? `<div class="row tight" style="margin-top:10px"><input type="text" id="dr-kat" list="dr-kats" value="${esc(CP(u.category))}" placeholder="${t('kategorie_aus_moneymoney')}" style="min-width:240px;flex:1">${katList('dr-kats')}<button id="dr-cat-btn" class="small">${t('in_moneymoney_eintragen')}</button></div>` : ''}
     <h3>${t('belege_n', mine.length)}</h3>
@@ -5604,7 +5613,7 @@ const pvOpen = (p, n) => { RPV.list.push(p); return `<a href="#" class="pv-diff 
 function pvDrawer(p, title, i = '') {
   const d = $('#drawer'), items = p.items || [], n = Math.max(items.length, p.bookings || p.open || 0);          // the list ends after 300
   if (drawerAgain('pv|' + i + '|' + title)) return;          // a second click on the same: closed, not opened again
-  d.innerHTML = `<button class="close icon">✕</button><h2>${esc(title)}</h2><div data-ex="drawer.preview"><div class="note">${tn('pv_n_offen', n)} · <a href="#bookings" id="pv-go">${t('pv_zur_freigabe')}</a></div>`
+  d.innerHTML = `${CLOSE_BTN}<h2>${esc(title)}</h2><div data-ex="drawer.preview"><div class="note">${tn('pv_n_offen', n)} · <a href="#bookings" id="pv-go">${t('pv_zur_freigabe')}</a></div>`
     + `<div class="wrap auto dr-wrap"><table class="plain small dr-tx"><colgroup><col class="c-d"><col><col class="c-a"></colgroup><tbody>`
     + items.map(x => `<tr><td>${FD(x.date)}</td><td>${esc(x.account.split(' / ').pop())}<div class="muted">${esc(x.purpose)}${x.older ? ` <span class="tag">${t('aelter')}</span>` : ''}</div></td><td class="num">${F(x.amount)}</td></tr>`).join('')
     + `</tbody></table></div></div>`;
@@ -5763,7 +5772,7 @@ async function saveConfig(cfg, findingsEl, trotzdem, extra, quiet) {
 }
 
 // ---------------------------------------------------------------- Kategorien
-const subTabs = (base, items) => `<div class="tabs">${items.map(([k, l]) => `<button data-next="#${base}${k ? '/' + k : ''}" class="${S.sub === k ? 'on' : ''}">${l}</button>`).join('')}</div>`;
+const subTabs = (base, items) => `<div class="tabs">${items.map(([k, l]) => `<button data-next="#${base}${k ? '/' + k : ''}" class="${S.sub === k ? 'on' : ''}" title="${esc(t(`page_${base}${k ? '_' + k : ''}`))}">${l}</button>`).join('')}</div>`;
 async function vKategorien() {
   // Zuordnen -- tabs: Offen (what has no category in MoneyMoney yet) · Regeln für MoneyMoney (proposals) · Eingetragen (what
   // Kontor entered in MoneyMoney, to take back). Where a category counts in the cash flow is a setting: Cashflow-Positionen.
@@ -5878,7 +5887,7 @@ function kbRefresh(eff) {
       + `<td>${esc(kt(`kb_${k}`))}${sub ? ` <span class="muted">› ${esc(sub)}</span>` : ''}<span class="hq" tabindex="0" data-tip="${esc(tip)}">?</span></td>`
       + `<td>${have ? esc(names) + part : esc(t('kb_keine'))}</td></tr>`;
   }
-  body.innerHTML = `<p class="small kb-rule">${esc(t('kb_regel'))}</p><table class="plain kb-table"><thead><tr><th></th><th>${t('kb_empfohlen')}</th><th>${t('kb_bei_dir')}</th></tr></thead><tbody>${rows}</tbody></table>`;
+  body.innerHTML = `<p class="small kb-rule">${esc(t('kb_regel'))}${more('categories-tree')}</p><table class="plain kb-table"><thead><tr><th></th><th>${t('kb_empfohlen')}</th><th>${t('kb_bei_dir')}</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 // the target account a saving category gets by itself (from the recipients in the cash flow): not needed (transfers to your
 // own accounts), found, or missing -- shown in its menu, so it is clear whether to choose
@@ -6037,7 +6046,7 @@ async function vZuordnen() {
     <select id="kz-jahr"><option value="">${t('alle_jahre')}</option>${years.map(y => `<option ${KZ.year === y ? 'selected' : ''}>${y}</option>`).join('')}</select>
     <label class="chk small">${t('ab')} <input type="number" id="kz-min" value="${esc(KZ.min)}" placeholder="0" style="width:80px"> €</label>
     <span class="sp"></span>${can && mitVorschlag.length ? `<button id="kz-alle" class="secondary small">${t('alle_vorschlaege_n', mitVorschlag.length)}</button>` : ''}</div>
-    <div class="note">${tn('n_ohne_kategorie_gruppen', off.open, hq('zuordnen'))}</div>` + katList('kz-kats');
+    <div class="note" data-ex="categories.open">${tn('n_ohne_kategorie_gruppen', off.open, hq('zuordnen'))}</div>` + katList('kz-kats');
   if (off.waiting) h += `<div class="banner info">${tn('n_warten_auf_mac', off.waiting, off.waiting)}</div>`;
   if (!off.groups.length) return h + `<div class="card" data-ex="categories.open"><div class="v s">${t('nichts_offen_2')}</div><div class="d">${t('alle_umsaetze_haben_eine_kategorie')}</div></div>`;
   h += '<div class="list" data-ex="categories.open">';
@@ -6197,10 +6206,10 @@ async function vKontenRegeln() {
 async function vEinstellungenMM() {
   const C = S.CFG, z = C.schedule || {}, b = C.balance || {};
   const ok = mmStepDone(S.STATUS) && S.KONTEN.length > 0 && VB.checked !== location.hash;     // just checked here: the page stays as it was
-  const conn = ok ? `<details class="conn-fold" data-keep="mm-conn"${keepOpen('mm-conn')}><summary><h2>${t('verbindung')}</h2><span class="dot ok"></span><span class="small muted">${t('mm_verbunden')}</span></summary>${vVerbindung()}</details>`
-    : `<h2>${t('verbindung')}</h2>${vVerbindung()}`;
+  const conn = ok ? `<details class="conn-fold" data-keep="mm-conn"${keepOpen('mm-conn')}><summary><h2>${t('verbindung')}${hq('mm_kontor')}</h2><span class="dot ok"></span><span class="small muted">${t('mm_verbunden')}</span></summary>${vVerbindung()}</details>`
+    : `<h2>${t('verbindung')}${hq('mm_kontor')}</h2>${vVerbindung()}`;
   // while you set Kontor up: the connection first, open (it is this step), the way on right below it
-  const setup = setupNav('connect'), first = setup ? `<h2>${t('verbindung')}</h2>${vVerbindung()}${setup.replace('class="setup-nav', 'class="setup-nav below')}` : ok ? '' : conn;
+  const setup = setupNav('connect'), first = setup ? `<h2>${t('verbindung')}${hq('mm_kontor')}</h2>${vVerbindung()}${setup.replace('class="setup-nav', 'class="setup-nav below')}` : ok ? '' : conn;
   return `<div data-ex="settings.moneymoney">` + first + `<div data-ex="settings.moneymoney.sync"><h2>${t('synchronisierung')}</h2>${await vSync()}</div>
   <div data-ex="settings.moneymoney.schedule"><h2>${t('abgleich_h')}</h2><div class="form">
     <label>${t('automatischer_abgleich_0', hq('abgleich'))}</label><label class="chk"><input type="checkbox" id="e-auto" ${z.automatic !== false ? 'checked' : ''}> ${t('alle_2')} <input type="number" id="e-intervall" min="5" value="${z.interval_minutes ?? 30}" style="width:70px"> ${t('minuten_nur_wenn_moneymoney_laeuft')}</label>
@@ -6224,9 +6233,9 @@ function vEinstellungenBelege() {
 function vEinstellungenSteuer() {
   const st = S.CFG.tax || {}, loans = S.KONTEN.filter(k => !k.group && k.role === 'liabilities');
   return `<div data-ex="accounts.tax"><div class="note">${t('steuer_einstellungen_note')}</div><div class="form">
-    <label>${t('vermietungs_oberkategorie')}</label><input type="text" id="e-verm" value="${esc(st.rental_category || 'Vermietung')}">
-    <div class="full"><h3>${t('darlehen_objekt')}</h3>${loans.length ? `<table class="plain objloans"><thead><tr><th>${t('darlehenskonto')}</th><th>${t('objekt_wie_in_der_kategorie')}</th></tr></thead><tbody>${loans.map(l => `<tr><td>${esc(l.name)}<div class="small muted">${esc(CP(l.path.split(' / ').slice(0, -1).join(' / ')))}</div></td><td><input type="text" class="e-obj" data-ref="${l.uuid} | ${esc(l.name)}" value="${esc((st.property_loans || {})[l.uuid + ' | ' + l.name] || Object.entries(st.property_loans || {}).find(([k]) => k.startsWith(l.uuid))?.[1] || '')}" placeholder="${t('objektname_wie_in_der_kategorie')}"></td></tr>`).join('')}</tbody></table>` : `<span class="muted small">${t('keine_darlehenskonten_erkannt')}</span>`}</div>
-    <label>${t('kategorie_steuerposition')}</label><div class="list" id="tax-positions">${Object.entries(st.positions || {}).filter(([k]) => !k.startsWith('_')).map(([k, v]) => posRow(k, v)).join('')}<button id="add-pos" class="secondary small" style="align-self:flex-start;width:auto">${t('zuordnung_hinzufuegen')}</button></div>
+    <label>${t('vermietungs_oberkategorie')}${hq('steuer_verm')}</label><input type="text" id="e-verm" value="${esc(st.rental_category || 'Vermietung')}">
+    <div class="full"><h3>${t('darlehen_objekt')}${hq('steuer_darlehen')}</h3>${loans.length ? `<table class="plain objloans"><thead><tr><th>${t('darlehenskonto')}</th><th>${t('objekt_wie_in_der_kategorie')}</th></tr></thead><tbody>${loans.map(l => `<tr><td>${esc(l.name)}<div class="small muted">${esc(CP(l.path.split(' / ').slice(0, -1).join(' / ')))}</div></td><td><input type="text" class="e-obj" data-ref="${l.uuid} | ${esc(l.name)}" value="${esc((st.property_loans || {})[l.uuid + ' | ' + l.name] || Object.entries(st.property_loans || {}).find(([k]) => k.startsWith(l.uuid))?.[1] || '')}" placeholder="${t('objektname_wie_in_der_kategorie')}"></td></tr>`).join('')}</tbody></table>` : `<span class="muted small">${t('keine_darlehenskonten_erkannt')}</span>`}</div>
+    <label>${t('kategorie_steuerposition')}${hq('steuer_pos')}</label><div class="list" id="tax-positions">${Object.entries(st.positions || {}).filter(([k]) => !k.startsWith('_')).map(([k, v]) => posRow(k, v)).join('')}<button id="add-pos" class="secondary small" style="align-self:flex-start;width:auto">${t('zuordnung_hinzufuegen')}</button></div>
   </div>
   ${saveBar()}</div>`;
 }
@@ -6410,7 +6419,7 @@ function vEinstellungenUpdates() {
   ${saveBar()}`;
 }
 function vEinstellungenDaten() {
-  return `<h2>${t('daten')}</h2><div class="kv"><div>${t('datenordner')}</div><div>${esc(S.STATUS.storage.folder)}</div>${S.STATUS.storage.program_folder ? `<div>${t('programmordner')}</div><div>${esc(S.STATUS.storage.program_folder)}</div>` : ''}<div>${t('verschluesselung')}</div><div>${!S.STATUS.storage.encrypted ? t('keine_verschluesselung') : t('aes_256_nach_anmeldung', t(S.STATUS.storage.touchid_unlock ? 'passwort_oder_touch_id' : 'passwort'))}</div><div>${t('belegordner')}</div><div><a href="#settings/receipts" title="${esc(t('belegordner_aendern'))}">${esc(S.STATUS.receipts.folder)}</a></div>
+  return `<h2>${t('daten')}${hq('daten_ordner')}</h2><div class="kv"><div>${t('datenordner')}</div><div>${esc(S.STATUS.storage.folder)}</div>${S.STATUS.storage.program_folder ? `<div>${t('programmordner')}</div><div>${esc(S.STATUS.storage.program_folder)}</div>` : ''}<div>${t('verschluesselung')}</div><div>${!S.STATUS.storage.encrypted ? t('keine_verschluesselung') : t('aes_256_nach_anmeldung', t(S.STATUS.storage.touchid_unlock ? 'passwort_oder_touch_id' : 'passwort'))}</div><div>${t('belegordner')}</div><div><a href="#settings/receipts" title="${esc(t('belegordner_aendern'))}">${esc(S.STATUS.receipts.folder)}</a></div>
     <div>Time Machine ${hq('timemachine')}</div><div><span id="tm-state" class="muted">…</span> <button id="tm-toggle" class="secondary small hidden"></button></div>
     <div>${t('protokoll')}</div><div><a href="#log">${t('protokoll_und_diagnose')}</a></div></div>
   ${S.STATUS.storage.encrypted ? `<h2>${t('datenschluessel_h')} ${hq('datenschluessel')}</h2>
@@ -6455,7 +6464,7 @@ function vSicherung() {
   <div data-ex="settings.backup.data">${vEinstellungenDaten()}</div>
   <div data-ex="settings.backup.reset"><h2>${t('zuruecksetzen_h')}</h2><div class="note">${t('zuruecksetzen_text')}</div>
   <div class="row tight"><input type="password" id="rs-pw" placeholder="${t('passwort_zur_bestaetigung')}" autocomplete="current-password" style="width:220px"><label class="chk"><input type="checkbox" id="rs-pw-reset"> ${t('passwort_ebenfalls_zuruecksetzen_einri')}</label><button id="rs-go" class="danger" ${S.STATUS.local ? '' : t('disabled_title_nur_am_mac')}>${t('programm_zuruecksetzen')}</button></div><div id="rs-report" class="findings"></div>
-  <h2>${t('deinstallieren_h')}</h2><div class="note">${t('deinstallieren_text')}</div>
+  <h2>${t('deinstallieren_h')}${hq('deinstallieren')}</h2><div class="note">${t('deinstallieren_text')}</div>
   <div class="row tight"><input type="password" id="un-pw" placeholder="${t('passwort_zur_bestaetigung')}" autocomplete="current-password" style="width:220px"><label class="chk"><input type="checkbox" id="un-prog" checked> ${t('deinstall_programmordner')}</label><button id="un-go" class="danger" ${S.STATUS.local ? '' : t('disabled_title_nur_am_mac')}>${t('kontor_deinstallieren')}</button></div><div id="un-report" class="findings"></div></div></div>`;
 }
 function pkgPreview() {
@@ -6533,7 +6542,7 @@ function clSeries(g) {
 function clHistory(hist) {
   if (!hist || !hist.length) return '';
   const old = hist.slice(CL_SHOWN);
-  return `<h2>${t('aenderungen_je_hauptversion')}</h2>${hist.slice(0, CL_SHOWN).map(clSeries).join('')}`
+  return `<h2>${t('aenderungen_je_hauptversion')}${hq('aenderungen')}</h2>${hist.slice(0, CL_SHOWN).map(clSeries).join('')}`
     + (old.length ? `<details class="cl-older"><summary>${tn('aeltere_hauptversionen_0', old.length, old.length > 1 ? t('0_bis_1', old[0].series, old[old.length - 1].series) : old[0].series)}</summary>${old.map(clSeries).join('')}</details>` : '');
 }
 // An update whose files hold something that can be a risk (update_guard.py read them before any of it runs): one entry per
@@ -6757,30 +6766,88 @@ function helpAppLinks(body) {
     frag.append(txt.slice(at)); nd.replaceWith(frag);
   }
 }
+// The help's search, word by word as you would say it ("Kredit tilgen", "Passwort vergessen"): every word counts in its forms
+// (einrichten finds Einrichtung), words like "und", "wie" do not; a section shows when it holds all words (none does: those
+// with the most), the one that fits best comes first -- ranked as the assistant's search_help ranks (tests/test_findable.py
+// holds both to the words you would search for). Folded as Kontor folds: ä as ae, no punctuation.
+const HELP_STOP = new Set(`aber alle allem allen aller alles also andere anderen auch auf aus bei beim bin bis bist bitte dann das dass dein deine deinem deinen deiner dem den
+denn der des dich die dies diese diesem diesen dieser dieses dir doch dort durch eben ein eine einem einen einer eines einmal etwas euch fuer ganz gar gegen geht
+gibt habe haben hast hat hatte hier ich ihm ihn ihr ihre ihrem ihren immer ins ist jetzt kann kein keine keinem keinen koennen mal man mehr mein meine meinem
+meinen meiner mich mir mit muss nach nicht nichts noch nun nur oder ohne schon sehr sein seine seinem seinen seiner seit sich sie sind soll sollen sollte ueber
+und uns unser unsere unter viel vom von vor wann war waren warum was weil welche welchem welchen welcher wenn wer werde werden wie wieder will wir wird wirst wo
+wollen worden wuerde wurde zu zum zur zwar about after again all also and any are because been before being but can could did does doing for from had has have
+her here him his how into its just more most not now off once only other our out over own she should some such than that the their them then there these they
+this those through too under until very was were what when where which while who why will with would you your`.split(/\s+/));
+// Kontor's name stands in nearly every section and is no Konto: kept apart (KONTOR), found only by a search for it
+const helpFold = s => ' ' + String(s).toLowerCase().replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue').replace(/ß/g, 'ss').normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
+  .replace(/[^a-z0-9]+/g, ' ').trim().replace(/(^| )kontors?(?= |$)/g, '$1KONTOR') + ' ';
+function helpWords(q) {
+  const out = [];
+  for (const raw of String(q).match(/[\p{L}\p{N}]+/gu) || []) {
+    for (const w of helpFold(raw).trim().split(' ')) {
+      if (!w || (w.length < 3 && !(raw.length === 2 && raw === raw.toUpperCase())) || HELP_STOP.has(w)) continue;
+      const end = w === 'KONTOR' ? '' : ['ern', 'en', 'er', 'es', 'e', 'n', 's'].find(e => w.endsWith(e) && w.length - e.length >= 5) || '';
+      out.push(w.slice(0, w.length - end.length));
+    }
+  }
+  return [...new Set(out)].slice(0, 8);
+}
+const helpCount = (text, w) => { if (w.length < 4) w = ' ' + w + ' '; let n = 0, i = text.indexOf(w); while (i >= 0) { n++; i = text.indexOf(w, i + 1); } return n; };
+// the sections that fit, best first (indexes): a word in few sections says more than one in many (weighted, 1 on average);
+// in the title 5, in the text as often as it stands there, at most 4 (a long section is not the better for its length)
+function helpRank(words, secs) {
+  if (!words.length) return [];
+  const say = {}; let sum = 0;
+  for (const w of words) { const df = secs.filter(s => helpCount(s.title + s.text, w)).length; say[w] = Math.log(1 + secs.length / (df || 1)); sum += say[w]; }
+  for (const w of words) say[w] *= words.length / (sum || 1);
+  const got = secs.map((s, i) => ({i, has: words.filter(w => helpCount(s.title + s.text, w)).length,
+    score: words.reduce((a, w) => a + say[w] * (5 * (helpCount(s.title, w) > 0) + Math.min(helpCount(s.text, w), 4)), 0)}));
+  const most = Math.max(...got.map(g => g.has));
+  return most ? got.filter(g => g.has === most).sort((a, b) => b.score - a.score || a.i - b.i).map(g => g.i) : [];
+}
+// a word of the search as it may stand in the text (ae: ä or ae, ss: ß or ss), with any ending
+const helpMarkRe = w => w === 'KONTOR' ? 'kontors?' : w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/ae/g, '(?:ae|ä)').replace(/oe/g, '(?:oe|ö)').replace(/ue/g, '(?:ue|ü)').replace(/ss/g, '(?:ss|ß)') + (w.length < 4 ? '(?![\\p{L}\\p{N}])' : '');
 function bindHilfe(main) {
   const body = $('#help-body', main); if (!body) return;
   helpAppLinks(body);
-  // Abschnitte = Ueberschrift h3 (## im Text) bis zur naechsten; Suche blendet Abschnitte ohne Treffer aus und markiert Treffer
-  const secs = []; let cur = null;
-  for (const el of [...body.children]) { if (el.tagName === 'H3' || el.tagName === 'H2') { cur = {head: el, els: [el], a: el.dataset.a || ''}; secs.push(cur); } else { if (!cur) { cur = {head: null, els: [], a: ''}; secs.push(cur); } cur.els.push(el); } }
-  const plain = new Map(secs.map(s => [s, s.els.map(e => e.textContent).join(' ').toLowerCase()]));
+  // sections: from a heading (## in the text: h3, ### : h4) to the next; the search hides sections without a hit and marks the
+  // words -- a part (###) found shows the heading of its section above it (where it stands)
+  const secs = []; let cur = null, top = null;
+  for (const el of [...body.children]) {
+    if (/^H[234]$/.test(el.tagName)) { cur = {head: el, els: [el], a: el.dataset.a || '', up: el.tagName === 'H4' ? top : null}; if (!cur.up) top = cur; secs.push(cur); }
+    else { if (!cur) { cur = {head: null, els: [], a: ''}; secs.push(cur); } cur.els.push(el); }
+  }
+  const folded = new Map(secs.map(s => { const parts = s.els.filter(e => e !== s.head).map(e => helpFold(e.textContent));
+    return [s, {title: helpFold(s.head ? s.head.textContent : ''), parts, text: parts.join('')}]; }));
   const unmark = () => $$('mark.hm', body).forEach(m => m.replaceWith(document.createTextNode(m.textContent)));
   const search = q => {
     HELP.q = q; unmark(); body.normalize();
-    const w = q.trim().toLowerCase(); let n = 0;
+    const words = helpWords(q), ranked = helpRank(words, secs.map(s => folded.get(s))), shown = new Set(ranked.map(i => secs[i]));
+    HELP.hits = ranked.map(i => secs[i].a);
+    const above = new Set([...shown].map(s => s.up).filter(Boolean));
     for (const s of secs) {
-      const hit = !w || plain.get(s).includes(w); if (hit && w) n++;
-      s.els.forEach(e => e.classList.toggle('hidden', !hit));
-      const tl = $(`.help-toc a[data-a="${s.a}"]`, main); if (tl) tl.classList.toggle('hidden', !hit);
-      if (hit && w) s.els.forEach(e => { const tw = document.createTreeWalker(e, NodeFilter.SHOW_TEXT); const nodes = []; while (tw.nextNode()) nodes.push(tw.currentNode);
-        nodes.forEach(nd => { const i = nd.nodeValue.toLowerCase().indexOf(w); if (i < 0) return; const r = document.createRange(); r.setStart(nd, i); r.setEnd(nd, i + w.length); const m = document.createElement('mark'); m.className = 'hm'; r.surroundContents(m); }); });
+      const hit = !words.length || shown.has(s);
+      s.els.forEach(e => e.classList.toggle('hidden', !hit && !(e === s.head && above.has(s))));
+      const tl = $(`.help-toc a[data-a="${s.a}"]`, main); if (tl) tl.classList.toggle('hidden', !hit && !above.has(s));
     }
-    HELP.n = n; HELP.i = -1; step(1, true);
-    if (!w) $('#help-n', main).textContent = '';
+    // the words marked in the sections shown, the best section first (↩ goes on from there, section by section)
+    const re = words.length ? new RegExp(words.map(helpMarkRe).join('|'), 'giu') : null;
+    HELP.marks = [];
+    if (re) for (const i of ranked) for (const e of secs[i].els) {
+      const tw = document.createTreeWalker(e, NodeFilter.SHOW_TEXT); const nodes = []; while (tw.nextNode()) nodes.push(tw.currentNode);
+      for (const nd of nodes) {
+        const found = [...nd.nodeValue.matchAll(re)]; if (!found.length) continue;
+        const frag = document.createDocumentFragment(); let at = 0;
+        for (const m of found) { frag.append(nd.nodeValue.slice(at, m.index)); const mk = document.createElement('mark'); mk.className = 'hm'; mk.dataset.s = secs[i].a; mk.textContent = m[0]; frag.append(mk); HELP.marks.push(mk); at = m.index + m[0].length; }
+        frag.append(nd.nodeValue.slice(at)); nd.replaceWith(frag);
+      }
+    }
+    HELP.n = ranked.length; HELP.i = -1; step(1, true);
+    if (!words.length) $('#help-n', main).textContent = '';
   };
   // through the marked hits: the first at once, ↩ / ⌘G the next, ⇧↩ / ⇧⌘G the one before -- the current one stronger, in view
   const step = (d, first) => {
-    const ms = $$('mark.hm', body), w = HELP.q.trim();
+    const ms = (HELP.marks || []).filter(m => m.isConnected), w = HELP.q.trim();
     $$('mark.hm.on', body).forEach(m => m.classList.remove('on'));
     if (ms.length) {
       HELP.i = HELP.i < 0 ? (d > 0 ? 0 : ms.length - 1) : (HELP.i + d + ms.length) % ms.length;
@@ -9085,11 +9152,11 @@ async function vEinstellungenAssistent() {
     <div class="as-list" id="as-mem-list"><div class="as-item muted small"><span>${t('ki_laedt_kurz')}</span></div></div>
     <div class="row tight as-mem-foot"><button class="small secondary" id="as-mem-export" title="${esc(t('ki_g_exportieren_tip'))}" disabled>${t('ki_g_exportieren')}</button><input type="file" id="as-mem-file" class="file-in" accept=".md,.markdown,.txt,.json,text/markdown,text/plain,application/json"><label for="as-mem-file" class="file-btn" id="as-mem-import" title="${esc(t('ki_g_importieren_tip'))}">${t('ki_g_importieren')}</label><button class="small secondary hidden" id="as-mem-unimport"></button><button class="small secondary" id="as-mem-all" disabled>${t('ki_g_alles_vergessen')}</button></div>
     <div id="as-mem-report" class="findings"></div></div>
-  </div><div data-ex="settings.assistant.rights"><h2>${t('ki_rechte')}</h2>
+  </div><div data-ex="settings.assistant.rights"><h2>${t('ki_rechte')}${hq('ki_sicher')}</h2>
   <div class="as-rights">${[['ki_rg_lesen', ['read']], ['ki_rg_zeigen', ['navigate']], ['ki_rg_aendern', ['enter_values', 'categorize', 'book', 'rules', 'receipts']], ['ki_rg_zugang', ['remote']], ['ki_rg_internet', ['internet']]].map(([g, ks]) =>
     `<div class="as-rg"><div class="as-rg-h">${t(g)}${g === 'ki_rg_aendern' ? hq('ki_eintragen') : g === 'ki_rg_internet' ? hq('ki_internet') : ''}</div>${ks.map(k => `<label class="chk"><input type="checkbox" class="as-right" data-r="${k}" ${(k === 'read' ? r.figures && r.transactions && r.page : r[k]) ? 'checked' : ''}> <span>${t(`ki_r_${k}`)}</span></label>${k === 'internet' ? webKey : ''}`).join('')}</div>`).join('')}</div>
   <div class="note">${t('ki_nie')}${more('assistant-rights')}</div>
-  </div><details class="as-log" id="as-log" data-ex="settings.assistant.changes"><summary>${t('ki_aenderungen')}</summary><div id="as-log-list" class="muted small">${t('ki_laedt_kurz')}</div></details></div>`;
+  </div><details class="as-log" id="as-log" data-ex="settings.assistant.changes"><summary title="${esc(t('ki_aenderungen_tip'))}">${t('ki_aenderungen')}</summary><div id="as-log-list" class="muted small">${t('ki_laedt_kurz')}</div></details></div>`;
 }
 // Einstellungen -> KI-Assistent -> Gedächtnis: what it was told to remember -- look, add, change, pin, forget (only at the Mac)
 async function asMemLoad(body, more, path) {
