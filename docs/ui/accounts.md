@@ -118,7 +118,9 @@ the user's categories counts there – neutral, no warning. It follows the table
 ### accounts.positions.table — Kategorien und Positionen
 One row per category, indented under its parent (parents in bold).
 - **Kategorie in MoneyMoney**. Tag "zwischen Bereichen": a category without a chosen position that has payments between two of
-  the user's areas – those count as contribution or withdrawal until a position is chosen (hover: the amount).
+  the user's areas – those count as contribution or withdrawal until a position is chosen (hover: the amount). The same tag, as
+  information, on a category proposed as Kapitalerträge with profit distributions between the user's areas: those count as
+  withdrawal (the profit is already in the participation's value) until a position is chosen; from other companies investment income.
 - **Umsätze**: number of booked transactions with this category or one below it, in all areas, over all months read (a click lists
   them).
 - **Letzte 12 Monate**: their sum from the same day a year ago up to today, whole euros, inflows positive, outflows negative (red);

@@ -276,11 +276,12 @@ def holding_lends_to_the_partnership(d, lag, k, i):
 
 
 def dividend(d, lag, k, i):
-    """The GmbH pays you a dividend: income for you, a withdrawal for the company."""
+    """The GmbH pays you a dividend: a withdrawal on both sides, never investment income for you -- its profit is already in
+    your wealth through the company (user, 2026-11-24); your net worth rises by it only because no participation is kept here."""
     x = 8000 * k
     return Sc([(i, "h_kk", d, -x, {"iban": "DE11", "purpose": "Gewinnausschüttung"}), (i + 1, "giro", d + timedelta(lag), x, {"iban": "DE21", "cat": "Dividenden"})],
               nw={"Privat": x, "Holding GmbH": -x},
-              rows=[("Privat", "income", "Kapitalerträge", x, True), ("Holding GmbH", "financing", "Einlagen/Entnahmen Gesellschafter", -x, True)])
+              rows=[("Privat", "investing", "Einlage/Entnahme Holding GmbH", x, True), ("Holding GmbH", "financing", "Einlagen/Entnahmen Gesellschafter", -x, True)])
 
 
 def transfer_to_savings(d, lag, k, i):

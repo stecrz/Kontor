@@ -307,6 +307,14 @@ anhängen – nie löschen.
   Einnahmen aufzublähen; die Firma bucht die Erstattung bei ihren Kosten. Seine übrigen Kategorien hatten schon je genau einen Platz.
   Einen eigenen Kategorienbaum in Kontor hatte er nur für den Fall vorgeschlagen, dass kein allgemeingültiger Baum möglich ist – nicht
   nötig: die festen Positionen sind dieser Baum, darunter bleiben die Kategorien in MoneyMoney frei. (umgesetzt in 3.17.73)
+  Geändert (Nutzer, 2026-11-24 – „Eine Gewinnausschüttung ist doch eine Entnahme“; „Sind Einrichtung und Ausstattung, auch meine
+  Sauna, wirklich Wohnkosten?“): Zwischen seinen Bereichen zählt eine Ausschüttung als Entnahme – nach Kategorie oder Verwendungszweck,
+  solange er keine Position wählt –, denn der Gewinn steckt schon im Wert seiner Beteiligung (sein Anteil am Nettovermögen der
+  Gesellschaft); als Kapitalertrag zählte er doppelt. Von Gesellschaften außerhalb seiner Bereiche bleibt sie Kapitalertrag (wie eine
+  Dividende), für die Steuer auch bei der eigenen GmbH (Anlage KAP). Zinsen auf Darlehen zwischen den Bereichen bleiben Ertrag und
+  Kosten. Einrichtung, Ausstattung und Haushaltsgeräte sind Lebenshaltung, nicht Wohnen (Miete, Nebenkosten – so trennt es auch die
+  amtliche Statistik), in einer Firma Investitionen (wie die Empfehlung sagt); eine Kategorie „Sauna“ schlägt Kontor weiter als Freizeit vor (meist Saunabesuche) – seine eigene Sauna ordnet
+  er unter Cashflow-Positionen selbst der Lebenshaltung zu. (umgesetzt in 3.17.77)
 - **Empfohlene Kategorien nur zur Orientierung** (Nutzer, 2026-11-24): keine Zählung „X von Y vorhanden“, kein „fehlt“ – nicht jede
   Zeile gilt für jeden (ohne Geschäft keine Umsatzerlöse). Die Karte zeigt je Zeile neutral, welche seiner Kategorien dort zählt, sonst „keine“.
   (umgesetzt in 3.17.46)
