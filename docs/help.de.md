@@ -332,10 +332,13 @@ Die Planung plant jede Position und die Kategorien darin; ein Budget aus MoneyMo
 | Kategorie in MoneyMoney | Position |
 |---|---|
 | Gehalt, Kapitalerträge, Wohnen › Miete …, Lebenshaltung › …, Mobilität, Versicherungen … | jeweils die gleichnamige |
-| Minijob, Bonus | Arbeitseinkommen |
+| Minijob, Bonus, Tantieme, Nebeneinkünfte aus eigener Arbeit (Honorare, Buchverkäufe) | Arbeitseinkommen |
+| Gewinnausschüttung (etwa einer GmbH) | Kapitalerträge – Geld aus einer GbR ist dagegen eine Entnahme: Einlagen & Entnahmen, zwischen deinen Bereichen erkennt Kontor sie selbst |
+| Verkäufe gebrauchter Sachen (Kleinanzeigen, eBay) | Sonstige Einnahmen – „Verkauf“ in einer Firma: Umsatzerlöse |
 | Rente, Pension, Kindergeld, Elterngeld | Rente & Sozialleistungen (Firma: Zuschüsse & Förderungen) |
 | Taschengeld, Unterhalt, Erbschaft – bekommen | Unterhalt & Geschenke (kein Arbeitseinkommen: keine Gegenleistung) |
 | Taschengeld, Unterhalt, Geschenke, Spenden – gegeben | Unterhalt, Geschenke & Spenden |
+| Auslagen – was du für andere zahlst und erstattet bekommst (etwa Tanken für deine Firma): Zahlung und Erstattung in dieselbe Kategorie | Auslagen – hebt sich auf, bis zur Erstattung steht der Betrag dort offen; die Firma bucht die Erstattung bei ihren Kosten (etwa Mobilität) |
 | Lebensmittel, Restaurant, Friseur, Drogerie, Haustier | Lebenshaltung (Essen und Trinken immer hier, zu Hause wie auswärts) |
 | Kita, Schule, Studium, Weiterbildung | Bildung & Betreuung (Firma: Fortbildung) |
 | Haftpflicht, Kranken-, Unfallversicherung | Versicherungen – eine Beitragserstattung bleibt in ihrer Kategorie und mindert den Beitrag |

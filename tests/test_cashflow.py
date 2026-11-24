@@ -739,6 +739,40 @@ class Positions(Reconciles):
         self.assertEqual(R.position_row("benefits", True), ("Zuschüsse & Förderungen", "pos_benefits_g"))
         self.assertEqual(R.position_row("education", False), ("Bildung & Betreuung", "pos_education"))
 
+    def test_the_users_examples_have_one_place_each(self):
+        # (2026-11-24) profit-related pay, a GmbH's distribution, money from a GbR, advances paid back by the company, selling
+        # used things and earning on the side: each lands in the position of its purpose -- "Verkauf" is revenue in a company only
+        import report as R
+        cases = {("Einkommen / Tantieme", True, False): "work_income", ("Tantieme", False, True): "staff",
+                 ("Gewinnausschüttung", True, False): "capital_income", ("Gewinnausschüttung", True, True): "capital_income",     # a holding
+                 ("Gewinnausschüttung", False, True): "partners", ("Entnahme GbR", True, False): "partners",
+                 ("Auslagen", False, False): "advances", ("Auslagen", True, False): "advances", ("Auslagenerstattung", True, False): "advances",
+                 ("Firma / Auslagen", False, True): "advances", ("Durchlaufende Posten", False, True): "advances",
+                 ("Kleinanzeigen", True, False): "other_income", ("Einnahmen / Verkäufe", True, False): "other_income",
+                 ("eBay", True, False): "other_income", ("Autoverkauf", True, False): "other_income", ("eBay", False, False): "other_expenses",
+                 ("Verkäufe", True, True): "revenue", ("eBay", True, True): "revenue", ("Verkaufserlöse", True, True): "revenue",
+                 ("Umsatzerlöse", True, False): "revenue", ("Nebeneinkünfte", True, False): "work_income",
+                 ("Nebenverdienst", True, False): "work_income", ("Mieterlöse", True, False): "rental", ("Mieterlöse", True, True): "rental"}
+        for (path, inc, firm), want in cases.items():
+            self.assertEqual(R.propose_position(path, inc, firm), want, (path, inc, firm))
+
+    def test_advances_paid_back_by_your_company_cancel_out(self):
+        # fuel paid privately for the partnership, paid back by it a month later: both in "Auslagen" -- the private cash flow shows
+        # the open amount in that row and nothing among income, mobility or contributions; the partnership books its own cost
+        data = build([(1, "giro", date(2026, 1, 20), -80.0, {"cat": "Auslagen", "name": "Tankstelle"}),
+                      (2, "kk", date(2026, 2, 3), -80.0, {"iban": "DE11", "cat": "Mobilität", "purpose": "Auslagen Januar"}),
+                      (3, "giro", date(2026, 2, 3), 80.0, {"iban": "DE21", "cat": "Auslagen"}),
+                      (4, "giro", date(2026, 2, 10), -45.5, {"cat": "Auslagen", "name": "Bahn"}),
+                      (5, "giro", date(2026, 3, 2), 45.5, {"cat": "Auslagen", "name": "Arbeitgeber", "iban": "DE99"})])
+        self.assertAddsUp(data)
+        p, g = rows(data["Privat"], "expenses"), rows(data["Muster GbR"])
+        a = p["Auslagen"]["amounts"]
+        self.assertEqual((a["2026-01"], a.get("2026-02"), a["2026-03"]), (-80.0, 34.5, 45.5))
+        self.assertAlmostEqual(sum(a.values()), 0.0, 2)                                        # cancels out, to the cent
+        self.assertFalse({"Einlage/Entnahme Muster GbR", "Mobilität", "Erstattungen", "Sonstige Einnahmen"} & set(rows(data["Privat"])))
+        self.assertEqual(g["Mobilität"]["amounts"]["2026-02"], -80.0)
+        self.assertNotIn("Einlagen/Entnahmen Gesellschafter", g)
+
     def test_every_position_has_its_text(self):
         import json
         import report as R

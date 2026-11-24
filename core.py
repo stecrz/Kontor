@@ -1330,15 +1330,15 @@ def positions_overview(ledger: Ledger, config: dict, categories: List[dict], tod
     for b in bereiche:
         accs = {a.uuid for a in b["leaves"]}
         n = Counter(norm_cat(t.category_path) for t in ledger.txs if t.booked and t.category_path and t.account_uuid in accs)
-        per_area.append((category_totals(ledger, accs), n))
+        per_area.append((category_totals(ledger, accs), n, b.get("kind") == "company"))
 
     def proposals(p: str) -> List[str]:
         if by_name(p):
             return ["transfer"]
         c: Counter = Counter()
-        for tot, n in per_area:
+        for tot, n, firm_area in per_area:
             if n.get(p):
-                c[propose_position(p, tot.get(p, 0.0) > 0)] += n[p]
+                c[propose_position(p, tot.get(p, 0.0) > 0, firm_area)] += n[p]
         return [k for k, _ in c.most_common()]
     kf = config.get("cashflow") or {}
     names_only = dict(config, cashflow=dict(kf, positions={}))

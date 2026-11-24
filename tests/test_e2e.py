@@ -4845,8 +4845,10 @@ class BrowserTest(unittest.TestCase):
                 self.assertEqual(pg.inner_text("details.kb > summary").strip(), "Empfohlene Kategorien"); self.assertEqual(pg.locator("#kb-sum").count(), 0)
                 n0 = pg.locator(".kb-table tr.kb-ok").count()
                 kb = pg.inner_text(".kb-table"); self.assertIn("Finanzierung", kb); self.assertIn("Am besten jedes Darlehen", kb); self.assertIn("Empfohlen in MoneyMoney", kb); self.assertNotIn("Umsatzerlöse", kb); self.assertIn("Wohnen", kb)   # private side first
+                self.assertIn("Sonstige Einnahmen", kb); self.assertIn("Auslagen", kb); self.assertIn("Tantieme · Nebeneinkünfte", kb)
                 pg.click(".kb-side button[data-side='f']"); kb = pg.inner_text(".kb-table")                 # business: its rows and names
                 self.assertIn("Umsatzerlöse", kb); self.assertIn("Gesellschafter", kb); self.assertIn("Raumkosten", kb); self.assertNotIn("Lebenshaltung", kb)
+                self.assertIn("Auslagen", kb); self.assertNotIn("Sonstige Einnahmen", kb)
                 pg.click(".kb-side button[data-side='p']"); self.assertIn("Lebenshaltung", pg.inner_text(".kb-table"))   # rows of the companies too
                 # every category to create is a row of its own (✓/○): Darlehen only their parent, Tilgung and Zinsen indented below it
                 # (two positions, two categories); the property's purchase indented below it; the grey names after "›" only examples

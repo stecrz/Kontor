@@ -100,8 +100,8 @@ business: no Umsatzerlöse). The recommended category tree for MoneyMoney – on
 A first line gives the rule: one tree for every kind of area (private, sole trader, GbR, GmbH …) – the account decides the
 area, the category only the purpose; a name meaning different things by side (receiving or paying a salary) needs two. A
 switch **Privat | Geschäftlich** shows one side at a time (remembered; at first Geschäftlich only for someone with companies
-alone): rows for both (Kapitalerträge, Versicherungen, Steuern, Darlehen, Umbuchung, Je Immobilie …) on each side, private-only
-rows (Gehalt, Lebenshaltung, Gesundheit, Freizeit, Unterhalt …) and business-only rows (Umsatzerlöse, Wareneinkauf, Personal,
+alone): rows for both (Kapitalerträge, Versicherungen, Steuern, Auslagen, Darlehen, Umbuchung, Je Immobilie …) on each side, private-only
+rows (Gehalt, Sonstige Einnahmen › Verkäufe, Lebenshaltung, Gesundheit, Freizeit, Unterhalt …) and business-only rows (Umsatzerlöse, Wareneinkauf, Personal,
 Betriebskosten, Umsatzsteuer, Gesellschafter) only on theirs, each side with its own names ("Wohnen" / "Raumkosten", "Sparen &
 Anlegen" / "Investitionen") and tips; "Bei dir" names the user's categories of that side (a category counts as business when
 most of its bookings are in a company's accounts).

@@ -1,5 +1,10 @@
 # Änderungen
 
+## 3.17.73 (2026-11-24 16:04)
+- Cashflow: neue Position „Auslagen“ – was du für andere zahlst und erstattet bekommst (etwa Tanken für die Firma), hebt sich auf
+- Cashflow-Positionen: erhaltene Gewinnausschüttung als Kapitalertrag vorgeschlagen; private Verkäufe (Kleinanzeigen, eBay) als Sonstige Einnahmen, in einer Firma Umsatzerlöse; Nebeneinkünfte als Arbeitseinkommen
+- Empfohlene Kategorien: Auslagen, Sonstige Einnahmen › Verkäufe, Gehalt › Tantieme · Nebeneinkünfte, Kapitalerträge › Ausschüttungen
+
 ## 3.17.72 (2026-11-24 15:30)
 - Cashflow-Positionen: Empfohlene Kategorien – Darlehen mit Tilgung und Zinsen als eigene, eingerückte Zeilen
 - Cashflow-Positionen: Immobilie direkt nach den Ausgaben, Kauf eingerückt; Zeile nennt, wohin Miete, Kosten, Kauf und Darlehen zählen

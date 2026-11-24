@@ -297,6 +297,16 @@ anhängen – nie löschen.
   Pflichtbeiträge „Versicherungen“. Erstattungen (Nutzer): zu viel gezahlte Beiträge bucht er in die Kategorie des Beitrags (mindert
   ihn), erstattete Kostenrechnungen unter „Erstattungen“. Die empfohlenen Kategorien zeigen privat und geschäftlich
   getrennt (Umschalter; Nutzer: sonst unübersichtlich). (umgesetzt in 3.17.68)
+- **Kategorienbaum ergänzt** (Nutzer, 2026-11-24 – er fragte nach Beispielen, die er nicht einordnen konnte, und wünschte fehlende
+  Positionen): Tantieme und Nebeneinkünfte aus eigener Arbeit (Honorare, Buchverkäufe) sind Arbeitseinkommen; eine erhaltene
+  Gewinnausschüttung (GmbH) ist Kapitalertrag – wie „Ausschüttung“ und die Schätzung nach dem Verwendungszweck; Kontor schlug bei der
+  Kategorie „Gewinnausschüttung“ vorher „Einlagen & Entnahmen“ vor –, Geld aus einer GbR ist eine Entnahme (zwischen seinen Bereichen
+  erkennt Kontor sie selbst); Verkäufe gebrauchter Sachen (Kleinanzeigen, eBay) sind privat „Sonstige Einnahmen“, in einer Firma
+  Umsatzerlöse (Vorschlag je Bereich); neue Position „Auslagen“ unter den Ausgaben für das, was er für andere zahlt und erstattet
+  bekommt (etwa Tanken für seine Firma): Zahlung und Erstattung in dieselbe Kategorie, dann hebt es sich auf, statt Mobilität und
+  Einnahmen aufzublähen; die Firma bucht die Erstattung bei ihren Kosten. Seine übrigen Kategorien hatten schon je genau einen Platz.
+  Einen eigenen Kategorienbaum in Kontor hatte er nur für den Fall vorgeschlagen, dass kein allgemeingültiger Baum möglich ist – nicht
+  nötig: die festen Positionen sind dieser Baum, darunter bleiben die Kategorien in MoneyMoney frei. (umgesetzt in 3.17.73)
 - **Empfohlene Kategorien nur zur Orientierung** (Nutzer, 2026-11-24): keine Zählung „X von Y vorhanden“, kein „fehlt“ – nicht jede
   Zeile gilt für jeden (ohne Geschäft keine Umsatzerlöse). Die Karte zeigt je Zeile neutral, welche seiner Kategorien dort zählt, sonst „keine“.
   (umgesetzt in 3.17.46)

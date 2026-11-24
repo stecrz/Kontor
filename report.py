@@ -926,7 +926,8 @@ POSITIONS = [  # (key, section, row -- German, the key of your planning; shown i
     ("leisure", "expenses", "Freizeit & Reisen"),
     ("property_costs", "expenses", "Objektkosten"), ("administration", "expenses", "Beratung & Gebühren"), ("taxes", "expenses", "Steuern"),
     ("vat", "expenses", "Umsatzsteuer"),
-    ("donations", "expenses", "Unterhalt, Geschenke & Spenden"), ("other_expenses", "expenses", "Sonstige Ausgaben"),
+    ("donations", "expenses", "Unterhalt, Geschenke & Spenden"), ("advances", "expenses", "Auslagen"),
+    ("other_expenses", "expenses", "Sonstige Ausgaben"),
     ("saving", "investing", "Sparen & Anlegen"), ("repayment", "financing", "Tilgung"), ("loan_interest", "financing", "Zinsen"),
     ("partners", "financing", "Einlagen & Entnahmen"),
     ("ignore", "", ""),
@@ -950,18 +951,25 @@ def position_row(pos: str, company: bool) -> Tuple[str, str]:
 POSITION_FIRST = [  # (words, in, out, only at the start of a word); not for costs of these (fees, card) -- see FIRST_NOT
     (("zins", "finanzierungskost"), "capital_income", "loan_interest", False),
     (("tilgung", "kredit", "darlehen", "finanzierung", "annuit"), "repayment", "repayment", False),
-    (("einlage", "entnahme", "privateinlage", "privatentnahme", "kapitaleinlage", "gewinnausschuett", "gewinnverwendung"), "partners", "partners", True),
+    (("einlage", "entnahme", "privateinlage", "privatentnahme", "kapitaleinlage", "gewinnverwendung"), "partners", "partners", True),
+    # a distribution received (from a GmbH) is investment income, as "Ausschüttung" and the estimate by the booking's words;
+    # paid out, it is equity (money from a GbR to its partners is a withdrawal: "Entnahme", above)
+    (("gewinnausschuett",), "capital_income", "partners", True),
     (("sparen", "sparplan", "bauspar", "invest", "wertpapier", "depot", "etf", "aktie", "fonds", "geldanlage", "ruecklage", "krypto",
       "altersvorsorge", "beteiligung", "immobilienkauf", "kapitalanlage", "rentenversicherung", "riester", "ruerup", "basisrente",
       "pensionskasse", "direktversicherung", "kapitallebensversicherung", "fondspolice"), "saving", "saving", True),
 ]
 FIRST_NOT = ("gebuehr", "kosten", "entgelt", "provision", "kreditkarte")
-POSITION_CONTEXT = [(("vermiet", "immobil", "objekt"), "rental", "property_costs")]
+POSITION_CONTEXT = [(("vermiet", "immobil", "objekt", "mieterloes", "pachterloes"), "rental", "property_costs")]
+# a position may be (a company's, a person's): "Verkauf" is revenue in a company, privately selling used things (other income)
 POSITION_HINTS = [
+    # paid for others and paid back (e.g. fuel for your company) -- both in one category: it cancels out; before "erstattung"
+    (("auslage", "verauslag", "durchlaufend"), "advances", "advances"),
     (("steuerberat", "beratung", "notar", "anwalt", "kontofuehr", "gebuehr", "bankgeb", "buchhalt", "buchfuehr"), "other_income", "administration"),
     (("wareneinkauf", "waren", "lieferant", "material"), "refunds", "goods"),
     (("personal", "loehne", "sozialversicher", "sozialabgab", "lohnneben"), "refunds", "staff"),
-    (("umsatzerl", "erloes", "kasseneinnahm", "verkauf"), "revenue", "other_expenses"),
+    (("umsatzerl", "kasseneinnahm"), "revenue", "other_expenses"),
+    (("erloes", "verkauf", "verkaeuf", "kleinanzeig", "ebay", "vinted", "flohmarkt"), ("revenue", "other_income"), "other_expenses"),
     (("betriebskost", "betriebsbedarf", "marketing", "werbung", "software", "it-kost"), "refunds", "operations"),
     (("ladenmiete", "raumkost", "geschaeftsmiete", "gewerbemiete"), "rental", "housing"),
     (("hausgeld", "instandhalt", "reparatur", "hausverwalt", "grundsteuer"), "refunds", "property_costs"),
@@ -974,7 +982,7 @@ POSITION_HINTS = [
       "pflegegeld", "mutterschaftsgeld", "bafoeg", "sozialleistung", "sozialhilfe", "grundsicherung", "kurzarbeit", "zuschuss", "zuschuesse",
       "foerdermittel", "foerderung", "subvention"), "benefits", "other_expenses"),
     (("gehalt", "gehaelt", "lohn", "loehn", "tantieme", "bonus", "gratifikation", "verguetung", "honorar", "arbeit", "minijob", "nebenjob",
-      "aushilfe", "werkstudent"), "work_income", "staff"),
+      "aushilfe", "werkstudent", "nebeneink", "nebenverdienst", "nebentaetig"), "work_income", "staff"),
     (("dividend", "kapitalertr", "ausschuett"), "capital_income", "partners"),
     (("mieteinnahm", "pacht"), "rental", "property_costs"),
     (("erstattung", "rueckzahlung", "gutschrift", "cashback"), "refunds", "other_expenses"),
@@ -1091,13 +1099,14 @@ def guess_position(t: Tx, company: bool, by_name: bool = True) -> Optional[str]:
     return None
 
 
-def propose_position(path: str, income: bool) -> str:
-    """Kontor's proposal for a category (by its words); income: its money mostly comes in."""
-    return recognised_position(path, income) or ("other_income" if income else "other_expenses")
+def propose_position(path: str, income: bool, company: bool = False) -> str:
+    """Kontor's proposal for a category (by its words); income: its money mostly comes in; company: in a company's area."""
+    return recognised_position(path, income, company) or ("other_income" if income else "other_expenses")
 
 
-def recognised_position(path: str, income: bool) -> Optional[str]:
-    """The position a category's words name -- None when none of them is known (then it is "other" income or expenses)."""
+def recognised_position(path: str, income: bool, company: bool = False) -> Optional[str]:
+    """The position a category's words name -- None when none of them is known (then it is "other" income or expenses).
+    company: in a company's area (a hint may name one position for a company, another for a person)."""
     low = fold_text(path)
     name = low.split(" / ")[-1]
     low_l = fold_text(legacy_cat(path))                # read as before 3.13.19 (every slash a level) first: the same proposals
@@ -1116,7 +1125,8 @@ def recognised_position(path: str, income: bool) -> Optional[str]:
     for text in texts:
         for words, pin, pout in POSITION_HINTS:
             if _has(words, text):
-                return pin if income else pout
+                pos = pin if income else pout
+                return (pos[0] if company else pos[1]) if isinstance(pos, tuple) else pos
     # "Einkommen" names work income only as the category's own name (its subcategories -- child benefit, pension -- are no
     # salary) and as a word of its own ("Hereinkommende Zahlungen" is none)
     if income and any(_has(("einkommen",), n, True) for n in dict.fromkeys((name_l, name))):
@@ -1140,16 +1150,16 @@ def category_totals(ledger: Ledger, accounts: Optional[Set[str]] = None) -> Dict
     return dict(out)
 
 
-def position_of(path: str, config: dict, totals: Dict[str, float]) -> Tuple[str, bool]:
+def position_of(path: str, config: dict, totals: Dict[str, float], company: bool = False) -> Tuple[str, bool]:
     """(position, yours) of a category: what you chose for it or for the nearest category above it (Kategorien ->
-    Cashflow-Positionen), otherwise Kontor's proposal."""
+    Cashflow-Positionen), otherwise Kontor's proposal (company: for a company's area)."""
     mine = my_positions(config)
     parts = path.split(" / ")
     for i in range(len(parts), 0, -1):
         p = " / ".join(parts[:i])
         if p in mine:
             return mine[p], True
-    return propose_position(path, totals.get(path, 0.0) > 0), False
+    return propose_position(path, totals.get(path, 0.0) > 0, company), False
 
 
 def my_positions(config: dict) -> Dict[str, str]:
@@ -1261,7 +1271,7 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
             # the most specific property's category (one property's may lie below another's)
             hits = [c for c in objekte if cat == c or cat.startswith(c + " / ")]
             obj = objekte[max(hits, key=len)] if hits else None
-            pos, yours = position_of(cat, config, totals)
+            pos, yours = position_of(cat, config, totals, company)
             if obj and (pos in ("repayment", "loan_interest") or (yours and pos in ("saving", "ignore", "partners"))):
                 obj = None
             r = pos_memo[cat] = (pos, obj)
@@ -1276,8 +1286,8 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
         c0 = norm_cat(t.category_path)
         if not c0:
             return c0, guess_position(t, company, by_name=False), False
-        g0, yours = position_of(c0, config, totals)
-        return c0, (g0 if yours else recognised_position(c0, totals.get(c0, 0.0) > 0)), yours
+        g0, yours = position_of(c0, config, totals, company)
+        return c0, (g0 if yours else recognised_position(c0, totals.get(c0, 0.0) > 0, company)), yours
 
     def paid_for(g0: Optional[str]) -> bool:
         return g0 in POS and (POS[g0][0] in ("income", "expenses") or g0 == "loan_interest")      # interest paid is a cost as well
