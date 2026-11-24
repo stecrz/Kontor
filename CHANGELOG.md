@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.17.49 (2026-11-24 02:37)
+- Entwicklung: Claude in Chrome in Kontor-Sitzungen gesperrt – weniger Grundlast je Schritt
+
 ## 3.17.48 (2026-11-24 02:31)
 - Bilanz: Depot mit einem Wertpapier – Verlauf zeigt das Wertpapier mit Namen und ISIN statt „Unbenannt 1“ (Kontostände neu einlesen)
 

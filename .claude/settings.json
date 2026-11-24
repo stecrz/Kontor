@@ -50,5 +50,10 @@
         ]
       }
     ]
-  }
+  },
+  "deniedMcpServers": [
+    {
+      "serverName": "claude-in-chrome"
+    }
+  ]
 }

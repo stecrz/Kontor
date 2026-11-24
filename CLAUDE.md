@@ -32,7 +32,8 @@ Entschiedenes nie löschen – auch Abgelehntes, immer mit dem Grund –, nach d
 - Werkzeuge (Python wie auf GitHub, Python 3.9 für den Starter, Chrome, ESLint, sqlcipher): `.claude/tools/setup.sh` läuft beim
   Start jeder Sitzung von selbst im Hintergrund (Ergebnis in `/tmp/kontor-setup.out`); meldet `release.py`, dass etwas fehlt: von Hand.
 - Leitplanken (`.claude/settings.json`, `.claude/hooks/`): Sperren für Kontors Datenordner, MoneyMoneys Datenbank, Überweisungen,
-  Force-Push und das Ganzlesen großer Dateien; Versionskette vor jedem Push; Lagebild zu Beginn jeder Aufgabe; Erinnerung, wenn
+  Force-Push und das Ganzlesen großer Dateien; Claude in Chrome gesperrt (`deniedMcpServers` – Kontor prüft mit dem Chrome der
+  Sitzung, die Werkzeuge kosteten nur Kontext); Versionskette vor jedem Push; Lagebild zu Beginn jeder Aufgabe; Erinnerung, wenn
   eine Änderung nicht abgeschlossen ist.
 
 ## Sparsam arbeiten (Nutzer, 2026-11-23/24: Credits nur, wo sie etwas bringen – ohne Abstriche bei Sicherheit und Korrektheit)
