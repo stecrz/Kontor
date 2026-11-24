@@ -126,6 +126,32 @@ Erneutes Einlesen ersetzt alle bisher eingelesenen Stände – ein Zurücksetzen
 
 **Danach zeichnet Kontor selbst auf**: Bankkonten rechnet Kontor ohnehin exakt aus den Umsätzen zurück. Für Depots merkt sich Kontor bei jedem Lesen den aktuellen Wert. Der Dienst läuft im Hintergrund, auch ohne geöffnetes Kontor-Fenster – nach einem Neustart des Macs oder einem Update, sobald du dich einmal bei Kontor angemeldet hast –, und liest innerhalb von etwa 20 Sekunden, sobald MoneyMoney offen und entsperrt ist – ein kurzer Blick in MoneyMoney genügt. Jeder Stand zählt für den Monat, in dem MoneyMoney ihn bei der Bank abgerufen hat. Hat MoneyMoney abgerufen, während Kontor nicht lief, oder fehlt ein Monat, weist Konten & Regeln → Kontostände darauf hin; dort steht auch je Depot, ab wann Kontor Stände kennt.
 
+<a id="setup-loans"></a>
+### Darlehen einrichten
+
+Wie du ein Darlehen in MoneyMoney führst, damit Bilanz, Cashflow und Steuer stimmen – für geliehenes Geld (Verbindlichkeit) und verliehenes (Forderung, die Vorzeichen umgekehrt):
+
+- **Mit eigenem Konto bei der Bank in MoneyMoney** (etwa eine Baufinanzierung, die MoneyMoney abruft): nichts weiter zu tun – die Bank bucht Auszahlung, Tilgung und Zinsen, Kontor findet die Gegenbuchungen.
+- **Sonst ein manuelles Konto** (Offline-Konto) in MoneyMoney anlegen – für ein Privatdarlehen von Familie oder Freunden, ein Verkäuferdarlehen oder ein Bankdarlehen, das MoneyMoney nicht abruft – und unter Konten & Regeln → Konten die Position **Verbindlichkeiten** wählen (verliehen: **Forderungen**).
+- **Auszahlung**: zum Eingang auf dem Bankkonto die Gegenbuchung im Darlehenskonto (geliehen: minus). Im Cashflow steht das als **Aufnahme** unter Finanzierung.
+- **Rate**: zu jeder Zahlung die Gegenbuchung mit der **vollen Rate** im Darlehenskonto, dazu die Zinsen des Monats als eigene Buchung dort (geliehen: minus, „Zinsen“ im Text). Kontor zeigt dann je Darlehen Tilgung (Rate minus Zinsen) und Zinsen, die Restschuld stimmt. Spiegelst du nur den Tilgungsanteil, passen die Beträge nicht zusammen: Die Rate steht unter „Unklar“, die Tilgung als Wertänderung.
+- **Kategorie**: nicht nötig – Kontor findet die Gegenbuchung am Betrag (höchstens drei Tage auseinander, mit „Umbuchung“ auf beiden Seiten bis zu einer Woche). „Umbuchung“ passt. Keine Einnahme- oder Ausgabenkategorie auf die Bankbuchung: Dann zählt sie als Einnahme oder Ausgabe, die Gegenbuchung als Wertänderung. Im Text der Gegenbuchung keine Wörter wie „Zins“, „Gebühr“ oder „Provision“ – solche Buchungen zählen als Zinsen.
+- **Ohne Handarbeit**: Die Buchungsregel [Manuelle Darlehen](#rules-loans) erkennt die Rate, bucht sie als Tilgung ins Darlehenskonto und jeden Monat die Zinsen; nur die Auszahlung buchst du selbst. Was du schon von Hand gebucht hast, zählt als gebucht.
+- **Zinsen kategorisieren** (ohne Darlehenskonto oder getrennt überwiesen): eine Kategorie mit „Zins“ im Namen, etwa „Ausgaben › Zinsen“ – gezahlte Zinsen zählen unter Finanzierung → Zinsen, erhaltene unter Kapitalerträge, gleich unter welcher Oberkategorie. Für erhaltene und gezahlte Zinsen zwei Kategorien: Die Summe einer Kategorie entscheidet, wo sie ganz zählt (Tagesgeldzinsen und Darlehenszinsen in einer würden verrechnet). Unter [Cashflow-Positionen](#categories-positions) steht, wo sie zählt. Je Darlehen und als Schuldzinsen für die [Steuer](#tax) zählen nur Zinsen, die im Darlehenskonto gebucht sind.
+- **Ganz ohne Konto**: die Kategorien Darlehen › Tilgung und Darlehen › Zinsen ([Empfohlene Kategorien](#categories-tree)); eine Auszahlung unter Tilgung zählt als Aufnahme. Eine Restschuld steht dann nicht in der Bilanz.
+
+<a id="setup-property"></a>
+### Immobilie einrichten
+
+Wie du eine Immobilie – Wohnung oder Haus – kaufst und in MoneyMoney buchst: Kauf, Finanzierung, Miete und Kosten.
+
+- **Konto der Immobilie**: ein manuelles Konto in MoneyMoney mit der Position **Immobilien** (Konten & Regeln → Konten). Sein Stand ist der Wert in der Bilanz; Wertanpassungen buchst du dort ohne Kategorie (Wertänderung).
+- **Kaufpreis vom eigenen Konto** (eigenes Geld): die Gegenbuchung im Konto der Immobilie – im Cashflow eine Investition in Immobilien.
+- **Darlehen direkt an den Verkäufer oder Notar ausgezahlt**: Das Geld läuft über keines deiner Konten – buche es auf beiden manuellen Konten, im Darlehenskonto minus und im Konto der Immobilie plus, beide mit der Kategorie „Umbuchung“. Im Cashflow erscheint nichts (es floss kein Geld von dir), in der Bilanz stehen Schuld und Wert. Ohne Kategorie stünden zwei gegenläufige Wertänderungen da. Das Darlehen selbst führst du wie unter [Darlehen einrichten](#setup-loans).
+- **Kaufnebenkosten** (Grunderwerbsteuer, Notar, Grundbuch, Makler): entweder als Gegenbuchung ins Konto der Immobilie – dann gehören sie zu ihrem Wert – oder unter einer Kategorie wie „Sparen & Anlegen › Kaufnebenkosten“: Kontor zählt sie als Investition, nicht als Kosten, und ohne [Zielkonto](#positions-recipients) als Geld, das das Vermögen verlässt.
+- **Miete und Kosten**: je vermietetem Objekt eine Kategorie unter **Vermietung**, etwa „Vermietung › Parkweg › Miete“ und „… › Hausgeld“ ([Empfohlene Kategorien](#categories-tree)); dasselbe Muster liest die [Steuer](#tax). Selbst bewohnt: Wohnen.
+- **Rendite und Plan**: unter [Immobilien](#properties) je Objekt eine Kalkulation; verknüpft mit dem Konto der Immobilie, den Darlehenskonten und der Vermietungskategorie vergleicht sie Soll und Ist. Unter Konten & Regeln → Steuer ordnest du jedes Darlehen seinem Objekt zu (Schuldzinsen).
+
 <a id="sync"></a>
 ## Synchronisierung
 
@@ -412,7 +438,7 @@ Ergebnis: Monats- und Jahrestabelle (Miete, Kosten, Zinsen, Tilgung, AfA, steuer
 <a id="tax"></a>
 ## Steuer
 
-Die Zahlen für die Steuererklärung (Einnahmen und Werbungskosten je Objekt, Schuldzinsen, AfA) – je Entität (Hauptbereich = privat, jede Gesellschaft mit deinem Anteil aus den Bereichen) und Jahr: Vermietung je Objekt aus den Kategorien `Vermietung \ Objekt \ Art` (beliebig viele Objekte, auch privat), Schuldzinsen je Darlehen (Zuordnung Darlehen → Objekt unter Konten & Regeln → Steuer), AfA, Steuerpositionen aus Kategorienamen (anpassbar unter Konten & Regeln → Steuer) und Buchungen ohne Kategorie als Prüfposten. Die Belege eines Jahres lassen sich als ZIP mit Übersicht exportieren. Keine Steuerberatung.
+Die Zahlen für die Steuererklärung (Einnahmen und Werbungskosten je Objekt, Schuldzinsen, AfA) – je Entität (Hauptbereich = privat, jede Gesellschaft mit deinem Anteil aus den Bereichen) und Jahr: Vermietung je Objekt aus den Kategorien `Vermietung \ Objekt \ Art` (beliebig viele Objekte, auch privat), Schuldzinsen je Darlehen (Zins- und Gebührenbuchungen im Darlehenskonto; Zuordnung Darlehen → Objekt unter Konten & Regeln → Steuer), AfA, Steuerpositionen aus Kategorienamen (anpassbar unter Konten & Regeln → Steuer) und Buchungen ohne Kategorie als Prüfposten. Die Belege eines Jahres lassen sich als ZIP mit Übersicht exportieren. Keine Steuerberatung.
 
 <a id="receipts"></a>
 ## Umsätze und Belege

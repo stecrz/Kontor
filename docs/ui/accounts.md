@@ -140,7 +140,8 @@ balances). Per area (heading with its name when there are several) one table; a 
 - **Empfänger** (with IBAN), **Kategorie** (the saving categories of these payments).
 - **Umsätze**: number of payments; **Summe**: their total in whole euros (outflows negative) – both over all months of the area's cash
   flow; a click lists them.
-- **Zielkonto**: "automatisch: <Konto>" (Kontor's choice: the category's target account, else the area's only portfolio), "je nach
+- **Zielkonto**: "automatisch: <Konto>" (Kontor's choice: the category's target account, else the area's only portfolio -- for the
+  costs of a purchase, a category with Kaufnebenkosten or Grunderwerbsteuer in its name: "automatisch: Kein Konto in MoneyMoney"), "je nach
   Kategorie", "Bitte wählen" (no target known; row marked), an own account, or "Kein Konto in MoneyMoney" (the money leaves the
   wealth Kontor sees). "Vorschlag: <Konto>" is a proposal that counts only once taken and saved.
 Without a target the net worth is still right; the payment then shows in the cash flow as value change "Anlage ohne Zielkonto"

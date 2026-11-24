@@ -349,6 +349,25 @@ class CashflowCases(Reconciles):
         self.assertEqual(r["Lebenshaltung"]["amounts"]["2026-02"], -700.0)
         self.assertEqual(r["Auto"]["amounts"]["2026-02"], 700.0)
 
+    def test_purchase_costs_are_saving_and_go_into_no_depot(self):
+        """The costs of buying a property (land transfer tax, notary) belong to the purchase: saving, not housing -- and without
+        a target account of your choosing they leave the net worth Kontor sees ("no account in MoneyMoney") instead of being
+        paid into the area's only depot (3.17.85: "Sparen & Anlegen / Kaufnebenkosten" counted under Wohnen; then as the
+        depot's money). Booked by hand into the property's account, they are part of its value."""
+        for cat in ("Sparen & Anlegen / Kaufnebenkosten", "Grunderwerbsteuer"):
+            data = build([(1, "giro", date(2026, 1, 5), 30000.0, {"cat": "Gehalt"}),
+                          (2, "giro", date(2026, 3, 5), -20000.0, {"cat": cat, "name": "Finanzamt"})])
+            self.assertAddsUp(data)
+            r = {k: sum(v["amounts"].values()) for k, v in rows(data["Privat"]).items()}
+            self.assertEqual(r, {"Arbeitseinkommen": 30000.0, cat.replace("\\", " / ") + " → extern": -20000.0}, cat)
+            sv = data["Privat"]["cashflow"]["saving_recipients"]            # the table of recipients: "automatic: no account"
+            self.assertEqual([(a["auto_how"], a["auto_target"]) for a in sv], [("external", None)], cat)
+        # ... your choice of an account still counts (a category's target account): no longer "external"
+        data = build([(1, "giro", date(2026, 1, 5), 30000.0, {"cat": "Gehalt"}),
+                      (2, "giro", date(2026, 3, 5), -20000.0, {"cat": "Sparen & Anlegen / Kaufnebenkosten", "name": "Finanzamt"})],
+                     {"cashflow": {"category_to_account": {"Sparen & Anlegen\\Kaufnebenkosten": "Depot"}}})
+        self.assertNotIn("Sparen & Anlegen / Kaufnebenkosten → extern", rows(data["Privat"]))
+
     def test_deposit_kept_counts_in_its_category(self):
         # a rent deposit as a manual receivable: paid, then paid back less what the landlord kept for service charges -- booked
         # out of the receivable by hand under the category it paid for. The same for a tenant's deposit held (a debt).
@@ -762,6 +781,10 @@ class Positions(Reconciles):
                  ("Kinder / Kita", False): "education", ("Weiterbildung", False): "education", ("Unterhalt", False): "donations",
                  ("Unterhaltung", False): "leisure", ("Auto / Unterhalt", False): "mobility", ("Buchhaltung", False): "administration",
                  ("Erbschaftsteuer", False): "taxes",
+                 # the costs of a purchase belong to it (3.17.85): saving -- fees of a depot stay costs
+                 ("Sparen & Anlegen / Kaufnebenkosten", False): "saving", ("Immobilie / Kaufnebenkosten", False): "saving",
+                 ("Kaufnebenkosten / Notar", False): "saving", ("Grunderwerbsteuer", False): "saving",
+                 ("Sparen & Anlegen / Depotgebühren", False): "administration",
                  ("Gehalt", True): "work_income", ("Minijob", True): "work_income", ("Kapitalerträge", True): "capital_income",
                  ("Erstattungen", True): "refunds", ("Sonstiges", True): "other_income", ("Taschengeld", True): "gifts_in",
                  ("Unterhalt", True): "gifts_in", ("Erbschaft", True): "gifts_in", ("Rente", True): "benefits",

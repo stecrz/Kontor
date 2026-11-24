@@ -124,6 +124,16 @@ Importing again replaces all balances imported so far – no reset is needed bef
 
 **After that Kontor records itself**: bank accounts are calculated exactly backwards from the transactions anyway. For portfolios Kontor notes the current value on every read. The service runs in the background, even without an open Kontor window – after the Mac restarts or after an update, once you have signed in to Kontor –, and reads within about 20 seconds as soon as MoneyMoney is open and unlocked – a quick look at MoneyMoney is enough. Each value counts for the month in which MoneyMoney retrieved it from the bank. If MoneyMoney retrieved data while Kontor was not running, or a month is missing, Accounts & rules → Balances points it out; it also shows per portfolio from when Kontor knows values.
 
+<a id="setup-loans"></a>
+### Setting up loans
+
+How to keep a loan in MoneyMoney so that balance sheet, cash flow and tax add up: a manual account with the position Liabilities (lent money: Receivables), the payout and every full instalment mirrored there, the month's interest as a booking of its own with "interest" in its text – or the booking rule [manual loans](#rules-loans) does it for you; no category is needed, "Umbuchung" fits.
+
+<a id="setup-property"></a>
+### Setting up a property
+
+How to keep a property in MoneyMoney: a manual account with the position Real estate for its value, the purchase price mirrored there, a loan paid straight to the seller booked on both manual accounts with the category "Umbuchung", purchase costs into the property's account or under a category such as "Sparen & Anlegen › Kaufnebenkosten", rent and costs per rented property under "Vermietung".
+
 <a id="sync"></a>
 ## Sync
 

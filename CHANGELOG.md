@@ -1,5 +1,9 @@
 # Änderungen
 
+## 3.17.85 (2026-11-24 22:24)
+- Hilfe: neue Anleitungen „Darlehen einrichten“ und „Immobilie einrichten“ – Gegenbuchungen, volle Rate, Zinsen, Kaufnebenkosten, Darlehen direkt an den Verkäufer; auch der KI-Assistent findet sie; Links unter Buchungsregeln → Darlehen und bei Immobilien
+- Cashflow-Positionen: Kaufnebenkosten und Grunderwerbsteuer zählen als Investition statt unter Wohnen und landen ohne gewähltes Zielkonto nicht mehr beim Depot
+
 ## 3.17.84 (2026-11-24 21:25)
 - Oberfläche: eine wieder geöffnete Seite steht genau dort, wo sie verlassen wurde – auch wenn Diagramme oder Vorschauen erst danach erscheinen (Bilanz, Cashflow, Übersicht, Hilfe, Buchungsregeln)
 - Bilanz: die Zeitraum-Knöpfe eines Diagramms stimmen auch, wenn der gewählte Zeitraum keine Werte hat

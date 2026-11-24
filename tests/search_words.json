@@ -8,6 +8,8 @@
  "accounts": ["Konto ausblenden", "Kontoart ändern", "Konto einem Bereich zuordnen"],
  "history": ["Verlauf eines Kontos", "Kontostand früher", "Saldo Verlauf"],
  "balances": ["historische Kontostände", "alte Kontostände laden", "Datenbank hochladen"],
+ "setup-loans": ["Darlehen einrichten", "Privatdarlehen Gegenbuchung", "Zinsen kategorisieren"],
+ "setup-property": ["Immobilie einrichten", "Wohnung kaufen buchen", "Kaufnebenkosten Grunderwerbsteuer"],
  "sync": ["Synchronisierung", "Abgleich", "MoneyMoney aktualisieren", "automatischer Abgleich"],
  "tables": ["Excel", "Tabelle exportieren", "Spalten einklappen"],
  "balance-sheet": ["Bilanz", "Aktiva Passiva", "Eigenkapital"],

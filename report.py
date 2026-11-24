@@ -960,6 +960,10 @@ POSITION_FIRST = [  # (words, in, out, only at the start of a word); not for cos
       "pensionskasse", "direktversicherung", "kapitallebensversicherung", "fondspolice"), "saving", "saving", True),
 ]
 FIRST_NOT = ("gebuehr", "kosten", "entgelt", "provision", "kreditkarte")
+# the costs of buying an investment (notary, land transfer tax, agent) belong to the purchase: saving, as the purchase itself
+# ("Sparen & Anlegen", samt Nebenkosten) -- also where FIRST_NOT ("kosten") would keep them from it (3.17.85: "Sparen &
+# Anlegen / Kaufnebenkosten" was proposed as Wohnen)
+PURCHASE_COSTS = ("kaufnebenkost", "erwerbsnebenkost", "anschaffungsnebenkost", "grunderwerbsteuer")
 POSITION_CONTEXT = [(("vermiet", "immobil", "objekt", "mieterloes", "pachterloes"), "rental", "property_costs")]
 # a position may be (a company's, a person's): "Verkauf" is revenue in a company, privately selling used things (other income)
 POSITION_HINTS = [
@@ -1116,6 +1120,8 @@ def recognised_position(path: str, income: bool, company: bool = False) -> Optio
     name_l = low_l.split(" / ")[-1]
     texts = list(dict.fromkeys((name_l, low_l, name, low)))
     for text in texts:
+        if any(w in text for w in PURCHASE_COSTS) and "zins" not in text:
+            return "saving"
         for words, pin, pout, start in POSITION_FIRST:
             if pin != "capital_income" and any(w in text for w in FIRST_NOT):
                 continue
@@ -1755,7 +1761,11 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
             parts = cat.split(" / ")
             c_to = next((kat_zu_konto[" / ".join(parts[:i])] for i in range(len(parts), 0, -1) if " / ".join(parts[:i]) in kat_zu_konto), None)
             e_to = emp_zu_konto.get(key)
-            auto = (c_to, "category") if c_to in root_leaves else (depots[0], "depot") if len(depots) == 1 and not c_to else (None, "")
+            # the costs of a purchase (notary, land transfer tax) go into no depot: without your choice they leave the net worth
+            # Kontor sees, as "no account in MoneyMoney" (3.17.85; before, the area's only depot took them as paid in)
+            costs = any(w in fold_text(cat) for w in PURCHASE_COSTS)
+            auto = (c_to, "category") if c_to in root_leaves else (None, "external") if costs and not c_to \
+                else (depots[0], "depot") if len(depots) == 1 and not c_to else (None, "")
             target, how = (None, "external") if e_to == "external" else (e_to, "recipient") if e_to in root_leaves else auto
             kind = roles.get(target, "saving_group") if target else "saving_group"          # the kind of the account it goes into, else "saving"
             # one row per category -- what your choice per recipient sends elsewhere has a row of its own (its account, its

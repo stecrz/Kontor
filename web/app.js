@@ -5163,7 +5163,7 @@ const immoData = id => ((S.DATA && S.DATA.real_estate) || []).find(x => String(x
 function vImmobilien(id) {
   if (id) return vImmobilie(id);
   const list = S.CFG.real_estate || [];
-  let h = `<div class="toolbar"><span class="muted small">${t('kalkulationen_je_objekt_mehrere_szenar')}</span><span class="sp"></span><button id="im-new" class="small" title="${esc(t('immo_neu_tip'))}">${t('neues_objekt')}</button></div>`;
+  let h = `<div class="toolbar"><span class="muted small">${t('kalkulationen_je_objekt_mehrere_szenar')}${more('setup-property')}</span><span class="sp"></span><button id="im-new" class="small" title="${esc(t('immo_neu_tip'))}">${t('neues_objekt')}</button></div>`;
   if (!list.length) return h + `<div class="card" data-ex="properties.list"><div class="v s">${t('noch_keine_immobilie')}</div><div class="d">${t('lege_ein_objekt_an_und')}</div></div>`;
   h += '<div class="cards k3" data-ex="properties.list">' + list.map(im => { const d = immoData(im.id) || {}; const K = d.figures || {}; const j1 = (d.years || []).find(j => j.months === 12) || (d.years || [])[0];
     return `<div class="card clickable" data-im="${esc(im.id)}" style="cursor:pointer"><div class="l">${esc(BN(im.area) || im.area || '–')}${im.in_planning ? `<span class="tag">${t('in_planung')}</span>` : ''}</div><div class="v s">${esc(im.name)}</div>
@@ -5535,7 +5535,7 @@ function vRegeln() {
   h += `<div class="group" data-ex="accounts.rules.auto"><div class="set-row"><div class="grow"><b>${t('auto_buchen')}</b><div class="small muted">${t(auto ? 'auto_buchen_an' : 'auto_buchen_aus')}${loc ? '' : ' ' + t('nur_am_mac_klammer')}</div></div>`
     + `<label class="switch${loc ? '' : ' off'}"><input type="checkbox" id="auto-book" ${auto ? 'checked' : ''} ${loc ? '' : 'disabled'}><i></i></label></div></div>`;
   h += `<section class="rule-sec" data-ex="accounts.rules.loans"><div class="sec-head"><h2>${t('regel_darlehen_titel')}${hq('regel_darlehen_h')}</h2><span class="sp"></span><button id="add-loan" class="secondary small add-rule">${t('darlehen_hinzufuegen')}</button></div>`
-    + `<p class="sec-sub">${t('darlehen_sub')}</p><div class="list" id="loans">${(C.loans || []).map((l, i) => loanForm(l, i)).join('')}</div><div class="empty small muted">${t('leer_darlehen')}</div></section>`;
+    + `<p class="sec-sub">${t('darlehen_sub')}${more('setup-loans')}</p><div class="list" id="loans">${(C.loans || []).map((l, i) => loanForm(l, i)).join('')}</div><div class="empty small muted">${t('leer_darlehen')}</div></section>`;
   const cos = companyAreas();
   h += `<section class="rule-sec" data-ex="accounts.rules.companies"><div class="sec-head"><h2>${t('regel_beteiligungen')}${hq('regel_gesellschaften_h')}</h2></div><p class="sec-sub">${t('gesellschaften_sub')}</p>`
     + `<div id="companies">${cos.map(b => companyCard(b, (C.companies || []).find(g => String(g.area) === String(b.id)) || {})).join('')}</div>`
@@ -5946,7 +5946,7 @@ function vAnlageEmpfaenger() {
     for (const a of KF.saving_recipients) {
       const own = mine[a.key] || '', ownId = own === 'external' ? '' : own.split('|')[0].trim();
       const ziele = new Set([...(KF.saving_targets || []), ownId].filter(Boolean));
-      const auto = a.auto_how === 'mixed' ? t('anl_nach_kategorie') : a.auto_target ? nm(a.auto_target) : null;
+      const auto = a.auto_how === 'mixed' ? t('anl_nach_kategorie') : a.auto_how === 'external' ? t('anl_extern') : a.auto_target ? nm(a.auto_target) : null;   // (purchase costs: no account)
       const opts = acctOptions(ownId, k => ziele.has(k.uuid)).replace(t('waehlen'), () => esc(auto ? t('automatisch_doppel', auto) : t('bitte_waehlen')))
         + `<option value="external" ${own === 'external' ? 'selected' : ''}>${t('anl_extern')}</option>`;
       const prop = a.proposal && !own ? ` <button class="small secondary ka-take" data-v="${esc(a.proposal)}">${esc(t('vorschlag_0', nm(a.proposal)))}</button>` : '';
