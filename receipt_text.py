@@ -18,6 +18,8 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import base64
+import binascii
 from datetime import date, timedelta
 from typing import Any, Dict, List, Optional
 
@@ -33,6 +35,8 @@ MAX_TEXT = 20000
 SECONDS = 90
 MAX_LAYOUT = 60 * 1024 * 1024            # the words of all pages with their places, as JSON
 LAYOUT_SECONDS = 300                     # many pages, scanned ones through text recognition
+MAX_PICTURES = 80 * 1024 * 1024          # the pictures of all pages, as JSON (60 pages of about 300 KB, in base64)
+MAX_PAGE_PICTURE = 4 * 1024 * 1024       # one of them
 
 
 class TextUnavailable(Exception):
@@ -90,16 +94,18 @@ def _helper() -> str:
     return HELPER_BIN
 
 
-def _ask(data: bytes, data_dir: str, layout: bool = False) -> Optional[bytes]:
-    """The helper's answer to one file (its text, or with layout its words and their places) -- always the same program, in
-    its sandbox, with nothing handed to it but the file and that one fixed word. None when it failed."""
+def _ask(data: bytes, data_dir: str, layout: bool = False, word: str = "") -> Optional[bytes]:
+    """The helper's answer to one file (its text, or with layout its words and their places, or with word "pictures" its pages
+    as pictures) -- always the same program, in its sandbox, with nothing handed to it but the file and that one fixed word.
+    None when it failed."""
+    word = "layout" if layout else word if word in ("pictures",) else ""
     if not data or len(data) > MAX_INPUT:
         raise ValueError(tr("s_leere_datei") if not data else tr("s_datei_zu_gross_max_d") % (MAX_INPUT // (1024 * 1024)))
     exe = _helper()
     work = tempfile.mkdtemp(prefix="rcpt-")              # its own folder for this run (not kontor-...: those it may not write)
     try:
-        r = subprocess.run([SANDBOX, "-p", _profile(os.path.expanduser("~"), data_dir, work), exe] + (["layout"] if layout else []),
-                           input=data, capture_output=True, timeout=LAYOUT_SECONDS if layout else SECONDS, cwd=work,
+        r = subprocess.run([SANDBOX, "-p", _profile(os.path.expanduser("~"), data_dir, work), exe] + ([word] if word else []),
+                           input=data, capture_output=True, timeout=LAYOUT_SECONDS if word else SECONDS, cwd=work,
                            env={"PATH": "/usr/bin:/bin", "TMPDIR": work})
     except subprocess.TimeoutExpired:
         raise TextUnavailable(tr("s_beleg_text_zeit"))
@@ -133,6 +139,29 @@ def layout_of(data: bytes, data_dir: str) -> Dict[str, Any]:
     if not isinstance(out, dict) or not isinstance(out.get("pages"), list):
         raise TextUnavailable(tr("s_beleg_text_fehler"))
     return out
+
+
+def pictures_of(data: bytes, data_dir: str) -> Dict[str, Any]:
+    """Every page of a PDF as the language model is shown it -- {"pages": [{"n", "jpeg": bytes}], "count", "cut"} (count: its
+    pages, cut: more than were drawn). Drawn on this Mac by the same helper in the same sandbox; each picture checked (a JPEG,
+    within its size, page numbers in order). TextUnavailable when it cannot be done."""
+    raw = _ask(data, data_dir, word="pictures")
+    try:
+        out = json.loads(raw.decode("utf-8")) if raw is not None and len(raw) <= MAX_PICTURES else None
+    except (ValueError, UnicodeDecodeError, RecursionError):
+        out = None
+    if not isinstance(out, dict) or not isinstance(out.get("pages"), list) or not isinstance(out.get("count"), int):
+        raise TextUnavailable(tr("s_beleg_text_fehler"))
+    pages, last = [], 0
+    for p in out["pages"]:
+        try:
+            n, jpeg = p["n"], base64.b64decode(p["jpeg"], validate=True)
+        except (KeyError, TypeError, ValueError, binascii.Error):
+            continue
+        if isinstance(n, int) and last < n <= out["count"] and jpeg[:3] == b"\xff\xd8\xff" and len(jpeg) <= MAX_PAGE_PICTURE:
+            pages.append({"n": n, "jpeg": jpeg})
+            last = n
+    return {"pages": pages, "count": max(0, out["count"]), "cut": out.get("cut") is True}
 
 
 # -- what a receipt says ---------------------------------------------------------------------------------------------------------

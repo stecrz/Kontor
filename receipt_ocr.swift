@@ -5,6 +5,9 @@
 // Started with the word "layout": every page with its words and where they stand, for tables (pdf_tables.py) -- JSON
 // {"pages": [{"n", "w", "h", "how", "items": [[x, y, width, height, text] ...]}], "count", "cut"}, all in tenths of a point,
 // y counted from the top of the page.
+//
+// Started with the word "pictures": every page of a PDF as the language model is shown it -- upright as it is shown, about
+// 1600 pixels on its longer side, as JPEG -- JSON {"pages": [{"n", "jpeg": base64}], "count", "cut"}.
 import CoreGraphics
 import Foundation
 import ImageIO
@@ -16,6 +19,8 @@ let maxChars = 20000
 let maxLayoutPages = 300          // "layout": pages read at most ...
 let maxRecognizedPages = 40       // ... of them scanned ones (text recognition takes its time)
 let maxItems = 250000             // ... and words in all
+let maxPicturePages = 60          // "pictures": pages drawn at most ...
+let pictureSide: CGFloat = 1600   // ... each this many pixels on its longer side
 
 func fail(_ why: String) -> Never {
     // the text recognition did not work (in the sandbox, say): said so -- Kontor reports it, it does not mean "no text"
@@ -198,6 +203,41 @@ func recognizedItems(_ image: CGImage, _ width: CGFloat, _ height: CGFloat) -> [
     return out
 }
 
+func jpeg(_ image: CGImage) -> Data? {
+    let out = NSMutableData()
+    guard let dest = CGImageDestinationCreateWithData(out as CFMutableData, "public.jpeg" as CFString, 1, nil) else { return nil }
+    CGImageDestinationAddImage(dest, image, [kCGImageDestinationLossyCompressionQuality: 0.85] as CFDictionary)
+    return CGImageDestinationFinalize(dest) ? out as Data : nil
+}
+
+func pagePicture(_ page: PDFPage) -> Data? {
+    // a page as it is shown (a turned page upright): drawn on white into a picture of its shown size, scaled to pictureSide on
+    // its longer side -- PDFKit's draw(with:to:) itself turns the page and places its box
+    let (width, height, _) = shown(page)
+    let longest = max(width, height)
+    guard longest > 0 else { return nil }
+    let scale = min(pictureSide / longest, 4)
+    let w = Int((width * scale).rounded()), h = Int((height * scale).rounded())
+    guard w > 0, h > 0, let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(),
+                                            bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue) else { return nil }
+    ctx.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1))
+    ctx.fill(CGRect(x: 0, y: 0, width: w, height: h))
+    ctx.scaleBy(x: scale, y: scale)
+    page.draw(with: .cropBox, to: ctx)
+    guard let image = ctx.makeImage() else { return nil }
+    return jpeg(image)
+}
+
+func pictures(_ data: Data) -> [String: Any] {
+    guard data.starts(with: [0x25, 0x50, 0x44, 0x46]), let doc = PDFDocument(data: data) else { return ["pages": [], "count": 0, "cut": false] }
+    var pages: [[String: Any]] = []
+    for i in 0..<min(doc.pageCount, maxPicturePages) {
+        guard let page = doc.page(at: i), let picture = pagePicture(page) else { continue }
+        pages.append(["n": i + 1, "jpeg": picture.base64EncodedString()])
+    }
+    return ["pages": pages, "count": doc.pageCount, "cut": doc.pageCount > maxPicturePages]
+}
+
 func layout(_ data: Data) -> [String: Any] {
     var pages: [[String: Any]] = []
     var count = 0
@@ -254,6 +294,12 @@ func layout(_ data: Data) -> [String: Any] {
 let data = FileHandle.standardInput.readDataToEndOfFile()
 if CommandLine.arguments.dropFirst().contains("layout") {
     if let json = try? JSONSerialization.data(withJSONObject: layout(data)) {
+        FileHandle.standardOutput.write(json)
+    }
+    exit(0)
+}
+if CommandLine.arguments.dropFirst().contains("pictures") {
+    if let json = try? JSONSerialization.data(withJSONObject: pictures(data)) {
         FileHandle.standardOutput.write(json)
     }
     exit(0)

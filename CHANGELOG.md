@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.17.63 (2026-11-24 05:12)
+- KI-Assistent: PDFs gehen als Text und Seitenbilder an das Modell – kurze ganz, lange Seite für Seite („Lese Seite 3 von 30 …“ in den Gedanken)
+
 ## 3.17.62 (2026-11-24 04:50)
 - Entwicklung: Fahrplan nennt die richtige Version
 

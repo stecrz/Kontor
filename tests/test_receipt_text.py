@@ -105,6 +105,28 @@ class Recognition(unittest.TestCase):
                 with self.assertRaises(R.TextUnavailable):
                     R.text_of(b"%PDF", "/d")
 
+    def test_page_pictures_are_checked(self):
+        """A PDF's pages as pictures: the helper's word "pictures", every picture a JPEG within its size, pages in order --
+        anything else is left out, a broken answer is no answer."""
+        import base64, json
+        jpeg = lambda t: base64.b64encode(b"\xff\xd8\xff" + t).decode()
+        out = json.dumps({"pages": [{"n": 1, "jpeg": jpeg(b"eins")}, {"n": 1, "jpeg": jpeg(b"noch einmal 1")}, {"n": 2, "jpeg": base64.b64encode(b"GIF89a").decode()},
+                                    {"n": 3, "jpeg": "kein base64!"}, {"n": 4, "jpeg": jpeg(b"vier")}, {"n": 9, "jpeg": jpeg(b"zu weit")}], "count": 4, "cut": False}).encode()
+        with mock.patch.object(R.sys, "platform", "darwin"), mock.patch.object(R, "_helper", return_value="/x/receipt_ocr"):
+            with mock.patch.object(R.subprocess, "run", return_value=mock.Mock(returncode=0, stdout=out)) as run:
+                got = R.pictures_of(b"%PDF", "/d")
+                self.assertEqual(run.call_args[0][0][-1], "pictures")
+            self.assertEqual([(p["n"], p["jpeg"]) for p in got["pages"]], [(1, b"\xff\xd8\xffeins"), (4, b"\xff\xd8\xffvier")])
+            self.assertEqual((got["count"], got["cut"]), (4, False))
+            for bad in (b"not json", b'{"pages": 5, "count": 1}', b'{"pages": []}'):
+                with mock.patch.object(R.subprocess, "run", return_value=mock.Mock(returncode=0, stdout=bad)):
+                    with self.assertRaises(R.TextUnavailable):
+                        R.pictures_of(b"%PDF", "/d")
+            with mock.patch.object(R.subprocess, "run", return_value=mock.Mock(returncode=0, stdout=b"{}")) as run:
+                with self.assertRaises(R.TextUnavailable):
+                    R.pictures_of(b"%PDF", "/d")
+                self.assertEqual(run.call_args[0][0][-1], "pictures")
+
 
 if __name__ == "__main__":
     unittest.main()

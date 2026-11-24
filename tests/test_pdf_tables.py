@@ -91,8 +91,8 @@ class Doc:
             pages.append({"n": n + 1, "w": round(self.w * 10), "h": round(self.h * 10), "how": how, "items": out})
         return {"pages": pages, "count": len(pages), "cut": False}
 
-    def pdf(self) -> bytes:
-        """The same as a PDF (Helvetica, one content stream per page)."""
+    def pdf(self, rotate: int = 0) -> bytes:
+        """The same as a PDF (Helvetica, one content stream per page; rotate: every page turned so, as a scanner may save it)."""
         objs = [b"<</Type/Catalog/Pages 2 0 R>>", b"", b"<</Type/Font/Subtype/Type1/BaseFont/Helvetica/Encoding/WinAnsiEncoding>>"]
         kids = []
         for items in self.pages:
@@ -100,7 +100,7 @@ class Doc:
                 ("%g" % size).encode(), x, self.h - y, text.encode("cp1252").replace(b"\\", b"\\\\").replace(b"(", b"\\(").replace(b")", b"\\)"))
                 for x, y, text, size in items)
             objs.append(b"<</Length %d>>stream\n" % len(body) + body + b"endstream")
-            objs.append(b"<</Type/Page/Parent 2 0 R/MediaBox[0 0 %d %d]/Contents %d 0 R/Resources<</Font<</F1 3 0 R>>>>>>" % (self.w, self.h, len(objs)))
+            objs.append(b"<</Type/Page/Parent 2 0 R%s/MediaBox[0 0 %d %d]/Contents %d 0 R/Resources<</Font<</F1 3 0 R>>>>>>" % (b"/Rotate %d" % rotate if rotate else b"", self.w, self.h, len(objs)))
             kids.append(len(objs))
         objs[1] = b"<</Type/Pages/Kids[%s]/Count %d>>" % (b" ".join(b"%d 0 R" % k for k in kids), len(kids))
         out, offs = b"%PDF-1.4\n", []
@@ -1170,6 +1170,34 @@ class OnMac(unittest.TestCase):
         self.assertEqual((lay["count"], lay["cut"], len(b["sheets"])), (30, False, 1), X.overview(b))
         self.assertEqual([v for v in figures(b) if v not in printed(d)], [])
         self.assertEqual(g[-len(want):], want, g[:8])
+
+    def test_pages_as_pictures(self):
+        """Each page as the language model is shown it: a JPEG about 1600 pixels on its longer side, upright as shown -- a
+        turned page too (its words then read by the text recognition from the picture)."""
+        def size(jpeg):                                   # width and height from the JPEG's frame header
+            i = 2
+            while i < len(jpeg):
+                if jpeg[i] != 0xFF:
+                    i += 1
+                    continue
+                mark, length = jpeg[i + 1], int.from_bytes(jpeg[i + 2:i + 4], "big")
+                if mark in (0xC0, 0xC1, 0xC2):
+                    return int.from_bytes(jpeg[i + 7:i + 9], "big"), int.from_bytes(jpeg[i + 5:i + 7], "big")
+                i += 2 + length
+            return 0, 0
+        d = Doc()
+        d.put(60, 120, "Kontoauszug Seite eins", size=28); d.page(); d.put(60, 120, "Kontoauszug Seite zwei", size=28)
+        got = R.pictures_of(d.pdf(), tempfile.mkdtemp())
+        self.assertEqual((got["count"], got["cut"], [p["n"] for p in got["pages"]]), (2, False, [1, 2]))
+        w, h = size(got["pages"][0]["jpeg"])
+        print("page picture:", w, h, len(got["pages"][0]["jpeg"]), "bytes")
+        self.assertEqual(h, 1600); self.assertAlmostEqual(w / h, 595 / 842, places=2)
+        self.assertIn("Seite eins", R.text_of(got["pages"][0]["jpeg"], tempfile.mkdtemp())["text"])
+        turned = R.pictures_of(d.pdf(rotate=90), tempfile.mkdtemp())["pages"][1]["jpeg"]
+        w, h = size(turned)
+        self.assertEqual(w, 1600); self.assertAlmostEqual(h / w, 595 / 842, places=2)
+        self.assertIn("Seite zwei", R.text_of(turned, tempfile.mkdtemp())["text"])         # upright: readable
+        self.assertEqual(R.pictures_of(b"\x89PNG kein PDF", tempfile.mkdtemp()), {"pages": [], "count": 0, "cut": False})
 
     def test_picture_by_text_recognition(self):
         d = Doc(1500, 620)                                # large writing: the page as a picture, read by Apple's text recognition

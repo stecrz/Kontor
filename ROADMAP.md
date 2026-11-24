@@ -352,9 +352,9 @@ anhängen – nie löschen.
   Demo, nichts geht hinaus; dauert Stunden, der Mac ist so lange belegt). Kontor zeigt das Ergebnis neben dem des bisherigen
   Modells – Punkte je Gruppe, Dauer – und schlägt den Wechsel vor, wenn das neue besser ist; gewechselt wird nur nach Klick, nie
   von selbst. Empfehlung: erst entscheiden, wenn Läufe am Mac zeigen, wie gut der Prüfsatz Modelle unterscheidet.
-- PDFs als Text und Seitenbilder (Entschieden „Bilder und PDFs wie Text“) – noch nicht umgesetzt. Offen dazu: HEIC wird nicht
-  als Bild gegeben (llama.cpp liest es nicht); am Mac prüfen, wie Qwen3.8 27B mit Bildern läuft (Meldungen über Abstürze beim Laden
-  eines Bildes – Kontor fängt einen Absturz ab und antwortet aus dem Text).
+- Bilder für das Modell, Rest (Entschieden „Bilder und PDFs wie Text“): HEIC wird nicht als Bild gegeben (llama.cpp liest es nicht);
+  am Mac prüfen, wie Qwen3.8 27B mit Bildern läuft (Meldungen über Abstürze beim Laden eines Bildes – Kontor fängt einen Absturz ab
+  und antwortet aus dem Text) und wie lange eine lange PDF Seite für Seite braucht.
 - Modelldienst auf einem zweiten eigenen Rechner (KI-Plattform: „später nur eine andere Auswahl“) – vorbereitet, nicht gebaut:
   Kontor spricht das Modell an genau einer Stelle an (`LocalAI._connect`, OpenAIs Formate; heute fest der Kindprozess auf diesem
   Mac über seine Socket-Datei). Einschalten wäre ein neuer Weg nach außen und braucht vorher, alles zusammen: nur im eigenen
