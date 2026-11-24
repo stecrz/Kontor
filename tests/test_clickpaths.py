@@ -39,9 +39,11 @@ from service import App, make_handler    # noqa: E402
 from fixtures import new_store  # noqa: E402
 
 PASSWORD = TT.PASSWORD
-FOUND_CLICKS = [24, 25, 29]     # cases a night found -- once fixed, their number goes here (each push walks them again); 3.17.71 (a night
+FOUND_CLICKS = [24, 25, 29, 132684508, 520936342, 879068245, 447175332]     # cases a night found -- once fixed, their number goes here (each push walks them again); 3.17.71 (a night
                                 # run by hand): the overview's figures wider than their cards beside the assistant, the balance's first
                                 # head on the iPhone wider than its column, a net worth of one figure throughout drawn as NaN
+                                # 3.17.80 (a night): the side window closed beside it stayed shut when its figure was pressed again
+                                # at once (click, Enter); links and cells in a folded <details> taken for visible (covered)
 KINDS = ["test", "random", "demo", "empty"]
 WORLD_NAMES = {"test": "Testwelt", "random": "Zufallswelt", "demo": "Demo", "empty": "leeres Kontor"}
 MAC_SIZES = [(1440, 900), (1512, 945), (1280, 800)]          # a 14-inch MacBook, the window nearly full screen (and a bit smaller)
@@ -65,6 +67,7 @@ RESTING = r"""(() => document.getAnimations().some(a => a.playState === 'running
 # purpose: a user clicks elsewhere), "away" (not to be brought into view), "covered <what>" (something of its own layer on it)
 FREE = r"""(() => {
   const el = document.querySelector('[data-cp]'); if (!el.closest('#main, #drawer')) return 'ok';
+  if (el.checkVisibility && !el.checkVisibility()) return 'away';                 // (in a folded <details>: not to be seen)
   const bar = document.querySelector('.topbar'), top = bar && !bar.closest('#drawer') ? bar.getBoundingClientRect().bottom : 0;
   const hit = () => { const r = el.getBoundingClientRect(), x = r.left + r.width / 2, y = r.top + r.height / 2;
     if (y < top + 4 || y > innerHeight - 4 || x < 0 || x > innerWidth) return null;
@@ -78,7 +81,8 @@ FREE = r"""(() => {
 DRAWER_READY = "document.querySelector('#drawer').classList.contains('open') && !document.querySelector('#drawer .spin') && !document.querySelector('#drawer').textContent.includes(t('wird_geladen'))"
 SNAP = r"""(root => {
   const box = document.querySelector(root); if (!box) return null;
-  const vis = el => el.getClientRects().length > 0 && getComputedStyle(el).visibility !== 'hidden';
+  // (seen: also not in a folded <details> -- Chromium keeps its contents' boxes, only checkVisibility() knows: 3.17.80)
+  const vis = el => el.getClientRects().length > 0 && getComputedStyle(el).visibility !== 'hidden' && (!el.checkVisibility || el.checkVisibility());
   const who = el => el.id ? '#' + el.id : el.tagName.toLowerCase() + Object.entries(el.dataset).filter(([k]) => k !== 'cp').map(([k, v]) => `[${k}=${v}]`).join('') + ' „' + (el.textContent || '').trim().slice(0, 24) + '“';
   const on = [...box.querySelectorAll('button.on, [aria-pressed="true"], [aria-selected="true"], input[type="checkbox"]:checked, input[type="radio"]:checked')].filter(vis).map(who);
   const rows = [...box.querySelectorAll('tr')].filter(vis).length;
@@ -426,7 +430,7 @@ class Walk:
 
     def do_page(self):
         """Another page: from the menu (on the iPhone it opens first), or a page's own link to one of its parts."""
-        subs = "[...document.querySelectorAll('#main a[href^=\"#\"], #main .tabs button[data-next]')].filter(a => a.getClientRects().length && /^#[a-z]+\\/[a-z-]+$/.test(a.getAttribute('href') || a.dataset.next || ''))"
+        subs = "[...document.querySelectorAll('#main a[href^=\"#\"], #main .tabs button[data-next]')].filter(a => a.getClientRects().length && (!a.checkVisibility || a.checkVisibility()) && /^#[a-z]+\\/[a-z-]+$/.test(a.getAttribute('href') || a.dataset.next || ''))"
         if self.rnd.random() < 0.3 and self.pick(subs):
             what = self.js("document.querySelector('[data-cp]').getAttribute('href') || document.querySelector('[data-cp]').dataset.next")
             self.note("Teil der Seite " + what)
@@ -445,7 +449,7 @@ class Walk:
                         self.problem("Esc schließt das Menü nicht")
                     self.note("Menü, Esc")
                     return
-            got = self.pick("[...document.querySelectorAll('#nav a[href^=\"#\"]')].filter(a => a.getClientRects().length && !a.closest('.hidden'))")
+            got = self.pick("[...document.querySelectorAll('#nav a[href^=\"#\"]')].filter(a => a.getClientRects().length && (!a.checkVisibility || a.checkVisibility()) && !a.closest('.hidden'))")
             if not got:
                 return
             what = self.js("document.querySelector('[data-cp]').getAttribute('href')")
@@ -460,7 +464,7 @@ class Walk:
 
     def do_toggle(self):
         """A switch of the view: an area, months or years, a level, a period, a row or section opened or closed."""
-        got = self.pick("[...document.querySelectorAll(%s)].filter(el => el.getClientRects().length && !el.disabled && getComputedStyle(el).visibility !== 'hidden')" % json.dumps(TOGGLES))
+        got = self.pick("[...document.querySelectorAll(%s)].filter(el => el.getClientRects().length && (!el.checkVisibility || el.checkVisibility()) && !el.disabled && getComputedStyle(el).visibility !== 'hidden')" % json.dumps(TOGGLES))
         if not got:
             return self.do_page()
         self.note("Umschalter " + got)
@@ -481,7 +485,7 @@ class Walk:
         if self.tab() not in SHOWING:
             return self.do_page()
         got = self.pick("""[...document.querySelectorAll('#main td, #main th, #main .nm, #main .ov-card, #main .kpi, #main .cf-heat-c, #main .cf-heat-n, #main .cf-br-row, #main a.ka-tx, #main [tabindex="0"], #main .card[data-im]')]
-            .filter(el => el.getClientRects().length && getComputedStyle(el).cursor === 'pointer' && !el.querySelector('input, select, textarea, button') && !el.closest('input, select, textarea, button, label, .bk-rej, [data-cmd-s]'))""")
+            .filter(el => el.getClientRects().length && (!el.checkVisibility || el.checkVisibility()) && getComputedStyle(el).cursor === 'pointer' && !el.querySelector('input, select, textarea, button') && !el.closest('input, select, textarea, button, label, .bk-rej, [data-cmd-s]'))""")
         if not got:
             return self.do_toggle()
         keys = self.rnd.random() < 0.35 and self.js("(() => { const el = document.querySelector('[data-cp]'); return el.tabIndex >= 0 && (el.matches('[tabindex=\"0\"], a, button')); })()")
@@ -506,7 +510,7 @@ class Walk:
         opened again: it shows what it showed when it was closed."""
         self.count["Seitenfenster"] += 1
         self.check()
-        if self.rnd.random() < 0.4 and self.pick("[...document.querySelectorAll('#drawer details > summary')].filter(el => el.getClientRects().length)"):
+        if self.rnd.random() < 0.4 and self.pick("[...document.querySelectorAll('#drawer details > summary')].filter(el => el.getClientRects().length && (!el.checkVisibility || el.checkVisibility()))"):
             self.note("aufgeklappt")
             if self.press():
                 self.pg.wait_for_timeout(150); self.check()
@@ -600,7 +604,7 @@ class Walk:
         if self.mobile:
             return self.do_open()
         got = self.pick("""[...document.querySelectorAll('#main [data-ex] td, #main [data-ex] th, #main [data-ex] .kpi, #main [data-ex] .ov-card, #main [data-ex] .lc, #main [data-ex] .cf-card, #drawer.open [data-ex] td')]
-            .filter(el => { const r = el.getBoundingClientRect(); return r.width > 4 && r.height > 4 && r.top > 60 && r.bottom < innerHeight - 4 && (el.textContent || '').trim(); })""")
+            .filter(el => { const r = el.getBoundingClientRect(); return r.width > 4 && r.height > 4 && r.top > 60 && r.bottom < innerHeight - 4 && (!el.checkVisibility || el.checkVisibility()) && (el.textContent || '').trim(); })""")
         if not got:
             return self.do_open()
         self.note("Rechtsklick auf " + got)

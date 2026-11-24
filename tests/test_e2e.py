@@ -4347,6 +4347,8 @@ class BrowserTest(unittest.TestCase):
                 pg.click(F_ + " tr.det[data-kat] td:nth-child(2)"); pg.wait_for_timeout(250)                    # the same figure again: closed
                 self.assertFalse(pg.evaluate("$('#drawer').classList.contains('open')"))
                 pg.click(F_ + " tr.det[data-kat] td:nth-child(2)"); pg.wait_for_selector("#drawer.open #cftx-page")      # and again: open
+                pg.click("#page-title", position={"x": 4, "y": 4}); pg.wait_for_timeout(100); self.assertFalse(pg.evaluate("$('#drawer').classList.contains('open')"))
+                pg.click(F_ + " tr.det[data-kat] td:nth-child(2)"); pg.wait_for_selector("#drawer.open #cftx-page", timeout=2000)   # closed beside it, the figure at once: open (3.17.80)
                 self.assertEqual(pg.evaluate("S.tab"), "cashflow"); self.assertTrue(pg.query_selector_all("#drawer tbody tr"))
                 pg.click("#cftx-page"); pg.wait_for_selector("#uf-von")                                  # ... and from there the page, to correct
                 self.assertEqual(pg.evaluate("S.uf.kats"), [kat]); self.assertEqual(pg.evaluate("S.tab"), "transactions")

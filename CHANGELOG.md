@@ -1,5 +1,9 @@
 # Änderungen
 
+## 3.17.82 (2026-11-24 20:32)
+- Seitenfenster: öffnet sofort wieder, wenn du es mit einem Klick daneben schließt und gleich wieder auf dieselbe Zahl klickst (oder Enter drückst)
+- Entwicklung: Nachtlauf – Klickpfade übergehen Zugeklapptes; Tests für Einlagen neben gleich hohen Zahlungen und für Beteiligungen auf den Cent
+
 ## 3.17.81 (2026-11-24 20:20)
 - Entwicklung: Nachtlauf – Cashflow und Planung laufen je in einem eigenen Job (der gemeinsame wurde jede Nacht nach 240 min abgebrochen, die neuen Planungsfälle liefen nie); Test hält fest: je Job genau ein Zufallstest
 

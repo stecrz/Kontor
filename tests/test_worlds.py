@@ -808,6 +808,51 @@ class RandomWorlds(unittest.TestCase):
         w.add("Privat", "bank", d, 250.0, iban=w.iban("Partnerin"), purpose="Darlehen"); w.add("Partnerin", "bank", d, -250.0, iban=w.iban("Privat"), purpose="Darlehen")
         w.add("Privat", "dar:Partnerin", d, -250.0, purpose="Darlehen Partnerin"); w.add("Privat", "dar:Partnerin", d, -250.0, purpose="Darlehen Partnerin")
         self.assertEqual(rows(w.datasets(), "Privat"), {"Einlage/Entnahme Partnerin / Darlehen von Partnerin / Aufnahme": 250.0, "Darlehen von Partnerin": -250.0})
+        # a contribution to the GbR two days before a friend's loan of the same amount; the participation booked on the friend's
+        # day, the loan to the friend three days later: the participation's booking is the contribution's, the friend's the
+        # loan's -- not the nearer payment's alone (up to 3.17.78 the friend's payment took the participation's booking, the loan
+        # to the friend became a change in value; a night's random case)
+        for cat in ("", "Umbuchung"):
+            w = World(0, ["Privat"], ["Beta GbR"], {"Beta GbR": {"Privat": 0.5}})
+            w.add("Privat", "bank", d, -4000.0, iban=w.iban("Beta GbR"), purpose="Einlage Beta GbR", cat=cat)
+            w.add("Privat", "stake:Beta GbR", d + timedelta(2), 4000.0, purpose="Einlage Beta GbR")
+            w.add("Beta GbR", "bank", d, 4000.0, iban=w.iban("Privat"), purpose="Einlage")
+            w.add("Privat", "bank", d + timedelta(2), -4000.0, name="Freund"); w.add("Privat", "ford", d + timedelta(5), 4000.0, name="Freund")
+            data = w.datasets(); self.check(w, data, "a contribution and a friend's loan of one amount (%s)" % (cat or "no category"))
+            self.assertEqual(rows(data, "Privat"), {"Einlage/Entnahme Beta GbR / Beteiligung Beta GbR": -4000.0, "Darlehen an Freund / Rückzahlung": -4000.0}, cat)
+        # ... without the loan booked to the friend, the friend's payment is nearer: it keeps the participation's booking, the
+        # contribution stays a plain contribution (as before)
+        w = World(0, ["Privat"], ["Beta GbR"], {"Beta GbR": {"Privat": 0.5}})
+        w.add("Privat", "bank", d, -4000.0, iban=w.iban("Beta GbR"), purpose="Einlage Beta GbR", to="Beta GbR")
+        w.add("Privat", "stake:Beta GbR", d + timedelta(2), 4000.0, purpose="Einlage Beta GbR")
+        w.add("Beta GbR", "bank", d, 4000.0, iban=w.iban("Privat"), purpose="Einlage")
+        w.add("Privat", "bank", d + timedelta(2), -4000.0, name="Freund")
+        self.assertEqual(rows(w.datasets(), "Privat")["Beteiligung Beta GbR"], -4000.0)
+        # a booking a payment claims is never paired otherwise -- also not as booked back on its own account: a contribution and
+        # a withdrawal of one amount a month apart, both booked on the participation under "Umbuchung" (3.17.80)
+        for cat in ("", "Umbuchung"):
+            w = World(0, ["Privat"], ["Beta GbR"], {"Beta GbR": {"Privat": 0.5}})
+            e = date(2026, 2, 27)
+            w.add("Privat", "bank", e, -4000.0, iban=w.iban("Beta GbR"), purpose="Einlage Beta GbR")
+            w.add("Privat", "stake:Beta GbR", e + timedelta(3), 4000.0, purpose="Einlage Beta GbR", cat=cat)
+            w.add("Beta GbR", "bank", e, 4000.0, iban=w.iban("Privat"), purpose="Einlage")
+            w.add("Privat", "bank", e + timedelta(29), 4000.0, iban=w.iban("Beta GbR"), purpose="Entnahme Beta GbR")
+            w.add("Privat", "stake:Beta GbR", e + timedelta(29), -4000.0, purpose="Entnahme Beta GbR", cat=cat)
+            w.add("Beta GbR", "bank", e + timedelta(29), -4000.0, iban=w.iban("Privat"), purpose="Entnahme")
+            data = w.datasets(); self.check(w, data, "a contribution and a withdrawal a month apart (%s)" % (cat or "no category"))
+            months = {z["row"]: {m: v for m, v in z["amounts"].items() if v} for s in data["Privat"]["cashflow"]["sections"] for z in s["rows"] if any(z["amounts"].values())}
+            self.assertEqual(months, {"Einlage/Entnahme Beta GbR / Beteiligung Beta GbR": {"2026-02": -4000.0, "2026-03": 4000.0}}, cat)
+        # a payment without an IBAN under "Umbuchung" a day before the partner's, her loan booked under "Umbuchung" on her day:
+        # the booking is hers -- the nearer payment takes it, whatever both bookings say (3.17.80)
+        for friend in (date(2026, 3, 30), date(2026, 3, 29)):
+            w = World(0, ["Privat", "Partnerin"])
+            w.account("Privat", "dar:Partnerin", "Darlehen von Partnerin", "liabilities")
+            w.add("Privat", "bank", friend, 250.0, name="Freund", cat="Umbuchung")
+            w.add("Privat", "bank", date(2026, 3, 31), 250.0, iban=w.iban("Partnerin"), purpose="Darlehen")
+            w.add("Privat", "dar:Partnerin", date(2026, 3, 31), -250.0, purpose="Darlehen Partnerin", cat="Umbuchung")
+            w.add("Partnerin", "bank", date(2026, 3, 31), -250.0, iban=w.iban("Privat"), purpose="Darlehen")
+            self.assertEqual(rows(w.datasets(), "Privat"), {"Einlage/Entnahme Partnerin / Darlehen von Partnerin / Aufnahme": 250.0,
+                                                           "Umbuchung ohne erkannten Partner": 250.0}, friend)
 
     def test_random_worlds(self):
         for seed in F.fuzz_seeds("Welten"):

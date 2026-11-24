@@ -9449,11 +9449,15 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape' && $('.side')
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && (REC.on || REC.starting)) { e.stopPropagation(); asMicStop(false); } }, true);          // a recording first: thrown away
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && $('#drawer').classList.contains('open') && !(drawerDirty() && !confirm(t('ungespeicherte_aenderungen_verwerfen')))) closeDrawer(); });
 // Klick neben das Seitenfenster schliesst es (bei ungespeicherten Eingaben erst nach Rueckfrage)
+// (only the click of that same press keeps it closed -- a new press on the row opens it again, however soon: the night's click
+// paths found it, 3.17.80)
 document.addEventListener('pointerdown', e => {
-  const dr = $('#drawer'); if (!dr.classList.contains('open') || dr.contains(e.target) || e.target.closest('#toast, .dlg-back')) return;
+  const dr = $('#drawer'); if (!dr.classList.contains('open')) { DRW.closed = null; return; }
+  if (dr.contains(e.target) || e.target.closest('#toast, .dlg-back')) return;
   if (drawerDirty() && !confirm(t('ungespeicherte_aenderungen_verwerfen'))) return;
   const key = DRW.key; closeDrawer(); DRW.closed = key ? {key, t: Date.now()} : null;
 });
+document.addEventListener('keydown', () => { if (!$('#drawer').classList.contains('open')) DRW.closed = null; }, true);   // (Enter on the row: as a new press)
 try { const s = JSON.parse(LS.get('kontor.ui') || '{}'); Object.assign(S, {plan: s.plan !== false, real: !!s.real, area: s.area || null}); } catch (e) {}
 viewApply(viewLoad());
 let SNAP_T = null;

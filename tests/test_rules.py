@@ -413,6 +413,20 @@ class RoundingTests(unittest.TestCase):
         hand = F.tx("priv.bet.ga", date(2026, 9, 1), 617.28, "Ich", "Anfangsstand")
         led = make_ledger(dict(raw, **{"priv.bet.ga": 617.28}), [hand, F.tx("ga.kk", date(2026, 10, 1), 1234.57, "Kunde", "Rechnung")])
         self.assertEqual([p.amount for p in plan_all(led, cfg, today).proposals], [0.01])
+        # at the floats' value only as a sum: Kontor's adjustment of October, then one of September approved later (it came in
+        # last, but for an earlier day) -- no balance Kontor computed that way: booked to the exact value (3.17.78; before it
+        # stayed a cent short: a night's random case)
+        pay = F.tx("ga.kk", date(2026, 10, 1), 1234.57, "Kunde", "Rechnung")
+        octo = F.tx("priv.bet.ga", date(2026, 10, 1), 617.27, "Alpha GbR", "Anteilswertanpassung · #kontor-wert-20261001-1")
+        sept = F.tx("priv.bet.ga", date(2026, 9, 30), 0.01, "Alpha GbR", "Anteilswertanpassung · #kontor-wert-20260930-1")
+        for cycle in ("daily", "monthly"):
+            cfg["companies"][0].update(retroactive_from="all", cycle=cycle)
+            led = make_ledger(dict(raw, **{"priv.bet.ga": 617.28}), [pay, octo, sept])
+            self.assertEqual(round(sum(p.amount for p in plan_all(led, cfg, today).proposals if p.kind == "value"), 2), 0.01, cycle)
+            # ... and in the order they came in (September first): Kontor's last adjustment set that balance -- it stays
+            led = make_ledger(dict(raw, **{"priv.bet.ga": 617.28}), [pay, dict(sept, id=octo["id"]), dict(octo, id=sept["id"])])
+            self.assertEqual([p.amount for p in plan_all(led, cfg, today).proposals if p.kind == "value" and p.booking_date >= date(2026, 10, 1)], [], cycle)
+        cfg["companies"][0].update(retroactive_from="", cycle="daily")
 
 
 class CompanyTests(unittest.TestCase):
