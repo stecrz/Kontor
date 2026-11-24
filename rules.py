@@ -704,7 +704,9 @@ def _keep_value(ledger: Ledger, res: RuleResult, rule: str, target, series: Valu
         if abs(round(series.factor * value, 2) - have) >= 0.005:
             return False
         i = len(mine_days) if d is None else bisect_right(mine_days, d)
-        return i > 0 and mine_top[i - 1] > series.newest(d)
+        # Kontor's latest adjustment up to that day is also the one it made last (none made later for an earlier day moved
+        # the balance since) -- and it came after everything in the company
+        return i > 0 and mine[i - 1][1] == mine_top[i - 1] > series.newest(d)
     want_now, src_now, unknown_now = series.at(None)
     if abs(want_now - target.balance) >= 0.005 and not unknown_now and stays(None, round(target.balance - twice, 2), src_now):
         want_now = round(target.balance - twice, 2)

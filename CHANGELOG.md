@@ -1,5 +1,9 @@
 # Änderungen
 
+## 3.17.78 (2026-11-24 19:11)
+- Beteiligungen: Wert auf den Cent genau, auch nach einer nachträglichen Monatsbuchung
+- Entwicklung: Nachtlauf (Regelwelten) behoben
+
 ## 3.17.77 (2026-11-24 18:34)
 - Cashflow: Ausschüttung deiner eigenen Gesellschaft zählt als Entnahme, nicht als Kapitalertrag – ihr Gewinn steckt schon im Wert der Beteiligung; von anderen Gesellschaften weiter Kapitalertrag
 - Cashflow-Positionen: Einrichtung, Ausstattung und Haushaltsgeräte unter Lebenshaltung statt Wohnen (in einer Firma Investitionen)

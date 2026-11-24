@@ -23,7 +23,8 @@ FOUND: List[int] = [377654401, 357881360,     # 3.16.58: two payments of one amo
                      754384078,                   # 3.17.16: many of one amount -- a payment to another area took a booking by hand a payment without IBAN could as well belong to
                      725914894,                   # 3.17.25: an insurance of one amount let a top-up take a contribution's booking on the participation
                      456949213, 895483918,        # 3.17.25: an extra loan payment dated before interest booked at the month's end (the worlds no longer build that)
-                     225758066]                   # 3.17.25: a mirrored booking moved beyond MIRROR_MOVED_DAYS, its original entered again: a note, by design
+                     225758066,                   # 3.17.25: a mirrored booking moved beyond MIRROR_MOVED_DAYS, its original entered again: a note, by design
+                     849776721, 474654560]        # 3.17.77: a value adjustment made later for an earlier month end let an exact stake stay a cent off (pre-3.16.99 rule)
 
 
 def fuzz_seeds(name: str = "", fixed_env: str = "KONTOR_FUZZ_SEEDS", fixed_default: int = 40, found: List[int] = None) -> Iterator[int]:
