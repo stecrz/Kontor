@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.17.76 (2026-11-24 17:51)
+- Hilfe: Suche findet jeden Abschnitt
+
 ## 3.17.75 (2026-11-24 17:23)
 - Cashflow: Kategorie zählt auf jedem Konto, auch auf manuellen – etwa der einbehaltene Teil einer Kaution; ohne Kategorie weiter Wertänderung
 - Cashflow: als Verbindlichkeit gebuchte Rechnung zählt bei Fälligkeit in ihrer Kategorie, die Schuld als Aufnahme
