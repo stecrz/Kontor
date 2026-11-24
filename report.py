@@ -229,7 +229,15 @@ def depot_holdings(acc: Account, werte: Dict[str, Optional[float]], mkeys: List[
             r["amounts"][cur] = round(r["amounts"].get(cur, 0.0) + float(p.get("marketValue") or p.get("amount") or 0), 2)
         except (TypeError, ValueError, AttributeError):
             continue
-    found, own = (state.get("sec_search") or {}).get("names") or {}, (state.get("sec_search") or {}).get("own") or {}
+    # a series in MoneyMoney's history without name and ISIN cannot be matched to the export by itself; when the portfolio holds
+    # a single security in the history and a single one now (with no history of its own), they are the same – one row
+    if len(rows) == 2:
+        (k1, r1), (k2, r2) = rows.items()
+        old, new = ((k1, r1), (k2, r2)) if k1.startswith("mm:") else ((k2, r2), (k1, r1))
+        if old[0].startswith("mm:") and not new[0].startswith("mm:") and set(new[1]["amounts"]) <= {cur}:
+            new[1]["amounts"].update(old[1]["amounts"])         # history only before the current month: nothing overlaps
+            del rows[old[0]]
+    found, own =(state.get("sec_search") or {}).get("names") or {}, (state.get("sec_search") or {}).get("own") or {}
     for key, r in rows.items():
         # MoneyMoney's own name (history or export) stays as "orig" and is always shown on hover, together with the ISIN; the name
         # shown: one changed in the setup (list of names), else MoneyMoney's, else the one looked up by the ISIN, else the ISIN

@@ -937,6 +937,27 @@ class SecurityNameTests(unittest.TestCase):
         self.assertEqual((b["name"], b["orig"], b["source"]), ("Mein Name", "Beispiel", "own_name"))
         self.assertEqual((c["name"], c["orig"], c["source"]), ("DE0007164600", "", ""))                      # nothing known: the ISIN
 
+    def test_unnamed_history_joins_the_single_security(self):
+        from datetime import date as D
+        from model import Account
+        from report import depot_holdings
+        acc = Account("u1", "Police", "portfolio", False, 0, 0.0, "EUR", portfolio=True)
+        mk = ["2026-09", "2026-10", "2026-11"]
+        werte = {"2026-09": 7912.47, "2026-10": 7938.83, "2026-11": 8063.29}
+        state = {"history_mm_sec": {"u1": [{"name": "", "isin": "", "amounts": {"2026-09": 7912.47, "2026-10": 7938.83}}]}}
+        live = [{"name": "ETF Welt", "isin": "IE00B4L5Y983", "marketValue": 8063.29}]
+        rows = depot_holdings(acc, werte, mk, D(2026, 11, 8), state, live, {})
+        self.assertEqual(len(rows), 1)                                        # one security throughout, no "Unnamed 1"
+        self.assertEqual((rows[0]["isin"], rows[0]["amounts"]), ("IE00B4L5Y983", werte))
+        # two securities now: which one the history was is unknown – kept apart, nothing guessed
+        live2 = live + [{"name": "Anleihe", "isin": "DE0001102580", "marketValue": 0.01 + 100}]
+        rows = depot_holdings(acc, dict(werte, **{"2026-11": 8163.30}), mk, D(2026, 11, 8), state, live2, {})
+        self.assertEqual(sum(1 for r in rows if not r["isin"] and not r.get("rest")), 1)
+        # a named history of its own: the unnamed series is not joined to it
+        state["history_mm_sec"]["u1"].append({"name": "ETF Welt", "isin": "IE00B4L5Y983", "amounts": {"2026-10": 1.0}})
+        rows = depot_holdings(acc, werte, mk, D(2026, 11, 8), state, live, {})
+        self.assertTrue(any(not r["isin"] and not r.get("rest") for r in rows))
+
 
 class SecurityHardeningTests(unittest.TestCase):
     """No plain-text fallback, sessions ended on a password change, external receipts limited."""

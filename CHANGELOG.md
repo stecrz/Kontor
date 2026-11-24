@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.17.43 (2026-11-24 01:14)
+- Bilanz: Depot mit nur einem Wertpapier – Verlauf ohne Namen aus MoneyMoney zählt zu ihm statt „Unbenannt 1“
+
 ## 3.17.42 (2026-11-24 00:48)
 - Entwicklung: Abschluss jeder Version mit einem Skript (release.py) – prüfen, daraufsetzen, nummerieren, veröffentlichen in einem Schritt
 - Entwicklung: Prüfen in zwei Stufen – englische Hilfe, README, Bilder, Highlights nur beim großen Versionssprung (Skill major)
