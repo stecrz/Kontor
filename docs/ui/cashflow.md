@@ -33,8 +33,8 @@ and dividends count here (position Kapitalerträge). Einnahmen and Ausgaben are 
 
 Positions (fixed outline for every area): income Arbeitseinkommen (salary, bonus, profit-related pay, minijob, side earnings from own work), Umsatzerlöse, Rente & Sozialleistungen
 (pension, child benefit, parental allowance …; companies: Zuschüsse & Förderungen), Vermietung, Kapitalerträge (interest,
-dividends, distributions of companies outside the user's areas; a distribution between the user's areas is a withdrawal
-– "Einlage/Entnahme <Bereich>" –, as its profit is already in the participation's value), Unterhalt &
+dividends, profit distributions from any company, the user's own GmbH or GbR too – its participation's value falls by it at
+the same time, a change in value; capital taken out or paid in is "Einlage/Entnahme"), Unterhalt &
 Geschenke (support, pocket money, gifts, inheritance received – no earned income), Erstattungen, Sonstige Einnahmen (e.g. selling
 used things privately; "Verkauf" in a company is Umsatzerlöse); expenses
 Wareneinkauf, Personal, Betriebskosten, Wohnen (companies: Raumkosten), Lebenshaltung (incl. food and drink at home and eating out,

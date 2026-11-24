@@ -315,6 +315,14 @@ anhängen – nie löschen.
   Kosten. Einrichtung, Ausstattung und Haushaltsgeräte sind Lebenshaltung, nicht Wohnen (Miete, Nebenkosten – so trennt es auch die
   amtliche Statistik), in einer Firma Investitionen (wie die Empfehlung sagt); eine Kategorie „Sauna“ schlägt Kontor weiter als Freizeit vor (meist Saunabesuche) – seine eigene Sauna ordnet
   er unter Cashflow-Positionen selbst der Lebenshaltung zu. (umgesetzt in 3.17.77)
+  Geändert (Nutzer, 2026-11-24 – „Eine Gewinnausschüttung sollte so oder so gleich gebucht sein, unabhängig davon, ob von externer
+  oder eigener GmbH“): Eine Gewinnausschüttung (auch ein Gewinnanteil) ist immer Kapitalertrag, auch von der eigenen GmbH oder GbR.
+  Bei der eigenen sinkt im gleichen Zug ihr Wert (Cash sinkt, das fließt in die Bewertung ein – Multiple-Rechnung steht noch aus,
+  siehe 4.), und Kontor bucht diese Wertminderung über die Regel der Beteiligung ins private Beteiligungskonto gegen – wie der Kurs
+  einer Aktie nach der Dividende; das Nettovermögen bleibt. Die Sonderregel aus 3.17.77 (zwischen den Bereichen eine Entnahme) ist
+  zurückgenommen; ihr Grund – der Gewinn zähle sonst doppelt – trug nicht: Er steht erst als Wertzuwachs der Beteiligung, mit der
+  Ausschüttung als Ertrag bei gleich großer Wertminderung, nichts doppelt. Entnahmen und Einlagen von Kapital bleiben Einlagen &
+  Entnahmen. (umgesetzt in 3.17.83)
 - **Empfohlene Kategorien nur zur Orientierung** (Nutzer, 2026-11-24): keine Zählung „X von Y vorhanden“, kein „fehlt“ – nicht jede
   Zeile gilt für jeden (ohne Geschäft keine Umsatzerlöse). Die Karte zeigt je Zeile neutral, welche seiner Kategorien dort zählt, sonst „keine“.
   (umgesetzt in 3.17.46)

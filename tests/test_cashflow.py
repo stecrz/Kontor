@@ -794,36 +794,36 @@ class Positions(Reconciles):
         for (path, inc, firm), want in cases.items():
             self.assertEqual(R.propose_position(path, inc, firm), want, (path, inc, firm))
 
-    def test_a_distribution_of_your_own_company_is_a_withdrawal(self):
-        # (2026-11-24) the company's profit is already in your participation (your share of its net worth): its distribution only
-        # moves it to your account -- a withdrawal, by category or purpose, never investment income counted a second time. Interest
-        # on a loan between your areas stays income; a distribution from a company outside your areas is investment income.
+    def test_a_distribution_is_investment_income_from_any_company(self):
+        # (user, 2026-11-24) the same booking whether the company is yours or not: investment income -- by category or purpose.
+        # Your own company's value falls by it at the same time: the rule for your participation books that against it, a change
+        # in value, as a share's price falls by its dividend; your net worth stays. Paid out, it is equity for the company.
         cfg = {"companies": [{"area": "Muster GbR", "participation": "Beteiligung an Muster GbR"}]}
         txs = [(1, "kk", date(2026, 2, 3), -5000.0, {"iban": "DE11", "cat": "Gewinnausschüttung"}),
                (2, "giro", date(2026, 2, 3), 5000.0, {"iban": "DE21", "cat": "Gewinnausschüttung"}),
-               (3, "kk", date(2026, 3, 3), -1000.0, {"iban": "DE11", "purpose": "Ausschüttung 2025"}),
-               (4, "giro", date(2026, 3, 3), 1000.0, {"iban": "DE21", "cat": "Kapitalerträge", "purpose": "Ausschüttung 2025"}),
-               (5, "kk", date(2026, 4, 3), -300.0, {"iban": "DE11", "purpose": "Zinsen Gesellschafterdarlehen"}),
-               (6, "giro", date(2026, 4, 3), 300.0, {"iban": "DE21", "purpose": "Zinsen Gesellschafterdarlehen"}),
-               (7, "giro", date(2026, 4, 9), 2000.0, {"iban": "DE77", "cat": "Gewinnausschüttung", "name": "Andere GmbH"}),
-               (8, "giro", date(2026, 5, 4), 700.0, {"iban": "DE21", "purpose": "Gewinnausschüttung 2025"}),
-               (9, "kk", date(2026, 5, 4), -700.0, {"iban": "DE11", "purpose": "Gewinnausschüttung 2025"})]
+               (3, "stake", date(2026, 2, 28), -5000.0, {"purpose": "Wertanpassung · #kontor-wert-20260228-1"}),
+               (4, "kk", date(2026, 3, 3), -1000.0, {"iban": "DE11", "purpose": "Gewinnanteil 2025"}),
+               (5, "giro", date(2026, 3, 3), 1000.0, {"iban": "DE21", "purpose": "Gewinnanteil 2025"}),
+               (6, "kk", date(2026, 4, 3), -300.0, {"iban": "DE11", "purpose": "Zinsen Gesellschafterdarlehen"}),
+               (7, "giro", date(2026, 4, 3), 300.0, {"iban": "DE21", "purpose": "Zinsen Gesellschafterdarlehen"}),
+               (8, "giro", date(2026, 4, 9), 2000.0, {"iban": "DE77", "cat": "Gewinnausschüttung", "name": "Andere GmbH"})]
         data = build(txs, cfg)
         self.assertAddsUp(data)
         p, g = rows(data["Privat"]), rows(data["Muster GbR"])
         nz = lambda z: {m: v for m, v in z["amounts"].items() if v}                          # the months with money
-        self.assertEqual(nz(p["Einlage/Entnahme Muster GbR"]), {"2026-02": 5000.0, "2026-03": 1000.0, "2026-05": 700.0})
-        self.assertEqual(nz(p["Kapitalerträge"]), {"2026-04": 2300.0})                 # interest and the other company
-        self.assertEqual(nz(g["Einlagen/Entnahmen Gesellschafter"]), {"2026-02": -5000.0, "2026-03": -1000.0, "2026-05": -700.0})
+        self.assertEqual(nz(p["Kapitalerträge"]), {"2026-02": 5000.0, "2026-03": 1000.0, "2026-04": 2300.0})
+        self.assertEqual(nz(p["Beteiligung an Muster GbR"]), {"2026-02": -5000.0})            # its value fell: a change in value
+        self.assertNotIn("Einlage/Entnahme Muster GbR", p)
+        self.assertEqual(nz(g["Einlagen/Entnahmen Gesellschafter"]), {"2026-02": -5000.0, "2026-03": -1000.0})
         self.assertEqual(nz(g["Zinsen"]), {"2026-04": -300.0})
-        # named on the positions page: it proposes investment income there (right for companies outside your areas)
-        self.assertEqual(data["Privat"]["cashflow"]["distributions"], {"Gewinnausschüttung": 5000.0, "Kapitalerträge": 1000.0})
-        # your choice of a position counts as it is
-        data = build(txs, dict(cfg, cashflow={"positions": {"Gewinnausschüttung": "capital_income"}}))
+        nw = {m: u["unexplained"] for m, u in data["Privat"]["cashflow"]["reconciliation"].items()}
+        self.assertTrue(all(abs(v) < 0.005 for v in nw.values()), nw)
+        self.assertNotIn("distributions", data["Privat"]["cashflow"])
+        # an "Entnahme" between your areas stays a withdrawal (capital taken out, no profit)
+        data = build([(1, "kk", date(2026, 2, 3), -800.0, {"iban": "DE11", "cat": "Entnahme"}),
+                      (2, "giro", date(2026, 2, 3), 800.0, {"iban": "DE21", "cat": "Entnahme"})], cfg)
         self.assertAddsUp(data)
-        p = rows(data["Privat"])
-        self.assertEqual(nz(p["Kapitalerträge"]), {"2026-02": 5000.0, "2026-04": 2300.0})
-        self.assertEqual(data["Privat"]["cashflow"]["distributions"], {"Kapitalerträge": 1000.0})
+        self.assertEqual(nz(rows(data["Privat"])["Einlage/Entnahme Muster GbR"]), {"2026-02": 800.0})
 
     def test_advances_paid_back_by_your_company_cancel_out(self):
         # fuel paid privately for the partnership, paid back by it a month later: both in "Auslagen" -- the private cash flow shows

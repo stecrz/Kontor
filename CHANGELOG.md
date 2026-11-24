@@ -1,5 +1,9 @@
 # Änderungen
 
+## 3.17.83 (2026-11-24 21:10)
+- Cashflow: Gewinnausschüttung zählt immer als Kapitalertrag, auch von deiner eigenen GmbH oder GbR – der gesunkene Wert der Beteiligung steht als Wertänderung daneben (Ausnahme aus 3.17.77 zurückgenommen)
+- Cashflow-Positionen: auch „Gewinnanteil“ als Kapitalertrag erkannt
+
 ## 3.17.82 (2026-11-24 20:32)
 - Seitenfenster: öffnet sofort wieder, wenn du es mit einem Klick daneben schließt und gleich wieder auf dieselbe Zahl klickst (oder Enter drückst)
 - Entwicklung: Nachtlauf – Klickpfade übergehen Zugeklapptes; Tests für Einlagen neben gleich hohen Zahlungen und für Beteiligungen auf den Cent

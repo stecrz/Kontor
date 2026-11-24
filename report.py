@@ -986,7 +986,7 @@ POSITION_HINTS = [
       "foerdermittel", "foerderung", "subvention"), "benefits", "other_expenses"),
     (("gehalt", "gehaelt", "lohn", "loehn", "tantieme", "bonus", "gratifikation", "verguetung", "honorar", "arbeit", "minijob", "nebenjob",
       "aushilfe", "werkstudent", "nebeneink", "nebenverdienst", "nebentaetig"), "work_income", "staff"),
-    (("dividend", "kapitalertr", "ausschuett"), "capital_income", "partners"),
+    (("dividend", "kapitalertr", "ausschuett", "gewinnanteil", "gewinnauszahl"), "capital_income", "partners"),
     (("mieteinnahm", "pacht"), "rental", "property_costs"),
     (("erstattung", "rueckzahlung", "gutschrift", "cashback"), "refunds", "other_expenses"),
     (("geldautomat", "bargeld", "barabhebung", "abhebung"), "other_income", "other_expenses"),
@@ -1027,7 +1027,7 @@ def _has(words, text: str, start: bool = False) -> bool:
 # at all (e.g. a loan rate mixes repayment and interest). Learned patterns of your categories come first (see classify).
 TX_HINTS = [
     ("text", r"tilgung|annuitaet|darlehensrate|kreditrate|\brate\b", ("", ""), ("", "")),
-    ("text", r"ausschuettung|dividend|ertragsgutschrift", ("capital_income", ""), ("capital_income", "")),
+    ("text", r"ausschuettung|dividend|ertragsgutschrift|gewinnanteil|gewinnauszahlung", ("capital_income", ""), ("capital_income", "")),
     ("text", r"\bzins|sollzins|habenzins|zinsabschluss|kupon", ("capital_income", "loan_interest"), ("capital_income", "loan_interest")),
     ("name", r"deutsche rentenversicherung", ("benefits", "insurance"), ("", "staff")),       # money from it: a pension
     ("name", r"familienkasse|elterngeldstelle|jobcenter|bundesagentur fuer arbeit|bafoeg", ("benefits", None), ("benefits", None)),
@@ -1141,7 +1141,6 @@ def recognised_position(path: str, income: bool, company: bool = False) -> Optio
 
 
 _UNTERHALT = re.compile(r"(?<![a-z])unterhalts?(?![a-z])")
-_DISTRIBUTION = re.compile(r"ausschuett|dividend|gewinnanteil|gewinnverteil|gewinnauszahl")
 
 
 def category_totals(ledger: Ledger, accounts: Optional[Set[str]] = None) -> Dict[str, float]:
@@ -1232,7 +1231,6 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
             pass
     emp_zu_konto: Dict[str, str] = {}                 # recipient -> the account saving goes into ("extern": none in MoneyMoney)
     unsure: Dict[str, float] = {}                     # category -> amount between your areas counted as contribution/withdrawal
-    shared: Dict[str, float] = {}                     # category -> profit distributions between your areas (withdrawals)
     for key, ref in ((kf.get("recipient_to_account") or {}).get(str(area_id)) or {}).items():
         if ref == "external":
             emp_zu_konto[key] = ref
@@ -1297,20 +1295,9 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
     def paid_for(g0: Optional[str]) -> bool:
         return g0 in POS and (POS[g0][0] in ("income", "expenses") or g0 == "loan_interest")      # interest paid is a cost as well
 
-    def distribution(t: Tx, c0: str, g0: Optional[str], yours: bool) -> bool:
-        """A profit distribution between your areas (by its category or purpose, unless you chose the position): equity, no
-        income -- the company's profit is already in the value of your participation (your share of its net worth), so counting
-        it as investment income again would count it twice. From a company outside your areas it stays investment income."""
-        return not yours and g0 == "capital_income" and bool(_DISTRIBUTION.search(fold_text(" ".join((c0, t.purpose, t.booking_text)))))
-
-    def pays_for(t: Tx) -> Tuple[str, Optional[str], bool, bool]:
-        """(category, position, chosen by you, pays for something -- a salary, rent, interest; not a distribution)."""
-        c0, g0, yours = between_position(t)
-        return c0, g0, yours, paid_for(g0) and not distribution(t, c0, g0, yours)
-
     def paid_for_something(t: Tx) -> bool:
         """A payment to another area that pays for something (a salary, rent): no contribution, it claims no booking."""
-        return not (t.category_path and is_transfer(t.category_path)) and pays_for(t)[3]
+        return not (t.category_path and is_transfer(t.category_path)) and paid_for(between_position(t)[1])
 
     mirror_areas: Dict[str, Set[str]] = defaultdict(set)
     for m in config.get("account_mirrors") or []:
@@ -1685,14 +1672,12 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
         if p is not None and not same and (pa is not None or p in beteiligungs_gruppen) and not by_cat[t.id]:
             # between two of your areas, but paid for something (a salary, rent): it counts in the position you chose for its
             # category or its name clearly says (not "other") -- without a category by the words of its purpose (estimated).
-            # Everything else between areas is a contribution or withdrawal.
-            c0, g0, yours, paid = pays_for(t)
-            if paid:
+            # Everything else between areas is a contribution or withdrawal. A profit distribution is investment income, from
+            # your own company as from any other (user, 2026-11-24): its value falls by it at the same time -- booked against
+            # your participation by the rule for it, a change in value -- as a share's price falls by its dividend.
+            c0, g0, yours = between_position(t)
+            if paid_for(g0):
                 p, guess = None, (None if c0 else g0)
-            elif c0 and g0 == "capital_income":
-                # a distribution by its words: a withdrawal here, though the positions page proposes investment income (for
-                # companies outside your areas) -- named there with this amount
-                shared[c0] = shared.get(c0, 0.0) + abs(t.amount)
             elif c0 and g0 is None and not yours:
                 # a category Kontor does not know and you did not place: shown under "other" on the positions page, but between
                 # your areas it counts as a contribution or withdrawal -- named there, so that the difference is no surprise
@@ -1859,7 +1844,6 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
     R.mapped_in = {u: dict(v) for u, v in mapped_in.items()}
     R.saving_recipients = _savings_list(ledger, savings, depots)
     R.uncertain = {c: round(v, 2) for c, v in unsure.items() if abs(v) >= 0.005}
-    R.distributions = {c: round(v, 2) for c, v in shared.items() if abs(v) >= 0.005}
     return R, inbound, warnings
 
 
@@ -2164,7 +2148,6 @@ def build_dataset(ledger: Ledger, config: dict, state: dict, today: date, bereic
                    "liquid_net_worth": liquid_nw, "positions": {r: role_label(r) for r in pos_sums}, "outside": ausserhalb},
         "cashflow": {"sections": sektionen, "reconciliation": ueberleitung, "saving_recipients": list(getattr(R, "saving_recipients", None) or []),
                          "uncertain": dict(getattr(R, "uncertain", None) or {}),
-                         "distributions": dict(getattr(R, "distributions", None) or {}),
                          "saving_targets": anlage_ziele, "cf_ids": cf_ids},
         "loan_config": loans_cfg,
         "accounts_inactive": sorted(inactive),
