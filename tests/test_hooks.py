@@ -9,6 +9,8 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import datetime
+from zoneinfo import ZoneInfo
 
 HOOK = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".claude", "hooks", "briefing.py")
 PRE_PUSH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".githooks", "pre-push")
@@ -256,14 +258,20 @@ class PushGuard(unittest.TestCase):
         self.git(d, "checkout", "-q", "-B", "main")
         return d
 
-    def version(self, d, v, files, keep=True):
-        """One version: its files, VERSION and a changelog section on top (keep: the sections before it stay)."""
+    def version(self, d, v, files, keep=True, heading=None, made=None):
+        """One version: its files, VERSION and a changelog section on top (keep: the sections before it stay); the heading's time
+        is the clock's unless given (heading "2026-01-01 10:00", commit made "2026-01-01T09:30:00+01:00")."""
         old = open(os.path.join(d, "CHANGELOG.md")).read().split("\n", 2)[2] if keep and os.path.exists(os.path.join(d, "CHANGELOG.md")) else ""
-        for name, text in dict(files, VERSION=v + "\n", **{"CHANGELOG.md": "# Änderungen\n\n## %s (2026-01-01 10:00)\n- %s\n\n%s" % (v, v, old)}).items():
+        heading = heading or datetime.datetime.now(ZoneInfo("Europe/Berlin")).strftime("%Y-%m-%d %H:%M")
+        for name, text in dict(files, VERSION=v + "\n", **{"CHANGELOG.md": "# Änderungen\n\n## %s (%s)\n- %s\n\n%s" % (v, heading, v, old)}).items():
             with open(os.path.join(d, name), "w") as f:
                 f.write(text)
         self.git(d, "add", "-A")
-        self.git(d, "commit", "-q", "-m", "%s: change" % v)
+        if made:
+            subprocess.run(["git", "commit", "-q", "-m", "%s: change" % v], cwd=d, check=True, capture_output=True,
+                           env=dict(ENV, GIT_COMMITTER_DATE=made, GIT_AUTHOR_DATE=made))
+        else:
+            self.git(d, "commit", "-q", "-m", "%s: change" % v)
 
     def guard(self, d, command="git push origin HEAD:main"):
         r = subprocess.run([sys.executable, GUARD], cwd=d, env=ENV, capture_output=True, text=True, timeout=60,
@@ -328,6 +336,19 @@ class PushGuard(unittest.TestCase):
         self.git(self.a, "commit", "-q", "-am", "1.0.11: no changelog")            # its section missing on top
         code, err = self.guard(self.a)
         self.assertEqual(code, 2); self.assertIn("passt nicht zu VERSION 1.0.11", err)
+
+    def test_changelog_time_from_the_clock(self):
+        # chats have no clock and guessed the time (3.17.30: 29 minutes ahead): never after the commit, at most 20 minutes before
+        self.version(self.a, "1.0.1", {"app.js": "two\n"}, heading="2026-01-01 10:00", made="2026-01-01T09:30:00+01:00")
+        code, err = self.guard(self.a)
+        self.assertEqual(code, 2); self.assertIn("Uhrzeit im CHANGELOG 2026-01-01 10:00, Commit um 2026-01-01 09:30", err)
+        self.assertNotIn("Versionskette", err)                                     # only the time, not a stale main
+        self.git(self.a, "reset", "-q", "--hard", "origin/main")
+        self.version(self.a, "1.0.1", {"app.js": "two\n"}, heading="2026-01-01 10:00", made="2026-01-01T10:40:00+01:00")
+        self.assertEqual(self.guard(self.a)[0], 2)                                 # written long before the commit
+        self.git(self.a, "reset", "-q", "--hard", "origin/main")
+        self.version(self.a, "1.0.1", {"app.js": "two\n"}, heading="2026-01-01 10:00", made="2026-01-01T10:12:00+01:00")
+        self.assertEqual(self.guard(self.a), (0, ""))                              # tests in between
 
     def test_chain_on_github(self):
         def chain(before, after):

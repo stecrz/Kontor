@@ -1233,7 +1233,7 @@ class StaleInterestTests(unittest.TestCase):
                  {"from_date": "2027-01-01", "percent": 2.0}]
         found = [f["text"] for f in core.check_config(led, [], {"loans": [loan_cfg(interest=dict(loan_cfg()["interest"], rate_list=rates))]}) if f["severity"] == "warning"]
         # only what plays a part from "Buchen ab" (2026) on
-        self.assertEqual([f for f in found if "Jahresbasis" in f], ["Darlehen Verkäuferdarlehen: Zinssatz ab 01.07.2026 gilt bei Jahresbasis erst ab 2027 – der Satz vom 1. Januar zählt fürs ganze Jahr."])
+        self.assertEqual([f for f in found if "Jahresbasis" in f], ["Darlehen „Verkäuferdarlehen“: Zinssatz ab 01.07.2026 gilt bei Jahresbasis erst ab 2027 – der Satz vom 1. Januar zählt fürs ganze Jahr."])
         monthly = loan_cfg(interest={"model": "remaining_debt_monthly", "rate_list": rates, "booking_day": "ultimo"})
         self.assertFalse([f for f in core.check_config(led, [], {"loans": [monthly]}) if "Jahresbasis" in f["text"]])
         self.assertTrue(core.check_config(led, [], {"loans": [loan_cfg(interest="kaputt")]}))           # damaged settings: named, not crashed
@@ -1274,7 +1274,7 @@ class TwiceTests(unittest.TestCase):
         self.assertEqual(len(right), 1)
         tl = next(t for t in real.txs if "#kontor-tx-" in t.purpose and t.booking_date == date(2026, 10, 1))
         res = plan_loan(_twice(real, tl).fork(), monthly, end)
-        self.assertEqual(res.warnings, ["Darlehen Verkäuferdarlehen: Kontors Buchung vom 01.10.2026 über 6.000,00 € steht doppelt in Verkäuferdarlehen "
+        self.assertEqual(res.warnings, ["Darlehen „Verkäuferdarlehen“: Kontors Buchung vom 01.10.2026 über 6.000,00 € steht doppelt in Verkäuferdarlehen "
                                         "(dieselbe Markierung) – eine davon bitte in MoneyMoney löschen."])
         # November's interest from the debt as if the repayment were there once (not 6,000.00 less), nothing booked for it again
         self.assertEqual([(p.kind, p.amount) for p in res.proposals], [("interest", right[0])])

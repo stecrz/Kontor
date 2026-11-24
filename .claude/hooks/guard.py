@@ -5,7 +5,10 @@ version chain (push_check): what goes to main sits on the newest main and is one
 VERSION, keeps every version section of the changelog and heads it with its own version. Exit code 2 blocks the call and
 tells Claude why; anything else lets the normal flow go on. A guard rail, not a sandbox.
 
-By hand / on GitHub: python3 .claude/hooks/guard.py chain <before> <after> -- the same version chain for the commits pushed."""
+By hand / on GitHub: python3 .claude/hooks/guard.py chain <before> <after> -- the same version chain for the commits pushed.
+The chain also checks the top changelog heading's time against the commit's own time: chats have no clock and guessed it, up
+to 29 minutes ahead (3.17.30) -- release.py writes it from the clock."""
+import datetime
 import json
 import os
 import re
@@ -33,8 +36,29 @@ PUSH = r"(?:^|[;&|(]\s*|\n\s*)git\s+(?:-C\s+(?:\"[^\"]+\"|'[^']+'|\S+)\s+)?push\
 HOME_REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))     # the folder above .claude
 
 
-def _git(repo: str, *args: str, timeout: float = 20):
-    return subprocess.run(["git", "-C", repo] + list(args), capture_output=True, text=True, timeout=timeout)
+def _git(repo: str, *args: str, timeout: float = 20, env=None):
+    return subprocess.run(["git", "-C", repo] + list(args), capture_output=True, text=True, timeout=timeout, env=env)
+
+
+BERLIN = "Europe/Berlin"                # the user's local time, in which the changelog headings are written
+STAMP = "%Y-%m-%d %H:%M"
+EARLY, LATE = 1, 20                     # minutes a heading may be after / before its commit (tests and rebase in between)
+
+
+def time_problem(repo: str, commit: str, changelog: str, name: str) -> str:
+    """The top heading's time against the commit's own time (both Berlin): never after it, at most LATE minutes before."""
+    m = re.search(r"(?m)^## \d+\.\d+\.\d+ \((\d{4}-\d\d-\d\d \d\d:\d\d)\)", changelog or "")
+    if not m:
+        return ""                                       # old headings without a time
+    made = _git(repo, "log", "-1", "--date=format-local:" + STAMP, "--format=%cd", commit, env=dict(os.environ, TZ=BERLIN)).stdout.strip()
+    try:
+        minutes = (datetime.datetime.strptime(m.group(1), STAMP) - datetime.datetime.strptime(made, STAMP)).total_seconds() / 60
+    except ValueError:
+        return ""
+    if -LATE <= minutes <= EARLY:
+        return ""
+    return ("%s: Uhrzeit im CHANGELOG %s, Commit um %s – nie schätzen, VERSION und CHANGELOG.md schreibt "
+            "`.claude/tools/release.py` (Zeit von der Uhr)." % (name, m.group(1), made))
 
 
 def _version(text: str):
@@ -71,6 +95,9 @@ def chain_problems(repo: str, before: str, after: str):
         top = (_sections(cl) or [None])[0]
         if top != ".".join(map(str, v)):
             out.append("%s: oberste CHANGELOG-Überschrift %s passt nicht zu VERSION %s." % (name, top, ".".join(map(str, v))))
+        late = time_problem(repo, c, cl, name)
+        if late:
+            out.append(late)
     return out
 
 
@@ -141,6 +168,8 @@ def push_check(command: str, cwd: str) -> str:
                 + ("\n- … und %d weitere" % (len(lost) - 8) if len(lost) > 8 else "")
                 + "\nEigene Änderungen auf den frisch geholten main setzen (`git pull --rebase origin main`), nie `reset --soft` auf einen "
                 "fremden Stand. Nur wenn du genau diese Zeilen bewusst geändert hast: KONTOR_PUSH_OK=1.")
+    if problems and all("Uhrzeit im CHANGELOG" in p for p in problems):
+        return "Changelog-Zeit stimmt nicht:\n- " + "\n- ".join(problems)
     if problems:
         return ("Versionskette stimmt nicht – so würden fremde Versionen überschrieben (wie 66ad67f):\n- " + "\n- ".join(problems)
                 + "\nEigene Arbeit ohne VERSION und CHANGELOG.md neu auf den frisch geholten main setzen, dann als nächste Nummer.")

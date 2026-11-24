@@ -763,10 +763,10 @@ def check_config(ledger: Ledger, categories: List[dict], config: dict) -> List[D
         n = l.get("name", "?") + ("" if l.get("active", True) else " (inaktiv)")
         ref(tr("s_darlehen_s_konto") % n, l.get("loan_account", ""), want_offline=True, group_ok=False)
         for s_ in l.get("source_accounts", []) or []:
-            ref("Darlehen %s: Quelle" % n, s_, group_ok=False)
+            ref("Darlehen „%s“: Quelle" % n, s_, group_ok=False)
         b = l.get("booking", {}) or {}
-        cat("Darlehen %s" % n, b.get("category_repayment"))
-        cat("Darlehen %s" % n, b.get("category_interest"))
+        cat("Darlehen „%s“" % n, b.get("category_repayment"))
+        cat("Darlehen „%s“" % n, b.get("category_interest"))
         erk = l.get("detection") or {}
         iban = (erk.get("counter_iban") or "").replace(" ", "")
         if not iban and not erk.get("text_contains"):
@@ -912,7 +912,7 @@ def check_config(ledger: Ledger, categories: List[dict], config: dict) -> List[D
             ref("Immobilie %s: Objektkonto" % n, im["property_account"], group_ok=False)
         for ln, r in (im.get("loan_accounts") or {}).items():
             if r:
-                ref("Immobilie %s: Darlehen %s" % (n, ln), r, group_ok=False)
+                ref("Immobilie %s: Darlehen „%s“" % (n, ln), r, group_ok=False)
         if im.get("area") and not any(b["id"] == im["area"] for b in bereiche):
             add("warning", tr("s_immobilie_s_bereich_s_existiert") % (n, im["area"]))
         if im.get("category"):

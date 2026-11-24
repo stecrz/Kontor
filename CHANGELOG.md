@@ -1,5 +1,9 @@
 # Änderungen
 
+## 3.17.45 (2026-11-24 01:55)
+- Automatische Buchungen: eigener Darlehensname in Anführungszeichen (Darlehen „Darlehen Immo A“), auch in Prüfhinweisen
+- Entwicklung: Versionskette prüft die Changelog-Uhrzeit gegen die Commit-Zeit
+
 ## 3.17.44 (2026-11-24 01:27)
 - Entwicklung: Lagebild holt GitHubs Testergebnisse auch ohne gh und meldet es, wenn GitHub nicht erreichbar ist
 

@@ -297,7 +297,7 @@ def plan_loan(ledger: Ledger, cfg: dict, today: date, config: Optional[dict] = N
     held: List[date] = []                                # ... of those you left out of this approval
     res = RuleResult()
     name = cfg.get("name") or cfg.get("loan_account")
-    rule = "Darlehen %s" % name
+    rule = "Darlehen „%s“" % name                    # your name quoted: "Darlehen „Darlehen Immo A“"
     try:
         loan = ledger.resolve(cfg["loan_account"])
         sources = [ledger.resolve(s) for s in cfg.get("source_accounts", [])]
