@@ -237,7 +237,7 @@ def depot_holdings(acc: Account, werte: Dict[str, Optional[float]], mkeys: List[
         if old[0].startswith("mm:") and not new[0].startswith("mm:") and set(new[1]["amounts"]) <= {cur}:
             new[1]["amounts"].update(old[1]["amounts"])         # history only before the current month: nothing overlaps
             del rows[old[0]]
-    found, own =(state.get("sec_search") or {}).get("names") or {}, (state.get("sec_search") or {}).get("own") or {}
+    found, own = (state.get("sec_search") or {}).get("names") or {}, (state.get("sec_search") or {}).get("own") or {}
     for key, r in rows.items():
         # MoneyMoney's own name (history or export) stays as "orig" and is always shown on hover, together with the ISIN; the name
         # shown: one changed in the setup (list of names), else MoneyMoney's, else the one looked up by the ISIN, else the ISIN

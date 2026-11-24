@@ -17,6 +17,8 @@ Teil von `CLAUDE.md` (Aufbau). Neue Testdatei oder neuer Prüfbereich: hier eint
   Chromium und der Safari-Engine) – je Push laufen davon 3 feste mit (im Teil „Übrige“).
   Dazu die Datenwelten (`test_data_worlds`): Zahlen, Anfragen, Assistent und – mit Chrome – jede Seite, die festen Welten in jeder
   Ansicht, dann neue Zufallswelten.
+  Fiel eine Nacht aus (3.17.64–3.17.66: `nightly.yml` ungültig, am 24.11. lief nichts), startet ihn der Nutzer von Hand:
+  GitHub → Actions → Zufallsläufe → „Run workflow“ (oder `gh workflow run nightly.yml -R stecrz/Kontor`).
 - **Lokal** (`.claude/tools/release.py`, Skill `release`): Code-Checks, betroffene Tests (`tests/affected.py`) ohne Browser, bei
   Rechenlogik 400 Zufallsfälle, Starter mit Python 3.9, dazu die mit `--tests` genannten (mit Browser). Alles lokal
   (`python3 -m pytest -q tests`, ~30 min) nur, wenn es wirklich nötig ist – GitHub macht es ohnehin.
@@ -54,7 +56,8 @@ Teil von `CLAUDE.md` (Aufbau). Neue Testdatei oder neuer Prüfbereich: hier eint
   Seitenfenster. Ein Fehler nennt Fall, Ansicht und jeden Schritt: `KONTOR_FUZZ_SEED=<Nummer>`; je Push 3 feste
   (`KONTOR_CLICK_SEEDS`), nachts so viele, wie passen; Gefundenes nach der Korrektur in `FOUND_CLICKS`. Den Weg eines
   bestandenen Falls zeigt `KONTOR_CLICK_LOG=1` mit `-s`; was sie fanden, hält `FoundTest` fest: Menü am iPhone mit esc und
-  Tipp auf die offene Seite, über der Assistenten-Seite, Demo ohne Wertpapiersuche)
+  Tipp auf die offene Seite, über der Assistenten-Seite, Demo ohne Wertpapiersuche; Skala auch für einen gleichbleibenden,
+  nicht runden Wert (sonst `NaN`), Zahlen der Übersicht neben dem Assistenten in ihren Karten, Kopf der ersten Bilanzspalte am iPhone)
 - `test_findable` (auffindbar: je Abschnitt der Hilfe Suchwörter, wie der Nutzer sie sagt, in `tests/search_words.json` – die Suche der Hilfe-Seite (unter den ersten drei, springt zum besten) und `search_help` (unter den vier Treffern) finden ihn; jeder Abschnitt und Anker der Hilfe ist Ziel eines „?“ oder Links aus Kontor; beide Suchen falten gleich (Füllwörter aus `memory.STOP`, Endungen). Fehlt ein Treffer: das Wort des Nutzers in den Abschnitt schreiben, nicht die Suche verbiegen; neuer Abschnitt der Hilfe: dort zwei, drei Suchwörter eintragen)
 - `test_fuzz`, `test_privacy`, `test_security` (Sperre, Datenschlüssel, Belegordner; `NothingGoesOut`: welche Teile ins Netz können, zu welchen Hosts, welche Programme sie starten – ein neuer Weg nach außen wird dort eingetragen)
 - `test_update_guard` (Prüfung vor dem Update: untergeschobene Änderungen werden gefunden, gewöhnliche nicht; Einstufung – Untergeschobenes bleibt kritisch, Geändertes an bestehenden Wegen und der Filter der Internetsuche zu prüfen, nachweislich Strengeres ohne Freigabe; Erklärung und Zeilen je Eintrag; Warten und Freigabe, Archiv und Git-Klon)
@@ -62,4 +65,9 @@ Teil von `CLAUDE.md` (Aufbau). Neue Testdatei oder neuer Prüfbereich: hier eint
 - `test_workflows` (Workflow-Dateien: kein Schlüssel doppelt, kein „: “ in einem Wert ohne Anführungszeichen – sonst startet GitHub gar keinen Lauf, wie nach 3.17.21 und 3.17.64)
 - `test_passkeys` (Zugang vom iPhone: CBOR/COSE/DER streng, ECDSA mit RFC-6979-Vektoren, Registrierung und Anmeldung mit einem Software-Passkey samt allen Fehlfällen, Link und Herausforderungen, QR-Code; über HTTP Hinzufügen, Face-ID-Anmeldung, jede Änderung nur bestätigt und nur für genau diese Anfrage, jede POST-Anfrage, `MAC_ONLY`, Entfernen beendet Sitzungen, nach Neustart, Demo, Zurücksetzen)
 - `affected.py` (kein Test): nennt die Testdateien, die eine Änderung betrifft – für den lokalen Lauf vor dem Push
+- `test_components` (Fremdes benannt: jedes Modell der Listen mit Lizenz, jede Bibliothek mit Eintrag – Name, Version, Lizenz, Herkunft, abgeschirmt)
+- `test_logging` (Protokoll klein und lesbar: eine Datei, die ihr Neuestes behält, keine Zeile je Abfrage, gesperrtes MoneyMoney einmal, keine Pfade)
+- `test_mac_webview` (nur im macOS-Lauf: jede Seite in macOS' WebKit mit `mac_webview.swift` – echter Rechtsklick, Bezug bleibt Zelle bzw. Zahl)
+- `test_receipt_text` (Belege: was ihr Text sagt und zu welchem Umsatz sie gehören, erfundene Belege; Sandbox und Grenzen der Texterkennung, soweit Linux sie prüfen kann)
+- `test_ui_docs` (`docs/ui`: jede Stelle mit `data-ex` beschrieben, jede Beschreibung gehört zu einer Stelle, jede Datei zu einer Seite)
 - `test_memory` (beschädigte Datei, Steckbrief in seiner Grenze, Suche und Passendes zur Frage in ihren Grenzen, Suche in gespeicherten Verläufen (`Talks`), kein Werkzeug schreibt, Vergessenes auch aus dem Protokoll und der Unterhaltung, Sicherung, Export und Import (`Carried`: hin und zurück, jede Notiz geprüft, ganz oder gar nicht, Doppelte, Listen von anderswo, fremde und beschädigte Dateien, Grenzen), nur am Mac, nie in der Demo, Liste im Browser)

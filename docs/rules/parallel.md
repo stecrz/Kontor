@@ -17,8 +17,9 @@ Von Hand nur, wenn das Skript selbst kaputt ist – dieselben Schritte: `git pul
 Die Cloud-Sitzung legt je Chat einen Zweig `claude/<name>` an und nennt ihn als Push-Ziel. Für Kontor gilt das nicht: der Zweig
 bleibt lokal, veröffentlicht wird nur über `release.py` auf `main` (`guard.py` sperrt `git push … claude/…`). Anlass (Nutzer,
 2026-11-24): ein Chat hatte seinen Zweig zusätzlich gepusht, ein alter CI-Testzweig lag noch da – auf GitHub braucht es nur `main`.
-Einen übrig gebliebenen Zweig löschen (`git push origin --delete <zweig>`; die Versionsprüfung lässt das durch, `main` nie) erst,
-wenn `git log origin/main..origin/<zweig>` leer ist oder sein Inhalt nachweislich in `main` steckt.
+Einen übrig gebliebenen Zweig löscht der Nutzer auf GitHub: aus der Cloud-Sitzung verbietet der Proxy das Löschen (3.17.54). Wo es
+geht (`git push origin --delete <zweig>`; die Versionsprüfung lässt das durch, `main` nie), nur, wenn `git log origin/main..origin/<zweig>`
+leer ist oder sein Inhalt nachweislich in `main` steckt.
 
 ## Sperren und warum
 - `.claude/hooks/guard.py` vor jedem `git push` aus dem Chat und in `release.py`: neuester `main` in der eigenen Arbeit, jeder Commit

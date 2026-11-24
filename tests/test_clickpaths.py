@@ -39,7 +39,9 @@ from service import App, make_handler    # noqa: E402
 from fixtures import new_store  # noqa: E402
 
 PASSWORD = TT.PASSWORD
-FOUND_CLICKS = []               # cases a night found -- once fixed, their number goes here (each push walks them again)
+FOUND_CLICKS = [24, 25, 29]     # cases a night found -- once fixed, their number goes here (each push walks them again); 3.17.71 (a night
+                                # run by hand): the overview's figures wider than their cards beside the assistant, the balance's first
+                                # head on the iPhone wider than its column, a net worth of one figure throughout drawn as NaN
 KINDS = ["test", "random", "demo", "empty"]
 WORLD_NAMES = {"test": "Testwelt", "random": "Zufallswelt", "demo": "Demo", "empty": "leeres Kontor"}
 MAC_SIZES = [(1440, 900), (1512, 945), (1280, 800)]          # a 14-inch MacBook, the window nearly full screen (and a bit smaller)
@@ -845,7 +847,9 @@ class ClickPathTest(_Kontor, unittest.TestCase):
 class FoundTest(_Kontor, unittest.TestCase):
     """What the click paths found, held fast: on the iPhone (and in a narrow window) Esc closes the menu, so does a tap on the
     page already open (no new page drawn); the menu lies above the assistant as a page (from there it could not be left); the
-    demo never asks for the names of securities (it knows no lookup: its page asked anyway and was refused)."""
+    demo never asks for the names of securities (it knows no lookup: its page asked anyway and was refused); a figure the same
+    throughout has a scale, the overview's figures stay in their cards beside the assistant, the balance's first head fits its
+    column on the iPhone."""
 
     def test_menu_and_demo(self):
         from playwright.sync_api import sync_playwright
@@ -882,6 +886,47 @@ class FoundTest(_Kontor, unittest.TestCase):
                 pg.evaluate("location.hash = '#accounts/history'"); pg.wait_for_selector("#mmh-names", state="attached"); T.quiet(pg)
                 self.assertFalse([u for u in asked if "/api/securities/lookup" in u])
                 self.assertEqual(errors, [])
+                b.close()
+        finally:
+            srv.shutdown(); srv.server_close()
+            app.assistant_stop(); app.stop.set()
+            shutil.rmtree(d, ignore_errors=True)
+
+    def test_narrow_heads_and_flat_figures(self):
+        # what the night run by hand of 3.17.71 found: a figure the same throughout and not round (three months of 1.234,56 €) gave
+        # no scale -- the overview drew its net worth as NaN; beside the assistant (1280 px) the overview's cards are 200 px and their
+        # figures did not wrap; on the iPhone the balance's first head (▸, label, ?, ↑↓, the eye) was wider than its column
+        from playwright.sync_api import sync_playwright
+        c = Case(0, False)
+        c.kind, c.world_seed, c.assistant, c.lang = "random", 825156183, True, "de"          # a world with hidden accounts: the eye shows
+        d = tempfile.mkdtemp(prefix="kontor-found-")
+        app, store, day = self.world(c, d)
+        srv = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(app))
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        base = "http://127.0.0.1:%d/" % srv.server_address[1]
+        try:
+            with sync_playwright() as p:
+                b = p.chromium.launch()
+                ctx = b.new_context(**TT.DEVICES["iphone"]); ctx.clock.install(time=datetime.datetime(day.year, day.month, day.day, 10, 0))
+                pg = ctx.new_page()
+                self.sign_in(pg, base, c)
+                for lo, hi in ((1234.56, 1234.56), (0.2, 0.2), (-98765.43, -98765.43), (0, 0), (5, 5)):
+                    ticks = pg.evaluate("([a, b]) => niceTicks(a, b, 3, 3)", [lo, hi])
+                    self.assertTrue(ticks and ticks[0] <= lo and ticks[-1] >= hi, (lo, ticks))
+                pg.evaluate("location.hash = '#balance'"); pg.wait_for_selector(".bil-tbl .th-first #alle-zeilen", state="attached"); TT.settle(pg)
+                head = pg.evaluate("""(() => { const f = document.querySelector('.bil-tbl .th-first'), g = f.parentElement.querySelector('.col-grip').getBoundingClientRect();
+                  const over = [...f.querySelectorAll('button, label')].filter(e => { const r = e.getBoundingClientRect(); return r.width && r.right > g.left && r.left < g.right; });
+                  return [f.scrollWidth - f.clientWidth, over.map(e => e.textContent)]; })()""")
+                self.assertEqual(head, [0, []])
+                ctx.close()
+                ctx = b.new_context(viewport={"width": 1280, "height": 800}); ctx.clock.install(time=datetime.datetime(day.year, day.month, day.day, 10, 0))
+                pg = ctx.new_page()
+                self.sign_in(pg, base, c)
+                pg.click("#assist-btn"); T.until(pg, "AS.open")
+                pg.evaluate("location.hash = '#overview'"); pg.wait_for_selector("#ov-fig-months .ov-s", state="attached"); TT.settle(pg)
+                wide = pg.evaluate("""[...document.querySelectorAll('.ov-card')].filter(c => { const r = c.getBoundingClientRect();
+                  return [...c.querySelectorAll('.ov-fig *')].some(e => e.getBoundingClientRect().right > r.right + 0.5); }).map(c => c.dataset.ov)""")
+                self.assertEqual(wide, [])
                 b.close()
         finally:
             srv.shutdown(); srv.server_close()

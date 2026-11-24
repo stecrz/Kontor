@@ -1,5 +1,12 @@
 # Änderungen
 
+## 3.17.71 (2026-11-24 13:42)
+- Übersicht: Vermögensgrafik auch bei gleichbleibendem Betrag richtig (statt leer); Zahlen in den Karten brechen neben dem Assistenten um, statt in die Nachbarkarte zu ragen
+- Bilanz: Kopf der ersten Spalte am iPhone zweizeilig – ↑↓ und Auge nicht mehr verdeckt
+- Entwicklung: Prüfung aller Versionen seit 3.17.20 – keine verlorene Version; Fahrplan: Platzhalter 3.17.V4 → 3.17.33, tote Verweise berichtigt, Kehrtwende MCP-Dienste und Zweige unter Entschieden nachgetragen
+- Entwicklung: Lagebild nennt für einen roten Nachtlauf auch Klickpfade und Datenwelten; Nachtlauf von Hand startbar (fiel am 24.11. aus); Funde des lokalen Nachtlaufs in FOUND_CLICKS und FoundTest
+- Entwicklung: jede Testdatei in docs/rules/tests.md; Tests gegen Versions-Platzhalter und tote Dateiverweise im Fahrplan
+
 ## 3.17.70 (2026-11-24 12:52)
 - Entwicklung: großer Versionssprung prüft mit voller Kraft – je Bereich ein eigener Prüfer, jede geänderte Datei vollständig gelesen
 

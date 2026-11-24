@@ -14,6 +14,7 @@ name: Zufallsläufe
 on:
   schedule:
     - cron: "17 1 * * *"
+  workflow_dispatch:                # by hand after a night that did not run (3.17.64-66: the file was invalid, 24.11. had none)
 
 permissions:
   contents: read

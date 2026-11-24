@@ -4,6 +4,7 @@ repositories: it lists what is new on main, fast-forwards only a clone with noth
 stays silent while nothing changed -- and a version squashed onto a stale main is refused."""
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -203,6 +204,12 @@ class TestsOnGitHub(unittest.TestCase):
 
     def test_nothing_known_says_nothing(self):
         self.assertEqual(self.summary([], []), ("", ""))
+
+    def test_night_tests_are_what_nightly_runs(self):
+        # the hint for a red night names the files to check again -- the click paths and data worlds (3.17.64, 3.17.66) were missing
+        with open(os.path.join(os.path.dirname(HOOK), "..", "..", ".github", "workflows", "nightly.yml"), encoding="utf-8") as f:
+            runs = set(re.findall(r"\btests/test_\w+\.py\b", "\n".join(l for l in f if re.match(r"\s*- \{name:", l))))
+        self.assertEqual(set(self.B.NIGHT_TESTS.split()), runs)
 
 
 GUARD = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".claude", "hooks", "guard.py")

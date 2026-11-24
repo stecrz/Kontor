@@ -1300,6 +1300,9 @@ function niceTicks(min, max, n, least = 0) {
     const finer = []; for (const e of [1, 0.1]) for (const x of [10, 5, 2.5, 2, 1]) if (x * p * e < step * (1 - 1e-9)) finer.push(x * p * e);
     for (const st of finer.sort((a, b) => b - a)) { const o = make(st); if (o.length >= least) { out = o; break; } }
   }
+  // the same figure throughout and not on a round step (three months of 1.234,56 €): the round steps around it -- never none
+  // (the charts take their range from the first and last line: none drew NaN)
+  if (!out.length) out = [Math.floor(min / step) * step + 0, Math.ceil(max / step) * step + 0];
   return out;
 }
 
@@ -1419,7 +1422,7 @@ function ovBuild(D) {
       + `<span class="ov-bs-b">${unk ? '' : `<i class="${x.chg >= 0 ? 'pos' : 'neg'}" style="${x.chg >= 0 ? 'left:50%' : `left:${(50 - w).toFixed(1)}%`};width:${w.toFixed(1)}%"></i>`}</span>`
       + `<span class="ov-bs-s">${esc(F0(x.now))} €${sub ? ' · ' + esc(sub) : ''}</span></div>`;
   }).join('');
-  return {svg: `<div class="ov-bs">${rows}</div>`, fig: `<span class="ov-s">${esc(per)}</span>`};
+  return {svg: `<div class="ov-bs">${rows}</div>`, fig: `<span class="ov-s"><span>${esc(per)}</span></span>`};
 }
 const ovDelta = v => v == null ? '' : `<span class="ov-d ${v >= 0 ? 'pos' : 'neg'}">${v >= 0 ? '+' : ''}${F0(v)} €</span>`;
 // 1. Net worth: the last twelve closed months as a line over a quiet area; the figure now and its change over them
@@ -1442,7 +1445,7 @@ function ovNetWorth(D, W, H) {
       + `<line class="ov-hl" x1="${x(i).toFixed(1)}" x2="${x(i).toFixed(1)}" y1="${P.t}" y2="${H - P.b}"/><circle class="ov-hd" cx="${x(i).toFixed(1)}" cy="${y(v[i]).toFixed(1)}" r="4"/></g>`; });
   for (const i of [0, Math.floor((ms.length - 1) / 2), ms.length - 1]) g += `<text class="cf-tick${i === ms.length - 1 ? ' end' : ''}" x="${x(i).toFixed(1)}" y="${H - 4}" text-anchor="${i === 0 ? 'start' : i === ms.length - 1 ? 'end' : 'middle'}">${esc(ML(ms[i]))}</text>`;
   return {svg: `<svg class="cf-svg ov-svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="${esc(t('nettovermoegen'))}">${g}</svg>`,
-    fig: `<span class="ov-v">${F0(last)} €</span><span class="ov-s">${esc(ML(ms[ms.length - 1]))}${yago != null ? ` · ${t('ov_12_monate')} ${ovDelta(last - yago)}` : ''}</span>`};
+    fig: `<span class="ov-v">${F0(last)} €</span><span class="ov-s"><span>${esc(ML(ms[ms.length - 1]))}</span>${yago != null ? ` · <span>${t('ov_12_monate')} ${ovDelta(last - yago)}</span>` : ''}</span>`};
 }
 // a change in percent, as short as it can be: one decimal under 100 %, whole numbers above, thousands abbreviated
 const ovPct = d => { if (d == null || !isFinite(d)) return ''; const a = Math.abs(d), s = d > 0.05 ? '+' : d < -0.05 ? '−' : '±';
@@ -1518,7 +1521,7 @@ function ovComposition(D, W, H) {
   const g = `<g data-ex="overview.comp.assets"><text class="ov-cap" x="2" y="11">${esc(t('ov_aktiva'))}</text>${side(aktiva, 0)}</g>`
     + `<g data-ex="overview.comp.funding"><text class="ov-cap" x="${(x2 + 2).toFixed(1)}" y="11">${esc(t('ov_passiva'))}</text>${side(passiva, x2)}</g>`;
   return {svg: `<svg class="cf-svg ov-svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="${esc(t('vermoegensstruktur'))}">${g}</svg>`,
-    fig: `<span class="ov-v">${F0(sumA)} €</span><span class="ov-s" title="${esc(t('ov_brutto_tip'))}">${esc(t('ov_brutto_am', ML(k)))}${has0 ? ' · ' + esc(t('ov_vergleich', ML(k0))) : ''}</span>`};          // the period: that month, against a year before
+    fig: `<span class="ov-v">${F0(sumA)} €</span><span class="ov-s" title="${esc(t('ov_brutto_tip'))}"><span>${esc(t('ov_brutto_am', ML(k)))}</span>${has0 ? ` · <span>${esc(t('ov_vergleich', ML(k0)))}</span>` : ''}</span>`};          // the period: that month, against a year before
 }
 // 3. The last twelve closed months: money in up, money out down (income, expenses, investing, financing), the change in cash as
 // a short stroke -- the upper part of the cash flow's monthly chart; a few far larger months are cut (marked) so the rest stays readable
@@ -1557,7 +1560,7 @@ function ovMonths(D, W, H) {
     g += `<rect class="cf-hit" data-cftip="${tip}" x="${(P.l + slot * i).toFixed(1)}" y="0" width="${slot.toFixed(1)}" height="${H - P.b}"/>`; });
   const net = bs.reduce((a, b) => a + b.net, 0);
   return {svg: `<svg class="cf-svg ov-svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="${esc(t('cf_je_monat_t'))}">${g}</svg>`,
-    fig: `<span class="ov-s">${t('ov_bank_12')} ${ovDelta(net)}</span>`};
+    fig: `<span class="ov-s"><span>${t('ov_bank_12')}</span> ${ovDelta(net)}</span>`};
 }
 // 4. Where the net worth of the last twelve closed months came from: start, the steps (surplus, interest, changes in value ...), end
 function ovWealth(D, W, H) {
@@ -1584,7 +1587,7 @@ function ovWealth(D, W, H) {
   }
   const tot = list.filter(r => r.kind === 'tot'), chg = tot.length > 1 ? tot[tot.length - 1].v - tot[0].v : null;
   return {svg: `<svg class="cf-svg ov-svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="${esc(t('cf_verm_bruecke'))}">${g}</svg>`,
-    fig: `<span class="ov-s">${esc(ML(ms[0]))} – ${esc(ML(ms[ms.length - 1]))}${chg != null ? ' · ' + ovDelta(chg) : ''}</span>`};
+    fig: `<span class="ov-s"><span>${esc(ML(ms[0]))} – ${esc(ML(ms[ms.length - 1]))}</span>${chg != null ? ' · ' + ovDelta(chg) : ''}</span>`};
 }
 
 // ---------------------------------------------------------------- Einrichtung (modular)
@@ -2159,7 +2162,7 @@ function vBilanz() {
   // header cell: ▸/▾ expands or collapses all positions, the eye also shows empty and hidden accounts and securities (only when there are any)
   const nHid = D.balance.rows.filter(r => !r.group && hidden(r)).length + nSecHid;
   const first = `<div class="th-first"><button class="th-btn" id="pos-all" title="${allOpen ? t('nur_positionen') : t('konten_zeigen')}">${allOpen ? '▾' : '▸'}</button><span>${t('position_konto')}</span>${hq('bilanz_tabelle')}`
-    + `<button class="th-mv" data-blk="table" data-mv="-1" title="${t('tbl_hoch')}"${at === 0 ? ' disabled' : ''}>↑</button><button class="th-mv" data-blk="table" data-mv="1" title="${t('tbl_runter')}"${at === 2 ? ' disabled' : ''}>↓</button><span class="sp"></span>`
+    + `<span class="th-mvs"><button class="th-mv" data-blk="table" data-mv="-1" title="${t('tbl_hoch')}"${at === 0 ? ' disabled' : ''}>↑</button><button class="th-mv" data-blk="table" data-mv="1" title="${t('tbl_runter')}"${at === 2 ? ' disabled' : ''}>↓</button></span><span class="sp"></span>`
     + (anyHidden ? `<label class="th-hid${S.alleB ? ' on' : ''}" title="${t('alle_zeilen_tip_n', nHid)}"><input type="checkbox" id="alle-zeilen" ${S.alleB ? 'checked' : ''}>${S.alleB ? ICON.eye : ICON.eyeOff}${nHid}</label>` : '') + `</div><span class="col-grip" title="${t('spalte_breite')}"></span>`;
   h += `<div class="wrap bil-tbl" data-ex="balance.table"${S.bilW ? ` style="--bil-w:${S.bilW}px"` : ''}><table>` + thead(first, C) + '<tbody>';
   for (const r of D.balance.rows) {

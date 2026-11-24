@@ -148,7 +148,7 @@ anhängen – nie löschen.
   austauschbar. Der Assistent läuft weiter auf dem MacBook; vorbereitet wird, dass ein stärkerer eigener Rechner später nur eine
   andere Auswahl ist. Sicher geht vor lokal: lokal ist der Weg, nicht das Ziel. Ein Kauf (Mac Studio o. Ä.) erst, wenn er einen
   entscheidenden Vorteil bringt.
-  (vorbereitet in 3.17.9–3.17.V4: Modellauswahl mit größeren Modellen; der Aufruf des Modells liegt an einer Stelle,
+  (vorbereitet in 3.17.9–3.17.33: Modellauswahl mit größeren Modellen; der Aufruf des Modells liegt an einer Stelle,
   `LocalAI._connect` – heute fest der Kindprozess auf diesem Mac, keine Adresse, keine Einstellung; was ein zweiter eigener
   Rechner vorher braucht, steht unter „Offen“)
 - **Claude als Recherche-Stufe** (Nutzer, 2026-11-23): Der Assistent darf Claude über Anthropics Schnittstelle fragen – mit dem
@@ -160,8 +160,8 @@ anhängen – nie löschen.
   (umgesetzt in 3.17.9 – die verständliche Auswahl – und 3.17.29 – größere Modelle, auch in mehreren Dateien)
 - **Abschirmung** (Nutzer, 2026-11-23): heißt wirklich kein Netz – auch nicht innerhalb des Macs – und möglichst keine
   Verbindung zu anderen Programmen; in der Oberfläche und Hilfe erklärt.
-  (umgesetzt in 3.17.V4: kein Netz, auch nicht innerhalb des Macs – das Modell lauscht auf einer Datei statt auf 127.0.0.1;
-  im Tooltip und in der Hilfe erklärt. Noch offen: Dienste von macOS nur nach Liste – siehe „Modelle und Rechner“)
+  (umgesetzt in 3.17.33: kein Netz, auch nicht innerhalb des Macs – das Modell lauscht auf einer Datei statt auf 127.0.0.1;
+  im Tooltip und in der Hilfe erklärt. Noch offen: Dienste von macOS nur nach Liste – siehe „2. KI-Assistent“)
 - **Aktuelles Python** (Nutzer, 2026-11-23): Kontor läuft auf einer aktuellen, festen Python-Version in seinem eigenen Ordner statt
   auf Apples Python 3.9 (seit 31.10.2025 ohne Sicherheitsupdates); geladen nur nach Klick, geprüft, mit Rückweg; Installation und
   Umstellung ohne Handgriffe des Nutzers, wo es irgend geht. (umgesetzt in 3.17.12: Einstellungen → Updates → Python und bei der Installation;
@@ -312,6 +312,9 @@ anhängen – nie löschen.
   Chrome, Claude Docs und `github` gesperrt (Code über Klon, `git` und `gh`); `claude-code-remote` bleibt, weil es die Plattform selbst
   ist (Umgebung, Netz, Schlüssel). Der Zweig `claude/…` jeder Cloud-Sitzung bleibt lokal, der Guard sperrt den Push dorthin;
   übrig gebliebene Zweige werden gelöscht. (umgesetzt in 3.17.49–3.17.52)
+  Geändert 2026-11-24 (Nutzer): keine MCP-Dienste gesperrt – die Ersparnis war gering, nichts soll später fehlen (`github` schon
+  in 3.17.53 wieder frei, weil seine Werkzeuge erst bei Bedarf laden; umgesetzt in 3.17.55). Übrig gebliebene Zweige löscht kein
+  Chat: der Proxy der Cloud-Sitzung verbietet das Löschen auf GitHub; Sitzungszweige werden nie hochgeladen (umgesetzt in 3.17.54).
 - **Nach dem Update glatt zurück** (Nutzer, 2026-11-24): Sobald das Update installiert ist, deckt sofort ein Ladebildschirm Kontor ab
   (nie ein schwarzes Fenster), bis die Anmeldung wirklich da ist; mit ihr kommt gleich Touch ID; nach der Anmeldung wird man nicht wieder
   abgemeldet. Ursache des doppelten Logins: die Antwort einer Sitzungsprüfung von vor der Anmeldung (Fokus kehrt beim Schließen des
@@ -416,7 +419,8 @@ Fertig, wenn
   opendirectoryd.libinfo und .membership, tccd.system, windowserver.active); ganz ohne lädt kein Modell, mit genau diesen läuft es,
   jeder einzelne ist dort entbehrlich. Der Grafikchip dort ist ein Ersatz – ein echter Mac kann andere brauchen, eine falsche Liste
   ließe das Modell nicht starten oder nur langsam rechnen. Deshalb erst nach einem Lauf am echten Mac festlegen (Probe:
-  `tests/mac_sandbox_probe.py`);
+  `tests/mac_sandbox_probe.py` aus 3.17.29, in 3.17.33 durch `tests/test_mac_model.py` ersetzt – holen mit
+  `git show 7e7729a:tests/mac_sandbox_probe.py`);
 - **hängendes Modell früher erkennen:** Qwen3.6 35B-A3B kann in llama.cpp nach mehreren Fragen hängen bleiben (dort #22450, keine
   Abhilfe bekannt); Kontor gibt eine Anfrage ohne Antwort erst nach 15 Minuten auf. Offen: über den Fortschritt, den llama.cpp
   meldet, früher erkennen und das Modell von selbst neu starten;

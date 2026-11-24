@@ -1,4 +1,5 @@
 import json
+import re
 import os
 import sys
 import unittest
@@ -783,6 +784,22 @@ class GoalTests(unittest.TestCase):
         text = self._read("ROADMAP.md")
         for words in ("**Gedächtnis des KI-Assistenten:**", "Nur aus den eigenen Worten des Nutzers", "zählt als seine eigenen Worte"):
             self.assertIn(words, text, words)
+
+    def test_every_test_file_is_in_the_rules(self):
+        # docs/rules/tests.md: "Neue Testdatei oder neuer Prüfbereich: hier eintragen" -- five were missing (found 3.17.69)
+        text = self._read("docs/rules/tests.md")
+        here = os.path.dirname(os.path.abspath(__file__))
+        missing = [f[:-3] for f in sorted(os.listdir(here)) if re.fullmatch(r"test_\w+\.py", f) and f[:-3] not in text]
+        self.assertEqual(missing, [])
+
+    def test_versions_and_files_in_the_roadmap_are_real(self):
+        # a chat wrote "3.17.V4" for its own number and never put it in; 3.17.42 named a probe 3.17.33 had removed
+        text = self._read("ROADMAP.md")
+        self.assertEqual(re.findall(r"\b\d+\.\d+\.[A-Za-z]\w*", text.replace("X.Y.Z", "")), [])
+        root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+        for path in set(re.findall(r"`(tests/[\w./-]+\.py)`", text)):
+            gone = not os.path.exists(os.path.join(root, path))
+            self.assertFalse(gone and not re.search(re.escape(path) + r"` aus \d+\.\d+\.\d+", text), path + " fehlt (Version dazuschreiben)")
 
     def test_goal_stays_in_the_rules(self):
         text = self._read("CLAUDE.md")

@@ -734,7 +734,10 @@ textarea { width:100%; min-height:90px; font-family:ui-monospace, Menlo, monospa
 .wrap tr.acct td:first-child, .wrap tr.transit td:first-child { padding-left:32px; } .wrap tr.wpr td:first-child { padding-left:50px; }
 .wrap tr.acct .nm, .wrap tr.wpr .nm { display:inline-block; max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; vertical-align:bottom; }
 .bil-tbl { --bil-w:250px; }
-@media (max-width:820px) { .bil-tbl { --bil-w:180px; } }
+@media (max-width:820px) { .bil-tbl { --bil-w:180px; }          /* the first column narrower: its head on two lines where it needs them (iPhone:
+  ▸, the label, ?, ↑↓ and the eye were 218 px in 162 -- ↓ under the grip, the eye in the next column) */
+  .bil-tbl .th-first { flex-wrap:wrap; row-gap:3px; } }
+.th-mvs { display:inline-flex; gap:5px; }
 /* fixed width (no jumping when rows open), adjustable by dragging the edge of the header cell */
 .bil-tbl th:first-child, .bil-tbl td:first-child { width:var(--bil-w); min-width:var(--bil-w); max-width:var(--bil-w); white-space:nowrap; }
 .bil-tbl tr.acct .nm { max-width:calc(var(--bil-w) - 104px); } .bil-tbl tr.wpr .nm { max-width:calc(var(--bil-w) - 84px); }
@@ -1026,7 +1029,8 @@ table.kb-table { width:auto; min-width:0; } table.kb-table tr:hover td { backgro
 .ov-head { display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin-bottom:6px; }
 .ov-card .ov-head { flex-direction:column; align-items:flex-start; gap:1px; } .ov-card .ov-fig { margin-left:0; }          /* the title, its figure below it */
 .ov-head b { font-size:15px; }
-.ov-fig { display:flex; align-items:baseline; flex-wrap:wrap; gap:0 10px; margin-left:auto; font-variant-numeric:tabular-nums; } .ov-fig .ov-s { white-space:nowrap; }          /* too narrow: the period below as a whole */
+.ov-fig { display:flex; align-items:baseline; flex-wrap:wrap; gap:0 10px; margin-left:auto; font-variant-numeric:tabular-nums; } .ov-fig .ov-s > span { white-space:nowrap; }          /* too narrow (a narrow window, the assistant beside it): the period below as a whole,
+   the change after it on a line of its own -- never wider than the card */
 .ov-v { font-size:19px; font-weight:600; white-space:nowrap; }
 .ov-s { color:var(--muted); font-size:12.5px; }
 .ov-d.pos { color:var(--pos); font-weight:600; } .ov-d.neg { color:var(--neg); font-weight:600; }

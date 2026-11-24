@@ -59,7 +59,8 @@ def own_files():
     return files - OWN
 
 
-NIGHT_TESTS = "tests/test_fuzz.py tests/test_cashflow.py tests/test_scenarios.py tests/test_worlds.py tests/test_rule_worlds.py"      # what nightly.yml runs (fixed + new cases)
+NIGHT_TESTS = ("tests/test_fuzz.py tests/test_cashflow.py tests/test_scenarios.py tests/test_worlds.py tests/test_rule_worlds.py "
+               "tests/test_clickpaths.py tests/test_data_worlds.py")      # what nightly.yml runs (fixed + new cases)
 
 
 def tests_on_github():
@@ -151,7 +152,7 @@ def ci_summary(push, night, since, who):
                              "Version, Commit-Nachricht mit „fix nightly“ (`X.Y.Z: fix nightly: …`), damit die anderen Chats es "
                              "liegen lassen. Fehler: `gh run view %s --log-failed | tail -80`; der Fall („seed …“) einzeln: "
                              "`KONTOR_FUZZ_SEED=<Nummer>`, ein neuer (ab 1000000) danach in FOUND (tests/fixtures.py); nachprüfen: "
-                             "`KONTOR_FUZZ_SEEDS=1000 TZ=Europe/Berlin python3 -m pytest -q %s`"
+                             "`KONTOR_FUZZ_SEEDS=1000 KONTOR_CLICK_SEEDS=40 TZ=Europe/Berlin python3 -m pytest -q <Datei des roten Jobs: %s>`"
                              % (ver, "" if r["conclusion"] == "failure" else " (%s)" % r["conclusion"], r.get("id"), NIGHT_TESTS))
     if not parts:
         return "", ""
