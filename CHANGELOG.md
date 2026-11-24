@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.17.53 (2026-11-24 03:10)
+- Entwicklung: GitHub-Werkzeuge wieder frei (kosteten keinen Kontext); übrig gebliebene Sitzungszweige werden nach dem Veröffentlichen gelöscht
+
 ## 3.17.52 (2026-11-24 03:07)
 - Entwicklung: Push auf claude/…-Zweige gesperrt, auf GitHub nur main
 - Entwicklung: übrige Zweige löschbar ohne Versionsprüfung; MCP-Bestand in CLAUDE.md

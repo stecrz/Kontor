@@ -57,9 +57,6 @@
     },
     {
       "serverName": "claude.ai Claude Docs"
-    },
-    {
-      "serverName": "github"
     }
   ]
 }

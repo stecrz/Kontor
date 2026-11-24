@@ -345,6 +345,21 @@ def wait_for_github(sha):
     say("GitHub: läuft noch – Ergebnis meldet das Lagebild.")
 
 
+def tidy_branches():
+    """Claude Code gives every session a branch claude/...; Kontor publishes on main only. Any claude/... branch on GitHub
+    whose work is wholly in main is left over: deleted (one whose work is not in main yet -- another chat's -- stays)."""
+    for line in out("ls-remote", "--heads", "origin", "claude/*").splitlines():
+        sha, ref = (line.split() + ["", ""])[:2]
+        name = ref[len("refs/heads/"):]
+        if not name.startswith("claude/"):
+            continue
+        if git("cat-file", "-e", sha + "^{commit}").returncode != 0:
+            git("fetch", "-q", "--depth=50", "origin", ref)
+        if git("merge-base", "--is-ancestor", sha, "origin/main").returncode == 0:
+            if git("push", "-q", "origin", "--delete", name).returncode == 0:
+                say("Übrig gebliebenen Zweig %s gelöscht (steckt ganz in main)." % name)
+
+
 def publish(subject, points, by, wanted, wait, extra):
     if git("rev-parse", "--verify", "-q", "origin/main").returncode != 0:
         git("fetch", "-q", "origin", "main", check=True)
@@ -406,6 +421,7 @@ def publish(subject, points, by, wanted, wait, extra):
             added = out("diff", "--name-only", "--diff-filter=A", "HEAD~1", "HEAD").splitlines()
             say("%s veröffentlicht (%s, %d Dateien%s). Tests auf GitHub laufen; ein rotes Ergebnis meldet das Lagebild."
                 % (version, sha[:7], n, ", neu: " + ", ".join(added[:12]) + (" …" if len(added) > 12 else "") if added else ""))
+            tidy_branches()
             if wait:
                 wait_for_github(sha)
             return
