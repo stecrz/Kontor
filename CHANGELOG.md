@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.17.86 (2026-11-24 23:10)
+- Entwicklung: Link „Mehr in der Hilfe“ hat einen eigenen Tooltip (Rundgang-Test war seit 3.17.85 rot)
+
 ## 3.17.85 (2026-11-24 22:24)
 - Hilfe: neue Anleitungen „Darlehen einrichten“ und „Immobilie einrichten“ – Gegenbuchungen, volle Rate, Zinsen, Kaufnebenkosten, Darlehen direkt an den Verkäufer; auch der KI-Assistent findet sie; Links unter Buchungsregeln → Darlehen und bei Immobilien
 - Cashflow-Positionen: Kaufnebenkosten und Grunderwerbsteuer zählen als Investition statt unter Wohnen und landen ohne gewähltes Zielkonto nicht mehr beim Depot
