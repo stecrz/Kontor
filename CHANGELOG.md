@@ -1,5 +1,9 @@
 # Änderungen
 
+## 3.17.59 (2026-11-24 04:06)
+- KI-Assistent: liest aus Bildern alles wie aus getipptem Text, auch Zahlen; Abweichungen zur Texterkennung nennt er
+- KI-Assistent: nach einem Absturz am Bild startet das Modell zuverlässig neu
+
 ## 3.17.58 (2026-11-24 03:46)
 - Updates: geänderte Hooks der Entwicklung (.githooks) nicht mehr als Fund gemeldet
 - Entwicklung: Update-Prüfung behandelt .githooks wie .claude (Kontors Git läuft ohne Hooks)

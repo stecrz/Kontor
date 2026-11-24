@@ -180,6 +180,15 @@ anhängen – nie löschen.
   der Bildteil des Modells wird mit dem Modell geladen, kein eigener Schalter. Zahlen bleiben belegt aus der Texterkennung
   (Entschieden: Zahlen nie aus einem Modell); das Bild hilft für das, was Text nicht hergibt (Aufbau, Grafik, Stempel, Fotos).
   Umsetzung und Prüfungen: siehe Offen „Bilder für das Modell“. (umgesetzt in 3.17.40)
+  Geändert (Nutzer, 2026-11-24): der Satz „Zahlen bleiben belegt aus der Texterkennung“ gilt nicht mehr – siehe „Bilder und PDFs wie Text“.
+- **Bilder und PDFs wie Text** (Nutzer, 2026-11-24): Ein Bild oder eine PDF ist für das Modell dasselbe wie getippter Text – es
+  darf alles daraus lesen, auch Zahlen, Daten und Namen. Grund: auch eine Eingabe kann einen Tippfehler haben; verboten wird nichts,
+  geprüft wird dort, wo eine Zahl weiterverarbeitet wird: jede Änderung steht vorher mit ihrer Zahl auf der Karte und wartet auf
+  den Klick; eine Zahl auf der Karte, die nicht im erkannten Text der Bilder und PDFs der Unterhaltung steht, ist dort als „bitte
+  prüfen“ markiert. PDFs wie bei Claude und ChatGPT möglichst genau: Text und Seitenbilder zusammen; viele Seiten in mehreren
+  Schritten (Seite für Seite, Stand im Gedanken-Teil sichtbar). Abgelehnt: „Zahlen nie vom Bild“ als Anweisung an das Modell
+  (3.17.40) – ein Chat hatte „Zahlen nie aus einem Modell“ (unten, gemeint: die Form einer Tabelle aus einem Dokumentmodell) zu
+  weit auf das Lesen von Bildern übertragen.
 - **Fremdes sichtbar benannt** (Nutzer, 2026-11-23): Alles Fremde, das Kontor nutzt – das neue Python, llama.cpp, die Modelle und
   künftige Bibliotheken –, steht für den Nutzer mit Name, Version, Lizenz, Herkunft und „abgeschirmt ja/nein“ in einer Liste unter
   Einstellungen (Updates → „Verwendete Programme“) und kurz in der Hilfe; so angelegt, dass eine künftige Bibliothek nur einen
@@ -338,19 +347,10 @@ anhängen – nie löschen.
   Demo, nichts geht hinaus; dauert Stunden, der Mac ist so lange belegt). Kontor zeigt das Ergebnis neben dem des bisherigen
   Modells – Punkte je Gruppe, Dauer – und schlägt den Wechsel vor, wenn das neue besser ist; gewechselt wird nur nach Klick, nie
   von selbst. Empfehlung: erst entscheiden, wenn Läufe am Mac zeigen, wie gut der Prüfsatz Modelle unterscheidet.
-- Bilder für das Modell (Wunsch des Nutzers, 2026-11-23: ein Modell, das Bilder lesen kann, soll sie bekommen; entschieden: Entschieden „Ganzes Bild an den Assistenten“) – noch nicht
-  umgesetzt, Vorschlag: der Bildteil des Modells (zweite Datei „mmproj“, etwa 1 GB) wird wie die Modelldatei geladen und per
-  SHA-256 geprüft (heute nur bei den Diktiermodellen), das Modell startet damit, und ein Bild aus dem Chat geht zusätzlich zum
-  erkannten Text an das Modell – nur als Daten in der Anfrage, nur im Arbeitsspeicher, gewertet wie der Text eines Belegs. Kontor
-  erkennt schon, ob das laufende Modell Bilder liest (`LocalAI.caps`, 3.17.17). Zu entscheiden: Zahlen weiter nur aus der
-  Texterkennung (Entschieden: Zahlen nie aus einem Modell) und das Bild nur für das, was Text nicht hergibt (Aufbau, Stempel,
-  Grafik) – Empfehlung: ja; den Bildteil mit dem Modell laden oder mit eigenem Klick (etwa 1 GB mehr Arbeitsspeicher) –
-  Empfehlung: eigener Klick; PDF-Seiten als Bild erst danach. Vorher am Mac prüfen: zu Qwen3.8 27B gibt es laut Modell-Recherche
-  offene Meldungen über Abstürze beim Laden eines Bildes.
-  (umgesetzt in 3.17.40, wie entschieden: Bildteil mit dem Modell, Zahlen nur aus der Texterkennung; ein Bild nur mit seiner Frage,
-  PNG/JPEG/GIF an den ersten Bytes erkannt, höchstens 4 und ein Viertel des Kontexts. Abgefangen: endet das Modell beim Start mit dem
-  Bildteil, startet es ohne; fällt es an einem Bild um, geht die Antwort aus dem Text weiter – beides steht unter der Antwort.
-  Offen: PDF-Seiten als Bild; HEIC wird nicht als Bild gegeben (llama.cpp liest es nicht); am Mac prüfen, wie Qwen3.8 27B mit Bildern läuft.)
+- PDFs als Text und Seitenbilder (Entschieden „Bilder und PDFs wie Text“) – noch nicht umgesetzt. Offen dazu: HEIC wird nicht
+  als Bild gegeben (llama.cpp liest es nicht); am Mac prüfen, wie Qwen3.8 27B mit Bildern läuft (Meldungen über Abstürze beim Laden
+  eines Bildes – Kontor fängt einen Absturz ab und antwortet aus dem Text).
+- Prüfung der Zahlen auf der Karte (Entschieden „Bilder und PDFs wie Text“) – noch nicht umgesetzt.
 - Modelldienst auf einem zweiten eigenen Rechner (KI-Plattform: „später nur eine andere Auswahl“) – vorbereitet, nicht gebaut:
   Kontor spricht das Modell an genau einer Stelle an (`LocalAI._connect`, OpenAIs Formate; heute fest der Kindprozess auf diesem
   Mac über seine Socket-Datei). Einschalten wäre ein neuer Weg nach außen und braucht vorher, alles zusammen: nur im eigenen

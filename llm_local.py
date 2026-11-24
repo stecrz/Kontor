@@ -1436,6 +1436,16 @@ class LocalAI:
             except OSError:
                 pass
 
+    def settle(self, seconds: float = 2.0) -> None:
+        """After a request that failed: a process that is ending (it fell over) is waited for a moment -- ensure then sees it
+        gone and starts it anew, instead of finding it still there and failing again."""
+        p = self.proc
+        if p is not None:
+            try:
+                p.wait(timeout=seconds)
+            except subprocess.TimeoutExpired:
+                pass
+
     def chat(self, body: dict, cancel: threading.Event) -> Iterator[dict]:
         """One answer of the model as its stream of pieces (OpenAI's chat format). Only ever the model Kontor started: over
         its socket file (_connect), with the key of that start."""

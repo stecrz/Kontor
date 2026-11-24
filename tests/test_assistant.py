@@ -3904,7 +3904,8 @@ class Receipts(_Assist):
         self.assertEqual(first["content"][0], {"type": "image_url", "image_url": {"url": "data:image/png;base64," + base64.b64encode(self.PNG).decode()}})
         self.assertEqual([x["type"] for x in first["content"]], ["image_url", "text"])
         said = first["content"][1]["text"]
-        self.assertIn("shown to you as a picture with this question: %s" % f["id"], said); self.assertIn("never off the picture", said)
+        self.assertIn("shown to you as a picture with this question: %s" % f["id"], said); self.assertIn("figures, dates and names included", said)
+        self.assertNotIn("never off the picture", said)                              # (user, 2026-11-24: read like typed text)
         self.assertNotIn(p["id"] + " = ", said.split("shown to you")[1]); self.assertNotIn(j["id"] + " = ", said.split("shown to you")[1])
         self.assertTrue(self.a.conv["receipt_text"])                                 # what a picture shows is data: other changes come unticked
         b64 = base64.b64encode(self.PNG).decode()

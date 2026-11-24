@@ -5297,7 +5297,8 @@ class Assistant:
                         turn[0]["content"] += "\n[Kontor: the picture could not be shown to you after all -- go by what read_receipt or read_table read of it]"
                         if text or mind:
                             job.emit("reset")
-                        self.ai.ensure(st["model"], st["context"], st["sandbox"], job.cancel)     # (a model that fell over: started anew)
+                        self.ai.settle()                     # (a model that fell over: gone for good, then started anew)
+                        self.ai.ensure(st["model"], st["context"], st["sandbox"], job.cancel)
                         continue
                     if not retried and history and re.search(r"context|too long|exceed", str(e), re.I):
                         thought += think_told if think_told is not None else think_n
@@ -5713,9 +5714,10 @@ def _file_text(files: Any, receipts: bool = True) -> str:
 
 
 def _seen_text(seen: List[dict]) -> str:
-    """The line that tells the model which of the files given it sees as pictures, and what it may take from them."""
-    return ("[Kontor: shown to you as %s with this question: %s -- look at %s for what text does not give (layout, stamps, signatures, "
-            "graphics, photos); take every figure, date and name only from read_receipt or read_table, never off the picture]" % (
+    """The line that tells the model which of the files given it sees as pictures -- read like typed text (user, 2026-11-24:
+    nothing is forbidden; figures are checked where they go into a change, on its card)."""
+    return ("[Kontor: shown to you as %s with this question: %s -- read %s like any text the user gives, figures, dates and names "
+            "included; read_receipt and read_table give the text recognized on this Mac beside it -- where the two differ, say so]" % (
                 "a picture" if len(seen) == 1 else "%d pictures" % len(seen), "; ".join("%s = %s" % (p["id"], json.dumps(p["name"], ensure_ascii=False)) for p in seen),
                 "it" if len(seen) == 1 else "them"))
 
