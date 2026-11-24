@@ -72,15 +72,23 @@ def tests_on_github():
 
     def runs(path):
         code, out = run(["gh", "api", "repos/%s/%s/actions/%s" % (m.group(1), m.group(2), path)], 8)
-        if code != 0:
-            return None
+        if code != 0:                   # no gh or not signed in: the repository is public, GitHub answers without it too
+            try:
+                import urllib.request
+                req = urllib.request.Request("https://api.github.com/repos/%s/%s/actions/%s" % (m.group(1), m.group(2), path),
+                                             headers={"Accept": "application/vnd.github+json", "User-Agent": "kontor-briefing"})
+                with urllib.request.urlopen(req, timeout=8) as r:
+                    out = r.read().decode("utf-8")
+            except Exception:
+                return None
         try:
             return json.loads(out).get("workflow_runs") or []
         except (ValueError, AttributeError):
             return None
     push = runs("runs?branch=main&event=push&per_page=8")
-    if push is None:
-        return "", ""
+    if push is None:                    # said, never silent: a red run must not go unnoticed
+        return ("Tests auf GitHub: nicht erreichbar (weder `gh` noch GitHubs Schnittstelle) – von Hand: "
+                "`gh run list -R %s/%s -L 3`" % (m.group(1), m.group(2))), "github-unreachable"
     night = runs("workflows/nightly.yml/runs?branch=main&per_page=5") or []
     since = lambda iso: git("log", "--since=" + iso, "--format=%s%x1f%b%x1e", "origin/main")[1] if iso else ""
     who = lambda sha: chat(git("log", "-1", "--format=%b", sha)[1])

@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.17.44 (2026-11-24 01:27)
+- Entwicklung: Lagebild holt GitHubs Testergebnisse auch ohne gh und meldet es, wenn GitHub nicht erreichbar ist
+
 ## 3.17.43 (2026-11-24 01:14)
 - Bilanz: Depot mit nur einem Wertpapier – Verlauf ohne Namen aus MoneyMoney zählt zu ihm statt „Unbenannt 1“
 
