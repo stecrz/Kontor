@@ -327,11 +327,19 @@ Die Planung plant jede Position und die Kategorien darin; ein Budget aus MoneyMo
 <a id="categories-tree"></a>
 ### Empfohlene Kategorien
 
-Über der Tabelle stehen die empfohlenen Kategorien für MoneyMoney – eingeklappt, bei Bedarf aufklappen; nur zur Orientierung: Was du nicht brauchst (etwa Umsatzerlöse ohne Geschäft), legst du nicht an, und rechts steht je Zeile, welche deiner Kategorien dort zählt. Die Grundregel: **eine Kategorie je Zweck**. Was in verschiedene Positionen gehört, gehört nie in dieselbe Kategorie – eine Kategorie „Immobilie“ mit Kaufpreis, Nebenkosten, Rate, Darlehensauszahlung und Miete etwa macht aus der Auszahlung eine Mieteinnahme und aus dem Kaufpreis Kosten. Besser:
+Über der Tabelle stehen die empfohlenen Kategorien für MoneyMoney – eingeklappt, bei Bedarf aufklappen; nur zur Orientierung: Was du nicht brauchst (etwa Umsatzerlöse ohne Geschäft), legst du nicht an, und rechts steht je Zeile, welche deiner Kategorien dort zählt. Oben schaltest du zwischen **Privat** und **Geschäftlich** um: Jede Seite zeigt nur ihre Zeilen mit ihren Namen (etwa „Wohnen“ privat, „Raumkosten“ geschäftlich). Die Grundregel: **eine Kategorie je Zweck**. Was in verschiedene Positionen gehört, gehört nie in dieselbe Kategorie – eine Kategorie „Immobilie“ mit Kaufpreis, Nebenkosten, Rate, Darlehensauszahlung und Miete etwa macht aus der Auszahlung eine Mieteinnahme und aus dem Kaufpreis Kosten. Besser:
 
 | Kategorie in MoneyMoney | Position |
 |---|---|
 | Gehalt, Kapitalerträge, Wohnen › Miete …, Lebenshaltung › …, Mobilität, Versicherungen … | jeweils die gleichnamige |
+| Minijob, Bonus | Arbeitseinkommen |
+| Rente, Pension, Kindergeld, Elterngeld | Rente & Sozialleistungen (Firma: Zuschüsse & Förderungen) |
+| Taschengeld, Unterhalt, Erbschaft – bekommen | Unterhalt & Geschenke (kein Arbeitseinkommen: keine Gegenleistung) |
+| Taschengeld, Unterhalt, Geschenke, Spenden – gegeben | Unterhalt, Geschenke & Spenden |
+| Lebensmittel, Restaurant, Friseur, Drogerie, Haustier | Lebenshaltung (Essen und Trinken immer hier, zu Hause wie auswärts) |
+| Kita, Schule, Studium, Weiterbildung | Bildung & Betreuung (Firma: Fortbildung) |
+| Haftpflicht, Kranken-, Unfallversicherung | Versicherungen – eine Beitragserstattung bleibt in ihrer Kategorie und mindert den Beitrag |
+| Private Renten- oder Kapitallebensversicherung, Riester, Rürup | Sparen & Anlegen – baut Vermögen auf, sichert kein Risiko ab |
 | Sparen & Anlegen – nur für Geld an Anlagen ohne Umsätze in MoneyMoney (Rentenversicherung, Bausparvertrag); eine Kategorie reicht | Sparen & Anlegen, Zielkonto daneben oder je Empfänger |
 | Darlehen › Tilgung, Zinsen – nur für Darlehen ohne Konto in MoneyMoney; eine Auszahlung unter Tilgung zählt als Aufnahme | Tilgung, Zinsen |
 | Firma: Umsatzerlöse, Wareneinkauf, Personal, Raumkosten, Betriebskosten, Umsatzsteuer | jeweils die gleichnamige (Raumkosten: Wohnen) |

@@ -4844,7 +4844,10 @@ class BrowserTest(unittest.TestCase):
                 pg.evaluate("document.querySelector('details.kb').open = true")
                 self.assertEqual(pg.inner_text("details.kb > summary").strip(), "Empfohlene Kategorien"); self.assertEqual(pg.locator("#kb-sum").count(), 0)
                 n0 = pg.locator(".kb-table tr.kb-ok").count()
-                kb = pg.inner_text(".kb-table"); self.assertIn("Finanzierung", kb); self.assertIn("Am besten jedes Darlehen", kb); self.assertIn("Empfohlen in MoneyMoney", kb); self.assertIn("Umsatzerlöse", kb); self.assertIn("Gesellschafter", kb)   # rows of the companies too
+                kb = pg.inner_text(".kb-table"); self.assertIn("Finanzierung", kb); self.assertIn("Am besten jedes Darlehen", kb); self.assertIn("Empfohlen in MoneyMoney", kb); self.assertNotIn("Umsatzerlöse", kb); self.assertIn("Wohnen", kb)   # private side first
+                pg.click(".kb-side button[data-side='f']"); kb = pg.inner_text(".kb-table")                 # business: its rows and names
+                self.assertIn("Umsatzerlöse", kb); self.assertIn("Gesellschafter", kb); self.assertIn("Raumkosten", kb); self.assertNotIn("Lebenshaltung", kb)
+                pg.click(".kb-side button[data-side='p']"); self.assertIn("Lebenshaltung", pg.inner_text(".kb-table"))   # rows of the companies too
                 self.assertIn("erkennt Kontor am Konto", pg.inner_text("#kb-body")); self.assertEqual(pg.locator(".kb-table .tag").count(), 0)   # the rule; one tree, no tags
                 pg.select_option('.kp-table tr[data-p="Umbuchung"] .kp-pos', "living")          # (saved at once)
                 until(pg, "document.querySelectorAll('.kb-table tr.kb-ok').length === %d" % (n0 - 1)); kb = pg.inner_text(".kb-table"); self.assertIn("keine", kb); self.assertNotIn("fehlt", kb); self.assertNotIn("bei Bedarf", kb)

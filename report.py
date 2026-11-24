@@ -917,20 +917,23 @@ def pair_transfers(ledger: Ledger, txs: List[Tx], root: Set[str], roles: Dict[st
 # ---------------------------------------------------------------------------
 POSITIONS = [  # (key, section, row -- German, the key of your planning; shown in your language via pos_<key>); one outline for
     # every area (a row shows only where there is money in it)
-    ("work_income", "income", "Arbeitseinkommen"), ("revenue", "income", "Umsatzerlöse"), ("rental", "income", "Vermietung"),
-    ("capital_income", "income", "Kapitalerträge"), ("refunds", "income", "Erstattungen"), ("other_income", "income", "Sonstige Einnahmen"),
+    ("work_income", "income", "Arbeitseinkommen"), ("revenue", "income", "Umsatzerlöse"), ("benefits", "income", "Rente & Sozialleistungen"),
+    ("rental", "income", "Vermietung"), ("capital_income", "income", "Kapitalerträge"), ("gifts_in", "income", "Unterhalt & Geschenke"),
+    ("refunds", "income", "Erstattungen"), ("other_income", "income", "Sonstige Einnahmen"),
     ("goods", "expenses", "Wareneinkauf"), ("staff", "expenses", "Personal"), ("operations", "expenses", "Betriebskosten"),
     ("housing", "expenses", "Wohnen"), ("living", "expenses", "Lebenshaltung"), ("mobility", "expenses", "Mobilität"),
-    ("insurance", "expenses", "Versicherungen"), ("health", "expenses", "Gesundheit"), ("leisure", "expenses", "Freizeit & Reisen"),
+    ("insurance", "expenses", "Versicherungen"), ("health", "expenses", "Gesundheit"), ("education", "expenses", "Bildung & Betreuung"),
+    ("leisure", "expenses", "Freizeit & Reisen"),
     ("property_costs", "expenses", "Objektkosten"), ("administration", "expenses", "Beratung & Gebühren"), ("taxes", "expenses", "Steuern"),
     ("vat", "expenses", "Umsatzsteuer"),
-    ("donations", "expenses", "Geschenke & Spenden"), ("other_expenses", "expenses", "Sonstige Ausgaben"),
+    ("donations", "expenses", "Unterhalt, Geschenke & Spenden"), ("other_expenses", "expenses", "Sonstige Ausgaben"),
     ("saving", "investing", "Sparen & Anlegen"), ("repayment", "financing", "Tilgung"), ("loan_interest", "financing", "Zinsen"),
     ("partners", "financing", "Einlagen & Entnahmen"),
     ("ignore", "", ""),
 ]
 POS = {k: (sec, row, i) for i, (k, sec, row) in enumerate(POSITIONS)}
-COMPANY_ROWS = {"housing": "Raumkosten"}       # the same position, named as a company would (text pos_<key>_g)
+# the same position, named as a company would (text pos_<key>_g)
+COMPANY_ROWS = {"housing": "Raumkosten", "benefits": "Zuschüsse & Förderungen", "education": "Fortbildung"}
 
 
 def position_row(pos: str, company: bool) -> Tuple[str, str]:
@@ -949,12 +952,13 @@ POSITION_FIRST = [  # (words, in, out, only at the start of a word); not for cos
     (("tilgung", "kredit", "darlehen", "finanzierung", "annuit"), "repayment", "repayment", False),
     (("einlage", "entnahme", "privateinlage", "privatentnahme", "kapitaleinlage", "gewinnausschuett", "gewinnverwendung"), "partners", "partners", True),
     (("sparen", "sparplan", "bauspar", "invest", "wertpapier", "depot", "etf", "aktie", "fonds", "geldanlage", "ruecklage", "krypto",
-      "altersvorsorge", "beteiligung", "immobilienkauf", "kapitalanlage"), "saving", "saving", True),
+      "altersvorsorge", "beteiligung", "immobilienkauf", "kapitalanlage", "rentenversicherung", "riester", "ruerup", "basisrente",
+      "pensionskasse", "direktversicherung", "kapitallebensversicherung", "fondspolice"), "saving", "saving", True),
 ]
 FIRST_NOT = ("gebuehr", "kosten", "entgelt", "provision", "kreditkarte")
 POSITION_CONTEXT = [(("vermiet", "immobil", "objekt"), "rental", "property_costs")]
 POSITION_HINTS = [
-    (("steuerberat", "beratung", "notar", "anwalt", "kontofuehr", "gebuehr", "bankgeb"), "other_income", "administration"),
+    (("steuerberat", "beratung", "notar", "anwalt", "kontofuehr", "gebuehr", "bankgeb", "buchhalt", "buchfuehr"), "other_income", "administration"),
     (("wareneinkauf", "waren", "lieferant", "material"), "refunds", "goods"),
     (("personal", "loehne", "sozialversicher", "sozialabgab", "lohnneben"), "refunds", "staff"),
     (("umsatzerl", "erloes", "kasseneinnahm", "verkauf"), "revenue", "other_expenses"),
@@ -965,20 +969,33 @@ POSITION_HINTS = [
     (("finanzamt", "steuer", "solidarit"), "refunds", "taxes"),
     (("mieteink", "pachteink"), "rental", "property_costs"),
     (("kapitaleink",), "capital_income", "other_expenses"),
-    (("gehalt", "gehaelt", "lohn", "loehn", "tantieme", "bonus", "gratifikation", "verguetung", "honorar", "arbeit"), "work_income", "staff"),
+    # pensions and public benefits (a company: grants and subsidies) -- before work income: "Ruhegehalt", "Arbeitslosengeld"
+    (("rente", "pension", "ruhegehalt", "versorgungsbez", "kindergeld", "elterngeld", "arbeitslosengeld", "buergergeld", "krankengeld",
+      "pflegegeld", "mutterschaftsgeld", "bafoeg", "sozialleistung", "sozialhilfe", "grundsicherung", "kurzarbeit", "zuschuss", "zuschuesse",
+      "foerdermittel", "foerderung", "subvention"), "benefits", "other_expenses"),
+    (("gehalt", "gehaelt", "lohn", "loehn", "tantieme", "bonus", "gratifikation", "verguetung", "honorar", "arbeit", "minijob", "nebenjob",
+      "aushilfe", "werkstudent"), "work_income", "staff"),
     (("dividend", "kapitalertr", "ausschuett"), "capital_income", "partners"),
     (("mieteinnahm", "pacht"), "rental", "property_costs"),
     (("erstattung", "rueckzahlung", "gutschrift", "cashback"), "refunds", "other_expenses"),
     (("geldautomat", "bargeld", "barabhebung", "abhebung"), "other_income", "other_expenses"),
     (("versicherung",), "refunds", "insurance"),
-    (("restaurant", "gastro"), "refunds", "leisure"),
     (("miete",), "rental", "housing"),
-    (("nebenkost", "strom", "energie", "wasser", "heiz", "internet", "telefon", "mobilfunk", "rundfunk", "wohnen", "wohnung"), "refunds", "housing"),
-    (("lebensmittel", "supermarkt", "einkauf", "drogerie", "kleidung", "haushalt", "lebenshalt"), "refunds", "living"),
+    (("nebenkost", "strom", "energie", "wasser", "heiz", "internet", "telefon", "mobilfunk", "rundfunk", "wohnen", "wohnung", "moebel"), "refunds", "housing"),
+    # eating and drinking -- at home or out -- is living, so "Lebensmittel & Restaurant" has one place; a pet's vet too (before "arzt")
+    (("lebensmittel", "supermarkt", "einkauf", "drogerie", "kleidung", "haushalt", "lebenshalt", "restaurant", "gastro", "kantine",
+      "lieferdienst", "getraenk", "friseur", "kosmetik", "koerperpflege", "haustier", "tierbedarf", "tierarzt"), "refunds", "living"),
     (("auto", "kfz", "tank", "benzin", "mobilit", "bahn", "oepnv", "taxi", "parken", "fahrrad", "verkehr", "maut", "transport"), "refunds", "mobility"),
-    (("gesundheit", "arzt", "apotheke", "medizin", "zahn", "kranken", "therapie"), "refunds", "health"),
-    (("freizeit", "urlaub", "reise", "kultur", "sport", "hobby", "abo", "streaming", "kino", "konzert", "hotel", "flug"), "refunds", "leisure"),
-    (("spende", "geschenk"), "other_income", "donations"),
+    (("gesundheit", "arzt", "apotheke", "medizin", "zahn", "kranken", "therapie", "brille", "optiker", "physio", "pflegeheim", "pflegedienst"),
+     "refunds", "health"),
+    (("freizeit", "urlaub", "ferien", "reise", "kultur", "sport", "hobby", "abo", "streaming", "kino", "konzert", "hotel", "flug", "sauna",
+      "wellness", "fitness", "therme", "schwimmbad", "vereinsbeitr", "event", "veranstaltung", "unterhaltung", "buecher", "zeitung", "zeitschrift",
+      "musik"), "refunds", "leisure"),
+    (("bildung", "schule", "schulung", "studium", "studienge", "kita", "kindergarten", "kinderbetreuung", "tagesmutter", "nachhilfe", "seminar"),
+     "refunds", "education"),
+    # support (maintenance, pocket money), gifts, inheritances, donations -- the taxes on them are taxes (above)
+    (("spende", "geschenk", "taschengeld", "schenkung", "erbschaft", "unterhaltszahl", "unterhaltsvorschuss", "kindesunterhalt",
+      "ehegattenunterhalt", "trennungsunterhalt"), "gifts_in", "donations"),
 ]
 _word_rx = {}
 
@@ -1001,7 +1018,8 @@ TX_HINTS = [
     ("text", r"tilgung|annuitaet|darlehensrate|kreditrate|\brate\b", ("", ""), ("", "")),
     ("text", r"ausschuettung|dividend|ertragsgutschrift", ("capital_income", ""), ("capital_income", "")),
     ("text", r"\bzins|sollzins|habenzins|zinsabschluss|kupon", ("capital_income", "loan_interest"), ("capital_income", "loan_interest")),
-    ("name", r"deutsche rentenversicherung", ("", "insurance"), ("", "staff")),       # money from it: a pension, no estimate
+    ("name", r"deutsche rentenversicherung", ("benefits", "insurance"), ("", "staff")),       # money from it: a pension
+    ("name", r"familienkasse|elterngeldstelle|jobcenter|bundesagentur fuer arbeit|bafoeg", ("benefits", None), ("benefits", None)),
     ("name", r"\baok\b|techniker krankenkasse|barmer|\bdak\b|\bikk\b|\bbkk\b|knappschaft|minijob|berufsgenossenschaft|krankenkasse|rentenversicherung",
      ("refunds", "insurance"), ("refunds", "staff")),
     ("text", r"\blohn\b|\bgehalt|lohn/gehalt|\bloehne\b|entgeltabrechnung|bezuege|\bverguetung", ("work_income", None), (None, "staff")),
@@ -1015,12 +1033,12 @@ TX_HINTS = [
     ("name", r"versicherung|allianz|\bhuk\b|\bergo\b|\baxa\b|generali|signal iduna|debeka|\bhdi\b|\bwwk\b|\blvm\b|\bdevk\b|gothaer|provinzial",
      ("refunds", "insurance"), ("refunds", "insurance")),
     ("text", r"spende|unicef|aerzte ohne grenzen|\bwwf\b|greenpeace|albert schweitzer", (None, "donations"), (None, "donations")),
-    ("name", r"\brewe\b|\bedeka\b|\baldi\b|\blidl\b|\bpenny\b|kaufland|denns|alnatura|\bdm\b|dm-drogerie|rossmann|amazon|zalando|\bikea\b",
+    ("name", r"\brewe\b|\bedeka\b|\baldi\b|\blidl\b|\bpenny\b|kaufland|denns|alnatura|\bdm\b|dm-drogerie|rossmann|amazon|zalando|\bikea\b|restaurant|lieferando|\bwolt\b",
      ("refunds", "living"), (None, None)),
     ("name", r"deutsche bahn|\bdb vertrieb|\bmvg\b|\bmvv\b|\baral\b|\bshell\b|\besso\b|totalenergies|tankstelle|\bsixt\b|share now|\buber\b|flixbus|lufthansa|parkhaus|\bapcoa\b|\badac\b",
      ("refunds", "mobility"), (None, "operations")),
     ("name", r"apotheke|zahnarzt|\barzt|arztpraxis|klinik|krankenhaus|physiotherap|fielmann", ("refunds", "health"), (None, None)),
-    ("name", r"netflix|spotify|disney|apple\.com|itunes|google play|eventim|airbnb|booking\.com|\bhotel|restaurant|lieferando|\bwolt\b|\bkino",
+    ("name", r"netflix|spotify|disney|apple\.com|itunes|google play|eventim|airbnb|booking\.com|\bhotel|\bkino",
      ("refunds", "leisure"), (None, None)),
 ]
 _TX_HINTS = [(f, re.compile(rx), pp, pc) for f, rx, pp, pc in TX_HINTS]
@@ -1103,7 +1121,13 @@ def recognised_position(path: str, income: bool) -> Optional[str]:
     # salary) and as a word of its own ("Hereinkommende Zahlungen" is none)
     if income and any(_has(("einkommen",), n, True) for n in dict.fromkeys((name_l, name))):
         return "work_income"
+    # "Unterhalt" as a word of its own in the category's name is support paid or received ("Unterhaltung" is leisure, above)
+    if any(_UNTERHALT.search(n) for n in dict.fromkeys((name_l, name))):
+        return "gifts_in" if income else "donations"
     return None
+
+
+_UNTERHALT = re.compile(r"(?<![a-z])unterhalts?(?![a-z])")
 
 
 def category_totals(ledger: Ledger, accounts: Optional[Set[str]] = None) -> Dict[str, float]:

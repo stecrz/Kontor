@@ -63,7 +63,7 @@ import receipt_text
 import table_text
 from decimal import ROUND_HALF_UP, Decimal
 from model import fmt_eur, has_mark, norm_cat
-from report import PLAN_AREA_METHODS, PLAN_METHODS, PLAN_MODELS
+from report import COMPANY_ROWS, PLAN_AREA_METHODS, PLAN_METHODS, PLAN_MODELS, position_row
 from llm_local import CATALOG, EMBED, EMBED_CONTEXT, EMBED_IDS, PICTURE_TOKENS, SANDBOXES, SPEECH, Cancelled, LocalAI, ModelError, SPEECH_IDS, SPEECH_CONTEXT, MAX_AUDIO, fit, physical_ram
 from llm_local import tuning as model_tuning
 from storage import StoreError, StoreLocked, selftest
@@ -3002,7 +3002,7 @@ class Assistant:
                 continue
             pos = c.get("own") or c.get("proposal")
             try:
-                label = tr("pos_%s_g" % pos) if c.get("company") and pos == "housing" else tr("pos_%s" % pos) if pos else None
+                label = tr(position_row(pos, True)[1]) if c.get("company") and pos in COMPANY_ROWS else tr("pos_%s" % pos) if pos else None
             except Exception:
                 label = str(pos)
             out.append({"category": path, "transactions": c.get("count_all"), "sum_last_12_months": _num(c.get("sum_12m")),

@@ -1,5 +1,10 @@
 # Änderungen
 
+## 3.17.68 (2026-11-24 11:02)
+- Cashflow: neue Positionen „Rente & Sozialleistungen“, „Unterhalt & Geschenke“, „Bildung & Betreuung“; „Geschenke & Spenden“ heißt „Unterhalt, Geschenke & Spenden“
+- Cashflow-Positionen: bessere Vorschläge nach dem Namen – Minijob, Taschengeld, Sauna, Friseur; Essen auch auswärts unter Lebenshaltung; private Rentenversicherung unter Sparen & Anlegen
+- Empfohlene Kategorien: Umschalter Privat | Geschäftlich, je Seite nur ihre Zeilen und Namen
+
 ## 3.17.67 (2026-11-24 10:24)
 - Entwicklung: Nachtlauf startet wieder (Workflow-Datei); Test gegen „: “ in Werten ohne Anführungszeichen
 

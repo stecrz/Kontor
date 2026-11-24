@@ -5853,47 +5853,61 @@ async function vPositionen() {
 // the recommended categories in MoneyMoney -- for information only, no score: one category per position, grouped like the
 // positions' menu, each group with how it is best set up; one tree for all areas; per row which of yours count there (or "keine"
 // -- not every row applies to everyone: no business, no revenue) -- updated as you change a position below
-// [key (texts kb_<key>, kb_<key>_sub, kb_<key>_tip; a company's: kb_<key>_g …), group, positions]; a rented property: always by
-// its own category (Je Immobilie)
-const KB_TREE = [['work_income', 'einnahmen', ['work_income']], ['revenue', 'einnahmen', ['revenue']],
-  ['capital_income', 'einnahmen', ['capital_income']], ['refunds', 'einnahmen', ['refunds']],
-  ['goods', 'ausgaben', ['goods']], ['staff', 'ausgaben', ['staff']], ['housing', 'ausgaben', ['housing']],
-  ['operations', 'ausgaben', ['operations']], ['living', 'ausgaben', ['living']], ['mobility', 'ausgaben', ['mobility']],
-  ['insurance', 'ausgaben', ['insurance']], ['health', 'ausgaben', ['health']], ['leisure', 'ausgaben', ['leisure']],
-  ['administration', 'ausgaben', ['administration']],
-  ['taxes', 'ausgaben', ['taxes']], ['vat', 'ausgaben', ['vat']], ['donations', 'ausgaben', ['donations']],
-  ['saving', 'sek_investitionen', ['saving']], ['loans', 'finanzierung', ['repayment', 'loan_interest']],
-  ['partners', 'finanzierung', ['partners']], ['transfer', 'sonstiges', ['transfer']],
-  ['property', 'kb_g_property', ['property', 'rental', 'property_costs']], ['property_buy', 'kb_g_property', ['property_saving']]];
+// [key (texts kb_<key>, kb_<key>_sub, kb_<key>_tip; a company's: kb_<key>_g …), group, positions, side ('p' private only,
+// 'f' business only, '' both)]; a rented property: always by its own category (Je Immobilie). One side at a time (Privat |
+// Geschäftlich, remembered), each with its own names and tips and the categories of yours on that side
+const KB_TREE = [['work_income', 'einnahmen', ['work_income'], 'p'], ['revenue', 'einnahmen', ['revenue'], 'f'],
+  ['benefits', 'einnahmen', ['benefits'], ''], ['capital_income', 'einnahmen', ['capital_income'], ''],
+  ['gifts_in', 'einnahmen', ['gifts_in'], 'p'], ['refunds', 'einnahmen', ['refunds'], ''],
+  ['goods', 'ausgaben', ['goods'], 'f'], ['staff', 'ausgaben', ['staff'], 'f'], ['housing', 'ausgaben', ['housing'], ''],
+  ['operations', 'ausgaben', ['operations'], 'f'], ['living', 'ausgaben', ['living'], 'p'], ['mobility', 'ausgaben', ['mobility'], ''],
+  ['insurance', 'ausgaben', ['insurance'], ''], ['health', 'ausgaben', ['health'], 'p'],
+  ['education', 'ausgaben', ['education'], ''], ['leisure', 'ausgaben', ['leisure'], 'p'],
+  ['administration', 'ausgaben', ['administration'], ''],
+  ['taxes', 'ausgaben', ['taxes'], ''], ['vat', 'ausgaben', ['vat'], 'f'], ['donations', 'ausgaben', ['donations'], 'p'],
+  ['saving', 'sek_investitionen', ['saving'], ''], ['loans', 'finanzierung', ['repayment', 'loan_interest'], ''],
+  ['partners', 'finanzierung', ['partners'], 'f'], ['transfer', 'sonstiges', ['transfer'], ''],
+  ['property', 'kb_g_property', ['property', 'rental', 'property_costs'], ''], ['property_buy', 'kb_g_property', ['property_saving'], '']];
 const KB_SAME_TIP = ['mobility', 'insurance', 'health', 'leisure', 'taxes'];      // one reason for these (kb_more_tip)
 let KB_KINDS = ['private'];
 function kbCard() {                                          // folded by default, also during setup (only looked up when wanted)
   return `<details class="card kb" data-keep="kp-kb" data-ex="accounts.positions.needs"${keepOpen('kp-kb')}><summary>${t('kb_titel')}</summary><div id="kb-body"></div></details>`;
 }
-// eff: [{path, eff (its position now), obj (a property's)}] -- from the table as it stands
+// eff: [{path, eff (its position now), obj (a property's), firma (mostly a company's)}] -- from the table as it stands
+let KB_EFF = [];
+function kbSide() {
+  let v = null; try { v = localStorage.getItem('kontor.kbSide'); } catch (e) { /* storage blocked: the default */ }
+  return v === 'p' || v === 'f' ? v : KB_KINDS.includes('company') && !KB_KINDS.includes('private') ? 'f' : 'p';
+}
 function kbRefresh(eff) {
   const body = $('#kb-body'); if (!body) return;
-  const at = new Map();
-  for (const r of eff) { const k = r.obj ? (r.eff === 'saving' ? 'property_saving' : ['repayment', 'loan_interest', 'partners', 'ignore'].includes(r.eff) ? r.eff : 'property') : r.eff;
+  if (eff) KB_EFF = eff; else eff = KB_EFF;
+  const side = kbSide(), at = new Map();
+  for (const r of eff) { if (!!r.firma !== (side === 'f')) continue;
+    const k = r.obj ? (r.eff === 'saving' ? 'property_saving' : ['repayment', 'loan_interest', 'partners', 'ignore'].includes(r.eff) ? r.eff : 'property') : r.eff;
     if (k) { if (!at.has(k)) at.set(k, []); at.get(k).push(r.path); } }
-  const hasF = KB_KINDS.includes('company'), hasP = !hasF || KB_KINDS.includes('private');
-  // one tree for every kind of area (private, sole trader, GbR, GmbH …): a name that differs by kind shows both (" / "); a tip
-  // in the kinds you have -- no tags, the account decides the area
-  const kt = key => { const p = I18N[key] ? t(key) : '', f = I18N[key + '_g'] ? t(key + '_g') : p;
-    return key.endsWith('_tip') ? (hasP && hasF && p !== f ? `${p} ${f}` : hasF ? f : p) : p !== f ? [p, f].filter(Boolean).join(' / ') : p; };
+  // one tree for every kind of area (private, sole trader, GbR, GmbH …), shown one side at a time: on the business side a
+  // company's name and tip (kb_<key>_g) where there is one -- the account decides the area
+  const kt = key => side === 'f' && I18N[key + '_g'] ? t(key + '_g') : I18N[key] ? t(key) : '';
   let grp = '', rows = '';
-  for (const [k, g, ps] of KB_TREE) {
+  for (const [k, g, ps, only] of KB_TREE) {
+    if (only && only !== side) continue;
     const mine = ps.flatMap(p => at.get(p) || []), have = mine.length > 0, miss = ps.filter(p => !(at.get(p) || []).length);
     if (g !== grp) { grp = g; const how = kt(`kb_how_${g}`);
       rows += `<tr class="kb-sec"><td colspan="3"><b>${esc(t(g))}</b>${how ? ` <span class="small muted">${esc(how)}</span>` : ''}</td></tr>`; }
     const names = mine.slice(0, 2).map(CP).join(', ') + (mine.length > 2 ? ' ' + t('kb_und_n', mine.length - 2) : '');
-    const part = have && miss.length && ps.length > 1 && k !== 'property' ? ` · <span class="muted">${esc(t('kb_ohne', miss.map(p => posLabel(p)).join(', ')))}</span>` : '';
+    const part = have && miss.length && ps.length > 1 && k !== 'property' ? ` · <span class="muted">${esc(t('kb_ohne', miss.map(p => posLabel(p, side === 'f')).join(', ')))}</span>` : '';
     const sub = kt(`kb_${k}_sub`), tip = kt(`kb_${KB_SAME_TIP.includes(k) ? 'more' : k}_tip`) + (have ? '' : ' ' + t('kb_anlegen'));
     rows += `<tr class="${have ? 'kb-ok' : ''}"><td class="kb-mark">${have ? '✓' : '○'}</td>`
       + `<td>${esc(kt(`kb_${k}`))}${sub ? ` <span class="muted">› ${esc(sub)}</span>` : ''}<span class="hq" tabindex="0" data-tip="${esc(tip)}">?</span></td>`
       + `<td>${have ? esc(names) + part : esc(t('kb_keine'))}</td></tr>`;
   }
-  body.innerHTML = `<p class="small kb-rule">${esc(t('kb_regel'))}${more('categories-tree')}</p><table class="plain kb-table"><thead><tr><th></th><th>${t('kb_empfohlen')}</th><th>${t('kb_bei_dir')}</th></tr></thead><tbody>${rows}</tbody></table>`;
+  const seg = [['p', t('kb_privat')], ['f', t('kb_geschaeftlich')]].map(([v, l]) => `<button type="button" data-side="${v}" class="${side === v ? 'on' : ''}" aria-pressed="${side === v}">${esc(l)}</button>`).join('');
+  body.innerHTML = `<p class="small kb-rule">${esc(t('kb_regel'))}${more('categories-tree')}</p><div class="seg small kb-side" role="group" aria-label="${esc(t('kb_seite'))}">${seg}</div><table class="plain kb-table"><thead><tr><th></th><th>${t('kb_empfohlen')}</th><th>${t('kb_bei_dir')}</th></tr></thead><tbody>${rows}</tbody></table>`;
+  $$('.kb-side button', body).forEach(b => b.addEventListener('click', () => {
+    try { localStorage.setItem('kontor.kbSide', b.dataset.side); } catch (e) { /* storage blocked: this view only */ }
+    kbRefresh();
+  }));
 }
 // the target account a saving category gets by itself (from the recipients in the cash flow): not needed (transfers to your
 // own accounts), found, or missing -- shown in its menu, so it is clear whether to choose
@@ -5969,7 +5983,7 @@ function bindPositionen(main) {
       const k = $('.kp-konto', r); k.classList.toggle('hidden', eff !== 'saving');      // counts for the categories below it too
       r._eff = eff;
     });
-    kbRefresh(rows.filter(r => +r.dataset.own).map(r => ({path: r.dataset.p, eff: r._eff, obj: ($('.kp-pos', r) || {dataset: {}}).dataset.obj})));
+    kbRefresh(rows.filter(r => +r.dataset.own).map(r => ({path: r.dataset.p, eff: r._eff, obj: ($('.kp-pos', r) || {dataset: {}}).dataset.obj, firma: !!r.dataset.firma})));
     const dirty = rows.some(r => own(r) !== r.dataset.init || ($('.kp-konto', r) && acc($('.kp-konto', r).value) !== acc(r.dataset.konto))) || kaDirty().length > 0;
     save.disabled = !dirty; DIRTY.on = dirty;
   };

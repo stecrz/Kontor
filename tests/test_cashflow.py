@@ -616,7 +616,7 @@ class ReviewCases(Reconciles):
 
     def test_a_payment_to_another_area_never_pairs_by_amount(self):
         data = build([(1, "giro", date(2026, 1, 5), 3000.0, {"cat": "Gehalt"}),
-                      (2, "giro", date(2026, 2, 3), -200.0, {"iban": "DE31", "cat": "Taschengeld"}),
+                      (2, "giro", date(2026, 2, 3), -200.0, {"iban": "DE31", "cat": "Übertrag Kind"}),
                       (3, "kind", date(2026, 2, 3), 200.0, {"iban": "DE11"}),
                       (4, "auto", date(2026, 2, 4), 200.0, {"purpose": "Zuschreibung"})])
         self.assertAddsUp(data)
@@ -704,13 +704,40 @@ class Positions(Reconciles):
                  ("Gehälter", False): "staff", ("Abos", False): "leisure", ("Wareneinkauf", False): "goods",
                  ("Einkommen", True): "work_income", ("Privat / Einkommen", True): "work_income", ("Mieteinkommen", True): "rental",
                  ("Kapitaleinkommen", True): "capital_income", ("Einkommensteuer", False): "taxes",
-                 ("Einkommen / Kindergeld", True): "other_income", ("Hereinkommende Zahlungen", True): "other_income",
+                 ("Einkommen / Kindergeld", True): "benefits", ("Hereinkommende Zahlungen", True): "other_income",
                  ("Gesellschafter / Einlage", True): "partners", ("Ausschüttung", False): "partners", ("Ausschüttung", True): "capital_income",
                  ("Privatentnahme", False): "partners", ("Gewinnausschüttung", False): "partners",
                  ("Personal / Gesellschafter-Geschäftsführer", False): "staff",
                  ("Sparen / Spareinlage", False): "saving"}
         for (path, inc), want in cases.items():
             self.assertEqual(R.propose_position(path, inc), want, path)
+
+    def test_a_usual_private_tree_has_one_place_each(self):
+        # a typical private category tree: every category lands in the position of its purpose, none in "other" by mistake
+        import report as R
+        cases = {("Wohnen / Miete & NK", False): "housing", ("Wohnen / Rundfunkbeitrag", False): "housing",
+                 ("Versicherungen / Krankenversicherung", False): "insurance", ("Versicherungen / Haftpflichtversicherung", False): "insurance",
+                 ("Versicherungen / Rentenversicherung", False): "saving", ("Riester-Rente", False): "saving",      # builds capital
+                 ("Risikolebensversicherung", False): "insurance", ("Kontoführungsgebühren", False): "administration",
+                 ("Sonstiges / Wohnung (Einrichtung, Ausstattung)", False): "housing", ("Sonstiges / Sauna", False): "leisure",
+                 ("Sonstiges / Mobilität & Fahrzeuge", False): "mobility", ("Sonstiges / Gesundheit, Brille, Hygiene", False): "health",
+                 ("Sonstiges / Friseur, Kosmetik, Körperpflege", False): "living", ("Sonstiges / Gastro & Lebensmittel", False): "living",
+                 ("Restaurant", False): "living", ("Sonstiges / Events & Freizeit(-ausrüstung)", False): "leisure",
+                 ("Sonstiges / Geschenke", False): "donations", ("Sonstiges / Abos, Bücher & Bildung", False): "leisure",
+                 ("Sonstiges / Anderes", False): "other_expenses", ("Haustiere / Tierarzt", False): "living",
+                 ("Kinder / Kita", False): "education", ("Weiterbildung", False): "education", ("Unterhalt", False): "donations",
+                 ("Unterhaltung", False): "leisure", ("Auto / Unterhalt", False): "mobility", ("Buchhaltung", False): "administration",
+                 ("Erbschaftsteuer", False): "taxes",
+                 ("Gehalt", True): "work_income", ("Minijob", True): "work_income", ("Kapitalerträge", True): "capital_income",
+                 ("Erstattungen", True): "refunds", ("Sonstiges", True): "other_income", ("Taschengeld", True): "gifts_in",
+                 ("Unterhalt", True): "gifts_in", ("Erbschaft", True): "gifts_in", ("Rente", True): "benefits",
+                 ("Pension", True): "benefits", ("Elterngeld", True): "benefits", ("Arbeitslosengeld", True): "benefits",
+                 ("Fördermittel", True): "benefits"}
+        for (path, inc), want in cases.items():
+            self.assertEqual(R.propose_position(path, inc), want, path)
+        # a company's name for the same position
+        self.assertEqual(R.position_row("benefits", True), ("Zuschüsse & Förderungen", "pos_benefits_g"))
+        self.assertEqual(R.position_row("education", False), ("Bildung & Betreuung", "pos_education"))
 
     def test_every_position_has_its_text(self):
         import json
@@ -772,6 +799,9 @@ class Positions(Reconciles):
         self.assertIsNone(g("Bank", "Darlehen Zins und Tilgung", -1500.0, False))                       # mixed: no estimate
         self.assertEqual(g("Bank", "Sollzinsen 4. Quartal", -80.0, False), "loan_interest")
         self.assertEqual(g("Nexi Germany", "Kartenumsätze", 900.0, True), "revenue")
+        self.assertEqual(g("Deutsche Rentenversicherung Bund", "Rente 11/2026", 1400.0, False), "benefits")
+        self.assertEqual(g("Familienkasse Bayern", "Kindergeld", 255.0, False), "benefits")
+        self.assertEqual(g("Lieferando", "Bestellung", -32.0, False), "living")                         # eating out: living
         self.assertIsNone(g("Nexi Germany", "Kartenumsätze", 900.0, False))
 
     def test_an_estimate_is_never_saving_or_repayment(self):

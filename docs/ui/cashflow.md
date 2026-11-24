@@ -31,10 +31,13 @@ Umschichtungen). A row with ▸ is closed, ▾ open; a closed row still holds th
 operating cash flow), without investing, repayment and paid interest (those are under Investitionen/Finanzierung); received interest
 and dividends count here (position Kapitalerträge). Einnahmen and Ausgaben are each the sum of their positions.
 
-Positions (fixed outline for every area): income Arbeitseinkommen, Umsatzerlöse, Vermietung, Kapitalerträge, Erstattungen, Sonstige
-Einnahmen; expenses Wareneinkauf, Personal, Betriebskosten, Wohnen (companies: Raumkosten), Lebenshaltung, Mobilität,
-Versicherungen, Gesundheit, Freizeit & Reisen, Objektkosten, Beratung & Gebühren, Steuern, Umsatzsteuer, Geschenke & Spenden,
-Sonstige Ausgaben; a property with its own category has rows "<Objekt> · Miete" and "<Objekt> · Kosten". "(ohne Kategorie)" holds
+Positions (fixed outline for every area): income Arbeitseinkommen (salary, bonus, minijob), Umsatzerlöse, Rente & Sozialleistungen
+(pension, child benefit, parental allowance …; companies: Zuschüsse & Förderungen), Vermietung, Kapitalerträge, Unterhalt &
+Geschenke (support, pocket money, gifts, inheritance received – no earned income), Erstattungen, Sonstige Einnahmen; expenses
+Wareneinkauf, Personal, Betriebskosten, Wohnen (companies: Raumkosten), Lebenshaltung (incl. food and drink at home and eating out,
+personal care), Mobilität, Versicherungen (risk cover and statutory contributions; private pension insurance that builds capital is
+Sparen & Anlegen), Gesundheit, Bildung & Betreuung (childcare, school, university, courses; companies: Fortbildung), Freizeit &
+Reisen, Objektkosten, Beratung & Gebühren, Steuern, Umsatzsteuer, Unterhalt, Geschenke & Spenden, Sonstige Ausgaben; a property with its own category has rows "<Objekt> · Miete" and "<Objekt> · Kosten". "(ohne Kategorie)" holds
 transactions without a category that Kontor could not estimate (link "Zuordnen"). A position belongs to its section by what it is,
 not by the sign of a single booking: a refund in Lebenshaltung makes that position less negative (or positive) inside Ausgaben.
 Which MoneyMoney category counts in which position is set under Konten & Regeln → Cashflow-Positionen.

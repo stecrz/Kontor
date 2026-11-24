@@ -287,6 +287,16 @@ anhängen – nie löschen.
   Abschluss mit `.claude/tools/release.py` in einem Aufruf; kein Warten auf GitHub – rot behebt der nächste Chat („fix ci“). Große Dateien
   nur in Bereichen lesen. Ein Grund für diese Regeln: das Wochenkontingent war mit „extra hoch“ in wenigen Stunden verbraucht.
   (umgesetzt in 3.17.42)
+- **Cashflow-Positionen vollständig und eindeutig** (Nutzer, 2026-11-24): Jede private oder unternehmerische Einnahme und Ausgabe
+  hat genau eine Position, ohne dass etwas ergänzt werden muss; nicht rückwärtskompatibel nötig (noch nichts eingerichtet). Neu:
+  „Rente & Sozialleistungen“ (Firma: „Zuschüsse & Förderungen“), „Unterhalt & Geschenke“ (bekommen), „Bildung & Betreuung“ (Firma:
+  „Fortbildung“); „Geschenke & Spenden“ heißt „Unterhalt, Geschenke & Spenden“. Abgrenzungen: Taschengeld ist kein Arbeitseinkommen
+  (keine Gegenleistung), sondern „Unterhalt & Geschenke“ – der Nutzer hatte Gehalt vermutet; Minijob ist Arbeitseinkommen; Essen und
+  Trinken gehören immer zur Lebenshaltung, auch auswärts (eine Kategorie „Gastro & Lebensmittel“ hat sonst keinen eindeutigen Platz);
+  private Renten- und Kapitallebensversicherungen sind „Sparen & Anlegen“ (bauen Vermögen auf), Risikoversicherungen und
+  Pflichtbeiträge „Versicherungen“. Erstattungen (Nutzer): zu viel gezahlte Beiträge bucht er in die Kategorie des Beitrags (mindert
+  ihn), erstattete Kostenrechnungen unter „Erstattungen“. Die empfohlenen Kategorien zeigen privat und geschäftlich
+  getrennt (Umschalter; Nutzer: sonst unübersichtlich). (umgesetzt in 3.17.68)
 - **Empfohlene Kategorien nur zur Orientierung** (Nutzer, 2026-11-24): keine Zählung „X von Y vorhanden“, kein „fehlt“ – nicht jede
   Zeile gilt für jeden (ohne Geschäft keine Umsatzerlöse). Die Karte zeigt je Zeile neutral, welche seiner Kategorien dort zählt, sonst „keine“.
   (umgesetzt in 3.17.46)
