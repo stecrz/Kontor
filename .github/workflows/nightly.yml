@@ -8,6 +8,9 @@ name: Zufallsläufe
 # (3 per push) and their found ones (FOUND_CLICKS), then new ones. A failure names its case: KONTOR_FUZZ_SEED=<number> runs
 # it again. Only the random tests; the rest of a version is checked by its push run (tests.yml). About 3 hours, well under
 # the user's limit of 5; red: the next chat fixes it (CLAUDE.md, "Nachtlauf rot").
+# The data worlds (tests/data_worlds.py: long names, large amounts, empty and full areas, other currencies, month and year
+# ends) go through the whole service -- figures, requests, the assistant; and every page in Chrome, each fixed world in every
+# view, new random worlds after them.
 on:
   schedule:
     - cron: "17 1 * * *"
@@ -35,6 +38,8 @@ jobs:
           - {name: "Regelwelten (Beteiligung, Darlehen, Kontenspiegel) 2 · neue Fälle", tests: tests/test_rule_worlds.py, fixed: "0"}
           - {name: "Klickpfade (Seiten, Dialoge, Seitenfenster, Bezüge) 1 · feste + neue Fälle", tests: tests/test_clickpaths.py, fixed: "40", browsers: true}
           - {name: "Klickpfade (Seiten, Dialoge, Seitenfenster, Bezüge) 2 · neue Fälle", tests: tests/test_clickpaths.py, fixed: "0", browsers: true}
+          - {name: "Datenwelten · Zahlen, Anfragen, Assistent · feste + neue Fälle", tests: "tests/test_data_worlds.py -k 'not Pages'", fixed: "0"}
+          - {name: "Datenwelten · Seiten in Chrome · feste + neue Fälle", tests: "tests/test_data_worlds.py -k Pages", fixed: "0", browsers: true, minutes: "150"}
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.3.3
@@ -52,7 +57,7 @@ jobs:
         env:
           KONTOR_FUZZ_SEEDS: ${{ matrix.fixed }}
           KONTOR_CLICK_SEEDS: ${{ matrix.fixed }}
-          KONTOR_FUZZ_MINUTES: "170"
+          KONTOR_FUZZ_MINUTES: ${{ matrix.minutes || '170' }}       # the data worlds' pages: their fixed worlds in every view first (~20 min)
           TZ: Europe/Berlin
         run: |
           echo "### ${{ matrix.name }}" >> "$GITHUB_STEP_SUMMARY"

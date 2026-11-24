@@ -1087,6 +1087,9 @@ def compact_transactions(ledger: Ledger, bereiche: List[dict], store: Optional[S
                "date": t.booking_date.isoformat(), "amount": t.amount, "name": t.name[:80], "purpose": t.purpose[:140],
                "category": path, "source": q, "booked_count": t.booked, "checkmark": t.checkmark,
                "needs": categorize.needs_category(t, banks)}
+        cur = (ledger.accounts[t.account_uuid].currency or "EUR").upper()
+        if cur != "EUR":
+            row["currency"] = cur                     # an account in another currency: its amounts are in it (never converted)
         if t.id > 0 and not (t.counter_iban or t.booking_text) and has_mark(t.purpose) and ledger.writable(t.account_uuid):
             row["kontor"] = True                      # a booking of Kontor's rules: its mark, in an account Kontor books into (never a bank's payment)
         if t.id in skip:
@@ -1138,7 +1141,7 @@ def portfolio_summary(ledger: Ledger, bereiche: List[dict]) -> List[dict]:
                 continue
         pos.sort(key=lambda x: -x["value"])
         out.append({"account": uuid, "name": acc.name, "entity": ent_of.get(uuid, ""), "sum": round(sum(p["value"] for p in pos), 2),
-                    "cost_basis": round(sum(p["cost_basis"] for p in pos), 2), "positions": pos})
+                    "cost_basis": round(sum(p["cost_basis"] for p in pos), 2), "positions": pos, "currency": (acc.currency or "EUR").upper()})
     return out
 
 
@@ -1298,7 +1301,7 @@ def positions_overview(ledger: Ledger, config: dict, categories: List[dict], tod
     """Kategorien -> Cashflow-Positionen: each of MoneyMoney's categories with bookings in your areas (in MoneyMoney's order):
     bookings, sum of the last 12 months, Kontor's proposal, what you chose, the property it belongs to, the account saving goes
     into, transfer category."""
-    from report import POSITIONS, category_totals, propose_position, transfer_check
+    from report import POSITIONS, category_totals, foreign_currency, propose_position, transfer_check
     config = with_property_categories(config, ledger)
     bereiche = bereiche_for(ledger, config)
     keep = {a.uuid for b in bereiche for a in b["leaves"]}
@@ -1313,8 +1316,8 @@ def positions_overview(ledger: Ledger, config: dict, categories: List[dict], tod
             count[p] += 1
             if t.account_uuid in firm:
                 in_firm[p] += 1
-            if since <= t.booking_date <= today:
-                year[p] += t.amount
+            if since <= t.booking_date <= today and not foreign_currency(ledger.accounts[t.account_uuid]):
+                year[p] += t.amount                       # (in euros: an account in another currency is not converted)
     used = set()
     for p in count:
         parts = p.split(" / ")

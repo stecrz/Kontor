@@ -35,10 +35,12 @@ that is not an own value (taken over from MoneyMoney – tooltip "aus MoneyMoney
 A month can be added before the first one.
 
 ### drawer.hist.holdings — Depotpositionen
-Portfolios only, folded at the top: "3 Positionen · 85.000 € · +5.000 € (6,3 %)" = number of holdings, their value, and the gain or
+Portfolios only, folded at the top: "3 Positionen · 85.000 € · +5.000 € (6,3 %)" = number of holdings, their value (a portfolio kept
+in another currency: in it, its code in place of €), and the gain or
 loss against their purchase value from MoneyMoney (in € and in percent of it; green gain, red loss; missing without a purchase
 value). The table, as of the last reading of MoneyMoney (today's holdings, not a month end): Position (name; hover: ISIN and
-asset class), Menge (quantity), Wert (value in €), G/V (value minus purchase value of that holding).
+asset class), Menge (quantity), Wert (value in €; a portfolio in another currency: in it, its code in the column's head, e.g.
+"Wert (USD)"), G/V (value minus purchase value of that holding).
 
 ## drawer.chart — Verlauf (Grafik)
 The chart in the history panel of an account or a security: its month-end balances as a line over an area down to zero
@@ -74,10 +76,11 @@ sheet's row Geldtransit; "Alle zeigen" lists all of them. "Keine Umbuchung über
 The transactions behind a figure (title: the row or category and the column or period, e.g. "Lebensmittel · Okt 26"), opened from
 a figure of the cash flow (table, heat map, ring) or from Konten & Regeln → Cashflow-Positionen (a category's bookings, a
 recipient's payments). The line above the list: for a category "12 Umsätze · Summe −1.234,56" – their number and sum (all
-matches, though at most 500 are listed); for other rows of the cash flow only the number ("12 Umsätze"), as the bookings behind
+matches, though at most 500 are listed; the sum in €, amounts of accounts in another currency beside it in their own currency,
+e.g. "Summe 1.200,00 € · 350,00 USD", only "350,00 USD" when all are in it – never added); for other rows of the cash flow only the number ("12 Umsätze"), as the bookings behind
 a row can differ from its figure (a transfer, interest booked on a loan account …). "ohne geschätzte Umsätze ohne Kategorie":
 transactions without a category that Kontor only estimated for that figure are not listed. Each line: date, counterparty with
-the purpose below, amount in € (outflows negative). From the cash flow: only that area and the months of the figure.
+the purpose below, amount in € (outflows negative; another currency: its code before it). From the cash flow: only that area and the months of the figure.
 
 ## drawer.check — Abgleich mit der Bilanz
 The check of the cash flow against the balance sheet for one column (title "Abgleich mit der Bilanz · Okt 26"), opened from a

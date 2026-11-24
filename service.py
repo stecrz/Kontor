@@ -3101,6 +3101,8 @@ def export_sheets(app: App, was: str, bereich: Optional[str], modus: str, view: 
                     rows.append(["", "        " + tr("x_afa"), -abs(d["depreciation"]) if d["depreciation"] else 0, None])
                 if J["uncategorized_flag"]["count"]:
                     rows.append(["", tr("x_ohne_kategorie"), J["uncategorized_flag"]["amount"], J["uncategorized_flag"]["count"]])
+            if ent.get("not_converted"):                 # as on the page: which accounts are not in it (another currency)
+                rows.append(["", tr("steuer_nicht_umgerechnet", ", ".join("%s (%s)" % (x["account"], x["currency"]) for x in ent["not_converted"])), None, None])
             sheets.append(Sheet(ent["name"], [tr("x_jahr"), tr("x_position"), tr("x_betrag"), tr("x_buchungen")], rows, widths=[8, 56, 16, 12], freeze="A2", bold_rows=bold))
         return sheets or [Sheet(tr("x_steuer"), [tr("x_hinweis")], [[tr("x_keine_daten")]])]
 
@@ -3115,14 +3117,16 @@ def export_sheets(app: App, was: str, bereich: Optional[str], modus: str, view: 
             if bereich:
                 ums = [u for u in ums if u["entity"] == bereich]
             counts = Belege(app.store, app.config).counts()
-        rows = [[u["date"], u["account_name"], u["name"], u["purpose"], u["amount"], u["category"], counts.get(u["id"], 0), u["id"]] for u in ums]
+        rows = [[u["date"], u["account_name"] + (" (%s)" % u["currency"] if u.get("currency") else ""), u["name"], u["purpose"], u["amount"], u["category"],
+                 counts.get(u["id"], 0), u["id"]] for u in ums]          # (another currency: named with the account -- never a euro amount)
         return [Sheet(tr("s_umsaetze") + (name if bereich else ""), [tr("x_datum"), tr("x_konto"), tr("x_name"), tr("x_zweck"), tr("x_betrag"), tr("x_kategorie"), tr("x_belege"), "ID"],
                       rows, widths=[12, 26, 30, 50, 14, 30, 8, 10], freeze="A2")]
 
     if was == "holdings":
         rows, bold = [], []
         for d in ds.get("depots", []):
-            rows.append([d["name"], "", "", "", None, None, d["cost_basis"], d["sum"]]); bold.append(len(rows) - 1)
+            cur = d.get("currency") or "EUR"
+            rows.append([d["name"] + ("" if cur == "EUR" else " (%s)" % cur), "", "", "", None, None, d["cost_basis"], d["sum"]]); bold.append(len(rows) - 1)
             for p in d["positions"]:
                 rows.append(["", p["name"], p["isin"], p["asset_class"], p["quantity"], p["price"], p["cost_basis"], p["value"]])
         return [Sheet(tr("x_depots"), [tr("x_depot"), tr("x_position"), "ISIN", tr("x_klasse"), tr("x_menge"), tr("x_kurs"), tr("x_einstand"), tr("x_wert")], rows,
@@ -3681,7 +3685,12 @@ def make_handler(app: App):
             limit = max(1, min(5000, int(q.get("limit", "500"))))
             jahre = sorted({t["date"][:4] for t in ums}, reverse=True)
             out = [dict(t, receipts=counts.get(t["id"], 0)) for t in hits[:limit]]
-            return {"transactions": out, "hits": len(hits), "sum": round(sum(t["amount"] for t in hits), 2), "total": len(ums), "years": jahre}
+            other: Dict[str, float] = {}                 # amounts in another currency: never in the sum in euros (Kontor does not convert)
+            for t in hits:
+                if t.get("currency"):
+                    other[t["currency"]] = round(other.get(t["currency"], 0.0) + t["amount"], 2)
+            return {"transactions": out, "hits": len(hits), "sum": round(sum(t["amount"] for t in hits if not t.get("currency")), 2),
+                    "sum_other": other, "hits_other": sum(1 for t in hits if t.get("currency")), "total": len(ums), "years": jahre}
 
         # -- POST/PUT ------------------------------------------------------
         def do_POST(self):

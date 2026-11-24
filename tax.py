@@ -22,7 +22,7 @@ from datetime import date
 from typing import Dict, List, Optional
 
 from model import Ledger, Tx, norm_cat
-from report import ASSET_ROLES, COST_WORDS, account_roles, _is_cost
+from report import ASSET_ROLES, COST_WORDS, account_roles, foreign_currency, _is_cost
 from model import MARK, marks_in
 from i18n import tr
 
@@ -121,13 +121,18 @@ def build_tax(ledger: Ledger, config: dict, today: date, bereiche: Optional[List
         leaf_ids = {a.uuid for a in leaves}
         own_ibans = {a.iban.replace(" ", "").upper() for a in leaves if a.iban}
         ent = {"name": e["name"], "uuid": e["id"], "kind": e["kind"], "share": e["share"], "years": {}}
+        # accounts in another currency: their amounts are not added to euros (Kontor does not convert) -- named, so the page says so
+        fx = [a for a in leaves if foreign_currency(a) and not a.portfolio and roles.get(a.uuid) not in ASSET_ROLES]
+        if fx:
+            ent["not_converted"] = [{"account": a.name, "currency": (a.currency or "").upper()} for a in fx]
+        fx_ids = {a.uuid for a in fx}
         for y in years:
             cats: Dict[str, Dict[str, float]] = defaultdict(lambda: {"amount": 0.0, "count": 0})
             no_cat = {"amount": 0.0, "count": 0}
             objekte: Dict[str, dict] = {}
             schuldzinsen: Dict[str, float] = defaultdict(float)
             for t in by_year.get(y, ()):
-                if t.account_uuid not in leaf_ids:
+                if t.account_uuid not in leaf_ids or t.account_uuid in fx_ids:
                     continue
                 acc = ledger.accounts[t.account_uuid]
                 role = roles.get(acc.uuid)

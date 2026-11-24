@@ -32,7 +32,8 @@ Bereich"); within an area the accounts in MoneyMoney's order.
   into. Detected by Kontor (hover: why, last fetch); a change here is saved at once. "–": not known.
 - **Anzeige**: "nach Aktivität" (hidden while it had neither balance nor transaction for N months), "immer anzeigen", "ausblenden".
 - **Saldo**: the account's current balance in MoneyMoney as last read (not a month-end value), with cents, in the account's own
-  currency without a currency sign (Kontor never converts); red below 0, green otherwise.
+  currency without a currency sign (Kontor never converts) – another currency than the euro with its code before it (e.g. "USD");
+  red below 0, green otherwise.
 In the Bereich, Position and Verlauf menus "(Vorschlag)" marks Kontor's proposal (from name, type, group, portfolio); a dashed
 border means the proposal is chosen, a solid border the user's own choice.
 

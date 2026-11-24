@@ -421,8 +421,6 @@ Bewusst nicht (mit Grund):
 Ziel: Alles, was der Nutzer heute von Hand prüft, prüfen Tests – damit Opus auf „hoch“ reicht und Fehler vor ihm auffallen.
 
 Fertig, wenn
-- Daten: mehr Testwelten mit Sonderfällen (lange Namen, große Beträge, leere und sehr volle Bereiche, Fremdwährung, Monats- und
-  Jahreswechsel) für Seiten und Assistent, nicht nur für die Rechenlogik.
 - Verständlichkeit (lässt sich nicht fest prüfen): bei jedem großen Versionssprung sieht sich ein Modell alle Seiten an (Skill `major`).
 
 ## 3. GbR-Entlastung: Immobilien, Steuer, Umsatzsteuer

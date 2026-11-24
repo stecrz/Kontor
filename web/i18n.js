@@ -999,6 +999,7 @@ const I18N = {
 "cf_vorjahr":["Vorjahr", "Year before"],
 "cf_klick_umsaetze":["Klicken zeigt die Umsätze", "Click shows the transactions"],
 "cf_tx_anzahl":["{0} Umsatz|{0} Umsätze", "{0} transaction|{0} transactions"],
+"steuer_nicht_umgerechnet":["Nicht enthalten, da in anderer Währung geführt (Kontor rechnet nicht um): {0}", "Not included, kept in another currency (Kontor does not convert): {0}"],
 "cf_tx_n":["{0} Umsatz · Summe {1}|{0} Umsätze · Summe {1}", "{0} transaction · total {1}|{0} transactions · total {1}"],
 "cf_tx_seite":["In Umsätze & Belege öffnen", "Open in Transactions & receipts"],
 "update_fremde_quelle":["Quelle: {0} (nicht der Standard)", "Source: {0} (not the default)"],

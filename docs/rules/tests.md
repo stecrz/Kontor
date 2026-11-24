@@ -4,7 +4,7 @@ Teil von `CLAUDE.md` (Aufbau). Neue Testdatei oder neuer Prüfbereich: hier eint
 
 ## Wo was läuft
 - **GitHub, jeder Push** (`.github/workflows/tests.yml`, rund 10 min, für kleine und große Versionen gleich): Linux mit Kontors
-  eigenem Python, Chrome und Safari-Engine, Code-Checks, in vier Teilen nebeneinander (Seiten = `tests/test_e2e.py`; Assistent und
+  eigenem Python, Chrome und Safari-Engine, Code-Checks, in vier Teilen nebeneinander (Seiten = `tests/test_e2e.py` und `tests/test_data_worlds.py`; Assistent und
   Rundgang; Rechnen mit Zufallsfällen – je Push 12 feste; alles andere – eine neue Testdatei landet dort von selbst), dazu Python 3.9
   nur für den Starter (`tests/test_python.py`); `--durations` nennt die langsamsten Tests. macOS: Apples Python, Swift-Helfer,
   Mac-App (bauen, Kontor darin laden, Mikrofon ohne Nachfrage; jede Seite in macOS' WebKit mit echtem Rechtsklick), Abschirmung der
@@ -15,6 +15,8 @@ Teil von `CLAUDE.md` (Aufbau). Neue Testdatei oder neuer Prüfbereich: hier eint
 - **GitHub, nachts** (`nightly.yml`): auf dem neuesten `main` die 1000 festen und so viele neue Zufallsfälle, wie in ~3 h passen,
   auf mehreren Rechnern nebeneinander; dazu Klickpfade durch die Oberfläche (`tests/test_clickpaths.py`, 40 feste und neue, in
   Chromium und der Safari-Engine) – je Push laufen davon 3 feste mit (im Teil „Übrige“).
+  Dazu die Datenwelten (`test_data_worlds`): Zahlen, Anfragen, Assistent und – mit Chrome – jede Seite, die festen Welten in jeder
+  Ansicht, dann neue Zufallswelten.
 - **Lokal** (`.claude/tools/release.py`, Skill `release`): Code-Checks, betroffene Tests (`tests/affected.py`) ohne Browser, bei
   Rechenlogik 400 Zufallsfälle, Starter mit Python 3.9, dazu die mit `--tests` genannten (mit Browser). Alles lokal
   (`python3 -m pytest -q tests`, ~30 min) nur, wenn es wirklich nötig ist – GitHub macht es ohnehin.
@@ -31,6 +33,14 @@ Teil von `CLAUDE.md` (Aufbau). Neue Testdatei oder neuer Prüfbereich: hier eint
 - `test_rule_worlds` (Zufallswelten für die Buchungsregeln: Beteiligung täglich/monatlich, Darlehen mit beiden Zinsmodellen, Zinswechsel, Buchungstag, Kontenspiegel – am Ende jeder Cent nachgerechnet, nichts zu viel; dazu Änderungen in MoneyMoney zwischen den Läufen)
 - `test_categories`, `test_e2e` (simuliertes MoneyMoney, HTTP, Browser; Browser-Tests warten auf einen Zustand – `until`, nach dem
   Speichern `stored` (steht es in der Ablage), vor Eingaben in eine Seite, die gleich neu lädt, `quiet` –, nie eine feste Zeit)
+- `test_data_worlds` mit `data_worlds.py` (Datenwelten für Seiten und Assistent, nicht nur die Rechenlogik: lange Namen – auch ein
+  Wort von 64 Buchstaben –, Beträge bis knapp 100 Mio. und einzelne Cent, ein leerer Bereich, einer ohne Konto, ein sehr voller mit
+  vierzig Konten und Tausenden Umsätzen, Konten und Depot in USD/CHF/GBP, Heute am 31.12., 1.1., 29.2., Monatsersten und -letzten,
+  ein heute eröffnetes Konto, eine Umbuchung über den Jahreswechsel, ein neuer Nutzer ohne Umsätze. Je Welt durch den ganzen Dienst:
+  jeder Bereich und Monat geht auf, Nettovermögen = Euro-Konten, Fremdwährung in keiner Euro-Summe (Bilanz, Steuer, Kategorien,
+  Umsatzsuche) und überall mit ihrem Kennzeichen, jede Anfrage der Seiten und jeder Download, jedes lesende Werkzeug des Assistenten
+  zu jedem Bereich, Konto und Monat – nie mitten im JSON abgeschnitten –, eine ganze Frage, jede Seite im Browser am Tag der Welt.
+  Je Push die zehn festen Welten (`FIXED`, Seiten in je einer Ansicht) und vier zufällige; nachts mehr, siehe oben)
 - `test_assistant` (mit `fake_llama.py` statt llama.cpp, Downloads ohne Netz)
 - `test_assistant_eval` (Prüfsatz `assistant_eval/`: 73 Aufgaben durch den Assistenten auf der Demo-Welt – jede Musterlösung besteht, keine falsche Antwort; mit echtem Modell nur am Mac, README dort; ändert sich ein Werkzeug oder die Demo-Welt, Aufgaben in `tasks.json` mitziehen)
 - `test_tables` (Excel lesen: Werte wie in Excel, Ausschnitte, Summen; abgelehnt: alte/geschützte Dateien, Entitäten, Grenzen, Teile außerhalb; CSV: Trennzeichen, Kodierung, Schreibweise je Spalte, Grenzen; Prüfproben: Summen, Überträge, Soll/Haben, SUMME-Formeln, eine verlesene Zahl, eine verlorene Zeile; Zeilen suchen)

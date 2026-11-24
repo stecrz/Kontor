@@ -399,6 +399,7 @@ td.flash-hit { animation:cellhit 3.3s ease-out; } @keyframes cellhit { 0%, 45% {
 .chart-legend i { display:inline-block; width:10px; height:10px; border-radius:3px; margin-right:5px; vertical-align:-1px; }
 .toolbar { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:6px 0 12px; } .uf-filters { margin:6px 0 12px; } .uf-filters .toolbar { margin:0 0 8px; }          /* the filters: three quiet rows */ .sync-full-info { margin:-6px 0 12px; }
 .toolbar .sp { flex:1; }
+.toolbar select { max-width:100%; } .toolbar label:has(> select) { display:inline-flex; align-items:center; gap:4px; min-width:0; max-width:100%; } .toolbar label > select { min-width:0; }          /* a long name in a menu never widens the page (iPhone) */
 .th-first { display:flex; align-items:center; gap:5px; }
 .th-first .sp { flex:1; }
 .th-btn { padding:0 4px; min-width:20px; height:20px; font-size:12px; line-height:1; background:transparent; border:1px solid var(--line); border-radius:5px; color:var(--muted); cursor:pointer; }

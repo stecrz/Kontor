@@ -299,12 +299,15 @@ def open_items(d: dict, ledger: Ledger, bereich_of: Dict[str, str], jahr: Option
         if min_betrag and abs(t.amount) < min_betrag:
             continue
         total += 1
-        key = party_key(t)
+        cur = ((ledger.accounts[t.account_uuid].currency if t.account_uuid in ledger.accounts else "") or "EUR").upper()
+        key = party_key(t) + ("" if cur == "EUR" else " " + cur)       # another currency: a group of its own (its sum in it, never mixed)
         g = groups.get(key)
         if g is None:
             g = groups[key] = {"key": key, "name": t.name[:80] or t.purpose[:80], "iban": (t.counter_iban or "")[:34], "count": 0, "sum": 0.0, "ids": [],
                                "transactions": [], "proposals": {}, "accounts": [], "date_from": t.booking_date.isoformat(), "date_to": t.booking_date.isoformat(),
                                "own_account": bool(t.counter_iban and own.get(t.counter_iban))}      # the other side is an account of yours (another area)
+            if cur != "EUR":
+                g["currency"] = cur
         r = suggest(d, t)
         if r:
             g["proposals"][t.id] = r["category"]

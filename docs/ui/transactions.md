@@ -24,14 +24,16 @@ can differ from that figure.
 One row per transaction, newest first (booking date, then MoneyMoney's id). Checkbox: selection for assigning one category to
 several at once (the blue bar above names how many are selected). Datum = booking date. Konto = MoneyMoney account. Name =
 counterparty. Verwendungszweck = purpose (first 140 characters). Betrag = € with cents, signed as in MoneyMoney (negative =
-outflow, red; positive = inflow, green). Kategorie = MoneyMoney's category ("A › B" = subcategory B of A); with ⏳ = assigned in
+outflow, red; positive = inflow, green); an account kept in another currency: in that currency, its code before the amount (e.g.
+"USD" – never converted). Kategorie = MoneyMoney's category ("A › B" = subcategory B of A); with ⏳ = assigned in
 Kontor, waits to be written into MoneyMoney at the next sync at the Mac (already counts); "–" = needs no category (not a bank
 account, pending, or one of Kontor's own bookings); orange "ohne" = no category yet. Hover box of the category: "aus MoneyMoney" or
 "zugeordnet, wird in MoneyMoney eingetragen". Belege = number of receipts linked (green); "＋" = none yet. A transfer between two
 accounts of the same area may show "ohne" although it needs no category (the filter "ohne Kategorie" leaves it out).
 
 ## transactions.detail — Umsatz (Seitenfenster)
-One transaction. Heading: counterparty. Datum = booking date; Betrag = € signed (red outflow, green inflow); Konto = account · its
+One transaction. Heading: counterparty. Datum = booking date; Betrag = € signed (red outflow, green inflow; an account in another
+currency: in it, with its code); Konto = account · its
 area; Zweck = purpose (first 140 characters); Kategorie = the category with its parent categories (or "ohne"; "–" for a transfer between own accounts, which needs none) · where it comes
 from ("aus MoneyMoney", or assigned in Kontor and waiting to be written); Status = "gebucht" (booked by the bank) or "vorgemerkt" (pending), "· abgehakt" =
 ticked in MoneyMoney; ID = MoneyMoney's id of the transaction. "Belege (N)": N receipts linked; each with its file name, tag "Mac"

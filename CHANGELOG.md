@@ -1,5 +1,11 @@
 # Änderungen
 
+## 3.17.66 (2026-11-24 07:10)
+- Fremdwährung: Beträge von Konten in anderer Währung in keiner Euro-Summe mehr (Steuer, Kategorien, Umsatzsummen, Kategorisieren, KI-Assistent), überall mit ihrem Währungskennzeichen
+- KI-Assistent: zu lange Ergebnisse gekürzt statt mitten drin abgeschnitten – er weiß, was fehlt; Bilanzzeilen auch in anderen Bereichen gefunden
+- iPhone: lange Namen in Auswahllisten machen die Seite nicht mehr breiter
+- Entwicklung: Datenwelten mit Sonderfällen (lange Namen, große Beträge, leere und volle Bereiche, Fremdwährung, Monats- und Jahreswechsel) für Seiten und Assistent, je Push und nachts
+
 ## 3.17.65 (2026-11-24 06:04)
 - Hilfe: Suche Wort für Wort wie man es sagt – findet Wortformen, springt in den passendsten Abschnitt
 - KI-Assistent: findet Hilfe-Abschnitte zu Alltagswörtern zuverlässiger (Kredit, Backup, Handy …)

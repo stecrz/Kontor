@@ -5,7 +5,8 @@ year is incomplete) and Entität (name, kind – privat, Gesellschaft, GbR, GmbH
 are sums of booked transactions of that entity's accounts in that calendar year, in € (inflows positive, outflows negative). Left
 out everywhere: transfers (counter IBAN of an own account of the entity, the user's transfer categories, Kontor's repayment, value
 and mirror bookings), portfolios, accounts set to "nicht bilanzieren" and guarantees, bookings on asset accounts (value
-bookings are no income) and on loan accounts (only their interest counts, as Schuldzinsen). Alpha: still being finished.
+bookings are no income) and on loan accounts (only their interest counts, as Schuldzinsen), and accounts kept in another currency
+(Kontor does not convert: a note below the cards names them). Alpha: still being finished.
 
 ## tax.cards — Kennzahlen des Jahres
 "Einnahmen (kategorisiert)": the sum of all categories whose total for the year is positive (each category netted first).
@@ -13,7 +14,9 @@ bookings are no income) and on loan accounts (only their interest counts, as Sch
 categories. "Schuldzinsen": interest and fees booked on the entity's loan and receivable accounts in the year (bookings whose
 text contains Zins, Gebühr, Entgelt, Provision, Bereitstellung or Kontor's interest mark) – negative = paid. "Ohne Kategorie":
 orange "N Buchungen" = booked transactions of the year without a category (that would count here), green "keine" = none; below
-their sum in € with cents and a link to them under Umsätze & Belege.
+their sum in € with cents and a link to them under Umsätze & Belege. Below the cards, only if the entity has accounts in another
+currency: "Nicht enthalten, da in anderer Währung geführt" with those accounts and their currencies – none of their amounts is in
+any figure of this page (never converted into euros).
 
 ## tax.rental — Vermietung je Objekt
 One column per rental object, found only from category names "<rental category> \ <object> \ <kind>" (e.g. Vermietung \

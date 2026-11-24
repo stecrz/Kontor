@@ -385,6 +385,68 @@ def result_room(context: int, web: bool = False) -> int:
     return max(WEB_RESULT, min(60000, int(context * 0.55))) if web else max(MAX_RESULT, min(40000, int(context * 0.36)))
 
 
+def _shortened(res: Any, most: int) -> Optional[str]:
+    """A result too long for the model's room (very many accounts, categories, areas, long names) made to fit without cutting the
+    JSON in the middle: a list of records (transactions, accounts, categories -- each a whole of its own, in the tool's order)
+    ends early; a list of structures (areas, sections, each with lists inside) keeps every item, each shortened in proportion to
+    its size, as do the lists side by side in one object. Lists of plain values (series aligned with months) are never shortened
+    -- a value must not slip to another month. What is left out is said (left_out: where, how many). None: it cannot be made to
+    fit that way (then the text is cut, as before)."""
+    if not isinstance(res, dict):
+        return None
+    dump = lambda x: json.dumps(x, ensure_ascii=False, separators=(",", ":"))
+    size = lambda x: len(dump(x))
+    def nested(v: Any) -> bool:                          # a structure: lists of records (or structures) somewhere inside
+        return isinstance(v, dict) and any((isinstance(w, list) and len(w) > 1 and all(isinstance(z, dict) for z in w)) or nested(w) for w in v.values())
+
+    def shares(sizes: List[int], room: float) -> List[int]:
+        """The room shared: the small parts whole, the large ones each the same (what is left, in equal parts)."""
+        rest, k = max(0.0, room), len(sizes)
+        for n in sorted(sizes):
+            if n * k > rest:
+                break
+            rest, k = rest - n, k - 1
+        cap = rest / k if k else 0
+        return [n if n <= cap else int(cap) for n in sizes]
+
+    def fit(x: Any, room: int, path: str, left: Dict[str, int]) -> Any:
+        n = size(x)
+        if n <= room:
+            return x
+        if isinstance(x, list) and x and all(isinstance(v, dict) for v in x):
+            if all(nested(v) for v in x):                # structures: all kept, each in its share of the room
+                got = shares([size(v) for v in x], room - len(x) - 1)
+                return [fit(v, got[i], "%s[%d]" % (path, i), left) for i, v in enumerate(x)]
+            out, used = [], 2                            # records: as many as fit, from the first
+            for v in x:
+                if used + size(v) + 1 > room:
+                    break
+                out.append(v)
+                used += size(v) + 1
+            if len(out) < len(x):
+                left[path] = len(x) - len(out)
+            return out
+        if isinstance(x, dict):
+            parts = [k for k, v in x.items() if (isinstance(v, list) and v and all(isinstance(z, dict) for z in v)) or (isinstance(v, dict) and v)]
+            inner = sum(size(x[k]) for k in parts)
+            if not inner:
+                return x
+            got = dict(zip(parts, shares([size(x[k]) for k in parts], room - (n - inner))))
+            return {k: (fit(v, got[k], "%s.%s" % (path, k) if path else str(k), left) if k in parts else v) for k, v in x.items()}
+        return x                                         # plain values, lists of them: as they are
+
+    for share in (1.0, 0.9, 0.8, 0.65, 0.5):
+        left: Dict[str, int] = {}
+        got = fit({k: v for k, v in res.items()}, int((most - 400) * share), "", left)
+        if left:
+            got = dict(got, left_out=left, shortened="too long for one result: the lists named in left_out end early (that many items left out) -- "
+                                                       "for the rest ask for less: a filter, one area, a shorter period")
+        out = dump(got)
+        if len(out) <= most:
+            return out if left else None
+    return None
+
+
 def question_limit(context: int) -> int:
     """How long a question may be (pasted tables, texts, code): about 40 % of what the model keeps in view."""
     return min(MAX_QUESTION, int(context * 1.2))
@@ -2482,9 +2544,16 @@ class Assistant:
             series = {"net_worth": bal.get("net_worth") or {}, **{k: {m: sides[m].get(k) for m in months} for k in ("assets", "liabilities", "liquid_assets")},
                       "liquid_net_worth": bal.get("liquid_net_worth") or {}}
         else:
-            hits = [r for r in bal.get("rows") or [] if r["name"].lower() == want] or [r for r in bal.get("rows") or [] if want in r["name"].lower()]
+            find = lambda bal: [r for r in bal.get("rows") or [] if r["name"].lower() == want] or [r for r in bal.get("rows") or [] if want in r["name"].lower()]
+            hits = find(bal)
+            if not hits and not str(a.get("area") or "").strip():          # no area named: the one area whose balance sheet has it
+                there = [(k, x) for k, x in (ds.get("areas") or {}).items() if k != key and "error" not in x and find(x.get("balance") or {})]
+                if len(there) == 1:
+                    key, b = there[0]
+                    bal, months = b["balance"], b["months"][-n:]
+                    hits = find(bal)
             if not hits:
-                raise ToolError("No row named %r in the balance sheet of this area. Use get_balance." % str(a.get("row"))[:80])
+                raise ToolError(self._no_row(ds, a.get("row"), want))
             # a depot's balance before its first known one is that one carried back (no balance known there): unknown, never a figure
             series = {r["name"]: {m: v for m, v in (r.get("amounts") or {}).items() if not (r.get("projected_before") and m < r["projected_before"])}
                       for r in hits[:4]}
@@ -2501,6 +2570,20 @@ class Assistant:
             out["note"] += ("; carried_back: no balance known for these accounts before the month named -- the totals carry their first known "
                             "balance back there, so a change in those months is not known")
         return out
+
+    @staticmethod
+    def _no_row(ds: dict, row: Any, want: str) -> str:
+        """Why a row is in no balance sheet: an account in another currency (Kontor does not convert it), in other areas, or none."""
+        areas, names = ds.get("areas") or {}, ds.get("area_names") or {}
+        there = [names.get(k, k) for k, x in areas.items() if "error" not in x and any(want in str(r.get("name") or "").lower() for r in (x.get("balance") or {}).get("rows") or [])]
+        if there:
+            return "No row named %r in the balance sheet of this area; it is in: %s -- give the area." % (str(row)[:80], "; ".join(there[:6]))
+        for x in areas.values():
+            for r in (x.get("balance") or {}).get("outside") or []:
+                if r.get("role") == "foreign_currency" and want in str(r.get("name") or "").lower():
+                    return ("%r is kept in %s: Kontor does not convert it, so it is in no balance sheet in euros (never add it to euro amounts). "
+                            "Its month-end balances in %s: get_account_history." % (r.get("name"), r.get("currency"), r.get("currency")))
+        return "No row named %r in the balance sheet of this area. Use get_balance." % str(row)[:80]
 
     def t_get_cashflow(self, a: dict, ctx: dict) -> Any:
         ds = self._ds()
@@ -2726,7 +2809,8 @@ class Assistant:
         if with_tx:
             # money that moved: not the bookings of Kontor's own rules (values, interest, mirrors -- also those just made, not read back yet)
             txs = [t for t in self.hooks["transactions"]({"entity": key, "from": sel[0] + "-01", "to": sel[-1] + "-31"})
-                   if not t.get("kontor") and not (int(t.get("id") or 0) < 0 and has_mark(t.get("purpose")))]
+                   if not t.get("kontor") and not (int(t.get("id") or 0) < 0 and has_mark(t.get("purpose")))
+                   and not t.get("currency")]          # (another currency: in no net worth in euros, so it explains none of it)
             txs.sort(key=lambda t: -abs(t["amount"]))
             out["largest_transactions"] = [dict({"date": t["date"], "amount": _num(t["amount"]), "name": (t.get("name") or "")[:60], "purpose": (t.get("purpose") or "")[:90],
                                                  "category": t.get("category") or None, "account": t.get("account_name")}, **({"transfer": True} if t.get("transfer") else {}))
@@ -2858,7 +2942,8 @@ class Assistant:
                                                "loan_interest": _num(v.get("loan_interest")), "depreciation": _num(-abs(v.get("depreciation") or 0)), "result": _num(v.get("result")),
                                                **({"your_share_of_result": _num(v.get("share_result"))} if v.get("share_result") is not None else {})}
                                               for n, v in (y.get("properties_list") or {}).items()],
-                        **({"without_category": {"amount": _num(unc.get("amount")), "transactions": unc.get("count")}} if unc.get("count") else {})})
+                        **({"without_category": {"amount": _num(unc.get("amount")), "transactions": unc.get("count")}} if unc.get("count") else {}),
+                        **({"not_included_other_currency": ["%s (%s)" % (x.get("account"), x.get("currency")) for x in e["not_converted"]]} if e.get("not_converted") else {})})
         return {"year": year, "years": years, "year_unfinished": year >= this, "areas": out,
                 "note": "the categories of the year sorted into the positions of the tax return as the user set them (%s -> %s); an overview for the tax return -- "
                         "no tax is calculated and this is no tax advice; costs, interest and depreciation are negative" % (tr("konten_regeln"), tr("steuer"))}
@@ -2941,6 +3026,7 @@ class Assistant:
             tx = g.get("transactions") or []
             prop = next((t.get("proposal") for t in tx if t.get("proposal")), None)
             groups.append({"group": _group_id(g), "counterparty": g.get("name"), "transactions": g.get("count"), "sum": _num(g.get("sum")),
+                           **({"currency": g["currency"]} if g.get("currency") else {}),
                            "kontors_suggestion": (prop.get("category") if isinstance(prop, dict) else prop) or None,
                            "examples": [{"date": t.get("date"), "amount": _num(t.get("amount")), "purpose": str(t.get("purpose") or "")[:80], "account": t.get("account")} for t in tx[:2]]})
         return {"without_category": got.get("open", 0), "year": year or "all years", "by_counterparty": groups,
@@ -3362,6 +3448,8 @@ class Assistant:
     def t_get_securities(self, a: dict, ctx: dict) -> Any:
         ds = self._ds()
         return {"depots": [{"account": d.get("name"), "area": d.get("entity"), "value": _num(d.get("sum")), "cost_basis": _num(d.get("cost_basis")),
+                            **({"currency": d["currency"], "note": "in %s, not converted -- never add to amounts in euros" % d["currency"]}
+                               if d.get("currency") not in (None, "", "EUR") else {}),
                             "positions": [{"name": p.get("name"), "isin": p.get("isin"), "quantity": p.get("quantity"), "price": p.get("price"), "value": _num(p.get("value")),
                                            "cost_basis": _num(p.get("cost_basis")), "class": p.get("asset_class")} for p in (d.get("positions") or [])[:60]]}
                            for d in ds.get("depots") or []]}
@@ -3382,10 +3470,14 @@ class Assistant:
         h = self.hooks["history"](acc["uuid"])
         n = max(2, min(60, int(a.get("months") or 13)))
         months = sorted(h.get("amounts") or {})[-n:]
-        return {"account": acc["name"], "path": acc["path"], "month_end_balances": {m: _num(h["amounts"][m]) for m in months},
-                "entered_by_hand": {m: _num(v) for m, v in sorted((h.get("manual") or {}).items())[-n:]},
-                "calculated_from": "the balances you entered and Kontor recorded" if h.get("source") == "balances" else "today's balance and the transactions, backwards",
-                "hint": h.get("hint")}
+        out = {"account": acc["name"], "path": acc["path"], "month_end_balances": {m: _num(h["amounts"][m]) for m in months},
+               "entered_by_hand": {m: _num(v) for m, v in sorted((h.get("manual") or {}).items())[-n:]},
+               "calculated_from": "the balances you entered and Kontor recorded" if h.get("source") == "balances" else "today's balance and the transactions, backwards",
+               "hint": h.get("hint")}
+        cur = str(acc.get("currency") or "EUR").upper()
+        if cur != "EUR":                                 # kept in another currency: its own figures, never converted, never in a euro sum
+            out.update({"currency": cur, "note": "balances in %s, not converted -- never add them to amounts in euros" % cur})
+        return out
 
     def t_get_rules(self, a: dict, ctx: dict) -> Any:
         cfg = self.app.config
@@ -3623,8 +3715,16 @@ class Assistant:
                 have = {t["id"] for t in rows}
                 meant = kept([t for t in wide if t["id"] not in have and texts[t["id"]] and like.get(memory_mod.Library.key(texts[t["id"]]), 0.0) >= memory_mod.SEM_MIN], False)
         names = ds.get("area_names") or {}
-        out: Dict[str, Any] = {"count": len(rows), "sum": _num(sum(t["amount"] for t in rows)), "sum_in": _num(sum(t["amount"] for t in rows if t["amount"] > 0)),
-                               "sum_out": _num(sum(t["amount"] for t in rows if t["amount"] < 0))}
+        eur = [t for t in rows if not t.get("currency")]           # amounts in another currency: never added to euros (Kontor does not convert)
+        out: Dict[str, Any] = {"count": len(rows), "sum": _num(sum(t["amount"] for t in eur)), "sum_in": _num(sum(t["amount"] for t in eur if t["amount"] > 0)),
+                               "sum_out": _num(sum(t["amount"] for t in eur if t["amount"] < 0))}
+        if len(eur) < len(rows):
+            fx: Dict[str, list] = {}
+            for t in rows:
+                if t.get("currency"):
+                    e = fx.setdefault(t["currency"], [0, 0.0])
+                    e[0] += 1; e[1] += t["amount"]
+            out["other_currencies"] = {c: {"count": n, "sum": _num(s)} for c, (n, s) in sorted(fx.items())}
         if rows:
             out["first"], out["last"] = min(t["date"] for t in rows), max(t["date"] for t in rows)
         by = a.get("group_by") if a.get("group_by") in ("month", "year", "category", "name", "account", "area") else ""
@@ -3633,14 +3733,18 @@ class Assistant:
                     "name": lambda t: t.get("name") or "(none)", "account": lambda t: t.get("account_name") or "", "area": lambda t: names.get(t.get("entity"), "")}[by]
             g: Dict[str, list] = {}
             for t in rows:
-                e = g.setdefault(keyf(t), [0, 0.0, set(), t["date"], t["date"]])
+                e = g.setdefault(keyf(t), [0, 0.0, set(), t["date"], t["date"], {}])
                 e[0] += 1
-                e[1] += t["amount"]
+                if t.get("currency"):                    # another currency: apart, in it
+                    e[5][t["currency"]] = e[5].get(t["currency"], 0.0) + t["amount"]
+                else:
+                    e[1] += t["amount"]
                 e[2].add(t["date"][:7])
                 e[3], e[4] = min(e[3], t["date"]), max(e[4], t["date"])
             items = sorted(g.items(), key=(lambda kv: kv[0]) if by in ("month", "year") else (lambda kv: abs(kv[1][1])), reverse=by not in ("month", "year"))
             # by name or category: in how many months, from when to when -- what comes every month (a subscription, a rent) shows
-            out["groups"] = [dict({by: k, "count": v[0], "sum": _num(v[1])}, **({"months": len(v[2]), "first": v[3], "last": v[4]} if by in ("name", "category") else {}))
+            out["groups"] = [dict({by: k, "count": v[0], "sum": _num(v[1])}, **({"months": len(v[2]), "first": v[3], "last": v[4]} if by in ("name", "category") else {}),
+                                  **({"other_currencies": {c: _num(x) for c, x in sorted(v[5].items())}} if v[5] else {}))
                              for k, v in items[:60]]
             if len(items) > 60:
                 out["more_groups"] = len(items) - 60
@@ -3650,17 +3754,22 @@ class Assistant:
             filed = self.hooks["receipt_counts"]()
             out["transactions"] = [{"date": t["date"], "amount": _num(t["amount"]), "name": (t.get("name") or "")[:60], "purpose": (t.get("purpose") or "")[:90],
                                     "category": t.get("category") or None, "account": t.get("account_name"), **({"transfer": True} if t.get("transfer") else {}),
+                                    **({"currency": t["currency"]} if t.get("currency") else {}),
                                     **({"receipts": filed[t["id"]]} if filed.get(t.get("id")) else {})} for t in order[:n]]
             if len(rows) > n:
                 out["more"] = len(rows) - n
         if not a.get("with_transfers") and not q.get("q") and not cat:
             out["note"] = "transfers between the user's own accounts are left out (with_transfers=true shows them)"
+        if "other_currencies" in out:
+            out["note"] = (out.get("note", "") + "; " if out.get("note") else "") + ("amounts are in euros unless a transaction names its currency; those "
+                                                                                     "are in other_currencies, not in sum, sum_in, sum_out or the groups' sums (not converted)")
         if ruled:
             out["note"] = (out.get("note", "") + "; " if out.get("note") else "") + ("the bookings of Kontor's own rules (#kontor-..., values, interest, "
                                                                                      "repayments, mirrors) are left out (with_rule_bookings=true shows them)")
         if meant:                                        # found without the words, by what they mean: apart, not in count or sums
-            out["by_meaning"] = {"count": len(meant), "transactions": [{"date": t["date"], "amount": _num(t["amount"]), "name": (t.get("name") or "")[:60],
-                                                                        "purpose": (t.get("purpose") or "")[:90]} for t in sorted(meant, key=lambda t: t["date"], reverse=True)[:10]]}
+            out["by_meaning"] = {"count": len(meant), "transactions": [dict({"date": t["date"], "amount": _num(t["amount"]), "name": (t.get("name") or "")[:60],
+                                                                             "purpose": (t.get("purpose") or "")[:90]}, **({"currency": t["currency"]} if t.get("currency") else {}))
+                                                                        for t in sorted(meant, key=lambda t: t["date"], reverse=True)[:10]]}
             out["note"] = (out.get("note", "") + "; " if out.get("note") else "") + ("by_meaning: found by meaning, not by the words -- not in count or sums; "
                                                                                      "if they belong, search again with their names")
         covered = sorted({names.get(t.get("entity"), "") for t in rows} - {""})
@@ -5645,7 +5754,7 @@ class Assistant:
         out = json.dumps(res, ensure_ascii=False, separators=(",", ":"))
         most = ctx.get("web_room", WEB_RESULT) if tool["kind"] == "web" else ctx.get("room", MAX_RESULT)          # (several lookups, fetched together, in one result)
         if len(out) > most:
-            out = out[:most] + ' …"}  [cut: too long -- ask for less (a shorter period, less detail, a filter)]'
+            out = _shortened(res, most) or (out[:most] + ' …"}  [cut: too long -- ask for less (a shorter period, less detail, a filter)]')
         return out
 
     def _label(self, tool: dict, args: dict) -> str:
