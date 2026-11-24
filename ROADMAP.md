@@ -298,6 +298,11 @@ anhängen – nie löschen.
   Chrome, Claude Docs und `github` gesperrt (Code über Klon, `git` und `gh`); `claude-code-remote` bleibt, weil es die Plattform selbst
   ist (Umgebung, Netz, Schlüssel). Der Zweig `claude/…` jeder Cloud-Sitzung bleibt lokal, der Guard sperrt den Push dorthin;
   übrig gebliebene Zweige werden gelöscht. (umgesetzt in 3.17.49–3.17.52)
+- **Nach dem Update glatt zurück** (Nutzer, 2026-11-24): Sobald das Update installiert ist, deckt sofort ein Ladebildschirm Kontor ab
+  (nie ein schwarzes Fenster), bis die Anmeldung wirklich da ist; mit ihr kommt gleich Touch ID; nach der Anmeldung wird man nicht wieder
+  abgemeldet. Ursache des doppelten Logins: die Antwort einer Sitzungsprüfung von vor der Anmeldung (Fokus kehrt beim Schließen des
+  Touch-ID-Fensters zurück; nach einem Start antwortete der Dienst je Anfrage bis 2 s verzögert) sperrte wieder. Seitdem verwirft die
+  Seite solche Antworten, und die Wartezeit auf den ersten Tailscale-Blick zählt ab dem Start, nicht je Anfrage. (umgesetzt in 3.17.56)
 
 ## Offen (Entscheidung steht aus – mit Empfehlung vorlegen, wenn der Punkt dran ist)
 - Umsatzsteuer-Voranmeldung direkt an ELSTER senden (ELSTERs Programmbibliothek ERiC, Anmeldung als Hersteller, Zertifikat und

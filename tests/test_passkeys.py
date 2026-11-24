@@ -1042,6 +1042,32 @@ class OverHttp(unittest.TestCase):
             self.MA.EXPOSURE_WAIT = wait
             self.app.__dict__["_exposure"] = {"serve": "unknown", "lock": None, "at": _t.time()}
 
+    def test_the_wait_for_tailscale_counts_from_the_start(self):
+        """The first look began with the service: a sign-in (and the look at the session) waits for it at most until
+        EXPOSURE_WAIT after the start, not EXPOSURE_WAIT from each request -- a page coming back after an update finds the
+        sign-in and Touch ID at once (user, 2026-11-24); right after the start it still waits for the look."""
+        self.MA.EXPOSURE_WAIT, wait = 0.4, self.MA.EXPOSURE_WAIT
+        try:
+            self._no_look()
+            self.app.__dict__["_exposure_start"] = _t.time() - 1.0          # started a while ago, Tailscale still silent
+            t0 = _t.time()
+            self.assertIsNone(self.app.exposure_block(self.MA.EXPOSURE_WAIT))
+            self.assertLess(_t.time() - t0, 0.2)
+            t0 = _t.time()
+            self.assertFalse(Client(self.srv.server_address[1]).call("/api/session")[1]["exposed"])
+            self.assertLess(_t.time() - t0, 0.3)
+            self.app.__dict__["_exposure_start"] = _t.time()                 # just started: it waits for the first look
+            t0 = _t.time()
+            self.assertIsNone(self.app.exposure_block(self.MA.EXPOSURE_WAIT))
+            self.assertGreaterEqual(_t.time() - t0, 0.3)
+            self.app.__dict__["_exposure_start"] = _t.time() - 1.0          # a look that knows: it counts at once, waited or not
+            self.app._exposure_set({"serve": "funnel", "lock": None}, running=True)
+            self.assertEqual(self.app.exposure_block(self.MA.EXPOSURE_WAIT), "exposed")
+        finally:
+            self.MA.EXPOSURE_WAIT = wait
+            self.app.__dict__["_exposure_running"] = False
+            self.app.__dict__["_exposure"] = {"serve": "unknown", "lock": None, "at": _t.time()}
+
     def test_a_sign_in_never_waits_long_for_tailscale(self):
         """Right after a start Kontor does not know yet whether "tailscale serve" passes its port on: a sign-in from this Mac's
         address waits a moment (EXPOSURE_WAIT) for the first look and then goes -- Kontor works without Tailscale (user,

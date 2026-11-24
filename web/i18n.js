@@ -1823,6 +1823,8 @@ const I18N = {
 "belegdateien_und_protokoll_bleiben_vor":["? Belegdateien, Protokoll und KI-Modelle bleiben. Vorher eine Sicherung herunterladen!", "? Receipt files, the log and the AI models remain. Download a backup first!"],
 "zurueckgesetzt_neustart_der_oberflaech":["Zurückgesetzt – Neustart der Oberfläche", "Reset – restarting the interface"],
 "update_wird_installiert":["Update wird installiert …", "Installing update …"],
+"kontor_neustart":["Kontor startet neu …", "Kontor is restarting …"],
+"kontor_wird_aktualisiert":["Kontor {0} ist installiert und startet …", "Kontor {0} is installed and starting …"],
 "moneymoney_wird_gelesen_auswertung_wir":["MoneyMoney wird gelesen, Auswertung wird erstellt …", "Reading MoneyMoney, creating report …"],
 "auswertung_wird_im_hintergrund_aktuali":["Auswertung wird im Hintergrund aktualisiert …", "Updating report in the background …"],
 "moneymoney_nicht_verfuegbar_bericht_sp":["MoneyMoney nicht verfügbar – Bericht später erstellen", "MoneyMoney not available – create the report later"],

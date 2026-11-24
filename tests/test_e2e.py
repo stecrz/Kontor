@@ -5680,6 +5680,81 @@ class TouchIdDemoBrowserTest(unittest.TestCase):
             shutil.rmtree(d, ignore_errors=True)
 
 
+class SignInAfterUpdateBrowserTest(unittest.TestCase):
+    """After an update (user, 2026-11-24): never a black window -- something turns until the sign-in is there; Touch ID asked
+    with the sign-in at once; confirmed, Kontor stays open -- an answer about the session asked before (the window closing brings
+    the focus back, the service answers slowly after its start) does not lock again, nor asks Touch ID a second time."""
+
+    def test_signed_in_stays_signed_in(self):
+        try:
+            from playwright.sync_api import sync_playwright
+        except ImportError:
+            self.skipTest("playwright fehlt")
+        import auth
+        d = tempfile.mkdtemp(prefix="kontor-ui-")
+        store = new_store(d)
+        cfg = config_for_test(os.path.join(d, "Belege")); cfg.setdefault("ui", {})["touchid"] = True
+        store.save("config.json", cfg); store.save("state.json", dict(ALL_NEW))
+        reset_mock(); patch_today()
+        app = App(store, d, bridge_factory=MockBridge)
+        app.first_password("sehr-geheimes-passwort")
+        srv = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(app)); url = "http://127.0.0.1:%d/" % srv.server_address[1]
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        windows, cond = [], threading.Condition()
+
+        def verify(reason="", tid=""):
+            w = {"tid": tid, "go": threading.Event(), "ok": False}
+            with cond:
+                windows.append(w); cond.notify_all()
+            w["go"].wait(90)
+            return w["ok"]
+        try:
+            with mock.patch.object(auth, "touchid_available", return_value=True), mock.patch.object(auth, "touchid_verify", verify), \
+                    mock.patch.object(auth, "touchid_close", lambda tid: False), sync_playwright() as p:
+                b = p.chromium.launch(); pg = b.new_page(viewport={"width": 1360, "height": 820})
+                errors = []; pg.on("pageerror", lambda e: errors.append(str(e)))
+                # the service answers slowly (right after its start): the answers about the session come late
+                pg.add_init_script("""window.__slow = 1500; { const of = window.fetch; window.fetch = (u, o) => String(u).includes('/api/session') && window.__slow
+                    ? of(u, o).then(r => new Promise(res => setTimeout(() => res(r), window.__slow))) : of(u, o); }""")
+                pg.goto(url)
+                self.assertTrue(pg.is_visible("#boot .spin"))           # what the page shows until it knows: never a black window
+                self.assertFalse(pg.is_visible("#login")); self.assertFalse(pg.is_visible("#shell"))
+                pg.wait_for_selector("#tid-box:not(.hidden)")
+                self.assertFalse(pg.is_visible("#boot"))
+                if not windows:
+                    pg.click("#touchid-btn")
+                with cond:
+                    self.assertTrue(cond.wait_for(lambda: len(windows) >= 1, 20))
+                until(pg, "TID.pending && !!TID.id")
+                # the window closes: the focus comes back and the page asks for the session -- its answer comes late
+                pg.evaluate("() => { REVAL = 0; window.dispatchEvent(new Event('focus')); }")
+                windows[0]["ok"] = True; windows[0]["go"].set()
+                wait_shell(pg, 60000)
+                pg.wait_for_timeout(2500)                     # the late answer is in: still open, no second window
+                self.assertTrue(pg.is_visible("#shell")); self.assertFalse(pg.is_visible("#login"))
+                self.assertEqual(len(windows), 1)
+                self.assertEqual(app.sessions.active(), 1)
+                # an update waits for its restart (a sync running) and Kontor locks meanwhile: the sign-in, never the cover over it
+                with mock.patch.object(app, "code_changed", return_value="9.9.9"):
+                    pg.evaluate("pollStatus()")
+                    app.sessions.drop_loopback()
+                    pg.wait_for_selector("#login:not(.hidden)", timeout=15000)
+                    pg.wait_for_timeout(1500)
+                    self.assertFalse(pg.is_visible("#boot")); self.assertTrue(pg.is_visible("#login"))
+                # the update installed, Kontor restarts: covered at once, something turns with what happens
+                # (looked at in the same step: the page reloads by itself once the service answers)
+                got = pg.evaluate("""() => { waitAndReload(true, t('kontor_wird_aktualisiert', '9.9.9')); const b = document.querySelector('#boot');
+                    return [getComputedStyle(b).display, b.querySelector('.spin') !== null, document.querySelector('#boot-text').textContent, t('kontor_wird_aktualisiert', '9.9.9')]; }""")
+                self.assertEqual(got[0], "flex"); self.assertTrue(got[1]); self.assertEqual(got[2], got[3]); self.assertIn("9.9.9", got[2])
+                self.assertEqual(errors, [])
+                b.close()
+        finally:
+            for w in windows:
+                w["go"].set()
+            srv.shutdown(); srv.server_close()
+            shutil.rmtree(d, ignore_errors=True)
+
+
 class WebAppTest(unittest.TestCase):
     """Kontor as an app of its own, step 1 of the setup: the way right in it (Safari makes the app itself, no page can), a
     button where the browser offers it (Chrome, Edge). Opened as an app at the Mac for the first time, Kontor goes straight on

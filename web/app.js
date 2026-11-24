@@ -406,7 +406,11 @@ try { if (LS.get('kontor.testRemote') === '1') IS_LOCAL = false; } catch (e) {}
 let USER_ACT = Date.now();
 for (const ev of ['pointerdown', 'pointermove', 'keydown', 'touchstart', 'wheel', 'dragover', 'drop']) document.addEventListener(ev, () => { USER_ACT = Date.now(); }, {passive: true, capture: true});
 // confirm: 'force' -- with Face ID whatever the list says (the service asked for it); 'done' -- never again for this request
+// counts the sign-ins and locks of this page: an answer about the session asked for before one of them is old (it arrives after
+// the sign-in it knows nothing of -- after an update the service answers slowly -- and must not lock again)
+const AUTH = {n: 0};
 async function api(path, body, method, netMode, renewed, confirm) {
+  const auth = AUTH.n;          // a 401 to a request sent before a sign-in (or a lock) since is old: it locks nothing
   const opts = { method: method || (body === undefined ? 'GET' : 'POST'), headers: {}, credentials: 'same-origin' };
   if (body !== undefined) { opts.headers['Content-Type'] = 'application/json'; opts.body = JSON.stringify(body); }
   if (S.csrf) opts.headers['X-CSRF-Token'] = S.csrf;
@@ -439,6 +443,7 @@ async function api(path, body, method, netMode, renewed, confirm) {
     throw new Error(t('seite_wird_neu_geladen').trim());
   }
   if (r.status === 401 && ['/api/login', '/api/touchid', '/api/passkey/login', '/api/pair/begin'].includes(path)) { const e = new Error(data.error || t('nicht_angemeldet')); e.status = 401; e.data = data; throw e; }      // a sign-in that failed: why (wrong password)
+  if (r.status === 401 && path !== '/api/session' && auth !== AUTH.n) { const e = new Error(t('nicht_angemeldet')); e.status = 401; e.stale = true; throw e; }
   if (r.status === 401 && path !== '/api/session') { S.csrf = null; if (OFFLINE.mode) { OFFLINE.mode = false; OFFLINE.as_of = null; checkSession(); } else showLogin(); const e = new Error(t('nicht_angemeldet')); e.status = 401; throw e; }
   if (r.status === 403 && data.csrf === 'invalid' && !renewed) {
     // signed in again meanwhile (e.g. in another window): the token of this page is old -- take the current one, try once more
@@ -692,9 +697,11 @@ function checkVersion(v) {
 }
 // the service restarts (an update): reload only once it answers again -- a reload while it is away leaves an error page
 // (in the web app in the Dock only ⌘R helped then); newVersion: wait until it runs another version than this page
-async function waitAndReload(newVersion) {
+// Kontor is covered at once (nothing of it stays on the screen while it restarts): something that turns until the new page is there
+async function waitAndReload(newVersion, text) {
   if (waitAndReload.on) return;
   waitAndReload.on = true;
+  bootShow(text || t('kontor_neustart'));
   const until = Date.now() + 180000;
   while (Date.now() < until) {
     await new Promise(r => setTimeout(r, 1500));
@@ -704,6 +711,9 @@ async function waitAndReload(newVersion) {
   }
   location.reload();
 }
+// the screen before Kontor knows what to show (the page just loaded, a restart): Kontor's colour with something that turns --
+// never a black window; it goes once the sign-in or Kontor itself is shown (app.css), or stays on ("on") while Kontor restarts
+function bootShow(text) { const b = $('#boot'); if (!b) return; $('#boot-text').textContent = text || ''; b.classList.add('on'); asMicStop(false); $('#drawer').classList.remove('open'); if (FIND.open) findBar(false); }
 async function checkSession() {
   try { SESSION = await api('/api/session'); } catch (e) { $('#login').classList.remove('hidden'); $('#login-err').textContent = e.message + t('neuer_versuch_in_5_s'); setTimeout(checkSession, 5000); return; }
   if (!SESSION.demo) swApply(!IS_LOCAL && SESSION.offline_copy !== false);     // the offline copy is for the iPhone; on the Mac it would only leave stale pages behind (e.g. after a port change) -- the demo leaves it as it is (keeps nothing in it)
@@ -773,7 +783,7 @@ const PAIR = {token: null, busy: false};
 const PK = {pending: false};
 async function pkLogin() {
   if (PK.pending) return;
-  PK.pending = true; $('#login-err').textContent = '';
+  PK.pending = true; AUTH.n++; $('#login-err').textContent = '';
   try {
     const o = await api('/api/passkey/options', {});
     const cred = await pkCall('get', {challenge: b64uBytes(o.challenge), rpId: o.rp_id, userVerification: 'required', timeout: o.timeout});
@@ -823,7 +833,7 @@ async function tryTouchId(auto) {
   // only when you are in Kontor: a lock that happened in the background (or a window just becoming visible) does not put the
   // system dialog in front of what you are doing -- it comes when you switch to Kontor (focus -> revalidate)
   if (auto && (document.hidden || !document.hasFocus())) return;
-  TID.pending = true; TID.lastTry = Date.now();
+  TID.pending = true; TID.lastTry = Date.now(); AUTH.n++;
   TID.id = Array.from(crypto.getRandomValues(new Uint8Array(16)), b => b.toString(16).padStart(2, '0')).join('');
   tidAsk();
   let again = false;
@@ -843,7 +853,11 @@ async function revalidate() {
   if (document.hidden || Date.now() - REVAL < 2000) return;
   REVAL = Date.now();
   let s;
+  const auth = AUTH.n;
   try { s = await fetch('/api/session', {credentials: 'same-origin'}).then(r => r.json()); } catch (e) { return; }
+  // a sign-in began or ended meanwhile (the Touch ID window closing brings the focus back while its answer is on its way):
+  // this answer is from before it -- not signed in -- and would lock again at once
+  if (auth !== AUTH.n || TID.pending || PK.pending || LOGIN.busy) return;
   const loginShown = !$('#login').classList.contains('hidden');
   if (s.offline) { if (IS_LOCAL) return; if (!OFFLINE.mode && !loginShown) { OFFLINE.mode = true; offlineBanner(); } return; }   // Mac weg: gespeicherte Ansicht bleibt offen
   if (checkVersion(s.version)) return;
@@ -857,7 +871,7 @@ window.addEventListener('focus', revalidate);
 $('#login-form').addEventListener('submit', async e => {
   e.preventDefault();
   if (LOGIN.busy) return;          // a second click (↩) while the first is on its way: nothing more
-  LOGIN.busy = true;
+  LOGIN.busy = true; AUTH.n++;
   try { await loginSubmit(); } finally { LOGIN.busy = false; }
 });
 async function loginSubmit() {
@@ -892,7 +906,7 @@ $('#pw-instead').addEventListener('click', () => { LOGIN.pw = true; showLogin();
 $('#tid-instead').addEventListener('click', () => { LOGIN.pw = false; showLogin(); });
 $('#sync-btn').addEventListener('click', () => syncNow(false, true));
 $('.side .brand').addEventListener('click', e => { go(e.target.closest('#ver') && !demoOn() ? '#settings/updates' : '#overview'); });
-async function lockNow() { try { await api('/api/lock', {}); } catch (e) {} S.csrf = null; OFFKEY = null; TID.skipNext = true; await checkSession(); }
+async function lockNow() { AUTH.n++; try { await api('/api/lock', {}); } catch (e) {} S.csrf = null; OFFKEY = null; TID.skipNext = true; await checkSession(); }
 // the demo: Kontor with made-up data, to show it -- opened with the same sign-in (the link below the card switches the sign-in to it)
 const demoOn = () => !!(SESSION && SESSION.demo);
 $('#demo-btn').title = t('demo_link_tip');
@@ -1064,6 +1078,7 @@ function findStep(d) {
 }
 
 async function enterApp() {
+  AUTH.n++;
   if (demoOn() !== DEMO_PAGE && (DEMO_PAGE || $('#main').childElementCount)) { history.replaceState(null, '', demoOn() ? '#overview' : location.pathname); location.reload(); return; }     // into or out of the demo: anew
   DEMO_PAGE = demoOn();
   if (DEMO_PAGE) LS.demo = new Map();          // the demo changes nothing kept on this device: what it writes stays in the page's memory
@@ -1199,7 +1214,7 @@ async function pollStatus(all) {
   S.STATUS = await api('/api/status'); statusMini();
   if (checkVersion(S.STATUS.version)) return;
   if (S.CFG && S.STATUS.webapp && !(S.CFG.ui || {}).webapp) { S.CFG.ui = Object.assign({}, S.CFG.ui, {webapp: true}); webappDraw(); }
-  if (S.STATUS.restart_pending) { clearTimeout(BER.timer); BER.timer = setTimeout(() => pollStatus().catch(() => waitAndReload(true)), 3000); return; }
+  if (S.STATUS.restart_pending) { clearTimeout(BER.timer); BER.timer = setTimeout(() => pollStatus().catch(e => { if (e.status !== 401) waitAndReload(true); }), 3000); return; }      // locked meanwhile: the sign-in, not the cover
   const b = S.STATUS.report || {};
   clearTimeout(BER.timer);
   if (b.running || (S.STATUS.service || {}).running) { BER.timer = setTimeout(() => pollStatus(all).catch(() => {}), 3000); return; }
@@ -6558,8 +6573,8 @@ async function upInstall(ui) { if (ui.disabled) return;
     const rev = (S.STATUS.update || {}).review, finds = upFinds(S.STATUS.update);
     if (finds.length && !confirm(t('upd_frage', S.STATUS.update.available))) return;
     ui.disabled = true; toast(t('update_wird_installiert'), 30000);
-    try { const r = await api('/api/update/install', finds.length ? {approved: rev.digest} : {}); toast(r.text, 8000);
-      if (r.ok && r.restart) waitAndReload(true); else if (r.needs_approval) { S.STATUS = await api('/api/status'); statusMini(); softRoute(); } else ui.disabled = false; } catch (e) { ui.disabled = false; toast(e.message, 8000); } }
+    try { const r = await api('/api/update/install', finds.length ? {approved: rev.digest} : {}); if (!(r.ok && r.restart)) toast(r.text, 8000);
+      if (r.ok && r.restart) waitAndReload(true, t('kontor_wird_aktualisiert', r.version || '')); else if (r.needs_approval) { S.STATUS = await api('/api/status'); statusMini(); softRoute(); } else ui.disabled = false; } catch (e) { ui.disabled = false; toast(e.message, 8000); } }
 // Einstellungen -> Updates: the Python Kontor runs in -- the Mac's own or Kontor's own (pyruntime.py): what runs, what can be
 // loaded, the button that fits, and while it is loaded and tried how far it is. Changed only at the Mac; every click is the
 // decision. After a switch Kontor restarts and the page waits for it.

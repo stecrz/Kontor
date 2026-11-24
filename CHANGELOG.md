@@ -1,5 +1,10 @@
 # Änderungen
 
+## 3.17.61 (2026-11-24 04:49)
+- Updates: nach dem Installieren sofort Ladebildschirm statt schwarzem Fenster, bis die Anmeldung da ist
+- Anmeldung: Touch ID kommt gleich mit der Anmeldeseite, auch direkt nach einem Neustart
+- Anmeldung: nach Touch ID nicht mehr zurück zur Anmeldeseite geworfen
+
 ## 3.17.60 (2026-11-24 04:25)
 - KI-Assistent: Karte einer Änderung zeigt „Bitte prüfen“ bei Zahlen, die nicht im erkannten Text der Bilder und PDFs stehen
 
