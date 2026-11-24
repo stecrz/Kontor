@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.17.70 (2026-11-24 12:52)
+- Entwicklung: großer Versionssprung prüft mit voller Kraft – je Bereich ein eigener Prüfer, jede geänderte Datei vollständig gelesen
+
 ## 3.17.69 (2026-11-24 12:39)
 - Entwicklung: Push-Sperre prüft fein, was eine fremde Version in eine Zeile schrieb – zusammengeführte Absätze gehen ohne Ausnahme
 - Entwicklung: fremde Zeilen ersetzen nur noch nach Zustimmung des Nutzers
