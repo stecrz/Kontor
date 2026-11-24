@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.17.67 (2026-11-24 10:24)
+- Entwicklung: Nachtlauf startet wieder (Workflow-Datei); Test gegen „: “ in Werten ohne Anführungszeichen
+
 ## 3.17.66 (2026-11-24 07:10)
 - Fremdwährung: Beträge von Konten in anderer Währung in keiner Euro-Summe mehr (Steuer, Kategorien, Umsatzsummen, Kategorisieren, KI-Assistent), überall mit ihrem Währungskennzeichen
 - KI-Assistent: zu lange Ergebnisse gekürzt statt mitten drin abgeschnitten – er weiß, was fehlt; Bilanzzeilen auch in anderen Bereichen gefunden

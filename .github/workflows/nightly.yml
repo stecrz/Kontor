@@ -47,7 +47,7 @@ jobs:
           python-version: "3.15"          # Kontor's own Python (Apple's 3.9 only starts the starter)
           activate-environment: true
       - run: uv pip install -q pytest
-      - name: Browsers (the click paths: Chromium and WebKit, Safari's engine)
+      - name: "Browsers (the click paths: Chromium and WebKit, Safari’s engine)"
         if: matrix.browsers
         timeout-minutes: 30                 # a stuck mirror must not hang the night
         run: |

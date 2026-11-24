@@ -1,6 +1,8 @@
 """The workflow files GitHub runs: a key twice in one mapping (3.17.21: two `env:` in one step) and GitHub does not start the
 run at all -- no tests for any push until it is fixed. Python's own YAML readers let the last one win, so this checks with the
-standard library alone: per mapping (a list item starts a new one), each key once; text of block scalars (`run: |`) is skipped."""
+standard library alone: per mapping (a list item starts a new one), each key once; text of block scalars (`run: |`) is skipped.
+Also a plain (unquoted) value with ": " in it (3.17.64: `- name: Browsers (the click paths: Chromium …)`) -- YAML reads a second
+key there, GitHub rejects the file and the nightly run never starts."""
 import glob
 import os
 import re
@@ -11,8 +13,9 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 KEY = re.compile(r'^( *)(- +)?([A-Za-z_][\w.-]*|"[^"]*"|\'[^\']*\'):(?=\s|$)')
 
 
-def duplicate_keys(text):
-    """(line, key) for every key that a mapping already has."""
+def duplicate_keys(text, colons=None):
+    """(line, key) for every key that a mapping already has; colons: a list that gets (line, key) of every plain value with
+    ": " in it (or ending in ":")."""
     found, stack, block = [], [], None
     for no, line in enumerate(text.splitlines(), 1):
         s = line.strip()
@@ -38,6 +41,8 @@ def duplicate_keys(text):
         rest = line[m.end():].split(" #")[0].strip()
         if rest[:1] in ("|", ">"):
             block = col
+        elif colons is not None and rest and rest[0] not in "\"'{[&*!" and (": " in rest or rest.endswith(":")):
+            colons.append((no, key))
     return found
 
 
@@ -48,6 +53,20 @@ class Workflows(unittest.TestCase):
         for f in files:
             with open(f, encoding="utf-8") as fh:
                 self.assertEqual(duplicate_keys(fh.read()), [], os.path.basename(f))
+
+    def test_no_colon_in_a_plain_value(self):
+        for f in sorted(glob.glob(os.path.join(ROOT, ".github", "workflows", "*.yml"))):
+            got = []
+            with open(f, encoding="utf-8") as fh:
+                duplicate_keys(fh.read(), got)
+            self.assertEqual(got, [], os.path.basename(f) + ": quote the value")
+
+    def test_finds_a_colon_in_a_plain_value(self):
+        got = []
+        duplicate_keys("steps:\n  - name: Browsers (the click paths: Chromium)\n    if: matrix.browsers\n"
+                       "  - name: \"Quoted: fine\"\n    run: |\n      echo a: b\n    env:\n      URL: https://x.org  # c: d\n"
+                       "      M: {a: 1}\n", got)
+        self.assertEqual(got, [(2, "name")])
 
     def test_finds_what_stopped_github(self):
         bad = ("jobs:\n  t:\n    steps:\n      - name: Tests\n        env:\n          TZ: Europe/Berlin\n"
