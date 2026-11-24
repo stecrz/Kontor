@@ -2,7 +2,10 @@ name: Zufallsläufe
 
 # every night on the newest main, as many random cases as fit: each job first the fixed cases (the first job of a test the
 # 1000 fixed ones, instead of 40 per push) and those found before (tests/fixtures.py, FOUND), then new ones drawn anew each
-# night until its time is up (KONTOR_FUZZ_MINUTES; the run's summary shows how many). The booking rules are slowest per case:
+# night until its time is up (KONTOR_FUZZ_MINUTES; the run's summary shows how many). Each random test takes that whole time
+# from when it begins, so every job runs exactly one of them (two in a file: one job each, picked with -k) -- the cash flow's
+# file has two, both in one job ran past the job's limit and GitHub cancelled it night after night (until 3.17.80;
+# tests/test_workflows.py, NightJobs, holds it). The booking rules are slowest per case:
 # several machines side by side. The click paths (tests/test_clickpaths.py: pages, dialogs, side windows and references in a
 # changing order, light and dark, Mac and iPhone, on changing worlds) walk in Chromium and Safari's engine: 40 fixed walks
 # (3 per push) and their found ones (FOUND_CLICKS), then new ones. A failure names its case: KONTOR_FUZZ_SEED=<number> runs
@@ -32,7 +35,8 @@ jobs:
           - {name: "Buchungsregeln 2 · neue Fälle", tests: tests/test_fuzz.py, fixed: "0"}
           - {name: "Buchungsregeln 3 · neue Fälle", tests: tests/test_fuzz.py, fixed: "0"}
           - {name: "Buchungsregeln 4 · neue Fälle", tests: tests/test_fuzz.py, fixed: "0"}
-          - {name: "Cashflow · feste + neue Fälle", tests: tests/test_cashflow.py, fixed: "1000"}
+          - {name: "Cashflow · feste + neue Fälle", tests: "tests/test_cashflow.py -k 'not random_plans'", fixed: "1000"}
+          - {name: "Planung · feste + neue Fälle", tests: "tests/test_cashflow.py -k random_plans", fixed: "1000"}
           - {name: "Szenarien · feste + neue Fälle", tests: tests/test_scenarios.py, fixed: "1000"}
           - {name: "Welten (Privatpersonen, Firmen, Beteiligungen) · feste + neue Fälle", tests: tests/test_worlds.py, fixed: "1000"}
           - {name: "Regelwelten (Beteiligung, Darlehen, Kontenspiegel) 1 · feste + neue Fälle", tests: tests/test_rule_worlds.py, fixed: "1000"}

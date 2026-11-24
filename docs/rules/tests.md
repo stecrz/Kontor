@@ -15,6 +15,10 @@ Teil von `CLAUDE.md` (Aufbau). Neue Testdatei oder neuer Prüfbereich: hier eint
 - **GitHub, nachts** (`nightly.yml`): auf dem neuesten `main` die 1000 festen und so viele neue Zufallsfälle, wie in ~3 h passen,
   auf mehreren Rechnern nebeneinander; dazu Klickpfade durch die Oberfläche (`tests/test_clickpaths.py`, 40 feste und neue, in
   Chromium und der Safari-Engine) – je Push laufen davon 3 feste mit (im Teil „Übrige“).
+  Jeder Zufallstest zieht neue Fälle, bis `KONTOR_FUZZ_MINUTES` seit **seinem** Beginn um sind – zwei in einem Job brauchen die
+  doppelte Zeit und GitHub bricht den Job an seiner Grenze ab (bis 3.17.79 der Cashflow-Job, Nacht für Nacht: Cashflow und
+  Planung in einer Datei; die neuen Planungsfälle liefen nie). Deshalb je Zufallstest ein eigener Job, bei zwei in einer Datei
+  mit `-k` getrennt (`test_workflows.NightJobs` prüft es bei jedem Push).
   Dazu die Datenwelten (`test_data_worlds`): Zahlen, Anfragen, Assistent und – mit Chrome – jede Seite, die festen Welten in jeder
   Ansicht, dann neue Zufallswelten.
   Fiel eine Nacht aus (3.17.64–3.17.66: `nightly.yml` ungültig, am 24.11. lief nichts), startet ihn der Nutzer von Hand:
@@ -62,7 +66,7 @@ Teil von `CLAUDE.md` (Aufbau). Neue Testdatei oder neuer Prüfbereich: hier eint
 - `test_fuzz`, `test_privacy`, `test_security` (Sperre, Datenschlüssel, Belegordner; `NothingGoesOut`: welche Teile ins Netz können, zu welchen Hosts, welche Programme sie starten – ein neuer Weg nach außen wird dort eingetragen)
 - `test_update_guard` (Prüfung vor dem Update: untergeschobene Änderungen werden gefunden, gewöhnliche nicht; Einstufung – Untergeschobenes bleibt kritisch, Geändertes an bestehenden Wegen und der Filter der Internetsuche zu prüfen, nachweislich Strengeres ohne Freigabe; Erklärung und Zeilen je Eintrag; Warten und Freigabe, Archiv und Git-Klon)
 - `test_hooks` (Lagebild, Push-Sperre und Lese-Sperre für große Dateien, `release.py` auf Wegwerf-Repositories: ein Commit je Version, schnellerer Chat, Konflikt mit der fremden Version benannt, bewusst geänderte Zeilen dürfen, beim Konflikt verlorene fremde Zeilen sperren (fein: was die fremde Version in die Zeile schrieb – ein Absatz, den beide geändert und zusammengeführt haben, geht ohne Ausnahme; `AddedParts`), rote Prüfung; `git reset` auf einen fremden Stand gesperrt)
-- `test_workflows` (Workflow-Dateien: kein Schlüssel doppelt, kein „: “ in einem Wert ohne Anführungszeichen – sonst startet GitHub gar keinen Lauf, wie nach 3.17.21 und 3.17.64)
+- `test_workflows` (Workflow-Dateien: kein Schlüssel doppelt, kein „: “ in einem Wert ohne Anführungszeichen – sonst startet GitHub gar keinen Lauf, wie nach 3.17.21 und 3.17.64; `NightJobs`: jeder Job der Nacht fährt genau einen Zufallstest, jeder Zufallstest hat einen Job, seine Zeit passt in die Grenze des Jobs)
 - `test_passkeys` (Zugang vom iPhone: CBOR/COSE/DER streng, ECDSA mit RFC-6979-Vektoren, Registrierung und Anmeldung mit einem Software-Passkey samt allen Fehlfällen, Link und Herausforderungen, QR-Code; über HTTP Hinzufügen, Face-ID-Anmeldung, jede Änderung nur bestätigt und nur für genau diese Anfrage, jede POST-Anfrage, `MAC_ONLY`, Entfernen beendet Sitzungen, nach Neustart, Demo, Zurücksetzen)
 - `affected.py` (kein Test): nennt die Testdateien, die eine Änderung betrifft – für den lokalen Lauf vor dem Push
 - `test_components` (Fremdes benannt: jedes Modell der Listen mit Lizenz, jede Bibliothek mit Eintrag – Name, Version, Lizenz, Herkunft, abgeschirmt)
