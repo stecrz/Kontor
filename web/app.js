@@ -7643,7 +7643,9 @@ const asKind = k => ({balances: t('ki_e_balances'), plan: t('ki_e_plan'), planru
 function asCard(p, ask, kind, body, fin, st) {
   // the frame of a proposed change: the tick while the card of changes waits, its kind, title and where, what it changes, its state
   const tick = p.state === 'queued' && ask ? `<label class="as-e-pick" title="${esc(t('ki_e_auswahl_tip'))}"><input type="checkbox" class="as-pick" data-id="${esc(p.id)}" ${p.off ? '' : 'checked'}></label>` : '';
-  return `<div class="as-entry ${esc(p.state)}${p.state === 'queued' && ask ? ' ask' : ''}${p.off ? ' off' : ''}" data-ex="assistant.change">${tick}<div class="as-e-k">${kind}</div><div class="as-e-h">${esc(p.title || '')}</div>${p.sub ? `<div class="muted small">${esc(p.sub)}</div>` : ''}${body}${fin}${st}</div>`;
+  // figures it brings in that stand nowhere in what was recognized of the pictures and PDFs given: to check before the click
+  const unsure = (p.unchecked || []).length ? `<div class="as-e-fin as-e-check">${esc(t('ki_e_zahl_pruefen', p.unchecked.map(v => (+v).toLocaleString(LOCALE, {minimumFractionDigits: Number.isInteger(+v) ? 0 : 2, maximumFractionDigits: 2})).join(', ')))}</div>` : '';
+  return `<div class="as-entry ${esc(p.state)}${p.state === 'queued' && ask ? ' ask' : ''}${p.off ? ' off' : ''}" data-ex="assistant.change">${tick}<div class="as-e-k">${kind}</div><div class="as-e-h">${esc(p.title || '')}</div>${p.sub ? `<div class="muted small">${esc(p.sub)}</div>` : ''}${body}${unsure}${fin}${st}</div>`;
 }
 function asBatch(p, m) {
   // the card of all changes of an answer: one click carries out the ticked ones (or none); afterwards what came of them

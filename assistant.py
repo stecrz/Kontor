@@ -1418,6 +1418,38 @@ class Assistant:
                 f["read"] = {"text": "", "how": "none", "fields": {}, "unavailable": str(e)}
         return f["read"]
 
+    def _unconfirmed(self, conv: dict, card: dict) -> List[float]:
+        """The figures a change brings in (its new values) that stand nowhere in the text recognized of the pictures and PDFs
+        given in this conversation (user, 2026-11-24: the model reads everything; a figure is checked where it goes into a
+        change). [] where none was given -- the figures then come from the user's words or Kontor's own data -- or the card
+        takes its figures from Kontor's data (a receipt's transaction, categories, waiting bookings)."""
+        if card.get("kind") in ("receipt", "category", "book", "hold"):
+            return []
+        with self.files_lock:
+            given = [f for f in self.files.values() if f["conv"] and f["conv"] == conv.get("id") and f["type"] in RECEIPT_TYPES.values()]
+        if not given:
+            return []
+        wanted: List[Decimal] = []
+        for r in card.get("rows") or []:
+            if not isinstance(r, dict):
+                continue
+            if isinstance(r.get("new"), (int, float)) and not isinstance(r.get("new"), bool):
+                wanted.append(Decimal(str(r["new"])))
+            elif isinstance(r.get("new_text"), str) and r.get("new_text") != r.get("old_text"):
+                for m in re.finditer(r"(\d[\d.,\u202f ]*)\s*(?:€|EUR|%)", r["new_text"]):      # amounts and rates of a setting (not days, dates, counts)
+                    wanted += _figures(m.group(1))
+        if not wanted:
+            return []
+        seen: set = set()
+        for f in given:
+            seen |= set(_figures(self._receipt_read(f).get("text") or "", both=True))
+        out: List[float] = []
+        for v in wanted:
+            v = abs(v).quantize(Decimal("0.01"))
+            if v and v not in seen and float(v) not in out:
+                out.append(float(v))
+        return out[:8]
+
     @staticmethod
     def _said(job: Job, key: str) -> None:
         """A line under the answer (web/i18n.js: key), once per answer."""
@@ -4002,6 +4034,9 @@ class Assistant:
             card["final"] = True
         if (job.conv or {}).get("receipt_text") and card.get("kind") != "receipt":
             card["off"] = True                           # a receipt's text was read in this conversation: what else is proposed waits unticked
+        unsure = self._unconfirmed(job.conv or {}, card)
+        if unsure:
+            card["unchecked"] = unsure                   # figures not in what was recognized of the pictures and PDFs given: "bitte prüfen" on the card
         job.batch.append({"id": aid, "card": card, "apply": apply, "undo": undo, "rights": (right,) + tuple(also), "same": same, "targets": set(targets or ()),
                           "undo_local": undo_local})
         job.emit("entry", id=aid, state="queued", **card)
@@ -5711,6 +5746,32 @@ def _file_text(files: Any, receipts: bool = True) -> str:
     if tab:
         parts.append("%s -- read with read_table: %s" % ("a table" if len(tab) == 1 else "%d tables" % len(tab), "; ".join(map(one, tab))))
     return "[Kontor: the user gave %s with this question]\n" % " | ".join(parts)
+
+
+_FIGURE = re.compile(r"(?<![\w])\d(?:[\d.,'\u202f ]*\d)?(?![\w])")
+
+
+def _figures(text: str, both: bool = False) -> List[Decimal]:
+    """The figures in a text, as positive amounts to the cent -- written the German way (1.234,56; 3,2), or with both: also the
+    English way (1,234.56) and each part of a figure with spaces in it on its own (1 234,50 or 12 and 34). What was recognized
+    of a file is searched so: no figure that stands there is missed; a card's own figures are read the German way."""
+    out: List[Decimal] = []
+
+    def read(tok: str, th: str, dec: str) -> None:
+        t = tok.replace(th, "")
+        if t.count(dec) <= 1 and (th not in tok or dec not in tok or tok.rfind(th) < tok.find(dec)):
+            try:
+                out.append(Decimal(t.replace(dec, ".")).quantize(Decimal("0.01")))
+            except Exception:
+                pass
+    for m in _FIGURE.finditer(text or ""):
+        raw = m.group(0).strip(" .,")
+        pieces = [re.sub(r"[ \u202f']", "", raw)] + (re.split(r"[ \u202f]+", raw) if both and re.search(r"[ \u202f]", raw) else [])
+        for tok in pieces:
+            read(tok, ".", ",")
+            if both:
+                read(tok, ",", ".")
+    return list(dict.fromkeys(out))
 
 
 def _seen_text(seen: List[dict]) -> str:

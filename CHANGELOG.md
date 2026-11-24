@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.17.60 (2026-11-24 04:25)
+- KI-Assistent: Karte einer Änderung zeigt „Bitte prüfen“ bei Zahlen, die nicht im erkannten Text der Bilder und PDFs stehen
+
 ## 3.17.59 (2026-11-24 04:06)
 - KI-Assistent: liest aus Bildern alles wie aus getipptem Text, auch Zahlen; Abweichungen zur Texterkennung nennt er
 - KI-Assistent: nach einem Absturz am Bild startet das Modell zuverlässig neu

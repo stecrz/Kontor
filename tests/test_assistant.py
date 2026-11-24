@@ -3934,6 +3934,25 @@ class Receipts(_Assist):
         self.assertEqual([e["key"] for e in evs if e["type"] == "notice"], ["ki_bild_nur_text"]); self.assertNotIn("gesehen", text_of(evs))
         self.assertNotIn("--mmproj", json.load(open(os.path.join(rt, "started.json")))["argv"])
 
+    def test_figures_of_a_change_checked_against_the_file(self):
+        """A change that brings in figures not in what was recognized of the pictures and PDFs of the conversation: "bitte
+        prüfen" with them on its card (user, 2026-11-24) -- figures that stand there, and changes without such a file, without."""
+        amt = abs(self.tx["amount"])
+        def card(values, **kw):
+            r = self.a.ask(dict({"question": 'call enter_balances %s' % json.dumps({"account": "Depot", "values": values})}, **kw))
+            evs = events(self.a, r["job"], until="batch")
+            self.a.confirm(r["job"], next(e["id"] for e in evs if e["type"] == "batch"), False, None, True); events(self.a, r["job"])     # (nothing carried out)
+            return next(e for e in evs if e["type"] == "entry")
+        self.assertNotIn("unchecked", card([{"month": "2025-03", "amount": 777.77}]))             # no file given: the user's words
+        for name, data in (("Foto.png", self.PNG), ("Rechnung.pdf", self.PDF)):
+            _, f = self.attach(name, data)
+            c = card([{"month": "2025-03", "amount": amt}, {"month": "2025-04", "amount": 1234.5}], files=[f["id"]])
+            self.assertEqual(c["unchecked"], [1234.5], (name, c))                              # the receipt's total stands in its text, 1.234,50 nowhere
+            self.assertEqual(bool(c.get("off")), name.endswith(".png"))                         # (a picture was shown to the model: its text is in the conversation)
+        D = A.Decimal
+        self.assertEqual(A._figures("Summe 1.234,56 € und 3,2 %"), [D("1234.56"), D("3.20")])
+        self.assertIn(D("1234.56"), A._figures("Total 1,234.56", both=True)); self.assertIn(D("1234.50"), A._figures("1 234,50", both=True))
+
     def test_filed_once_without_reading_first_names_and_other_changes(self):
         # filed without read_receipt first: the card still says what differs; filed once only
         _, f = self.attach("\u202eRechnung" + "x" * 140 + ".pdf")
