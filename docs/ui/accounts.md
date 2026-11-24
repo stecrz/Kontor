@@ -96,7 +96,7 @@ categories are never changed; Kontor creates none.
 ### accounts.positions.needs — Empfohlene Kategorien
 A folded card (also during setup), for information only – no count or score, since not every row applies to everyone (no
 business: no Umsatzerlöse). The recommended category tree for MoneyMoney – one category per position –, grouped like the position menu (Einnahmen, Ausgaben,
-Investitionen, Finanzierung, Sonstiges, "Je Immobilie"), each group with one line on how it is best set up.
+"Je Immobilie", Investitionen, Finanzierung, Sonstiges), each group with one line on how it is best set up.
 A first line gives the rule: one tree for every kind of area (private, sole trader, GbR, GmbH …) – the account decides the
 area, the category only the purpose; a name meaning different things by side (receiving or paying a salary) needs two. A
 switch **Privat | Geschäftlich** shows one side at a time (remembered; at first Geschäftlich only for someone with companies
@@ -105,11 +105,15 @@ rows (Gehalt, Lebenshaltung, Gesundheit, Freizeit, Unterhalt …) and business-o
 Betriebskosten, Umsatzsteuer, Gesellschafter) only on theirs, each side with its own names ("Wohnen" / "Raumkosten", "Sparen &
 Anlegen" / "Investitionen") and tips; "Bei dir" names the user's categories of that side (a category counts as business when
 most of its bookings are in a company's accounts).
-"Je Immobilie" always (every rented property, private or a company's, by its own linked category). Investitionen and Finanzierung: best every investment and every loan
-as an account in MoneyMoney; then Kontor splits by the account's kind (and shows payout, repayment and interest per loan) with no
-category. Column **Empfohlen in MoneyMoney**: the category to create, its subcategories after "›".
-Column **Bei dir**: ✓ = at least one of the user's categories counts there (named, "und N weitere"; "keine für …" when only part
-is covered); ○ with "keine" = none of the user's categories counts there – neutral, no warning. It follows the table below live.
+"Je Immobilie" (every rented property, by its own linked category) right after Ausgaben: rent counts under Einnahmen, costs
+under Ausgaben (own rows per property, by the sign of each booking; a subcategory by its total), its purchase ("Kauf", indented)
+under Investitionen, its loan under Finanzierung – so a group of its own. Investitionen and Finanzierung: best every investment
+and loan as an account in MoneyMoney; then no category is needed. Darlehen: a parent row without a mark, Tilgung and Zinsen
+indented below it (two positions, two categories; only for loans without an account).
+Column **Empfohlen in MoneyMoney** (tooltip): every row with ✓ or ○ is one category to create when needed; indented rows are
+subcategories counting in another position; grey names after "›" are only examples of finer subcategories, never required.
+Column **Bei dir**: ✓ = at least one of the user's categories counts there (named, "und N weitere"); ○ with "keine" = none of
+the user's categories counts there – neutral, no warning. It follows the table below live.
 
 ### accounts.positions.table — Kategorien und Positionen
 One row per category, indented under its parent (parents in bold).

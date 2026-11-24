@@ -320,14 +320,14 @@ Der Cashflow hat eine feste Gliederung; deine Kategorien aus MoneyMoney zählen 
 - **Automatisch** – wie die Kategorie darüber, sonst Kontors Vorschlag nach dem Namen (etwa „Einkommen › Rückzahlung Finanzamt“ → Erstattungen, „Sparen“ → Sparen & Anlegen).
 - Eine gewählte Position gilt auch für alle Kategorien darunter, solange sie keine eigene haben.
 - **Sparen & Anlegen** zählt nicht als Ausgabe; unter **Zielkonto** wählst du daneben das Konto, in das das Geld fließt (nur bei dieser Position; genauer je Empfänger, siehe unten). **Umbuchung** – Geld zwischen deinen Konten oder Bereichen, weder Einnahme noch Ausgabe – sucht die Gegenbuchung. **Einlagen & Entnahmen** – Geld von und an Mitgesellschafter außerhalb deiner Bereiche – zählt in der Firma zur Finanzierung, privat zu den Beteiligungen. **Nicht berücksichtigen** nimmt die Kategorie ganz heraus: Ihr Betrag zählt in keiner Zeile und steht als Abweichung im Abgleich mit der Bilanz (mit diesem Grund) – nur für Ausnahmen wie eine Fehlbuchung, die sich später aufhebt.
-- Kategorien einer Immobilie (Immobilien → Kategorie) haben im Cashflow eigene Zeilen „Miete“ und „Kosten“.
+- Kategorien einer Immobilie (Immobilien → Kategorie) haben im Cashflow eigene Zeilen „Miete“ und „Kosten“. Auf der Kategorie der Immobilie selbst entscheidet das Vorzeichen jeder Buchung, eine Unterkategorie zählt nach ihrer Summe – so mindert eine Erstattung unter „Kosten“ die Kosten, statt als Miete zu zählen.
 
 Die Planung plant jede Position und die Kategorien darin; ein Budget aus MoneyMoney zählt für seine Kategorie. In MoneyMoney ändert sich nichts. Die Spaltenköpfe bleiben beim Blättern stehen.
 
 <a id="categories-tree"></a>
 ### Empfohlene Kategorien
 
-Über der Tabelle stehen die empfohlenen Kategorien für MoneyMoney – eingeklappt, bei Bedarf aufklappen; nur zur Orientierung: Was du nicht brauchst (etwa Umsatzerlöse ohne Geschäft), legst du nicht an, und rechts steht je Zeile, welche deiner Kategorien dort zählt. Oben schaltest du zwischen **Privat** und **Geschäftlich** um: Jede Seite zeigt nur ihre Zeilen mit ihren Namen (etwa „Wohnen“ privat, „Raumkosten“ geschäftlich). Die Grundregel: **eine Kategorie je Zweck**. Was in verschiedene Positionen gehört, gehört nie in dieselbe Kategorie – eine Kategorie „Immobilie“ mit Kaufpreis, Nebenkosten, Rate, Darlehensauszahlung und Miete etwa macht aus der Auszahlung eine Mieteinnahme und aus dem Kaufpreis Kosten. Besser:
+Über der Tabelle stehen die empfohlenen Kategorien für MoneyMoney – eingeklappt, bei Bedarf aufklappen; nur zur Orientierung: Was du nicht brauchst (etwa Umsatzerlöse ohne Geschäft), legst du nicht an, und rechts steht je Zeile, welche deiner Kategorien dort zählt. Jede Zeile mit ✓ oder ○ ist eine Kategorie; eingerückte Zeilen legst du als Unterkategorie der Zeile darüber an, weil sie in einer anderen Position zählen (Darlehen › Tilgung und Zinsen, Immobilie › Kauf). Grau nach „›“ stehen nur Beispiele für feinere Unterkategorien – kein Muss. Oben schaltest du zwischen **Privat** und **Geschäftlich** um: Jede Seite zeigt nur ihre Zeilen mit ihren Namen (etwa „Wohnen“ privat, „Raumkosten“ geschäftlich). Die Grundregel: **eine Kategorie je Zweck**. Was in verschiedene Positionen gehört, gehört nie in dieselbe Kategorie – eine Kategorie „Immobilie“ mit Kaufpreis, Nebenkosten, Rate, Darlehensauszahlung und Miete etwa macht aus der Auszahlung eine Mieteinnahme und aus dem Kaufpreis Kosten. Besser:
 
 | Kategorie in MoneyMoney | Position |
 |---|---|
@@ -341,10 +341,10 @@ Die Planung plant jede Position und die Kategorien darin; ein Budget aus MoneyMo
 | Haftpflicht, Kranken-, Unfallversicherung | Versicherungen – eine Beitragserstattung bleibt in ihrer Kategorie und mindert den Beitrag |
 | Private Renten- oder Kapitallebensversicherung, Riester, Rürup | Sparen & Anlegen – baut Vermögen auf, sichert kein Risiko ab |
 | Sparen & Anlegen – nur für Geld an Anlagen ohne Umsätze in MoneyMoney (Rentenversicherung, Bausparvertrag); eine Kategorie reicht | Sparen & Anlegen, Zielkonto daneben oder je Empfänger |
-| Darlehen › Tilgung, Zinsen – nur für Darlehen ohne Konto in MoneyMoney; eine Auszahlung unter Tilgung zählt als Aufnahme | Tilgung, Zinsen |
+| Darlehen › Tilgung und Darlehen › Zinsen – zwei Kategorien, nur für Darlehen ohne Konto in MoneyMoney; eine Auszahlung unter Tilgung zählt als Aufnahme | Tilgung bzw. Zinsen |
 | Firma: Umsatzerlöse, Wareneinkauf, Personal, Raumkosten, Betriebskosten, Umsatzsteuer | jeweils die gleichnamige (Raumkosten: Wohnen) |
 | Firma: Gesellschafter › Einlagen, Ausschüttungen – Mitgesellschafter außerhalb deiner Bereiche | Einlagen & Entnahmen |
-| Immobilie ‹Name› › Miete, Kosten | die Zeilen der Immobilie (Immobilien → Kategorie) |
+| Immobilie ‹Name› – je vermietete Immobilie; Unterkategorien wie Miete und Kosten nach Wunsch, empfohlen bei Erstattungen (Hausgeld-, Nebenkostenabrechnung) | die Zeilen der Immobilie (Immobilien → Kategorie): Miete zu den Einnahmen, Kosten zu den Ausgaben |
 | Immobilie ‹Name› › Kauf (Kaufpreis, Nebenkosten) | Sparen & Anlegen (selbst wählen), Zielkonto: das Konto der Immobilie |
 | Umbuchung | Umbuchung – zwischen deinen Konten und Bereichen, auch Einlagen und Entnahmen |
 

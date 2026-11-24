@@ -1,5 +1,10 @@
 # Änderungen
 
+## 3.17.72 (2026-11-24 15:30)
+- Cashflow-Positionen: Empfohlene Kategorien – Darlehen mit Tilgung und Zinsen als eigene, eingerückte Zeilen
+- Cashflow-Positionen: Immobilie direkt nach den Ausgaben, Kauf eingerückt; Zeile nennt, wohin Miete, Kosten, Kauf und Darlehen zählen
+- Cashflow-Positionen: Tooltip am Spaltenkopf – Zeile = anzulegende Kategorie, grau nur Beispiele; Immobilie: Unterkategorien empfohlen bei Erstattungen
+
 ## 3.17.71 (2026-11-24 13:42)
 - Übersicht: Vermögensgrafik auch bei gleichbleibendem Betrag richtig (statt leer); Zahlen in den Karten brechen neben dem Assistenten um, statt in die Nachbarkarte zu ragen
 - Bilanz: Kopf der ersten Spalte am iPhone zweizeilig – ↑↓ und Auge nicht mehr verdeckt

@@ -4848,6 +4848,22 @@ class BrowserTest(unittest.TestCase):
                 pg.click(".kb-side button[data-side='f']"); kb = pg.inner_text(".kb-table")                 # business: its rows and names
                 self.assertIn("Umsatzerlöse", kb); self.assertIn("Gesellschafter", kb); self.assertIn("Raumkosten", kb); self.assertNotIn("Lebenshaltung", kb)
                 pg.click(".kb-side button[data-side='p']"); self.assertIn("Lebenshaltung", pg.inner_text(".kb-table"))   # rows of the companies too
+                # every category to create is a row of its own (✓/○): Darlehen only their parent, Tilgung and Zinsen indented below it
+                # (two positions, two categories); the property's purchase indented below it; the grey names after "›" only examples
+                kr = pg.evaluate("""[...document.querySelectorAll('.kb-table tbody tr')].map(r => ({sec: r.classList.contains('kb-sec'),
+                    mark: r.cells[0].textContent.trim(), name: r.cells.length > 1 ? r.cells[1].childNodes[0].textContent.trim() : r.textContent.trim(),
+                    below: !!r.querySelector('td.kb-below'), mine: r.cells.length > 2 ? r.cells[2].textContent.trim() : ''}))""")
+                at = next(i for i, r in enumerate(kr) if r["name"] == "Darlehen" and not r["sec"])
+                self.assertEqual((kr[at]["mark"], kr[at]["below"], kr[at]["mine"]), ("", False, ""))
+                self.assertEqual([(r["name"], r["below"], r["mark"] in "✓○" and r["mark"] != "") for r in kr[at + 1:at + 3]], [("Tilgung", True, True), ("Zinsen", True, True)])
+                secs = [r["name"] for r in kr if r["sec"]]
+                self.assertLess(secs.index(next(x for x in secs if x.startswith("Ausgaben"))), secs.index(next(x for x in secs if x.startswith("Je Immobilie"))))
+                self.assertLess(secs.index(next(x for x in secs if x.startswith("Je Immobilie"))), secs.index(next(x for x in secs if x.startswith("Investitionen"))))
+                im = next(i for i, r in enumerate(kr) if r["name"] == "Immobilie ‹Name›")
+                self.assertEqual((kr[im]["below"], kr[im + 1]["name"], kr[im + 1]["below"]), (False, "Kauf", True))
+                self.assertTrue(all(r["mark"] for r in kr if not r["sec"] and r["name"] != "Darlehen"))    # every other row: a category
+                self.assertNotIn("keine für", pg.inner_text(".kb-table"))
+                self.assertEqual(pg.get_attribute(".kb-table thead .hq", "data-help"), "categories-tree")
                 self.assertIn("erkennt Kontor am Konto", pg.inner_text("#kb-body")); self.assertEqual(pg.locator(".kb-table .tag").count(), 0)   # the rule; one tree, no tags
                 pg.select_option('.kp-table tr[data-p="Umbuchung"] .kp-pos', "living")          # (saved at once)
                 until(pg, "document.querySelectorAll('.kb-table tr.kb-ok').length === %d" % (n0 - 1)); kb = pg.inner_text(".kb-table"); self.assertIn("keine", kb); self.assertNotIn("fehlt", kb); self.assertNotIn("bei Bedarf", kb)

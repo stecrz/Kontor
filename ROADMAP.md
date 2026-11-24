@@ -300,6 +300,15 @@ anhängen – nie löschen.
 - **Empfohlene Kategorien nur zur Orientierung** (Nutzer, 2026-11-24): keine Zählung „X von Y vorhanden“, kein „fehlt“ – nicht jede
   Zeile gilt für jeden (ohne Geschäft keine Umsatzerlöse). Die Karte zeigt je Zeile neutral, welche seiner Kategorien dort zählt, sonst „keine“.
   (umgesetzt in 3.17.46)
+- **Empfohlene Kategorien: was angelegt sein muss, je eine Zeile** (Nutzer, 2026-11-24): Jede Kategorie, die angelegt sein muss,
+  steht als eigene Zeile da, oder es wird anders klar, was angelegt sein muss bzw. sollte; was nur sinnvoll ist, empfiehlt der Tooltip.
+  Anlass: „Darlehen › Tilgung · Zinsen“ sah aus wie „Kapitalerträge › Zinsen · Dividenden“ (freiwillige Unterkategorien), Tilgung und
+  Zinsen sind aber zwei Positionen, also zwei Kategorien. Umgesetzt: „Darlehen“ ist nur Oberzeile, Tilgung und Zinsen stehen eingerückt
+  mit eigenem ✓/○; grau nach „›“ nur Beispiele (Tooltip am Spaltenkopf). Immobilie: Miete und Kosten trennt Kontor am Vorzeichen,
+  Unterkategorien bleiben freiwillig – empfohlen bei Erstattungen (eine Unterkategorie zählt nach ihrer Summe); „Kauf“ eingerückt
+  darunter. Der Nutzer fragte, ob „Je Immobilie“ unter Finanzierung oder Investitionen gehört: nein, weil Miete und Kosten Einnahmen
+  und Ausgaben sind (nur Kauf und Darlehen zählen dort) – eigene Gruppe, jetzt direkt nach den Ausgaben, ihre Zeile nennt, wohin jeder
+  Teil zählt. (umgesetzt in 3.17.72)
 - **Sperre vor dem Push nach Herkunft** (Nutzer, 2026-11-24): bewusst geänderte Zeilen sollen gehen, nichts eines parallelen Chats
   darf überschrieben werden, ein Konflikt in denselben Teilen einer Datei soll erkannt und abgewogen werden (welcher Stand der neuere
   ist). Umgesetzt: `release.py` merkt sich den eigenen Ausgangsstand; nur Zeilen von Versionen danach sperren; Konflikt-Meldung nennt

@@ -194,7 +194,7 @@ const H = {
   port: t('port_tip'),
   update_quelle: t('update_quelle_tip'),
   einrichtung_knoepfe: t('einrichtung_knoepfe_tip'),
-  position_kat: t('position_kat_tip'),
+  position_kat: t('position_kat_tip'), kb_empfohlen: t('kb_empfohlen_tip'),
   cf_operativ: t('cf_operativ_tip'), cf_invest: t('cf_invest_tip'), cf_finanz: t('cf_finanz_tip'), cf_bruecke: t('cf_bruecke_tip'), cf_verm_bruecke: t('cf_verm_bruecke_tip'), cf_je_monat_t: t('cf_je_monat_tip'), cf_herkunft_verwendung: t('cf_herkunft_verwendung_tip'),
   cf_ausgaben_kuchen: t('cf_ausgaben_kuchen_tip'), cf_heatmap: t('cf_heatmap_tip'),
   cf_unklar: t('cf_unklar_tip'), cf_wert: t('cf_wert_tip'), cf_fcf: t('cf_fcf_tip'), cf_bank: t('cf_bank_tip'), cf_umsch: t('cf_umschichtungen_tip'), cf_nv: t('cf_nv_tip'), cf_abgleich_bank: t('cf_abgleich_bank_tip'),
@@ -262,7 +262,7 @@ const H = {
 const HELP_AT = {als_app: 'app', berechtigung: 'setup', immo_abrechnung: 'properties', immo_abziehbar: 'properties', immo_afa: 'properties', immo_aussch: 'properties', immo_darlehen_art: 'properties', immo_darlehen_konten: 'properties', immo_faellig: 'properties', immo_geb: 'properties', immo_ges: 'properties', immo_index: 'properties', immo_kategorie: 'properties', immo_kosten: 'properties', immo_nk: 'properties', immo_objektkonto: 'properties', immo_ruecklage: 'properties', immo_sonder: 'properties', immo_uebergang: 'properties', immo_verkauf: 'properties', immo_wert: 'properties', immo_zinsbindung: 'properties',
   area: 'areas', main_area: 'areas', share: 'areas', gruppenwahl: 'areas', anzeige: 'accounts', position_kurz: 'accounts', position: 'accounts',
   inactive: 'accounts', verlauf_kurz: 'history', history_source: 'history', verlauf_import: 'history', depotverlauf: 'history', mmhist: 'balances',
-  zuordnen: 'categories', regeln_mm: 'categories-rules', kz_eingetragen: 'categories-write-back', position_kat: 'categories-positions', zielkonto: 'positions-recipients', anl_empfaenger: 'positions-recipients', sicherung: 'backup',
+  zuordnen: 'categories', regeln_mm: 'categories-rules', kz_eingetragen: 'categories-write-back', position_kat: 'categories-positions', kb_empfohlen: 'categories-tree', zielkonto: 'positions-recipients', anl_empfaenger: 'positions-recipients', sicherung: 'backup',
   cf_operativ: 'cash-flow', cf_invest: 'cash-flow', cf_finanz: 'cash-flow', cf_unklar: 'cash-flow', cf_wert: 'cash-flow',
   cf_bank: 'cash-flow', cf_umsch: 'cash-flow', cf_fcf: 'cash-flow', cf_nv: 'cash-flow', cf_abgleich_bank: 'cash-flow', cf_abgleich_nv: 'cash-flow', cf_bruecke: 'cash-flow-bridge', cf_verm_bruecke: 'cash-flow-wealth', cf_je_monat_t: 'cash-flow-months', cf_herkunft_verwendung: 'cash-flow-total',
   cf_ausgaben_kuchen: 'cash-flow-ring', cf_heatmap: 'cash-flow-heatmap',
@@ -5857,8 +5857,11 @@ async function vPositionen() {
 // positions' menu, each group with how it is best set up; one tree for all areas; per row which of yours count there (or "keine"
 // -- not every row applies to everyone: no business, no revenue) -- updated as you change a position below
 // [key (texts kb_<key>, kb_<key>_sub, kb_<key>_tip; a company's: kb_<key>_g …), group, positions, side ('p' private only,
-// 'f' business only, '' both)]; a rented property: always by its own category (Je Immobilie). One side at a time (Privat |
-// Geschäftlich, remembered), each with its own names and tips and the categories of yours on that side
+// 'f' business only, '' both), 1 = a subcategory of the row above]. Every row with positions is a category to create (✓/○); a
+// row without is only their parent (Darlehen: repayment and interest are two positions, so two categories); the grey names after
+// "›" are examples of finer subcategories, never needed. A rented property: always by its own category (Je Immobilie, after the
+// expenses: its rent and costs count there, in rows of their own -- its purchase under investing, its loan under financing).
+// One side at a time (Privat | Geschäftlich, remembered), each with its own names and tips and the categories of yours on that side
 const KB_TREE = [['work_income', 'einnahmen', ['work_income'], 'p'], ['revenue', 'einnahmen', ['revenue'], 'f'],
   ['benefits', 'einnahmen', ['benefits'], ''], ['capital_income', 'einnahmen', ['capital_income'], ''],
   ['gifts_in', 'einnahmen', ['gifts_in'], 'p'], ['refunds', 'einnahmen', ['refunds'], ''],
@@ -5868,9 +5871,10 @@ const KB_TREE = [['work_income', 'einnahmen', ['work_income'], 'p'], ['revenue',
   ['education', 'ausgaben', ['education'], ''], ['leisure', 'ausgaben', ['leisure'], 'p'],
   ['administration', 'ausgaben', ['administration'], ''],
   ['taxes', 'ausgaben', ['taxes'], ''], ['vat', 'ausgaben', ['vat'], 'f'], ['donations', 'ausgaben', ['donations'], 'p'],
-  ['saving', 'sek_investitionen', ['saving'], ''], ['loans', 'finanzierung', ['repayment', 'loan_interest'], ''],
-  ['partners', 'finanzierung', ['partners'], 'f'], ['transfer', 'sonstiges', ['transfer'], ''],
-  ['property', 'kb_g_property', ['property', 'rental', 'property_costs'], ''], ['property_buy', 'kb_g_property', ['property_saving'], '']];
+  ['property', 'kb_g_property', ['property', 'rental', 'property_costs'], ''], ['property_buy', 'kb_g_property', ['property_saving'], '', 1],
+  ['saving', 'sek_investitionen', ['saving'], ''],
+  ['loans', 'finanzierung', [], ''], ['repayment', 'finanzierung', ['repayment'], '', 1], ['loan_interest', 'finanzierung', ['loan_interest'], '', 1],
+  ['partners', 'finanzierung', ['partners'], 'f'], ['transfer', 'sonstiges', ['transfer'], '']];
 const KB_SAME_TIP = ['mobility', 'insurance', 'health', 'leisure', 'taxes'];      // one reason for these (kb_more_tip)
 let KB_KINDS = ['private'];
 function kbCard() {                                          // folded by default, also during setup (only looked up when wanted)
@@ -5893,20 +5897,19 @@ function kbRefresh(eff) {
   // company's name and tip (kb_<key>_g) where there is one -- the account decides the area
   const kt = key => side === 'f' && I18N[key + '_g'] ? t(key + '_g') : I18N[key] ? t(key) : '';
   let grp = '', rows = '';
-  for (const [k, g, ps, only] of KB_TREE) {
+  for (const [k, g, ps, only, below] of KB_TREE) {
     if (only && only !== side) continue;
-    const mine = ps.flatMap(p => at.get(p) || []), have = mine.length > 0, miss = ps.filter(p => !(at.get(p) || []).length);
+    const mine = ps.flatMap(p => at.get(p) || []), have = mine.length > 0, cat = ps.length > 0;
     if (g !== grp) { grp = g; const how = kt(`kb_how_${g}`);
       rows += `<tr class="kb-sec"><td colspan="3"><b>${esc(t(g))}</b>${how ? ` <span class="small muted">${esc(how)}</span>` : ''}</td></tr>`; }
     const names = mine.slice(0, 2).map(CP).join(', ') + (mine.length > 2 ? ' ' + t('kb_und_n', mine.length - 2) : '');
-    const part = have && miss.length && ps.length > 1 && k !== 'property' ? ` · <span class="muted">${esc(t('kb_ohne', miss.map(p => posLabel(p, side === 'f')).join(', ')))}</span>` : '';
-    const sub = kt(`kb_${k}_sub`), tip = kt(`kb_${KB_SAME_TIP.includes(k) ? 'more' : k}_tip`) + (have ? '' : ' ' + t('kb_anlegen'));
-    rows += `<tr class="${have ? 'kb-ok' : ''}"><td class="kb-mark">${have ? '✓' : '○'}</td>`
-      + `<td>${esc(kt(`kb_${k}`))}${sub ? ` <span class="muted">› ${esc(sub)}</span>` : ''}<span class="hq" tabindex="0" data-tip="${esc(tip)}">?</span></td>`
-      + `<td>${have ? esc(names) + part : esc(t('kb_keine'))}</td></tr>`;
+    const sub = kt(`kb_${k}_sub`), tip = kt(`kb_${KB_SAME_TIP.includes(k) ? 'more' : k}_tip`) + (have || !cat ? '' : ' ' + t('kb_anlegen'));
+    rows += `<tr class="${have ? 'kb-ok' : cat ? '' : 'kb-par'}"><td class="kb-mark">${!cat ? '' : have ? '✓' : '○'}</td>`
+      + `<td${below ? ' class="kb-below"' : ''}>${esc(kt(`kb_${k}`))}${sub ? ` <span class="muted">› ${esc(sub)}</span>` : ''}<span class="hq" tabindex="0" data-tip="${esc(tip)}">?</span></td>`
+      + `<td>${!cat ? '' : have ? esc(names) : esc(t('kb_keine'))}</td></tr>`;
   }
   const seg = [['p', t('kb_privat')], ['f', t('kb_geschaeftlich')]].map(([v, l]) => `<button type="button" data-side="${v}" class="${side === v ? 'on' : ''}" aria-pressed="${side === v}">${esc(l)}</button>`).join('');
-  body.innerHTML = `<p class="small kb-rule">${esc(t('kb_regel'))}${more('categories-tree')}</p><div class="seg small kb-side" role="group" aria-label="${esc(t('kb_seite'))}">${seg}</div><table class="plain kb-table"><thead><tr><th></th><th>${t('kb_empfohlen')}</th><th>${t('kb_bei_dir')}</th></tr></thead><tbody>${rows}</tbody></table>`;
+  body.innerHTML = `<p class="small kb-rule">${esc(t('kb_regel'))}${more('categories-tree')}</p><div class="seg small kb-side" role="group" aria-label="${esc(t('kb_seite'))}">${seg}</div><table class="plain kb-table"><thead><tr><th></th><th>${t('kb_empfohlen')} ${hq('kb_empfohlen')}</th><th>${t('kb_bei_dir')}</th></tr></thead><tbody>${rows}</tbody></table>`;
   $$('.kb-side button', body).forEach(b => b.addEventListener('click', () => {
     try { localStorage.setItem('kontor.kbSide', b.dataset.side); } catch (e) { /* storage blocked: this view only */ }
     kbRefresh();
