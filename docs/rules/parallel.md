@@ -17,15 +17,27 @@ Von Hand nur, wenn das Skript selbst kaputt ist – dieselben Schritte: `git pul
 - `.claude/hooks/guard.py` vor jedem `git push` aus dem Chat und in `release.py`: neuester `main` in der eigenen Arbeit, jeder Commit
   darüber hebt `VERSION` als Zahl, behält alle `## X.Y.Z`-Abschnitte und trägt oben seine eigene Version; keine Zeile, die eine
   der neuesten Versionen auf `main` gebracht hat, geht verloren (außer in `HIGHLIGHTS.md`, das bewusst gestrafft wird – Fremdes
-  dort beim Zusammenführen erhalten). `.githooks/pre-push` prüft dasselbe gegen GitHub (`VERSION` höher, keine Changelog-Zeile
+  dort beim Zusammenführen erhalten). Maßgeblich ist die Herkunft: `release.py` merkt sich den `main`, auf dem die eigene Arbeit
+  entstand (`.git/kontor-seen`, auch über einen Konflikt-Halt hinweg). Zeilen von Versionen, die schon darin lagen, darf die Arbeit
+  ändern – Git trägt die Änderung per Dreiwege-Merge auf den neuen `main` und meldet einen Konflikt, wo eine andere Version dieselbe
+  Stelle geändert hat; sie werden nur genannt („Bewusst geändert“). Fehlen Zeilen einer Version, die erst danach kam, sperrt es:
+  beim Lösen des Konflikts verloren oder ein alter Baum. Ein Push von Hand kennt den Ausgangsstand nicht und sperrt jede Zeile.
+- `git reset` (soft oder gemischt) auf einen Stand außerhalb der eigenen Geschichte ist gesperrt (`guard.reset_check`): er setzt
+  die eigenen Dateien unter einen fremden Stand, und der gemerkte Ausgangsstand stimmte nicht mehr. Eigene Commits zusammenfassen
+  (Ziel unterhalb von `HEAD`), Austragen aus dem Index und `--hard`/`--keep`/`--merge` dürfen. `.githooks/pre-push` prüft dasselbe gegen GitHub (`VERSION` höher, keine Changelog-Zeile
   verloren), GitHub den ganzen Push (Job „Versionskette“).
 - Anlass: 3.16.9 und 66ad67f (3.16.21) – `git reset --soft origin/main` auf altem Stand setzte einen alten Baum auf den neuen
   `main` und löschte fremde Versionen; 3.16.35 setzte bei richtiger Kette den Code von 3.16.32 zurück.
-- Abgelehnt: nie umgehen, sondern holen, daraufsetzen, neu nummerieren. `KONTOR_PUSH_OK=1` nur für eine bewusste Ausnahme (etwa
-  ein Tippfehler in einem alten Changelog-Eintrag).
+- Anlass der Herkunft (Nutzer, 2026-11-24): 3.17.46 änderte bewusst die Karte, die 3.17.38–3.17.41 gebaut hatten – die alte Sperre
+  hielt das für einen alten Baum, weil sie jede Zeile der letzten acht Versionen zählte.
+- Abgelehnt: nie umgehen, sondern holen, daraufsetzen, neu nummerieren. `KONTOR_PUSH_OK=1` nur für eine bewusste Ausnahme: ein
+  Tippfehler in einem alten Changelog-Eintrag, oder nach einem Konflikt ersetzt die eigene Änderung eine neuere fremde nach dem
+  Abwägen bewusst (`KONTOR_PUSH_OK=1 python3 .claude/tools/release.py …`; Unvereinbares vorher dem Nutzer vorlegen).
 
 ## Konflikte
-Beide Seiten lesen und so zusammenführen, dass beide Änderungen erhalten bleiben; Fremdes nie verwerfen. Lässt sich ein Konflikt
+`release.py` nennt je Datei die neuere Version, die dieselbe Stelle geändert hat, und den eigenen Ausgangsstand. Zwischen
+`<<<<<<< HEAD` und `=======` steht der fremde Teil – der neuere, schon veröffentlichte Stand –, bis `>>>>>>> … (wip)` der eigene,
+der ihn nicht kannte. Beide Seiten lesen und so zusammenführen, dass beide Absichten erhalten bleiben; Fremdes nie verwerfen. Lässt sich ein Konflikt
 nicht eindeutig auflösen (Unvereinbares, eine Entscheidung steht an): den Nutzer fragen, mit Empfehlung. Nach jedem Daraufsetzen
 prüft `release.py` erneut – auch ohne Konflikt, denn Logikfehler meldet Git nicht.
 

@@ -311,6 +311,22 @@ class PushGuard(unittest.TestCase):
         self.version(self.a, "1.0.2", {"tax.py": "mine and long enough\n", "app.js": "one\nadded by the other chat\nmine too, long\n"})
         self.assertEqual(self.guard(self.a), (0, ""))
 
+    def test_reset_onto_a_commit_outside_the_own_history_is_locked(self):
+        self.version(self.a, "1.0.1", {"tax.py": "mine and long enough\n"})
+        self.version(self.b, "1.0.1", {"app.js": "one\nadded by the other chat\n"}); self.git(self.b, "push", "-q", "origin", "HEAD:main")
+        self.git(self.a, "fetch", "-q", "origin")
+        code, err = self.guard(self.a, "git reset --soft origin/main")         # an older tree under the newer main
+        self.assertEqual(code, 2); self.assertIn("nicht in deiner Geschichte", err); self.assertIn("pull --rebase", err)
+        self.assertEqual(self.guard(self.a, "git reset origin/main")[0], 2)     # mixed: the same
+        self.assertEqual(self.guard(self.dir, "cd %s && git reset -q --soft origin/main" % self.a)[0], 2)
+        self.assertEqual(self.guard(self.a, "git -C %s reset --soft FETCH_HEAD" % self.a)[0], 2)
+        for ok in ("git reset --soft HEAD~1", "git reset --hard origin/main", "git reset -q HEAD tax.py", "git reset",
+                   "git reset --keep origin/main", 'grep -n "git reset --soft origin/main" docs/rules/parallel.md'):
+            self.assertEqual(self.guard(self.a, ok), (0, ""), ok)
+        self.git(self.a, "reset", "-q", "--hard", "origin/main")                 # own commits on top of main: squashing may
+        self.version(self.a, "1.0.2", {"tax.py": "x\n"}); self.version(self.a, "1.0.3", {"tax.py": "y\n"})
+        self.assertEqual(self.guard(self.a, "git reset --soft origin/main"), (0, ""))
+
     def test_overview_condensed_by_the_next_version_may_go(self):
         # HIGHLIGHTS.md: a chat extends a point another chat's version just added -- rewritten on purpose, not an older tree
         self.version(self.b, "1.0.1", {"HIGHLIGHTS.md": "## 1.0\n- KI-Assistent: Diktieren und Diagramme\n"}); self.git(self.b, "push", "-q", "origin", "HEAD:main")
@@ -413,8 +429,8 @@ class ReleaseScript(unittest.TestCase):
             with open(os.path.join(d, name), "w", encoding="utf-8") as f:
                 f.write(text)
 
-    def release(self, d, *args):
-        r = subprocess.run([sys.executable, os.path.join(d, ".claude", "tools", "release.py")] + list(args), cwd=d, env=ENV,
+    def release(self, d, *args, env=None):
+        r = subprocess.run([sys.executable, os.path.join(d, ".claude", "tools", "release.py")] + list(args), cwd=d, env=dict(ENV, **(env or {})),
                            capture_output=True, text=True, timeout=300)
         return r.returncode, r.stdout + r.stderr
 
@@ -473,6 +489,44 @@ class ReleaseScript(unittest.TestCase):
         self.assertEqual(self.release(self.b, "--check")[0], 0)
         code, out = self.release(self.b, "c", "ohne Bezug")
         self.assertEqual(code, 2, out); self.assertIn("Bezug", out)
+
+    def test_recent_lines_changed_on_purpose_and_lost_in_a_conflict(self):
+        # a line of the version just before, changed on purpose (it was in the main the work was built on): may go, named
+        self.write(self.a, {"app.py": "A = 1\nB = 1\nLABEL = 'eins'\n"})
+        self.assertEqual(self.release(self.a, "eins", "Bilanz: eins", "--by", "Claude X: l")[0], 0)
+        self.git(self.b, "pull", "-q", "--rebase", "origin", "main")
+        self.write(self.b, {"app.py": "A = 1\nB = 1\nLABEL = 'zwei'\n"})
+        code, out = self.release(self.b, "zwei", "Bilanz: zwei", "--by", "Claude Y: l")
+        self.assertEqual(code, 0, out); self.assertIn("Bewusst geändert: 1 Zeile(n) aus 1.0.1", out); self.assertIn("1.0.2 veröffentlicht", out)
+        # chat a, still on 1.0.1, changes the same line: Git shows the conflict, naming the newer version and the own start
+        self.write(self.a, {"app.py": "A = 1\nB = 1\nLABEL = 'drei'\n"})
+        code, out = self.release(self.a, "drei", "Bilanz: drei")
+        self.assertEqual(code, 3, out); self.assertIn("beruht auf 1.0.1", out); self.assertIn("app.py: 1.0.2: zwei", out)
+        self.assertIn("neuere, schon veröffentlichte Stand", out)
+        # resolved by keeping only its own side: the newer version's line is lost -- locked, nothing goes out
+        self.write(self.a, {"app.py": "A = 1\nB = 1\nLABEL = 'drei'\n"})
+        self.git(self.a, "add", "app.py")
+        subprocess.run(["git", "rebase", "--continue"], cwd=self.a, env=dict(ENV, GIT_EDITOR="true"), check=True, capture_output=True)
+        code, out = self.release(self.a, "drei", "Bilanz: drei")
+        self.assertEqual(code, 4, out); self.assertIn("erst nach deinem Ausgangsstand 1.0.1", out); self.assertIn("1.0.2 app.py: LABEL = 'zwei'", out)
+        self.assertEqual(self.main_file("VERSION"), "1.0.2")
+        # weighed, and its change replaces the other on purpose: said so, then it goes
+        code, out = self.release(self.a, "drei", "Bilanz: drei", env={"KONTOR_PUSH_OK": "1"})
+        self.assertEqual(code, 0, out); self.assertIn("bewusst ersetzt", out); self.assertIn("1.0.3 veröffentlicht", out)
+        self.assertEqual(self.main_file("app.py"), "A = 1\nB = 1\nLABEL = 'drei'")
+        self.assertFalse(os.path.exists(os.path.join(self.a, ".git", "kontor-seen")))
+        # both kept instead: no lock, no exception needed
+        self.git(self.b, "pull", "-q", "--rebase", "origin", "main")
+        self.write(self.a, {"app.py": "A = 1\nB = 1\nLABEL = 'drei'\nNOTE = 'vier'\n"})
+        self.write(self.b, {"app.py": "A = 1\nB = 1\nLABEL = 'drei und fünf'\n"})
+        self.assertEqual(self.release(self.b, "fünf", "Bilanz: fünf")[0], 0)
+        code, out = self.release(self.a, "vier", "Bilanz: vier")
+        self.assertEqual(code, 3, out)
+        self.write(self.a, {"app.py": "A = 1\nB = 1\nLABEL = 'drei und fünf'\nNOTE = 'vier'\n"})
+        self.git(self.a, "add", "app.py")
+        subprocess.run(["git", "rebase", "--continue"], cwd=self.a, env=dict(ENV, GIT_EDITOR="true"), check=True, capture_output=True)
+        code, out = self.release(self.a, "vier", "Bilanz: vier")
+        self.assertEqual(code, 0, out); self.assertEqual(self.main_file("app.py"), "A = 1\nB = 1\nLABEL = 'drei und fünf'\nNOTE = 'vier'")
 
 
 if __name__ == "__main__":

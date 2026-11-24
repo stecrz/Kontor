@@ -39,6 +39,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 GIT_DIR = os.path.join(ROOT, ".git")
 STATE = os.path.join(GIT_DIR, "kontor-checks")                   # per clone: chats side by side never share it
 LOG = os.path.join(GIT_DIR, "kontor-release.log")
+SEEN = os.path.join(GIT_DIR, "kontor-seen")                      # the main the own work was built on, kept across a conflict stop
 PY = os.path.expanduser("~/kontor-venv/bin/python") if os.path.exists(os.path.expanduser("~/kontor-venv/bin/python")) else sys.executable
 PY39 = os.path.expanduser("~/py39/bin/python")
 OWN = ("VERSION", "CHANGELOG.md")                                   # written by this script only
@@ -271,11 +272,55 @@ def back_to_wip():
     git("commit", "--amend", "-q", "--no-verify", "-m", "wip", check=True)
 
 
-def guard_says():
+def guard():
     spec = importlib.util.spec_from_file_location("kontor_guard", os.path.join(ROOT, ".claude", "hooks", "guard.py"))
     g = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(g)
-    return g.push_check("git push origin HEAD:main", ROOT)
+    return g
+
+
+def guard_says(seen):
+    """The lock before the push, knowing the main the work was built on: lines of versions already in it the work changed on
+    purpose (named, so it can be traced); lines of versions after it lost lock it -- unless KONTOR_PUSH_OK=1 after weighing."""
+    g = guard()
+    why = g.push_check("git push origin HEAD:main", ROOT, seen=seen)
+    if not why:
+        mine = g.lost_lines(ROOT, "origin/main", "HEAD")
+        if mine:
+            say("Bewusst geändert: %d Zeile(n) aus %s – standen schon in deinem Ausgangsstand %s."
+                % (len(mine), ", ".join(sorted({g._subject(ROOT, c) for c, f, l in mine})), out("show", seen + ":VERSION") or seen[:7]))
+    elif os.environ.get("KONTOR_PUSH_OK") == "1" and why.startswith("Dein Stand löscht Zeilen von Versionen"):
+        say("KONTOR_PUSH_OK=1 – nach dem Abwägen bewusst ersetzt:\n" + why.split("\nDie fremde Version")[0])
+        return ""
+    return why
+
+
+def seen_base(base):
+    """The main the own work was built on: the oldest of the fork point now and the one kept from a run that stopped at a
+    conflict (after `git rebase --continue` the fork point is already the newer main -- what came there the work never had)."""
+    try:
+        kept = open(SEEN, encoding="utf-8").read().strip()
+    except OSError:
+        kept = ""
+    if kept and git("merge-base", "--is-ancestor", kept, base).returncode == 0:
+        return kept
+    return base
+
+
+def forget_seen():
+    try:
+        os.remove(SEEN)
+    except OSError:
+        pass
+
+
+def theirs(seen, files):
+    """Per file in a conflict: the newer versions on main that changed it since the work's own start."""
+    lines = []
+    for f in files:
+        vs = out("log", "--format=%s", "%s..origin/main" % seen, "--", f).splitlines()
+        lines.append("- %s: %s" % (f, "; ".join(v[:70] for v in vs[:3]) or "?"))
+    return "\n".join(lines)
 
 
 def repo_slug():
@@ -314,7 +359,11 @@ def publish(subject, points, by, wanted, wait, extra):
     if [f for f in out("diff", "--cached", "--name-only", base).splitlines() if f in OWN]:
         stop("VERSION und CHANGELOG.md schreibt nur dieses Skript: `git checkout origin/main -- VERSION CHANGELOG.md`, Punkte als Argumente.", 4)
     if not out("diff", "--cached", "--name-only", base):
+        forget_seen()
         stop("Nichts zu veröffentlichen.", 0)
+    seen = seen_base(base)
+    with open(SEEN, "w", encoding="utf-8") as f:
+        f.write(seen + "\n")
     git("reset", "-q", "--soft", base, check=True)                     # own work as one commit on the main it was built on
     git("commit", "-q", "--no-verify", "-m", "wip", check=True)
     for attempt in range(4):
@@ -322,11 +371,15 @@ def publish(subject, points, by, wanted, wait, extra):
         if git("merge-base", "--is-ancestor", "origin/main", "HEAD").returncode != 0:
             r = git("rebase", "-q", "origin/main")
             if r.returncode != 0:
-                files = out("diff", "--name-only", "--diff-filter=U")
-                stop("Konflikt mit einer neueren Version auf main in: %s\nBeide Änderungen erhalten (Fremdes nie verwerfen; "
-                     "Unvereinbares dem Nutzer mit Empfehlung vorlegen), `git add`, `git rebase --continue`, dann denselben Befehl erneut."
-                     % (files.replace("\n", ", ") or "?"), 3)
+                files = out("diff", "--name-only", "--diff-filter=U").splitlines()
+                stop("Konflikt: eine neuere Version auf main hat dieselben Stellen geändert wie du (deine Arbeit beruht auf %s):\n%s\n"
+                     "Zwischen `<<<<<<< HEAD` und `=======` steht ihr Teil – der neuere, schon veröffentlichte Stand –, bis `>>>>>>> … (wip)` "
+                     "deiner, der ihn nicht kannte. "
+                     "Beide Absichten zusammenführen, Fremdes nie verwerfen; Unvereinbares dem Nutzer mit Empfehlung vorlegen. Dann "
+                     "`git add`, `git rebase --continue`, denselben Befehl erneut – die Sperre prüft, dass keine ihrer Zeilen verloren ging."
+                     % (out("show", seen + ":VERSION") or seen[:7], theirs(seen, files) or "?"), 3)
         if out("rev-parse", "HEAD") == out("rev-parse", "origin/main"):
+            forget_seen()
             stop("Nichts mehr zu veröffentlichen – steckt schon in main.", 0)
         if not checks(extra):                                           # per state: after a rebase onto new versions again
             stop("Nicht veröffentlicht. Beheben, dann denselben Befehl erneut.", 1)
@@ -340,12 +393,13 @@ def publish(subject, points, by, wanted, wait, extra):
         changelog(version, points)
         git("add", *OWN, check=True)
         git("commit", "--amend", "-q", "--no-verify", "-m", "%s: %s" % (version, subject), "-m", by, check=True)
-        why = guard_says()
+        why = guard_says(seen)
         if why:
             back_to_wip()
             stop("Gesperrt vor dem Push: " + why, 4)
         r = git("-c", "push.negotiate=true", "push", "-q", "origin", "HEAD:main", timeout=300)
         if r.returncode == 0:
+            forget_seen()
             sha = out("rev-parse", "HEAD")
             git("fetch", "-q", "origin", "main")
             n = len(out("diff", "--name-only", "HEAD~1", "HEAD").splitlines())

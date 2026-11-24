@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.17.47 (2026-11-24 02:16)
+- Entwicklung: Sperre vor dem Push nach Herkunft – bewusst geänderte Zeilen dürfen, beim Konflikt verlorene Zeilen paralleler Chats sperren; Konflikt nennt die neuere Version; kein git reset auf fremden Stand
+
 ## 3.17.46 (2026-11-24 02:03)
 - Konten & Regeln: Empfohlene Kategorien nur zur Orientierung – keine Zählung „X von Y vorhanden“, kein „fehlt“, je Zeile neutral „keine“
 

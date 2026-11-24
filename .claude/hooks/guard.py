@@ -2,7 +2,8 @@
 MoneyMoney's own data, never use MoneyMoney's transfer commands; nowhere force-push or delete main; never read a big text file
 whole (read_check: find the place, then a range -- what is read is paid again at every later step); and before every push the
 version chain (push_check): what goes to main sits on the newest main and is one version after another -- each commit raises
-VERSION, keeps every version section of the changelog and heads it with its own version. Exit code 2 blocks the call and
+VERSION, keeps every version section of the changelog and heads it with its own version --, and no line of a newer version is
+lost; no `git reset` that sets the files on a commit outside their own history (reset_check). Exit code 2 blocks the call and
 tells Claude why; anything else lets the normal flow go on. A guard rail, not a sandbox.
 
 By hand / on GitHub: python3 .claude/hooks/guard.py chain <before> <after> -- the same version chain for the commits pushed.
@@ -101,15 +102,20 @@ def chain_problems(repo: str, before: str, after: str):
     return out
 
 
-def lost_lines(repo: str, base: str, ref: str, recent: int = 8):
+def lost_lines(repo: str, base: str, ref: str, recent: int = 8, seen: str = ""):
     """Lines the newest versions on main added (code, tests, texts -- not VERSION or CHANGELOG.md, nor HIGHLIGHTS.md, whose lines
     the next versions condense on purpose) that main still has and the work pushed no longer has: an older tree set on top of
-    main loses them while VERSION and CHANGELOG look right (3.16.35 lost the code of 3.16.32 that way). [(commit, file, line)]."""
+    main loses them while VERSION and CHANGELOG look right (3.16.35 lost the code of 3.16.32 that way). [(commit, file, line)].
+    seen: the main the work was built on (release.py knows it) -- a line already in it the work changed on purpose (Git carried
+    the change onto the newer main, a conflict where another version touched the same place); only lines of versions that
+    came after it count: lost while resolving a conflict, or an older tree. Without it (a push by hand) every line counts."""
     out, have, ours = [], {}, {}
     show = lambda c, f: set(_git(repo, "show", "%s:%s" % (c, f)).stdout.split("\n"))
     for c in _git(repo, "rev-list", "-n", str(recent), base).stdout.split():
         if not _git(repo, "rev-parse", "--verify", "-q", c + "^").stdout.strip():
             continue                                    # the first commit: nothing before it
+        if seen and _git(repo, "merge-base", "--is-ancestor", c, seen).returncode == 0:
+            continue                                    # the work was built on it: its lines changed on purpose
         cur = None
         for line in _git(repo, "diff", "-U0", c + "^", c, "--", ".", ":(exclude)VERSION", ":(exclude)CHANGELOG.md",
                          ":(exclude)HIGHLIGHTS.md").stdout.split("\n"):
@@ -123,6 +129,42 @@ def lost_lines(repo: str, base: str, ref: str, recent: int = 8):
             if line[1:] in have[cur] and line[1:] not in ours[cur]:
                 out.append((c[:7], cur, line[1:].strip()))
     return out
+
+
+def _subject(repo: str, c: str) -> str:
+    """A commit as its version ("3.17.45") -- else its short id."""
+    s = _git(repo, "log", "-1", "--format=%s", c).stdout.strip()
+    m = re.match(r"(\d+\.\d+\.\d+):", s)
+    return m.group(1) if m else c[:7]
+
+
+RESET = r"(?:^|[;&|(]\s*|\n\s*)git\s+(?:-C\s+(\"[^\"]+\"|'[^']+'|\S+)\s+)?reset\b([^\n;&|]*)"
+
+
+def reset_check(command: str, cwd: str) -> str:
+    """`git reset` (soft or mixed) onto a commit that is not in the work's own history keeps the files and moves the history under
+    them -- an older tree set on a newer main (3.16.9, 66ad67f, 3.16.35), and the main the work seems built on is wrong, so the
+    lock on lost lines would trust it. Squashing own commits (onto a commit below HEAD), unstaging and --hard/--keep/--merge may.
+    Returns why not, or ""."""
+    for m in re.finditer(RESET, command):
+        words = m.group(2).split()
+        if any(w in ("--hard", "--keep", "--merge") for w in words):
+            continue
+        target = next((w for w in words if not w.startswith("-")), "") if "--" not in words else \
+            next((w for w in words[:words.index("--")] if not w.startswith("-")), "")
+        if not target:
+            continue
+        d = m.group(1).strip("\"'") if m.group(1) else _push_repo(command.replace(" reset", " push", 1), cwd)
+        top = _git(d, "rev-parse", "--show-toplevel").stdout.strip()
+        if not top or not os.path.isfile(os.path.join(top, "VERSION")):
+            continue                                    # not Kontor
+        sha = _git(top, "rev-parse", "--verify", "-q", target + "^{commit}").stdout.strip()
+        if not sha or _git(top, "merge-base", "--is-ancestor", sha, "HEAD").returncode == 0:
+            continue                                    # a path (unstaging), or own commits squashed
+        return ("`git reset %s` setzt deine Dateien auf einen Stand, der nicht in deiner Geschichte liegt – so landeten alte Bäume "
+                "auf dem neuen main (3.16.35). Neuen main holen: `git pull --rebase origin main` (Konflikte zeigt Git); nichts "
+                "Eigenes mehr: `git reset --hard origin/main`; veröffentlichen: `.claude/tools/release.py`." % target)
+    return ""
 
 
 def _push_repo(command: str, cwd: str) -> str:
@@ -143,9 +185,10 @@ def _pushed_ref(command: str) -> str:
     return "main" if "main" in words else "HEAD"
 
 
-def push_check(command: str, cwd: str) -> str:
+def push_check(command: str, cwd: str, seen: str = "") -> str:
     """Before a push to Kontor's main: the newest main fetched (at most 5 s; else the last one fetched) and in the work pushed;
-    every commit on top of it one proper version. Returns why not, or "" (also for other repositories)."""
+    every commit on top of it one proper version; no line of a newer version lost (seen: the main the work was built on, from
+    release.py -- see lost_lines). Returns why not, or "" (also for other repositories)."""
     repo = _push_repo(command, cwd)
     top = _git(repo, "rev-parse", "--show-toplevel").stdout.strip()
     if not top or not (os.path.isfile(os.path.join(top, "VERSION")) and os.path.isfile(os.path.join(top, "CHANGELOG.md"))):
@@ -161,7 +204,15 @@ def push_check(command: str, cwd: str) -> str:
         return ("Der neueste main steckt nicht in deiner Arbeit: erst `git pull --rebase origin main` (Konflikte: beide Seiten "
                 "erhalten), Tests erneut, Nummer aus dem neuen main + 1 – nie `reset --soft` auf einen fremden Stand.")
     problems = chain_problems(top, "origin/main", ref)
-    lost = lost_lines(top, "origin/main", ref) if not problems else []
+    lost = lost_lines(top, "origin/main", ref, seen=seen) if not problems else []
+    if lost and seen:
+        built = _git(top, "show", seen + ":VERSION").stdout.strip() or seen[:7]
+        return ("Dein Stand löscht Zeilen von Versionen, die erst nach deinem Ausgangsstand %s kamen – beim Lösen eines Konflikts "
+                "verloren?\n- " % built + "\n- ".join("%s %s: %s" % (_subject(top, c), f, l[:90]) for c, f, l in lost[:8])
+                + ("\n- … und %d weitere" % (len(lost) - 8) if len(lost) > 8 else "")
+                + "\nDie fremde Version ist der neuere, schon veröffentlichte Stand; deine Arbeit kannte sie nicht. Beide Absichten "
+                "zusammenführen (die Zeilen wieder aufnehmen, deine Änderung darauf anwenden), dann denselben Befehl erneut. Nur wenn "
+                "deine Änderung sie nach dem Abwägen bewusst ersetzt: KONTOR_PUSH_OK=1 davor; Unvereinbares dem Nutzer vorlegen.")
     if lost:
         return ("Dein Stand löscht Zeilen, die die neuesten Versionen auf main gebracht haben – er beruht auf einem älteren Baum "
                 "(wie 3.16.35):\n- " + "\n- ".join("%s %s: %s" % (c, f, l[:90]) for c, f, l in lost[:8])
@@ -236,6 +287,14 @@ def main() -> int:
             return 2
         return 0
     command = str((data.get("tool_input") or {}).get("command") or "")
+    if tool == "Bash" and re.search(RESET, command):
+        try:
+            why = reset_check(command, str(data.get("cwd") or ""))
+        except Exception as e:                          # the check itself broke: said, not silently let through
+            why = "Prüfung von `git reset` fehlgeschlagen (%s) – stattdessen `git pull --rebase origin main`." % type(e).__name__
+        if why:
+            print("Gesperrt: " + why, file=sys.stderr)
+            return 2
     if tool == "Bash" and re.search(PUSH, command) and "KONTOR_PUSH_OK=1" not in command:      # a deliberate exception (like .githooks/pre-push)
         try:
             why = push_check(command, str(data.get("cwd") or ""))

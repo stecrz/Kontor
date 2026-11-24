@@ -281,6 +281,10 @@ anhängen – nie löschen.
 - **Empfohlene Kategorien nur zur Orientierung** (Nutzer, 2026-11-24): keine Zählung „X von Y vorhanden“, kein „fehlt“ – nicht jede
   Zeile gilt für jeden (ohne Geschäft keine Umsatzerlöse). Die Karte zeigt je Zeile neutral, welche seiner Kategorien dort zählt, sonst „keine“.
   (umgesetzt in 3.17.46)
+- **Sperre vor dem Push nach Herkunft** (Nutzer, 2026-11-24): bewusst geänderte Zeilen sollen gehen, nichts eines parallelen Chats
+  darf überschrieben werden, ein Konflikt in denselben Teilen einer Datei soll erkannt und abgewogen werden (welcher Stand der neuere
+  ist). Umgesetzt: `release.py` merkt sich den eigenen Ausgangsstand; nur Zeilen von Versionen danach sperren; Konflikt-Meldung nennt
+  die fremde Version; `git reset` auf einen fremden Stand gesperrt (`docs/rules/parallel.md`). (umgesetzt in 3.17.47)
 
 ## Offen (Entscheidung steht aus – mit Empfehlung vorlegen, wenn der Punkt dran ist)
 - Umsatzsteuer-Voranmeldung direkt an ELSTER senden (ELSTERs Programmbibliothek ERiC, Anmeldung als Hersteller, Zertifikat und

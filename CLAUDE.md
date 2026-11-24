@@ -71,7 +71,8 @@ Mehrere Chats arbeiten gleichzeitig, jeder in seinem Klon, abgestimmt nur über 
   Version mit „fix ci“ bzw. „fix nightly“ im Betreff – daran lassen die anderen es liegen. War ein anderer schneller: die eigene
   Korrektur verwerfen. Fällt nur die Umgebung aus (Download, Spiegel): `gh run rerun <id> --failed`.
 - **Sperren vor jedem Push** (`.claude/hooks/guard.py`, `.githooks/pre-push`, auf GitHub Job „Versionskette“): neuester `main` in der
-  eigenen Arbeit, jede Version höher, keine fremde Zeile verloren. Nie umgehen, nie Force-Push, `main` nie löschen.
+  eigenen Arbeit, jede Version höher, keine Zeile einer Version verloren, die nach dem eigenen Ausgangsstand kam (bewusst Geändertes
+  aus ihm darf); kein `git reset` auf einen fremden Stand. Nie umgehen, nie Force-Push, `main` nie löschen.
 - Konflikte: beide Seiten erhalten, Fremdes nie verwerfen; Unvereinbares dem Nutzer mit Empfehlung vorlegen.
 
 ## Was wo gepflegt wird
