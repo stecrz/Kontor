@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.17.50 (2026-11-24 02:42)
+- Entwicklung: Claude Docs in Kontor-Sitzungen gesperrt – weniger Grundlast je Schritt
+
 ## 3.17.49 (2026-11-24 02:37)
 - Entwicklung: Claude in Chrome in Kontor-Sitzungen gesperrt – weniger Grundlast je Schritt
 
