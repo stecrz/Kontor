@@ -5848,7 +5848,7 @@ async function vPositionen() {
   for (const b of Object.values((S.DATA && S.DATA.areas) || {})) for (const [c, v] of Object.entries(((b || {}).cashflow || {}).uncertain || {})) UNS[npath(c)] = Math.max(UNS[npath(c)] || 0, Math.abs(v));
   d.categories.forEach((r, i) => {
     const parent = (d.categories[i + 1] || {}).depth > r.depth, own = r.own || '', uns = !own ? UNS[npath(r.path)] : null;
-    h += `<tr data-p="${esc(r.path)}" data-v="${esc(r.proposal)}" data-v2="${esc((r.proposal_also || []).join(','))}" data-init="${esc(own)}" data-konto="${esc(r.account)}" data-own="${r.count ? 1 : 0}" data-firma="${r.company ? 1 : ''}"><td style="padding-left:${10 + 18 * r.depth}px">${parent ? `<b>${esc(r.name)}</b>` : esc(r.name)}${uns != null ? ` <span class="tag warn tipped kp-uns" tabindex="0" data-tip="${esc(t('kp_unsicher_tip', F0(Math.abs(uns))))}">${t('kp_unsicher')}</span>` : ''}</td>
+    h += `<tr data-p="${esc(r.path)}" data-v="${esc(r.proposal)}" data-v2="${esc((r.proposal_also || []).join(','))}" data-init="${esc(own)}" data-konto="${esc(r.account)}" data-own="${r.count ? 1 : 0}" data-firma="${r.company ? 1 : ''}" data-buy="${r.purchase ? 1 : ''}"><td style="padding-left:${10 + 18 * r.depth}px">${parent ? `<b>${esc(r.name)}</b>` : esc(r.name)}${uns != null ? ` <span class="tag warn tipped kp-uns" tabindex="0" data-tip="${esc(t('kp_unsicher_tip', F0(Math.abs(uns))))}">${t('kp_unsicher')}</span>` : ''}</td>
       <td class="num small kp-n">${r.count_all ? `<a href="#" class="kp-tx" data-tx="all">${r.count_all}</a>` : ''}</td><td class="num small kp-n ${r.sum_12m < 0 ? 'neg' : ''}">${r.sum_12m ? `<a href="#" class="kp-tx" data-tx="12m">${F0(r.sum_12m)}</a>` : ''}</td><td class="kp-arrow" aria-hidden="true">→</td>
       <td><select class="kp-pos"${r.property_name ? ` data-obj="${esc(r.property_name)}"` : ''}>${r.property_name ? objOpts(own) : opts(own, r.company)}</select></td>
       <td>${(() => { const at = autoTarget(r.path); return `<select class="kp-konto${at.miss && !r.account ? ' kp-miss' : ''}">${acctOptions(r.account, k => !k.group && (k.depot || k.role === 'term_investments' || k.role === 'cash' || k.role === 'participations' || k.role === 'real_estate')).replace(t('waehlen'), () => esc(at.text))}</select>`; })()}</td></tr>`;
@@ -5984,8 +5984,9 @@ function bindPositionen(main) {
       const sel = $('.kp-pos', r); if (!sel) return;
       let a = auto(r);
       if (!sel.dataset.obj && parents.has(r.dataset.p) && !own(r) && !inherited(r)) a = '';
-      // a property's category leaves its rows for interest or a repayment, or for saving or leaving out that you chose
-      if (sel.dataset.obj && !(['repayment', 'loan_interest'].includes(a) || (inherited(r) && OBJ_OUT.includes(a)))) a = '';
+      // a property's category leaves its rows for interest or a repayment, for its purchase (price, purchase costs: saving),
+      // or for saving or leaving out that you chose
+      if (sel.dataset.obj && !(['repayment', 'loan_interest'].includes(a) || (a === 'saving' && r.dataset.buy) || (inherited(r) && OBJ_OUT.includes(a)))) a = '';
       const eff = own(r) || a;
       const also = !inherited(r) && a === r.dataset.v && r.dataset.v2 ? r.dataset.v2.split(',') : [];       // another area counts it the other way round
       sel.options[0].textContent = sel.dataset.obj && !a ? t('automatisch_0', t('immobilie_0', sel.dataset.obj)) : a ? t('automatisch_0', [posLabel(a, r.dataset.firma), ...also.map(k => posLabel(k))].join(' / ')) : t('automatisch_unter');

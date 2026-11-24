@@ -61,7 +61,11 @@ Beteiligungen (money paid into or out of a company of the user, named by the com
 that position in a private area: money into or out of a company Kontor does not keep), Andere Bereiche (contributions to and
 withdrawals from another area of the user, named by the area), Gewährte Darlehen (the account; "<account> / Zinsen" = interest
 received on a loan granted), Fremdwährung (money moved into an account in another currency), Sparen & Anlegen (saving whose account
-is unknown; a company's: "Anlagevermögen & Geldanlagen"). Under each kind its accounts – or, for saving by a MoneyMoney category, the category ("… → <Konto>" when the user chose
+is unknown; a company's: "Anlagevermögen & Geldanlagen"). Buying securities into a depot (which has balances only, no bookings) and
+selling them back belongs here by a category with the position Sparen & Anlegen: the purchase −, the sale +, the depot's change in
+value shows only the prices; a category "Umbuchung" finds no counter-booking there and lands under Unklar. The price and the purchase
+costs of a property count here too, also from a category below the property's own (never as the property's costs; a price without
+a counter-booking in the property's account goes into no depot: "Anlage ohne Zielkonto"). Under each kind its accounts – or, for saving by a MoneyMoney category, the category ("… → <Konto>" when the user chose
 another account for a recipient; "… → kein Konto in MoneyMoney" = money that leaves the wealth Kontor sees). A kind's row is the sum
 of its rows. Plan columns: saving by category and loans granted planned like positions; transfers into or out of accounts,
 contributions and withdrawals not planned (0).

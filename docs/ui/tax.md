@@ -23,7 +23,7 @@ One column per rental object, found only from category names "<rental category> 
 Musterstraße \ Mieteinnahmen; the rental category is set under Konten & Regeln → Steuer); a category with only two levels counts
 for "(allgemein)", loan interest that fits no object for "(Darlehen ohne Objekt)". Rows, each the year's sum per object: indented
 kind rows = sum of that kind (e.g. Mieteinnahmen positive, Hausgeld negative). "Einnahmen" = sum of the kinds with a positive total.
-"Werbungskosten (ohne Zinsen/AfA)" = sum of the kinds with a negative total. "Schuldzinsen <loan>" = interest and fees on that loan
+"Werbungskosten (ohne Zinsen/AfA)" = sum of the kinds with a negative total. Categories named as the property's price or purchase costs ("… › Kaufpreis", "… › Kaufnebenkosten") are left out: acquisition costs are written off (AfA), not deducted. "Schuldzinsen <loan>" = interest and fees on that loan
 account (assigned to an object under Konten & Regeln → Steuer, or to the only object automatically). "AfA (manuell)" = the year's
 depreciation as a positive amount: the value entered here for this year (in the field), else the depreciation of the object's active
 calculation under Immobilien (matched by the last part of its rental category, else its name; grey in the empty field), else 0. "Ergebnis (Überschuss / Verlust)" = Einnahmen + Werbungskosten +

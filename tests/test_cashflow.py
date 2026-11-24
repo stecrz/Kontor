@@ -1064,6 +1064,149 @@ class Positions(Reconciles):
         self.assertEqual((g["Parkweg · Miete"]["amounts"]["2026-02"], g["Parkweg · Miete"]["property_name"]), (9500.0, "Parkweg"))
         self.assertEqual(g["Parkweg · Kosten"]["amounts"]["2026-02"], -800.0)
 
+    def test_proposals_for_purchases_loans_and_companies(self):
+        """The user's check of the positions (2026-11-24, 3.17.87) against names people really use: buying a property is saving
+        (it counted as the property's costs, "Wohnungskauf" as housing), a mortgage a repayment, early repayment charges
+        interest; what a home of your own costs below "Wohnen" is housing; a company's travel, office and telephone run the
+        business (travel stood under leisure), its fixed assets are an investment. And what must stay as it was, though a new
+        word is part of it (the independent check of this change): the loan for the price is financing, "Kauf" below
+        securities goes into the depot, "Gewerbesteuer" is a tax, "Kindergarten" education."""
+        for path, inc, firm, want in (
+                ("Vermietung / Parkweg / Kaufpreis", False, False, "saving"), ("Wohnungskauf", False, False, "saving"), ("Immobilie / Kauf", False, False, "saving"),
+                ("Vermietung / Parkweg / Grunderwerbsteuer", False, False, "saving"), ("Vermietung / Parkweg / Zinsen Kaufpreisdarlehen", False, False, "loan_interest"),
+                ("Hypothek", False, False, "repayment"), ("Vorfälligkeitsentschädigung", False, False, "loan_interest"),
+                ("Tagesgeld", False, False, "saving"), ("Edelmetalle", False, False, "saving"), ("Zinsen Tagesgeld", True, False, "capital_income"),
+                ("Wohnen / Hausgeld", False, False, "housing"), ("Wohnen / Grundsteuer", False, False, "housing"), ("Hausgeld", False, False, "property_costs"),
+                ("Vermietung / Parkweg / Hausgeld", False, False, "property_costs"), ("Wohnen / Einrichtung", False, False, "living"),
+                ("Handy", False, False, "housing"), ("Telefon & Internet", False, True, "operations"), ("Telefon & Internet", False, False, "housing"),
+                ("Reisekosten", False, True, "operations"), ("Reisekosten", False, False, "leisure"), ("Bürobedarf", False, True, "operations"),
+                ("Gewerbesteuer", False, True, "taxes"), ("Werbekosten", False, True, "operations"), ("Fremdleistungen", False, True, "goods"),
+                ("Anlagevermögen", False, True, "saving"), ("Nebenkosten des Geldverkehrs", False, True, "administration"),
+                ("Büromaterial", False, True, "operations"), ("Fahrzeugkosten", False, True, "mobility"),
+                ("Berufsunfähigkeit", False, False, "insurance"), ("Autokauf", False, False, "mobility"), ("Kauf", False, False, "other_expenses"),
+                # as before
+                ("Kaufpreisdarlehen / Tilgung", False, False, "repayment"), ("Vermietung / Parkweg / Tilgung Kaufpreisdarlehen", False, False, "repayment"),
+                ("Darlehen / Kaufpreisdarlehen", True, False, "repayment"), ("Wertpapiere / Kauf", False, False, "saving"),
+                ("Waren / Ankauf", False, True, "goods"), ("Umsatzsteuer / Erwerb", False, True, "vat"), ("Kleidung / Kauf", False, False, "living"),
+                ("Einkommen / Erwerb", True, False, "other_income"), ("Kinder / Kindergarten", False, False, "education"),
+                ("Wartung Maschinen", False, True, "other_expenses"), ("Personal / Vermögenswirksame Leistungen", False, True, "staff"),
+                ("Raumkosten / Reinigung", False, True, "housing"), ("Versicherungen / Mitgliedsbeitrag", False, False, "insurance"),
+                ("Haushalt / Hausrat", False, False, "living"), ("IT-Leasing", False, True, "other_expenses"), ("Hypothekenzinsen", False, False, "loan_interest")):
+            self.assertEqual(report.propose_position(path, inc, firm), want, (path, inc, firm))
+        self.assertEqual([report.purchase_kind(c) for c in ("Sparen & Anlegen / Kaufnebenkosten", "Parkweg / Kaufpreis", "Immobilie / Kauf", "Kaufpreisdarlehen / Zinsen",
+                                                            "Kaufpreisdarlehen", "Einkauf", "Wertpapiere / Kauf", "Beteiligungen / Erwerb")],
+                         ["costs", "price", "price", "", "", "", "", "price"])
+
+    def test_buying_a_property_is_no_cost_of_it(self):
+        """Price and purchase costs booked below the property's own category: an investment, not its costs -- the price finds
+        its counter-booking in the property's account (it counted as costs, the counter-booking as a change in value), the
+        costs leave the net worth Kontor sees. A price without a counter-booking goes into no depot."""
+        from unittest import mock
+        cfg = {"real_estate": [{"id": "i1", "name": "Parkweg", "area": "g-Muster GbR", "category": "Vermietung\\Parkweg"}]}
+        with mock.patch.dict(ACCOUNTS, {"haus": ("Haus Parkweg", "Muster GbR", "real_estate", None, "offline")}):
+            data = build([(1, "kk", date(2025, 12, 2), 150000.0, {"cat": "Mieteinnahmen"}),
+                          (2, "kk", date(2026, 1, 3), -100000.0, {"cat": "Vermietung\\Parkweg\\Kaufpreis"}), (3, "haus", date(2026, 1, 3), 100000.0, {}),
+                          (4, "kk", date(2026, 1, 10), -12000.0, {"cat": "Vermietung\\Parkweg\\Kaufnebenkosten"}),
+                          (5, "kk", date(2026, 2, 3), -800.0, {"cat": "Vermietung\\Parkweg\\Hausgeld"})], cfg)
+            self.assertAddsUp(data)
+            g = rows(data["Muster GbR"])
+            self.assertEqual((g["Haus Parkweg"]["amounts"]["2026-01"], g["Haus Parkweg"]["group"], g["Haus Parkweg"]["nw"]), (-100000.0, "Immobilien", False))
+            self.assertEqual((g["Parkweg · Kosten"]["amounts"]["2026-01"], g["Parkweg · Kosten"]["amounts"]["2026-02"]), (0.0, -800.0))
+            extern = g["Vermietung / Parkweg / Kaufnebenkosten → extern"]
+            self.assertEqual((extern["amounts"]["2026-01"], extern["nw"]), (-12000.0, True))
+            self.assertFalse([z for z in rows(data["Muster GbR"], "valuation").values() if any(z["amounts"].values())])
+        data = build([(1, "giro", date(2025, 12, 5), 90000.0, {"cat": "Gehalt"}), (2, "giro", date(2026, 1, 3), -50000.0, {"cat": "Immobilienkauf"}),
+                      (3, "giro", date(2026, 2, 3), -500.0, {"cat": "Sparen"})])
+        self.assertAddsUp(data)
+        p = rows(data["Privat"])
+        self.assertEqual((p["Immobilienkauf"]["account"], p["Sparen"]["account"]), (None, "depot"))          # the price: not into the only depot
+        self.assertEqual(p["Anlage ohne Zielkonto"]["amounts"]["2026-01"], -50000.0)
+        data = build([(1, "giro", date(2025, 12, 5), 9000.0, {"cat": "Gehalt"}), (2, "giro", date(2026, 1, 3), -5000.0, {"cat": "Wertpapiere\\Kauf"})])
+        self.assertEqual(rows(data["Privat"])["Wertpapiere / Kauf"]["account"], "depot")                    # securities bought: into the depot, as before
+        # the property's actual costs of the year (Immobilien -> Soll/Ist) and the tax overview leave the purchase out as well
+        txs = [(1, "kk", date(2026, 1, 3), -100000.0, {"cat": "Vermietung\\Parkweg\\Kaufpreis"}), (2, "kk", date(2026, 1, 10), -12000.0, {"cat": "Vermietung\\Parkweg\\Kaufnebenkosten"}),
+               (3, "kk", date(2026, 2, 3), -800.0, {"cat": "Vermietung\\Parkweg\\Hausgeld"}), (4, "kk", date(2026, 2, 5), 1500.0, {"cat": "Vermietung\\Parkweg\\Miete"})]
+        led = make_ledger(txs)
+        roles = {k: v[2] for k, v in ACCOUNTS.items()}
+        im = dict(cfg["real_estate"][0], calcs=[{"id": "k", "active": True, "inputs": {"name": "Parkweg", "purchase_price": 100000, "transfer_date": "2026-01-01",
+                                                                                         "rent": {"net_rent_month": 1500}}}])
+        config = core.merged_config({"balance": {"roles": roles}, "real_estate": [im], "companies": [{"area": "Muster GbR"}]})
+        year = core.immo_soll_ist(led, config, im, core.immo_results(config, TODAY)["i1"], roles, TODAY)[0]
+        self.assertEqual((year["year"], year["rent_actual"], year["costs_actual"]), (2026, 1500.0, -800.0))
+        import tax
+        kinds = [dict(e["years"]["2026"]["properties_list"]["Parkweg"]["kinds"]) for e in tax.build_tax(led, config, TODAY)["entities"]
+                 if "Parkweg" in e["years"].get("2026", {}).get("properties_list", {})]
+        self.assertEqual(kinds, [{"Hausgeld": -800.0, "Miete": 1500.0}])
+
+    def test_a_propertys_plan_goes_on_from_its_accounts(self):
+        """A property calculation knows its own course only. Where the loan account owes less (an extra repayment it does not
+        hold) or the property's account shows another value, the plan goes on from the accounts with the calculation's terms
+        -- the planned debt and value jumped to the calculation's in the first plan month."""
+        fut = ["2026-07", "2026-08", "2026-09"]
+        s = {"interest": {"2026-07": -500.0, "2026-08": -498.75}, "repayment": {"2026-07": -500.0, "2026-08": -501.25},
+             "balance_amount": {"2026-06": -200000.0, "2026-07": -199500.0, "2026-08": -198998.75}}
+        for same in (-200000.0, -200000.6, 0.0, 150.0):                # as calculated (to the euro); nothing owed; no debt
+            self.assertIs(report._from_actual_debt(s, same, "2026-06", fut), s)
+        self.assertIs(report._from_actual_debt(s, -180000.0, "2026-05", fut), s)          # a month the calculation does not know
+        got = report._from_actual_debt(s, -170000.0, "2026-06", fut)
+        self.assertEqual([(got[k]["2026-07"], got[k]["2026-08"]) for k in ("interest", "repayment", "balance_amount")],
+                         [(-425.0, -423.56), (-575.0, -576.44), (-169425.0, -168848.56)])          # the same 1,000 a month, less of it interest
+        self.assertNotIn("2026-09", got["balance_amount"])                                         # beyond the calculation: nothing
+        # settled once a year (interest on the balance of 1 January): the extra repayment of March lowers the interest from
+        # next January on -- this year's stays the calculation's (the account owed as much as calculated at the year's end)
+        y = {"yearly": True, "interest": {"2026-12": -500.0, "2027-01": -480.0}, "repayment": {"2026-12": -500.0, "2027-01": -520.0},
+             "balance_amount": {"2025-12": -200000.0, "2026-11": -194500.0, "2026-12": -194000.0, "2027-01": -193480.0}}
+        got = report._from_actual_debt(y, -174500.0, "2026-11", ["2026-12", "2027-01"], {"2025-12": -200000.0, "2026-11": -174500.0})
+        self.assertEqual((got["interest"]["2026-12"], got["repayment"]["2026-12"], got["balance_amount"]["2026-12"]), (-500.0, -500.0, -174000.0))
+        self.assertEqual((got["interest"]["2027-01"], got["repayment"]["2027-01"]), (round(-480.0 * 174000 / 194000, 2), round(-1000.0 + 480.0 * 174000 / 194000, 2)))
+        more = report._from_actual_debt(s, -230000.0, "2026-06", fut)                             # owing more than calculated: more interest, less repaid
+        self.assertEqual((more["interest"]["2026-07"], more["repayment"]["2026-07"], more["balance_amount"]["2026-07"]), (-575.0, -425.0, -229575.0))
+        last = report._from_actual_debt(s, -300.0, "2026-06", fut)                                # nearly paid off: no more than is owed, then nothing
+        self.assertEqual([(last[k]["2026-07"], last[k]["2026-08"]) for k in ("interest", "repayment", "balance_amount")], [(-0.75, 0.0), (-300.0, 0.0), (0.0, 0.0)])
+        v = {"2026-06": 300000.0, "2026-07": 300250.0}
+        self.assertEqual(report._from_actual_value(v, 330000.0, "2026-06", fut), {"2026-06": 300000.0, "2026-07": 330275.0})
+        for same in (300000.0, 300000.5, 0.0):
+            self.assertIs(report._from_actual_value(v, same, "2026-06", fut), v)
+        self.assertIs(report._from_actual_value(v, 330000.0, "2026-05", fut), v)
+        # ... through the whole plan: bought 2025 with a seller's loan of 200,000 at 3 %, 20,000 repaid on top in March, the
+        # value raised by hand -- the plan's first month goes on from 171,160 owed and 330,000
+        from unittest import mock
+        with mock.patch.dict(ACCOUNTS, {"haus": ("Haus Parkweg", "Muster GbR", "real_estate", None, "offline")}):
+            txs = [(1, "kk", date(2024, 12, 2), 120000.0, {"cat": "Mieteinnahmen"}),
+                   (2, "kk", date(2025, 1, 3), -100000.0, {}), (3, "haus", date(2025, 1, 3), 100000.0, {}),
+                   (4, "vd", date(2025, 1, 3), -200000.0, {"cat": "Umbuchung"}), (5, "haus", date(2025, 1, 3), 200000.0, {"cat": "Umbuchung"}),
+                   (7, "kk", date(2026, 3, 1), -20000.0, {"purpose": "Sondertilgung"}), (8, "vd", date(2026, 3, 1), 20000.0, {"purpose": "Sondertilgung"}),
+                   (9, "haus", date(2026, 1, 1), 30000.0, {"purpose": "Wertanpassung"})]
+            n, d = 100, date(2025, 2, 1)
+            while d <= date(2026, 6, 1):
+                txs += [(n, "kk", d, -1000.0, {"purpose": "Rate"}), (n + 1, "vd", d, 1000.0, {"purpose": "Rate"}), (n + 2, "vd", d, -480.0, {"purpose": "Zinsen"})]
+                n, d = n + 10, date(d.year + d.month // 12, d.month % 12 + 1, 1)
+            im = {"id": "im1", "name": "Parkweg", "area": "g-Muster GbR", "property_account": "Haus Parkweg", "loan_accounts": {"Kaufpreisdarlehen": "Verkäuferdarlehen"},
+                  "in_planning": True, "calcs": [{"id": "k1", "name": "Basis", "active": True, "inputs": {
+                      "name": "Parkweg", "purchase_price": 300000, "transfer_date": "2025-01-01", "horizon_years": 20, "building_share_percent": 70,
+                      "depreciation_percent": 2, "value_growth_percent": 1.0, "rent": {"net_rent_month": 1400}, "costs": {"non_recoverable_pa": 1200},
+                      "loans": [{"name": "Kaufpreisdarlehen", "amount": 200000, "interest_percent": 3.0, "kind": "annuity", "annuity_month": 1000, "settlement": "monthly"}],
+                      "partners": [{"name": "A", "share_percent": 100, "tax_rate_percent": 42}], "distribution_percent": 0}}]}
+            led = make_ledger(txs)
+            roles = {k: v[2] for k, v in ACCOUNTS.items()}
+            config = core.merged_config({"balance": {"roles": roles}, "real_estate": [im]})
+            b = next(x for x in core.bereiche_for(led, config) if x["name"] == "Muster GbR")
+            ds = report.build_dataset(led, config, {}, TODAY, b, roles)
+            res = core.immo_results(config, TODAY)
+            self.assertLess(res["im1"]["series_data"]["loans"]["Kaufpreisdarlehen"]["balance_amount"]["2026-06"], -190000.0)          # the calculation: without the 20,000
+            report.apply_plan(ds, {"horizon_months": 6}, config, immo=core.immo_for_plan(config, b["id"], res), ledger_resolve=lambda r: led.resolve(r).uuid)
+            first = ds["plan_months"][0]
+            f = rows(ds, "financing")
+            owed = -ds["balance"]["rows"][[r["id"] for r in ds["balance"]["rows"]].index("vd")]["amounts"]["2026-06"]
+            self.assertEqual(owed, 171160.0)
+            zins, tilg = f["Verkäuferdarlehen / Zinsen"]["plan"]["amounts"][first], f["Verkäuferdarlehen / Tilgung"]["plan"]["amounts"][first]
+            self.assertEqual((zins, round(zins + tilg, 2)), (-427.9, -1000.0))                     # 3 % of 171,160 a month; the same rate
+            proj = {r["id"]: r["amounts"][first] for r in ds["balance"]["projection"]["rows"]}
+            self.assertEqual(proj["vd"], round(-owed - tilg, 2))
+            self.assertTrue(330000.0 < proj["haus"] < 330000.0 * 1.002, proj["haus"])              # from 330,000 on, a month of 1 % a year
+            self.assertAlmostEqual(ds["balance"]["projection"]["net_worth"][first] - ds["balance"]["net_worth"]["2026-06"],
+                                   zins + (proj["haus"] - 330000.0), 1)          # no jump: the interest and the value's month (no rent category here)
+
     def test_property_rows_by_sign_and_the_most_specific_property(self):
         cfg = {"real_estate": [{"id": "i1", "name": "Altbau", "area": "g-Muster GbR", "category": "Vermietung"},
                               {"id": "i2", "name": "Neubau", "area": "g-Muster GbR", "category": "Vermietung\\Neubau"}]}

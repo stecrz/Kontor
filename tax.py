@@ -22,7 +22,7 @@ from datetime import date
 from typing import Dict, List, Optional
 
 from model import Ledger, Tx, norm_cat
-from report import ASSET_ROLES, COST_WORDS, account_roles, foreign_currency, _is_cost
+from report import ASSET_ROLES, COST_WORDS, account_roles, foreign_currency, purchase_kind, _is_cost
 from model import MARK, marks_in
 from i18n import tr
 
@@ -156,7 +156,8 @@ def build_tax(ledger: Ledger, config: dict, today: date, bereiche: Optional[List
                     continue
                 cats[path]["amount"] += t.amount; cats[path]["count"] += 1
                 parts = path.split(" / ")
-                if parts[0].lower() == verm:
+                # (price and purchase costs of a property are no income-related expenses: they are written off -- AfA)
+                if parts[0].lower() == verm and not purchase_kind(path):
                     obj = parts[1] if len(parts) >= 3 else "(allgemein)"
                     art = parts[-1] if len(parts) >= 2 else tr("tax_ohne_art")
                     o = objekte.setdefault(obj, {"kinds": defaultdict(float), "debt_interest": {}, "depreciation": 0.0})

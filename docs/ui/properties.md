@@ -73,7 +73,8 @@ chosen); Cashflow kum. = summed from the first year; Objektwert; EK im Objekt = 
 ## properties.target — Soll/Ist
 Each calendar year with a scenario year and transactions: Soll = active scenario, Ist = MoneyMoney (booked), Δ = Ist − Soll,
 whole €; green = better than planned (more rent, less cost or interest, less remaining debt), red = worse, plain = equal. Miete Ist = positive transactions of the rental category and below (service charge advances
-included; Soll excludes them). Kosten Soll = costs + reserve; Ist = negative transactions of that category. Zinsen Ist = interest
+included; Soll excludes them). Kosten Soll = costs + reserve; Ist = negative transactions of that category (without the purchase: categories named as its
+price or purchase costs, e.g. "… › Kaufpreis", "… › Kaufnebenkosten", are an investment). Zinsen Ist = interest
 and fee bookings on the linked loan accounts. Restschuld Ist = what is owed on the linked loan accounts at 31 Dec (this year: today),
 above zero like Soll; empty without linked loan accounts. This year is incomplete.
 

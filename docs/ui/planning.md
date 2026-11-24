@@ -91,7 +91,10 @@ says) gets no interest and no repayment in the plan.
 Per plan month: interest = debt (Jahresbasis: the debt at the end of the year before) × rate ÷ 12, repayment = payment − interest
 (not below 0, never more than the debt left), the debt falls by the repayment. These values fill the loan's rows Zinsen and Tilgung
 in the table (unless a cell is overridden) and the loan's balance in the balance sheet's plan columns. Loans of a property
-calculation follow that calculation. "Keine Darlehenszeilen im Cashflow." = no such loan.
+calculation follow that calculation's terms from what the loan account owes at the end of the last actual month: the calculation's
+payment each month, interest at its rate on the debt really left (an extra repayment the calculation does not hold lowers it), the
+rest repays (a loan settled once a year: the ratio of the two debts at the last year end holds for the whole year); where account
+and calculation agree to the euro, exactly the calculation. "Keine Darlehenszeilen im Cashflow." = no such loan.
 
 ## planning.appreciation — Wertentwicklung je Konto
 One row per account of the area except bank accounts (also liabilities and hidden accounts, tag "ausgeblendet"): "Konto" (its path),
@@ -99,7 +102,8 @@ One row per account of the area except bank accounts (also liabilities and hidde
 applies to; empty = the projected balance itself), "Kopplung an Bereich" (another area), "Anteil" (0–1, empty = 1). Per plan month:
 balance + (Basis or balance) × % ÷ 12. Coupled: the balance = Anteil × that area's planned net worth (a participation at its share).
 Without an entry: portfolios, securities and term investments change by "Rendite Wertpapiere/Anlagen" (Parameter), other accounts
-stay; an account of a property calculation follows its object value. These changes have no payment: they show as Wertänderungen in
+stay; an account of a property calculation grows as the calculation's object value does, from what the account shows at the end of the
+last actual month (a value set by hand stays the starting point). These changes have no payment: they show as Wertänderungen in
 the plan columns and in the projected net worth.
 
 ## planning.events — Geplante Ereignisse

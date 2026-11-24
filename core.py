@@ -22,7 +22,7 @@ from model import UUID_RE, Account, Ledger, Tx, accounts_from_export, add_months
 import mm_categories
 import realestate
 import categorize
-from report import COST_WORDS, POS, PROPERTY_CONTEXT, ROLES, account_roles, build_dataset, equity_ratio, holding_key, my_positions
+from report import COST_WORDS, POS, PROPERTY_CONTEXT, ROLES, account_roles, build_dataset, equity_ratio, holding_key, my_positions, purchase_kind
 import rules
 from rules import Proposal, parse_start, plan_all
 from storage import Store
@@ -1235,6 +1235,8 @@ def immo_soll_ist(ledger: Ledger, config: dict, im: dict, res: dict, roles: Dict
                     continue
                 cl = norm_cat(t.category_path).lower()
                 if cl == cat or cl.startswith(cat + " / "):
+                    if purchase_kind(norm_cat(t.category_path)):
+                        continue                         # price and purchase costs: an investment, none of its running costs
                     if t.amount > 0:
                         miete += t.amount
                     else:
@@ -1373,7 +1375,7 @@ def positions_overview(ledger: Ledger, config: dict, categories: List[dict], tod
             prop = props.pop() if len(props) == 1 else ""
         out.append({"path": p, "name": p.split(" / ")[-1], "depth": p.count(" / "), "count": count.get(p, 0),
                     "count_all": sum(count[q] for q in sub), "sum_12m": round(sum(year.get(q, 0.0) for q in sub), 2),
-                    "proposal": prop, "proposal_also": also,
+                    "proposal": prop, "proposal_also": also, "purchase": bool(purchase_kind(p)),
                     "own": mine.get(p), "account": konto.get(p) or "", "property_name": obj,
                     "company": 2 * sum(in_firm[q] for q in sub) > sum(count[q] for q in sub)})
     return {"categories": out, "positions": [[k, sec] for k, sec, _ in POSITIONS], "transfer": list(kf.get("transfer_categories") or ["Umbuchung"]),

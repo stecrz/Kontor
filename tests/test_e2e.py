@@ -3267,7 +3267,9 @@ class FeatureTests(_AppBase):
         self.assertEqual(ez["plan"]["amounts"][jan27], 9980.0)        # 9000 x 1,02 + 800
         pr = {r["id"]: r for r in gbr["balance"]["projection"]["rows"]}
         self.assertEqual(pr[F.uid("ga.vd")]["amounts"]["2026-12"], -1164000.0)
-        self.assertEqual(round(pr[F.uid("ga.immo")]["amounts"]["2026-12"]), round(1500000 * 1.02 ** (11 / 12)))   # monatliche Wertentwicklung ab dem 2. Monat
+        # the value goes on from what the property's account shows (1,500,000 at the end of November, never adjusted) with the
+        # calculation's growth -- not from the calculation's own value, 25,000 higher by then (a jump nobody booked: 3.17.87)
+        self.assertEqual(round(pr[F.uid("ga.immo")]["amounts"]["2026-12"]), round(1500000 * 1.02 ** (1 / 12)))
         inv = [z for z in [s for s in gbr["cashflow"]["sections"] if s["name"] == "financing"][0]["rows"] if z["row"] == "Einlagen/Entnahmen Gesellschafter"]
         self.assertTrue(inv); self.assertLess(sum(inv[0]["plan"]["amounts"].values()), 0)
         # Steuer: AfA aus der Kalkulation, wenn nicht manuell eingetragen

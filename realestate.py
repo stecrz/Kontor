@@ -528,7 +528,7 @@ def berechne(obj: dict, heute: Optional[date] = None) -> dict:
         if worst["cashflow_cumulative"] < -0.5:
             hinweise.append(tr("s_kumulierter_cashflow_bis_d_negativ") % (worst["year"], _eur(worst["cashflow_cumulative"])))
     return {"inputs": o, "figures": kennzahlen, "years": jahre, "months": monate, "hints": hinweise,
-            "loan_names": [l.name for l in loans], "start": _mk(*start)}
+            "loan_names": [l.name for l in loans], "loans_yearly": [l.name for l in loans if l.jaehrlich], "start": _mk(*start)}
 
 
 def _irr(cfs: List[float]) -> Optional[float]:
@@ -571,7 +571,8 @@ def planreihen(res: dict) -> dict:
         out["reserve"][mk] = r["reserve"]
         out["value"][mk] = r["value"]
         for name, d in r["loans"].items():
-            x = out["loans"].setdefault(name, {"interest": {}, "repayment": {}, "balance_amount": {}})
+            # (yearly: settled once a year on the balance of 1 January -- the plan carries it on from the account that way)
+            x = out["loans"].setdefault(name, {"interest": {}, "repayment": {}, "balance_amount": {}, "yearly": name in (res.get("loans_yearly") or ())})
             x["interest"][mk] = d["interest"]
             x["repayment"][mk] = d["repayment"] + d["special_repayment"]
             x["balance_amount"][mk] = d["balance_amount"]

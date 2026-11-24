@@ -949,31 +949,62 @@ def position_row(pos: str, company: bool) -> Tuple[str, str]:
 # (name, then path). Folded (ae, oe, ue, ss); German names are compounds, so parts of words count -- words of up to three
 # letters only at the start of a word.
 POSITION_FIRST = [  # (words, in, out, only at the start of a word); not for costs of these (fees, card) -- see FIRST_NOT
-    (("zins", "finanzierungskost"), "capital_income", "loan_interest", False),
-    (("tilgung", "kredit", "darlehen", "finanzierung", "annuit"), "repayment", "repayment", False),
+    (("zins", "finanzierungskost", "vorfaelligkeit"), "capital_income", "loan_interest", False),
+    (("tilgung", "kredit", "darlehen", "finanzierung", "annuit", "hypothek"), "repayment", "repayment", False),
     (("einlage", "entnahme", "privateinlage", "privatentnahme", "kapitaleinlage", "gewinnverwendung"), "partners", "partners", True),
     # a distribution received (from a GmbH) is investment income, as "Ausschüttung" and the estimate by the booking's words;
     # paid out, it is equity (money from a GbR to its partners is a withdrawal: "Entnahme", above)
     (("gewinnausschuett",), "capital_income", "partners", True),
     (("sparen", "sparplan", "bauspar", "invest", "wertpapier", "depot", "etf", "aktie", "fonds", "geldanlage", "ruecklage", "krypto",
       "altersvorsorge", "beteiligung", "immobilienkauf", "kapitalanlage", "rentenversicherung", "riester", "ruerup", "basisrente",
-      "pensionskasse", "direktversicherung", "kapitallebensversicherung", "fondspolice"), "saving", "saving", True),
+      "pensionskasse", "direktversicherung", "kapitallebensversicherung", "fondspolice", "tagesgeld", "festgeld", "edelmetall",
+      "vermoegensaufbau"), "saving", "saving", True),
 ]
 FIRST_NOT = ("gebuehr", "kosten", "entgelt", "provision", "kreditkarte")
 # the costs of buying an investment (notary, land transfer tax, agent) belong to the purchase: saving, as the purchase itself
 # ("Sparen & Anlegen", samt Nebenkosten) -- also where FIRST_NOT ("kosten") would keep them from it (3.17.85: "Sparen &
 # Anlegen / Kaufnebenkosten" was proposed as Wohnen)
 PURCHASE_COSTS = ("kaufnebenkost", "erwerbsnebenkost", "anschaffungsnebenkost", "grunderwerbsteuer")
+# ... and so is the price: buying a property (or any investment) is no cost of it -- also in a category below the property's
+# own ("Vermietung / Parkweg / Kaufpreis" counted as the property's costs, its counter-booking in the property's account as a
+# change in value: 3.17.87). "Kauf" as a category's whole name says the same below a property or a participation ("Immobilie /
+# Kauf") -- not anywhere ("Wertpapiere / Kauf" goes into the depot, "Waren / Ankauf" is goods). Never what pays for it: the
+# loan for the price ("Kaufpreisdarlehen / Tilgung") is financing.
+PURCHASE_PRICE = ("kaufpreis", "hauskauf", "wohnungskauf", "immobilienkauf", "grundstueckskauf", "objektkauf", "immobilienerwerb")
+PURCHASE_NAMES = ("kauf", "ankauf", "erwerb")
+PURCHASE_OF = ("immobil", "vermiet", "objekt", "grundstueck", "eigentumswohnung", "beteiligung", "firmenanteil", "geschaeftsanteil")
+PURCHASE_NOT = ("zins", "tilgung", "darlehen", "kredit", "finanzierung", "annuit", "hypothek")
+
+
+def purchase_kind(path: str) -> str:
+    """"price" (the purchase of an investment), "costs" (what buying it cost: notary, land transfer tax) or "" -- by the
+    category's words."""
+    low = fold_text(path)
+    if any(w in low for w in PURCHASE_NOT):
+        return ""
+    if any(w in low for w in PURCHASE_COSTS):
+        return "costs"
+    parts = low.split(" / ")
+    if any(w in low for w in PURCHASE_PRICE) or (len(parts) > 1 and parts[-1] in PURCHASE_NAMES and any(w in " / ".join(parts[:-1]) for w in PURCHASE_OF)):
+        return "price"
+    return ""
 POSITION_CONTEXT = [(("vermiet", "immobil", "objekt", "mieterloes", "pachterloes"), "rental", "property_costs")]
+# what a home of your own costs, booked below "Wohnen": housing -- "Hausgeld" and "Grundsteuer" alone name a rented property's costs
+HOME_COSTS = ("hausgeld", "instandhalt", "reparatur", "hausverwalt", "grundsteuer")
 # a position may be (a company's, a person's): "Verkauf" is revenue in a company, privately selling used things (other income)
 POSITION_HINTS = [
     # paid for others and paid back (e.g. fuel for your company) -- both in one category: it cancels out; before "erstattung"
     (("auslage", "verauslag", "durchlaufend"), "advances", "advances"),
     # furnishings and household appliances are no housing costs (rent, utilities) but household goods -- a company's: an
     # investment (as the recommended categories say); after the fees below ("Einrichtungsgebühr"), before "wohnung" and "miete"
-    (("steuerberat", "beratung", "notar", "anwalt", "kontofuehr", "gebuehr", "bankgeb", "buchhalt", "buchfuehr"), "other_income", "administration"),
+    (("steuerberat", "beratung", "notar", "anwalt", "kontofuehr", "gebuehr", "bankgeb", "buchhalt", "buchfuehr", "geldverkehr"), "other_income", "administration"),
     (("einricht", "ausstatt", "moebel", "mobiliar", "haushaltsger", "haushaltsgeraet"), "refunds", ("saving", "living")),
-    (("wareneinkauf", "waren", "lieferant", "material"), "refunds", "goods"),
+    # a company's: fixed assets are an investment; travel, entertaining, office supplies, postage and advertising run the business
+    # (before "material" below: "Büromaterial" is no purchase of goods)
+    (("anlagevermoeg", "sachanlage"), "refunds", ("saving", "other_expenses")),
+    (("reisekost", "bewirtung"), "refunds", ("operations", "leisure")),
+    (("buerobedarf", "bueromaterial", "porto", "werbekost", "werbemittel", "werbematerial", "geringwertig"), "refunds", ("operations", "other_expenses")),
+    (("wareneinkauf", "waren", "lieferant", "material", "fremdleist", "subunternehm"), "refunds", "goods"),
     (("personal", "loehne", "sozialversicher", "sozialabgab", "lohnneben"), "refunds", "staff"),
     (("umsatzerl", "kasseneinnahm"), "revenue", "other_expenses"),
     (("erloes", "verkauf", "verkaeuf", "kleinanzeig", "ebay", "vinted", "flohmarkt"), ("revenue", "other_income"), "other_expenses"),
@@ -994,13 +1025,17 @@ POSITION_HINTS = [
     (("mieteinnahm", "pacht"), "rental", "property_costs"),
     (("erstattung", "rueckzahlung", "gutschrift", "cashback"), "refunds", "other_expenses"),
     (("geldautomat", "bargeld", "barabhebung", "abhebung"), "other_income", "other_expenses"),
-    (("versicherung",), "refunds", "insurance"),
+    (("versicherung", "berufsunfaehig", "haftpflicht", "rechtsschutz"), "refunds", "insurance"),
     (("miete",), "rental", "housing"),
-    (("nebenkost", "strom", "energie", "wasser", "heiz", "internet", "telefon", "mobilfunk", "rundfunk", "wohnen", "wohnung"), "refunds", "housing"),
+    # telephone and internet: at home part of housing, in a company of running it (as the estimate for a booking says)
+    (("internet", "telefon", "mobilfunk", "handy", "kommunikation"), "refunds", ("operations", "housing")),
+    (("nebenkost", "strom", "energie", "wasser", "heiz", "rundfunk", "wohnen", "wohnung", "handwerker", "renovier", "modernisier"),
+     "refunds", "housing"),
     # eating and drinking -- at home or out -- is living, so "Lebensmittel & Restaurant" has one place; a pet's vet too (before "arzt")
     (("lebensmittel", "supermarkt", "einkauf", "drogerie", "kleidung", "haushalt", "lebenshalt", "restaurant", "gastro", "kantine",
-      "lieferdienst", "getraenk", "friseur", "kosmetik", "koerperpflege", "haustier", "tierbedarf", "tierarzt"), "refunds", "living"),
-    (("auto", "kfz", "tank", "benzin", "mobilit", "bahn", "oepnv", "taxi", "parken", "fahrrad", "verkehr", "maut", "transport"), "refunds", "mobility"),
+      "lieferdienst", "getraenk", "friseur", "kosmetik", "koerperpflege", "haustier", "tierbedarf", "tierarzt", "elektronik"), "refunds", "living"),
+    (("auto", "kfz", "tank", "benzin", "mobilit", "bahn", "oepnv", "taxi", "parken", "fahrrad", "verkehr", "maut", "transport", "fahrzeugkost"),
+     "refunds", "mobility"),
     (("gesundheit", "arzt", "apotheke", "medizin", "zahn", "kranken", "therapie", "brille", "optiker", "physio", "pflegeheim", "pflegedienst"),
      "refunds", "health"),
     (("freizeit", "urlaub", "ferien", "reise", "kultur", "sport", "hobby", "abo", "streaming", "kino", "konzert", "hotel", "flug", "sauna",
@@ -1119,9 +1154,9 @@ def recognised_position(path: str, income: bool, company: bool = False) -> Optio
     low_l = fold_text(legacy_cat(path))                # read as before 3.13.19 (every slash a level) first: the same proposals
     name_l = low_l.split(" / ")[-1]
     texts = list(dict.fromkeys((name_l, low_l, name, low)))
+    if not income and purchase_kind(path):
+        return "saving"
     for text in texts:
-        if any(w in text for w in PURCHASE_COSTS) and "zins" not in text:
-            return "saving"
         for words, pin, pout, start in POSITION_FIRST:
             if pin != "capital_income" and any(w in text for w in FIRST_NOT):
                 continue
@@ -1131,6 +1166,8 @@ def recognised_position(path: str, income: bool, company: bool = False) -> Optio
         for words, pin, pout in POSITION_CONTEXT:
             if _has(words, text):
                 return pin if income else pout
+    if not company and not income and "wohnen" in low and _has(HOME_COSTS, low):
+        return "housing"
     for text in texts:
         for words, pin, pout in POSITION_HINTS:
             if _has(words, text):
@@ -1274,14 +1311,16 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
 
     def place(cat: str) -> Tuple[str, Optional[str]]:
         """(position, property) of a category: a property's category (and those below it) has its own rows -- unless it is
-        interest or a repayment, or you chose saving or leaving it out."""
+        interest, a repayment or the property's purchase, or you chose saving or leaving it out."""
         r = pos_memo.get(cat)
         if r is None:
             # the most specific property's category (one property's may lie below another's)
             hits = [c for c in objekte if cat == c or cat.startswith(c + " / ")]
             obj = objekte[max(hits, key=len)] if hits else None
             pos, yours = position_of(cat, config, totals, company)
-            if obj and (pos in ("repayment", "loan_interest") or (yours and pos in ("saving", "ignore", "partners"))):
+            # (nor its purchase: price and purchase costs are an investment, also in a category below the property's own)
+            if obj and (pos in ("repayment", "loan_interest") or (yours and pos in ("saving", "ignore", "partners"))
+                        or (pos == "saving" and purchase_kind(cat))):
                 obj = None
             r = pos_memo[cat] = (pos, obj)
         return r
@@ -1763,8 +1802,12 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
             e_to = emp_zu_konto.get(key)
             # the costs of a purchase (notary, land transfer tax) go into no depot: without your choice they leave the net worth
             # Kontor sees, as "no account in MoneyMoney" (3.17.85; before, the area's only depot took them as paid in)
-            costs = any(w in fold_text(cat) for w in PURCHASE_COSTS)
+            # The price of a property or a company share goes into no depot either (3.17.87): with a counter-booking in the
+            # asset's account it is found as any transfer, without one it stands as "without target account" until you name it.
+            buy = purchase_kind(cat)
+            costs = buy == "costs"
             auto = (c_to, "category") if c_to in root_leaves else (None, "external") if costs and not c_to \
+                else (None, "") if buy == "price" and not c_to \
                 else (depots[0], "depot") if len(depots) == 1 and not c_to else (None, "")
             target, how = (None, "external") if e_to == "external" else (e_to, "recipient") if e_to in root_leaves else auto
             kind = roles.get(target, "saving_group") if target else "saving_group"          # the kind of the account it goes into, else "saving"
@@ -2525,6 +2568,56 @@ def plan_position(z: dict, sec: str, cfg: dict, rule: dict, future: List[str], f
         p["amounts"][mk] = round(sum(val.values()), 2)
 
 
+PLAN_NEAR = 1.0        # euro: an account this near its calculation follows it to the cent (rounding, a booking's day)
+
+
+def _from_actual_debt(series: dict, owed: float, last: str, future: List[str], actual: Optional[Dict[str, Optional[float]]] = None) -> dict:
+    """A property calculation's loan (interest, repayment and balance per month, as in the cash flow: paid = negative, owed =
+    negative) carried on from what the loan account owes at the end of the last actual month: each month the calculation's
+    payment (interest + repayment, with its extra repayments), the interest at the calculation's rate on what is really owed
+    (its interest by the ratio of the two debts), the rest repays -- no more than is owed; paid off, nothing is paid any
+    more. A loan settled once a year (series["yearly"]: interest on the balance of 1 January) keeps the ratio of the two
+    debts at the last year end for the whole year -- an extra repayment during the year lowers the interest from the next
+    (actual: the account's balances per month, for the year end before the plan). After the calculation's last month
+    nothing is planned from it (what is still owed then stays). Unchanged where the calculation does not know that month's
+    debt, the account owes nothing (or is no debt), or both agree within PLAN_NEAR."""
+    bal = series.get("balance_amount") or {}
+    calc = bal.get(last)
+    if calc is None or calc > -0.005 or owed > -0.005 or abs(owed - calc) < PLAN_NEAR:
+        return series
+    out = {k: dict(series.get(k) or {}) for k in ("interest", "repayment", "balance_amount")}
+    yearly, year_end = bool(series.get("yearly")), {}        # year_end: December -> what was owed then (planned)
+    b, before = owed, calc
+    for mk in future:
+        if mk not in out["balance_amount"]:
+            break
+        ci, cr = float(out["interest"].get(mk, 0.0)), float(out["repayment"].get(mk, 0.0))
+        part = b / before if before < -0.005 and b < -0.005 else 0.0
+        if yearly and b < -0.005:
+            dec = "%d-12" % (int(mk[:4]) - 1)
+            was, was_calc = year_end.get(dec, (actual or {}).get(dec) if dec <= last else None), bal.get(dec)
+            if was is not None and was_calc is not None and was < -0.005 and was_calc < -0.005:
+                part = was / was_calc
+        interest = round(ci * part, 2)
+        repay = min(0.0, max(round(ci + cr - interest, 2), round(b, 2))) if b < -0.005 else 0.0
+        before = float(out["balance_amount"][mk])
+        b = round(b - repay, 2)
+        out["interest"][mk], out["repayment"][mk], out["balance_amount"][mk] = interest, repay, b
+        if mk.endswith("-12"):
+            year_end[mk] = b
+    return dict(series, **out)
+
+
+def _from_actual_value(series: Dict[str, float], value: float, last: str, future: List[str]) -> Dict[str, float]:
+    """A property calculation's value per month carried on from what the property's account shows at the end of the last
+    actual month: it grows as the calculation's value does from there. Unchanged where the calculation has no value for
+    that month (not bought yet), the account shows none, or both agree within PLAN_NEAR."""
+    calc = series.get(last)
+    if calc is None or calc < 0.005 or value < 0.005 or abs(value - calc) < PLAN_NEAR:
+        return series
+    return dict(series, **{mk: round(value * float(series[mk]) / calc, 2) for mk in future if mk in series})
+
+
 def _event_months(ev: dict, future: List[str]) -> List[str]:
     start = str(ev.get("month") or "")[:7]
     if len(start) != 7:
@@ -2650,6 +2743,16 @@ def apply_plan(dataset: dict, plan: dict, config: dict, fremd_nw: Optional[Dict[
                                   **{k: ex[k] for k in ("property_name", "lbl", "glbl", "ord") if ex.get(k)}))
         immo_rows[(ex["section"], ex["row"])] = ex["amounts"]
     fixed_rows: Dict[Tuple[str, str], Tuple[Dict[str, float], str]] = {k: (v, "property") for k, v in immo_rows.items()}
+    # A calculation knows its own course only: where the account stands elsewhere today -- an extra repayment it does not hold,
+    # a value you set yourself -- the plan goes on from what the account shows, with the calculation's terms (3.17.87; before, the
+    # planned debt and value jumped to the calculation's in the first plan month, a change of net worth nobody had).
+    now = {u: by_uuid[u]["amounts"].get(ist[-1]) for u in set(immo_loans) | set(immo_wert) if u in by_uuid}
+    for u in list(immo_loans):
+        if now.get(u) is not None:
+            immo_loans[u] = _from_actual_debt(immo_loans[u], now[u], ist[-1], future, by_uuid[u]["amounts"])
+    for u in list(immo_wert):
+        if now.get(u) is not None:
+            immo_wert[u] = _from_actual_value(immo_wert[u], now[u], ist[-1], future)
 
     # 0b. Ereignisse: Zeilen anlegen
     event_moves: Dict[str, List[Tuple[Optional[str], Optional[str], float]]] = defaultdict(list)   # mk -> [(von, nach, betrag)]

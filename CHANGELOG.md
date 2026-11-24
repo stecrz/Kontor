@@ -1,5 +1,11 @@
 # Änderungen
 
+## 3.17.87 (2026-11-24 23:38)
+- Cashflow: Kaufpreis und Kaufnebenkosten einer Immobilie zählen als Investition, auch unter der Kategorie der Immobilie – nicht mehr als Kosten des Objekts (Cashflow, Soll/Ist, Steuerübersicht)
+- Planung: Darlehen und Wert einer Immobilie gehen vom tatsächlichen Kontostand weiter statt auf die Kalkulation zu springen – eine Sondertilgung senkt die geplanten Zinsen
+- Cashflow-Positionen: mehr Kategorienamen erkannt (Hypothek, Vorfälligkeit, Tagesgeld, Festgeld; Firma: Reisekosten, Bürobedarf, Porto, Telefon unter Betriebskosten; Hausgeld und Grundsteuer unter „Wohnen“ sind Wohnen)
+- Hilfe: Wertpapiere kaufen und verkaufen – Kategorie mit Sparen & Anlegen statt „Umbuchung“
+
 ## 3.17.86 (2026-11-24 23:10)
 - Entwicklung: Link „Mehr in der Hilfe“ hat einen eigenen Tooltip (Rundgang-Test war seit 3.17.85 rot)
 
