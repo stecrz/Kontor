@@ -3,9 +3,11 @@ name: Zufallsläufe
 # every night on the newest main, as many random cases as fit: each job first the fixed cases (the first job of a test the
 # 1000 fixed ones, instead of 40 per push) and those found before (tests/fixtures.py, FOUND), then new ones drawn anew each
 # night until its time is up (KONTOR_FUZZ_MINUTES; the run's summary shows how many). The booking rules are slowest per case:
-# several machines side by side. A failure names its case: KONTOR_FUZZ_SEED=<number> runs it again. Only the random tests, on
-# Apple's Python version (its pytest keeps nothing of a passed case); the rest of a version is checked by its push run
-# (tests.yml). About 3 hours, well under the user's limit of 5; red: the next chat fixes it (CLAUDE.md, "Nachtlauf rot").
+# several machines side by side. The click paths (tests/test_clickpaths.py: pages, dialogs, side windows and references in a
+# changing order, light and dark, Mac and iPhone, on changing worlds) walk in Chromium and Safari's engine: 40 fixed walks
+# (3 per push) and their found ones (FOUND_CLICKS), then new ones. A failure names its case: KONTOR_FUZZ_SEED=<number> runs
+# it again. Only the random tests; the rest of a version is checked by its push run (tests.yml). About 3 hours, well under
+# the user's limit of 5; red: the next chat fixes it (CLAUDE.md, "Nachtlauf rot").
 on:
   schedule:
     - cron: "17 1 * * *"
@@ -31,6 +33,8 @@ jobs:
           - {name: "Welten (Privatpersonen, Firmen, Beteiligungen) · feste + neue Fälle", tests: tests/test_worlds.py, fixed: "1000"}
           - {name: "Regelwelten (Beteiligung, Darlehen, Kontenspiegel) 1 · feste + neue Fälle", tests: tests/test_rule_worlds.py, fixed: "1000"}
           - {name: "Regelwelten (Beteiligung, Darlehen, Kontenspiegel) 2 · neue Fälle", tests: tests/test_rule_worlds.py, fixed: "0"}
+          - {name: "Klickpfade (Seiten, Dialoge, Seitenfenster, Bezüge) 1 · feste + neue Fälle", tests: tests/test_clickpaths.py, fixed: "40", browsers: true}
+          - {name: "Klickpfade (Seiten, Dialoge, Seitenfenster, Bezüge) 2 · neue Fälle", tests: tests/test_clickpaths.py, fixed: "0", browsers: true}
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.3.3
@@ -38,9 +42,16 @@ jobs:
           python-version: "3.15"          # Kontor's own Python (Apple's 3.9 only starts the starter)
           activate-environment: true
       - run: uv pip install -q pytest
+      - name: Browsers (the click paths: Chromium and WebKit, Safari's engine)
+        if: matrix.browsers
+        timeout-minutes: 30                 # a stuck mirror must not hang the night
+        run: |
+          uv pip install -q playwright
+          for i in 1 2 3 4; do python -m playwright install --with-deps chromium webkit && break; [ $i = 4 ] && exit 1; sleep 30; done
       - name: Tests
         env:
           KONTOR_FUZZ_SEEDS: ${{ matrix.fixed }}
+          KONTOR_CLICK_SEEDS: ${{ matrix.fixed }}
           KONTOR_FUZZ_MINUTES: "170"
           TZ: Europe/Berlin
         run: |

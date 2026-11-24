@@ -48,6 +48,34 @@ def until(pg, js, seconds=15.0):
     raise AssertionError("not reached: " + js)
 
 
+def stored(pg, check, seconds=15.0):
+    """Waits until what was saved is in the store (a state, never a fixed time); returns what check returned."""
+    t0 = time.time()
+    while True:
+        try:
+            got = check()
+            if got:
+                return got
+        except Exception:               # not there yet
+            got = None
+        if time.time() - t0 > seconds:
+            raise AssertionError("not saved")
+        pg.wait_for_timeout(50)
+
+
+def quiet(pg, seconds=60.0):
+    """Waits until the page has nothing on its way from the service (every request answered, the page drawn from it) and no
+    report is being rebuilt -- e.g. before typing into a page the next reload would draw anew."""
+    pg.evaluate("""() => { if (window.__inflight != null) return; window.__inflight = 0; const a0 = api;
+        api = async (...a) => { window.__inflight++; try { return await a0(...a); } finally { window.__inflight--; } }; }""")
+    t0 = time.time()
+    while not pg.evaluate("""async () => { try { await pollStatus(); } catch (e) {} const r = (S.STATUS || {}).report || {};
+        return window.__inflight === 0 && !r.running && (r.as_of || '') === BER.as_of && !document.querySelector('#main .loading'); }"""):
+        if time.time() - t0 > seconds:
+            raise AssertionError("the page did not come to rest")
+        pg.wait_for_timeout(200)
+
+
 def wait_shell(pg, timeout=30000):
     """Wait for the app after login; on timeout report what the login page shows (flaky timeouts under load)."""
     try:
@@ -4818,9 +4846,9 @@ class BrowserTest(unittest.TestCase):
                 n0 = pg.locator(".kb-table tr.kb-ok").count()
                 kb = pg.inner_text(".kb-table"); self.assertIn("Finanzierung", kb); self.assertIn("Am besten jedes Darlehen", kb); self.assertIn("Empfohlen in MoneyMoney", kb); self.assertIn("Umsatzerlöse", kb); self.assertIn("Gesellschafter", kb)   # rows of the companies too
                 self.assertIn("erkennt Kontor am Konto", pg.inner_text("#kb-body")); self.assertEqual(pg.locator(".kb-table .tag").count(), 0)   # the rule; one tree, no tags
-                pg.select_option('.kp-table tr[data-p="Umbuchung"] .kp-pos', "living"); pg.wait_for_timeout(100)
-                self.assertEqual(pg.locator(".kb-table tr.kb-ok").count(), n0 - 1); kb = pg.inner_text(".kb-table"); self.assertIn("keine", kb); self.assertNotIn("fehlt", kb); self.assertNotIn("bei Bedarf", kb)
-                pg.select_option('.kp-table tr[data-p="Umbuchung"] .kp-pos', ""); pg.wait_for_timeout(100); self.assertEqual(pg.locator(".kb-table tr.kb-ok").count(), n0)
+                pg.select_option('.kp-table tr[data-p="Umbuchung"] .kp-pos', "living")          # (saved at once)
+                until(pg, "document.querySelectorAll('.kb-table tr.kb-ok').length === %d" % (n0 - 1)); kb = pg.inner_text(".kb-table"); self.assertIn("keine", kb); self.assertNotIn("fehlt", kb); self.assertNotIn("bei Bedarf", kb)
+                pg.select_option('.kp-table tr[data-p="Umbuchung"] .kp-pos', ""); until(pg, "document.querySelectorAll('.kb-table tr.kb-ok').length === %d" % n0)
                 # a count opens its payments in the side panel
                 pg.click(".kp-table tr[data-p='Umbuchung'] a.kp-tx >> nth=0"); pg.wait_for_selector("#drawer.open tbody tr")
                 self.assertTrue(pg.inner_text("#drawer h2").startswith("Umbuchung")); pg.keyboard.press("Escape"); pg.wait_for_timeout(200)
@@ -4829,8 +4857,8 @@ class BrowserTest(unittest.TestCase):
                 pg.mouse.click(pg.evaluate("innerWidth") - 8, pg.evaluate("innerHeight") - 8); pg.wait_for_timeout(300)   # unsaved entries: asked first (here: kept)
                 self.assertTrue(pg.evaluate("$('#drawer').classList.contains('open')"))
                 pg.evaluate("$('#drawer #h-csv').remove(); window.confirm = window._cf")
-                pg.mouse.click(pg.evaluate("innerWidth") - 8, pg.evaluate("innerHeight") - 8); pg.wait_for_timeout(300)   # a click on the panel's background closes it
-                self.assertFalse(pg.evaluate("$('#drawer').classList.contains('open')"))
+                pg.mouse.click(pg.evaluate("innerWidth") - 8, pg.evaluate("innerHeight") - 8)        # a click on the panel's background closes it
+                until(pg, "!$('#drawer').classList.contains('open')")
                 # the account per recipient: Kontor's choice named in the first entry; a choice of your own can be saved
                 sel = ".ka-table tr[data-key='broker'] select.ka-ziel"
                 self.assertIn("Depot", pg.inner_text(sel + " option >> nth=0")); self.assertTrue(pg.is_disabled("#kp-save"))
@@ -4903,12 +4931,12 @@ class BrowserTest(unittest.TestCase):
                 pg.reload(); pg.wait_for_selector("#bch"); self.assertIsNone(pg.query_selector("#bch.big-sel")); self.assertEqual(order(), ["nw", "sel", "pos"])
                 self.assertTrue(pg.query_selector("#modus-seg button[data-m='months'].on"))
                 pg.click(".lc[data-lc='pos'] .lc-big"); pg.wait_for_selector("#bch.big-pos"); pg.click("#modus-seg button[data-m='years']"); pg.wait_for_timeout(300)
-                pg.click("#bch-rb button[data-m='120']"); pg.wait_for_timeout(200); pg.click("#view-save"); pg.wait_for_timeout(200)
+                pg.click("#bch-rb button[data-m='120']"); pg.wait_for_selector("#bch-rb button[data-m='120'].on"); pg.click("#view-save"); until(pg, "!!localStorage.getItem('kontor.balanceView')")
                 pg.reload(); pg.wait_for_selector("#bch.big-pos"); self.assertEqual(order(), ["nw", "sel", "bil"])
                 self.assertTrue(pg.query_selector("#modus-seg button[data-m='years'].on")); self.assertTrue(pg.query_selector("#bch-rb button[data-m='120'].on"))
                 # one default each for months and years: the one saved last opens, switching takes the other one's ranges
                 pg.click("#modus-seg button[data-m='months']"); pg.wait_for_timeout(300); self.assertTrue(pg.query_selector("#bch-rb button[data-m='12'].on"))     # large chart: 1 J
-                pg.click("#bch-rb button[data-m='36']"); pg.wait_for_timeout(200); pg.click("#view-save"); pg.wait_for_timeout(200)
+                pg.click("#bch-rb button[data-m='36']"); pg.wait_for_selector("#bch-rb button[data-m='36'].on"); pg.click("#view-save"); until(pg, "!!localStorage.getItem('kontor.balanceView')")
                 pg.click("#modus-seg button[data-m='years']"); pg.wait_for_timeout(300); self.assertTrue(pg.query_selector("#bch-rb button[data-m='120'].on"))
                 pg.reload(); pg.wait_for_selector("#bch"); self.assertTrue(pg.query_selector("#modus-seg button[data-m='months'].on")); self.assertTrue(pg.query_selector("#bch-rb button[data-m='36'].on"))
                 pg.click("#view-reset"); pg.wait_for_timeout(300)
@@ -4923,7 +4951,7 @@ class BrowserTest(unittest.TestCase):
                 pg.click(tbl(1)); pg.wait_for_timeout(300); self.assertEqual(order3(), ["chart", "table", "lines"])
                 pg.click(tbl(1)); pg.wait_for_timeout(300); self.assertEqual(order3(), ["chart", "lines", "table"])
                 pg.click("#bch .th-mv[data-blk='chart'][data-mv='1']"); pg.wait_for_timeout(300); self.assertEqual(order3(), ["lines", "chart", "table"])
-                pg.click("#view-save"); pg.wait_for_timeout(200)
+                pg.click("#view-save"); until(pg, "!!localStorage.getItem('kontor.balanceView')")
                 self.assertEqual(pg.evaluate("JSON.parse(localStorage.getItem('kontor.balanceView')).views.months.blocks"), ["lines", "chart", "table"])
                 pg.click("#view-reset"); pg.wait_for_timeout(300); self.assertEqual(order3(), ["chart", "table", "lines"]); pg.click("#pos-all"); pg.wait_for_timeout(300)
                 # the same in the table: a portfolio opens into its securities (without opening the account's history)
@@ -5132,20 +5160,20 @@ class BrowserTest(unittest.TestCase):
                 self.assertTrue(pg.query_selector("#drawer #h-chart svg"))                                  # Verlauf als Grafik
                 pg.click("#page-title", position={"x": 5, "y": 5}); pg.wait_for_selector("#drawer:not(.open)")                        # Klick daneben schliesst
                 pg.click("tr.acct[data-id='%s'] td" % F.uid("priv.depot")); pg.wait_for_selector("#drawer.open #h-grid")
-                pg.fill("#drawer input[data-mk='2026-09']", "77000"); pg.click("#h-save"); pg.wait_for_timeout(1200)
+                pg.fill("#drawer input[data-mk='2026-09']", "77000"); pg.click("#h-save")
+                stored(pg, lambda: store.load("state.json")["history"][F.uid("priv.depot")]["2026-09"] == 77000.0)
                 if shots: pg.screenshot(path=os.path.join(shots, "ui_verlauf_drawer.png"))
                 pg.keyboard.press("Escape")
-                self.assertEqual(store.load("state.json")["history"][F.uid("priv.depot")]["2026-09"], 77000.0)
                 # Einrichtung: Bausteine, Positionen-Editor speichern
                 pg.click("#nav a[href='#setup']"); pg.wait_for_selector(".setup-list")
                 self.assertIn("Bereiche", pg.query_selector("#main").inner_text())
                 # it stays in the menu until you close it yourself; then it can be shown again
                 if not pg.evaluate("setupMissing()"):
-                    pg.click("#setup-done"); pg.wait_for_function("location.hash === '#overview'"); pg.wait_for_timeout(200)
-                    self.assertTrue(pg.evaluate("document.querySelector('#nav-setup').classList.contains('hidden')")); self.assertTrue(pg.evaluate("S.CFG.ui.setup_done"))
+                    pg.click("#setup-done"); pg.wait_for_function("location.hash === '#overview'")
+                    until(pg, "document.querySelector('#nav-setup').classList.contains('hidden') && S.CFG.ui.setup_done")
                     pg.goto("http://127.0.0.1:%d/#setup" % port); pg.wait_for_selector("#setup-again"); pg.click("#setup-again"); pg.wait_for_selector("#setup-done")
-                    self.assertFalse(pg.evaluate("S.CFG.ui.setup_done")); pg.wait_for_timeout(200)
-                    self.assertFalse(pg.evaluate("document.querySelector('#nav-setup').classList.contains('hidden')"))
+                    self.assertFalse(pg.evaluate("S.CFG.ui.setup_done"))
+                    until(pg, "!document.querySelector('#nav-setup').classList.contains('hidden')")
                 else:
                     self.assertTrue(pg.evaluate("document.querySelector('#setup-done').disabled"))
                 pg.goto("http://127.0.0.1:%d/#accounts" % port); pg.wait_for_selector("#save-konten")
@@ -5164,9 +5192,8 @@ class BrowserTest(unittest.TestCase):
                 self.assertEqual(pg.eval_on_selector("tr[data-uuid='%s'] .k-verlauf" % F.uid("priv.giro"), "e => e.value"), "transactions")
                 self.assertNotEqual((store.load("config.json")["balance"].get("history_source") or {}).get(F.uid("priv.giro") + " | Hausbank Giro"), "balances")
                 self.assertEqual(pg.evaluate("getComputedStyle(document.querySelector('#h-grid')).gridTemplateColumns.split(' ').length"), 1)   # Monate untereinander
-                pg.click("#h-save"); pg.wait_for_timeout(800)
-                self.assertEqual(pg.eval_on_selector("tr[data-uuid='%s'] .k-verlauf" % F.uid("priv.giro"), "e => e.value"), "balances")          # nach Speichern zieht die Tabelle mit
-                self.assertEqual(pg.query_selector("#hq-pending").inner_text(), "")
+                pg.click("#h-save")
+                until(pg, "document.querySelector(\"tr[data-uuid='%s'] .k-verlauf\").value === 'balances' && document.querySelector('#hq-pending').textContent === ''" % F.uid("priv.giro"))   # nach Speichern zieht die Tabelle mit
                 pg.keyboard.press("Escape"); pg.wait_for_selector("#drawer:not(.open)")
                 pg.click("tr[data-uuid='%s'] .k-hist" % F.uid("priv.giro")); pg.wait_for_selector("#drawer.open .hq-q.on[data-q='balances']", timeout=10000)   # bleibt beim erneuten Oeffnen
                 # Kontostaende: eigener Wert 2026-03 wirkt sofort auf die Monate davor (Vorschau ohne Neubau)
@@ -5220,7 +5247,8 @@ class BrowserTest(unittest.TestCase):
                 self.assertLessEqual(pg.evaluate("document.querySelector('.acct-table').scrollWidth"), pg.evaluate("document.querySelector('#main').clientWidth"))   # passt in die Breite
                 pg.select_option("tr[data-uuid='%s'] .k-rolle" % F.uid("priv.immo"), "real_estate")
                 self.assertIsNone(pg.query_selector("#k-neu"))                                          # kein "Bericht aktualisieren" im Einrichtungsschritt
-                pg.click("#save-konten"); pg.wait_for_selector("#findings-k2 .ok", timeout=20000); pg.wait_for_timeout(1500)
+                pg.click("#save-konten"); pg.wait_for_selector("#findings-k2 .ok", timeout=20000)
+                stored(pg, lambda: store.load("config.json")["balance"]["roles"][F.uid("priv.immo") + " | Immobilie Lindenstraße"] == "real_estate")
                 self.assertTrue(pg.evaluate("document.querySelector('#bereich-seg').classList.contains('hidden')"))   # Bereichsleiste nur in den Auswertungen
                 self.assertIn("Gespeichert", pg.query_selector("#findings-k2").inner_text())
                 bil = store.load("config.json")["balance"]
@@ -5235,8 +5263,8 @@ class BrowserTest(unittest.TestCase):
                 pg.fill("input[data-p='purchase_price']", "1500000"); pg.fill("input[data-p='rent.net_rent_month']", "9000")
                 pg.click("#im-loan-add"); pg.wait_for_selector(".loan-box")
                 pg.fill(".loan-box input[data-p='loans.0.amount']", "1200000"); pg.fill(".loan-box input[data-p='loans.0.annuity_month']", "6000")
-                pg.click("#im-calc"); pg.wait_for_timeout(900)
-                self.assertIn("Kaufpreisfaktor", pg.query_selector("#im-result").inner_text())
+                pg.click("#im-calc")
+                until(pg, "(document.querySelector('#im-result') || {}).innerText?.includes('Kaufpreisfaktor')")
                 pg.click("#im-kalk-save")
                 for _ in range(60):                                                                       # saved (a slow machine: not after a fixed time)
                     cfg_im = store.load("config.json").get("real_estate") or []
@@ -5261,8 +5289,7 @@ class BrowserTest(unittest.TestCase):
                 pg.wait_for_selector(".kz-save:not([disabled])")
                 n_before = len(pg.query_selector_all(".kz-group"))
                 box = pg.query_selector(".kz-group"); box.query_selector(".kz-kat").fill("Haushalt / Werkzeug"); box.query_selector(".kz-save").click()
-                pg.wait_for_timeout(1500)
-                self.assertLess(len(pg.query_selector_all(".kz-group")), n_before)
+                until(pg, "document.querySelectorAll('.kz-group').length < %d" % n_before)
                 self.assertTrue(any(w[0] == "set" and w[2] == F.uid("cat:Werkzeug") for b in MockBridge.instances for w in b.written))
                 if shots: pg.screenshot(path=os.path.join(shots, "ui_zuordnen.png"), full_page=True)
                 # Eingetragen: the entry listed; taken back (with the question), it leaves the list
@@ -5280,17 +5307,13 @@ class BrowserTest(unittest.TestCase):
                 if shots: pg.screenshot(path=os.path.join(shots, "ui_kategorien.png"), full_page=True)
                 # Planung: Ereignis anlegen -- erst wenn die Neuberechnung nach dem Zuordnen fertig und geladen ist (sonst baut
                 # das Nachladen die Seite waehrend der Eingabe neu auf)
-                for _ in range(60):                 # asks for the status itself instead of waiting for the next poll (every 30 s)
-                    if pg.evaluate("async () => { try { await pollStatus(); } catch (e) {} return !!S.STATUS && !(S.STATUS.report || {}).running && (S.STATUS.report || {}).as_of === BER.as_of; }"):
-                        break
-                    pg.wait_for_timeout(500)
-                pg.wait_for_timeout(1000)
+                quiet(pg)                           # asks for the status itself instead of waiting for the next poll (every 30 s)
                 pg.click("#nav a[href='#planning']"); pg.wait_for_selector(".ev-row")
                 row = pg.query_selector_all(".ev-row")[-1]
                 row.query_selector(".ev-text").fill("Rückzahlung"); row.query_selector(".ev-betrag").fill("50000")
                 row.query_selector(".ev-von").select_option(F.uid("priv.depot") + " | Depot"); row.query_selector(".ev-nach").select_option(F.uid("priv.darl") + " | Darlehen Lindenstraße")
-                row.query_selector(".ev-save").click(); pg.wait_for_timeout(1200)
-                self.assertTrue(pg.query_selector(".ev-row .ev-del"))
+                row.query_selector(".ev-save").click()
+                until(pg, "[...document.querySelectorAll('.ev-row')].some(r => r.querySelector('.ev-del') && r.querySelector('.ev-text').value === 'Rückzahlung')")
                 if shots: pg.screenshot(path=os.path.join(shots, "ui_planung_ereignisse.png"), full_page=True)
                 # Jahresmodus
                 pg.click("#nav a[href='#cashflow']"); pg.wait_for_timeout(300)
@@ -5305,8 +5328,7 @@ class BrowserTest(unittest.TestCase):
                 # Planung: Methode setzen
                 pg.click("#nav a[href='#planning']"); pg.wait_for_selector(".edit")
                 first = pg.query_selector(".edit"); first.query_selector(".meth").select_option("fix"); first.query_selector(".amount").fill("1234"); first.query_selector(".save").click()
-                pg.wait_for_timeout(800)
-                self.assertIn("1.234,00", pg.query_selector("#main").inner_text())
+                until(pg, "document.querySelector('#main').innerText.includes('1.234,00')")
                 # Umsaetze: Zeile oeffnen -> Drawer
                 pg.click("#nav a[href='#transactions']"); pg.wait_for_selector("#ums-table tbody tr")
                 pg.click("#ums-table tbody tr td:nth-child(4)"); pg.wait_for_selector("#drawer.open"); pg.wait_for_timeout(400)
@@ -5402,8 +5424,8 @@ class BrowserTest(unittest.TestCase):
                 # an incomplete counter account is not saved
                 # account mirrors: a section of their own (no company needed); an incomplete one is not saved
                 self.assertIsNone(pg.query_selector(".co-card .gk-row")); self.assertIsNone(pg.query_selector(".co-card .opt"))
-                pg.click("#add-mirror"); pg.select_option("#mirrors .gk-row .g-a", index=1); pg.click("#save-rules"); pg.wait_for_timeout(300)
-                self.assertTrue(pg.query_selector("#mirrors .gk-row.invalid")); self.assertEqual(store.load("config.json").get("account_mirrors") or [], [])
+                pg.click("#add-mirror"); pg.select_option("#mirrors .gk-row .g-a", index=1); pg.click("#save-rules")
+                pg.wait_for_selector("#mirrors .gk-row.invalid"); self.assertEqual(store.load("config.json").get("account_mirrors") or [], [])
                 self.assertTrue(pg.query_selector("#mirrors .gk-row .c-rmode"))                    # its own "Buchen ab"
                 pick = """([sel, txt]) => { const s = document.querySelector(sel), o = [...s.options].find(o => o.textContent.includes(txt)); s.value = o.value; s.dispatchEvent(new Event('change', {bubbles: true})); }"""
                 # an account in two steps: the area, then its accounts (only those)
@@ -5419,35 +5441,34 @@ class BrowserTest(unittest.TestCase):
                 opts = pg.eval_on_selector_all("#mirrors .gk-row .g-a option", "e => e.map(o => o.textContent)")
                 self.assertIn("Immobilie Lindenstraße", opts); self.assertFalse([o for o in opts if " · " in o], opts)
                 pg.evaluate(pick, ["#mirrors .gk-row .g-a", "Immobilie Lindenstraße"]); pg.evaluate(pick, ["#mirrors .gk-row .g-b", "Immobilie Lindenstraße"])
-                pg.click("#save-rules"); pg.wait_for_timeout(300)                                  # the same account twice: said so, not saved
-                self.assertTrue(pg.query_selector("#mirrors .gk-row.invalid")); self.assertIn("dasselbe Konto", pg.inner_text("#toast"))
+                pg.click("#save-rules")                                                            # the same account twice: said so, not saved
+                pg.wait_for_selector("#mirrors .gk-row.invalid"); until(pg, "document.querySelector('#toast').textContent.includes('dasselbe Konto')")
                 self.assertEqual(store.load("config.json").get("account_mirrors") or [], [])
                 # two accounts, no company involved: saved as a rule of its own, with what it would book
                 pg.evaluate(pick, ["#mirrors .gk-row .gk-arrow + .acct-pick .ap-area", "Alpha GbR"]); pg.evaluate(pick, ["#mirrors .gk-row .g-b", "Kapitalkonto B"])
-                pg.select_option("#mirrors .gk-row .c-rmode", "all"); pg.wait_for_timeout(1200)      # (the test's day is fixed: "today" here would be in its future)
+                pg.select_option("#mirrors .gk-row .c-rmode", "all")                                 # (the test's day is fixed: "today" here would be in its future)
                 self.assertTrue(pg.is_hidden("#mirrors .gk-row .c-ab"))
-                self.assertTrue(pg.inner_text("#mirrors .gk-row .pv").strip())
-                pg.click("#save-rules"); pg.wait_for_timeout(900)
-                ms = store.load("config.json")["account_mirrors"]
+                until(pg, "document.querySelector('#mirrors .gk-row .pv').innerText.trim() !== ''")         # what it would book
+                pg.click("#save-rules")
+                ms = stored(pg, lambda: store.load("config.json")["account_mirrors"])
                 self.assertEqual([(m["a"].split(" | ")[0], m["b"].split(" | ")[0], m["from_date"], "area" in m) for m in ms],
                                  [(F.uid("priv.immo"), F.uid("ga.kap.b"), "all", False)])
                 pg.click("#mirrors .gk-row .gk-del")
                 pg.fill(".co-card .c-sw", "1")
-                pg.keyboard.press("Meta+s"); pg.wait_for_timeout(900)          # ⌘S saves
-                self.assertIn("Gespeichert", pg.query_selector("#findings").inner_text())
-                self.assertEqual(store.load("config.json")["companies"][0]["threshold"], 1); self.assertTrue(pg.is_disabled("#save-rules"))
-                self.assertEqual(store.load("config.json")["account_mirrors"], [])                   # removed again
+                pg.keyboard.press("Meta+s")                                     # ⌘S saves
+                stored(pg, lambda: store.load("config.json")["companies"][0]["threshold"] == 1 and store.load("config.json")["account_mirrors"] == [])   # the mirror removed again
+                until(pg, "document.querySelector('#save-rules').disabled && document.querySelector('#findings').innerText.includes('Gespeichert')")
                 # Sync: online or offline per account as a menu; offline accounts recognised as "Offline-Konto"
                 self.assertFalse(pg.evaluate("DIRTY.on"))
                 pg.evaluate("location.hash = '#accounts'"); pg.wait_for_selector(".ab-sel")          # leaving after ⌘S: no question (a late change event does not count)
                 sel = "tr[data-uuid='%s'] .ab-sel" % F.uid("priv.bet.ga")
                 self.assertEqual(pg.eval_on_selector(sel, "e => e.value"), "offline")
                 self.assertEqual(pg.eval_on_selector(sel, "e => e.title"), "Offline-Konto")                       # why: as recognised (an offline account: no refresh)
-                pg.select_option(sel, "online"); pg.wait_for_timeout(900)                                          # saved at once ...
-                self.assertIn(F.uid("priv.bet.ga"), " ".join(store.load("config.json")["fetch"]["online"]))
+                pg.select_option(sel, "online")                                                                     # saved at once ...
+                stored(pg, lambda: F.uid("priv.bet.ga") in " ".join(store.load("config.json")["fetch"]["online"]))
                 self.assertFalse(pg.evaluate("DIRTY.on"))                                                          # ... so no unsaved change
-                pg.wait_for_selector(sel); pg.select_option(sel, "offline"); pg.wait_for_timeout(900)
-                self.assertNotIn(F.uid("priv.bet.ga"), " ".join(store.load("config.json")["fetch"]["online"]))
+                pg.wait_for_selector(sel); pg.select_option(sel, "offline")
+                stored(pg, lambda: F.uid("priv.bet.ga") not in " ".join(store.load("config.json")["fetch"]["online"]))
                 # ⌘L locks
                 pg.keyboard.press("Meta+l"); pg.wait_for_selector("#login:not(.hidden)")
                 pg.fill("#login-pw", "sehr-geheimes-passwort"); pg.click("#login-btn"); wait_shell(pg)
@@ -5473,8 +5494,8 @@ class BrowserTest(unittest.TestCase):
                 srv.shutdown(); srv.server_close(); stopped = True
                 pg.reload(); pg.wait_for_selector("#login:not(.hidden)")
                 self.assertIn("nicht erreichbar", pg.query_selector("#login-text").inner_text())
-                pg.fill("#login-pw", "falsches-passwort"); pg.click("#login-btn"); pg.wait_for_timeout(1500)
-                self.assertIn("falsch", pg.query_selector("#login-err").inner_text())
+                pg.fill("#login-pw", "falsches-passwort"); pg.click("#login-btn")
+                until(pg, "document.querySelector('#login-err').textContent.includes('falsch')")
                 pg.fill("#login-pw", "sehr-geheimes-passwort"); pg.click("#login-btn"); pg.wait_for_selector("#shell:not(.hidden)", timeout=20000)
                 pg.wait_for_selector(".ov-grid")
                 self.assertIn("Offline-Ansicht", pg.query_selector("#banner").inner_text())
@@ -5502,8 +5523,8 @@ class BrowserTest(unittest.TestCase):
                 if shots: pg.screenshot(path=os.path.join(shots, "ui_offline.png"), full_page=True)
                 # Am Mac selbst gibt es keine Offline-Ansicht: Dienst weg -> Hinweis und neuer Versuch
                 pg.evaluate("localStorage.removeItem('kontor.testRemote')")
-                pg.reload(); pg.wait_for_selector("#login:not(.hidden)"); pg.wait_for_timeout(500)
-                self.assertIn("Dienst", pg.query_selector("#login-err").inner_text())
+                pg.reload(); pg.wait_for_selector("#login:not(.hidden)")
+                until(pg, "document.querySelector('#login-err').textContent.includes('Dienst')")
                 self.assertEqual(errors, [])
                 b.close()
         finally:

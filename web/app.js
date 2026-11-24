@@ -1660,7 +1660,7 @@ async function mmhFollow() {
 async function mmhNames(openList) {
   // the names of the securities: the ones MoneyMoney knows only by their ISIN can be looked up once at OpenFIGI (only on a
   // click, only the ISINs are sent); then all securities are listed with their names, which can be changed here
-  const el = $('#mmh-names'); if (!el) return;
+  const el = $('#mmh-names'); if (!el || demoOn()) return;          // (the demo knows no lookup: it never reaches OpenFIGI)
   let r; try { r = await api('/api/securities/lookup'); } catch (e) { return; }
   const n = r.open.length, had = r.found + r.without > 0, list = r.list || [];
   el.classList.toggle('hidden', !n && !list.length); el.classList.toggle('done', !n && list.length > 0);
@@ -9338,6 +9338,10 @@ document.addEventListener('click', e => {
 });
 document.addEventListener('change', e => { const id = e.target.id; if (id === 'planan') { S.plan = e.target.checked; route(); } else if (id === 'realan') { S.real = e.target.checked; route(); } else if (id === 'alle-zeilen') { if (S.tab === 'balance') S.alleB = e.target.checked; else S.all = e.target.checked; route(); } });
 $('#menu-btn').addEventListener('click', () => $('.side').classList.toggle('open'));
+// the menu over the page (a narrow window, the iPhone): an entry closes it -- also the page already open (no new address, no new
+// page drawn); Esc closes it like any menu
+$('#nav').addEventListener('click', e => { if (e.target.closest('a[href]')) $('.side').classList.remove('open'); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && $('.side').classList.contains('open') && !$('#drawer').classList.contains('open') && !$('.dlg-back, #ctx')) { e.preventDefault(); $('.side').classList.remove('open'); $('#menu-btn').focus(); } });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && (REC.on || REC.starting)) { e.stopPropagation(); asMicStop(false); } }, true);          // a recording first: thrown away
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && $('#drawer').classList.contains('open') && !(drawerDirty() && !confirm(t('ungespeicherte_aenderungen_verwerfen')))) closeDrawer(); });
 // Klick neben das Seitenfenster schliesst es (bei ungespeicherten Eingaben erst nach Rueckfrage)

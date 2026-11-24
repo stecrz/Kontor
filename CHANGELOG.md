@@ -1,5 +1,10 @@
 # Änderungen
 
+## 3.17.64 (2026-11-24 05:35)
+- Menü (iPhone, schmales Fenster): esc schließt es, ein Tipp auf die offene Seite auch; auf der Seite des Assistenten liegt es nicht mehr darunter
+- Entwicklung: zufällige Klickpfade jede Nacht – Seiten, Dialoge, Seitenfenster, Bezüge; hell/dunkel, Mac/iPhone, Chromium/WebKit, wechselnde Welten; je Push 3 feste
+- Entwicklung: Seitentest wartet nach dem Speichern auf den Zustand statt einer festen Zeit; Demo fragt auf „Kontostände“ keine Wertpapiernamen mehr ab
+
 ## 3.17.63 (2026-11-24 05:12)
 - KI-Assistent: PDFs gehen als Text und Seitenbilder an das Modell – kurze ganz, lange Seite für Seite („Lese Seite 3 von 30 …“ in den Gedanken)
 

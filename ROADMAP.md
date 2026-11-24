@@ -421,9 +421,6 @@ Bewusst nicht (mit Grund):
 Ziel: Alles, was der Nutzer heute von Hand prüft, prüfen Tests – damit Opus auf „hoch“ reicht und Fehler vor ihm auffallen.
 
 Fertig, wenn
-- Zufällige Klickpfade jede Nacht (`nightly.yml`): Seiten, Dialoge, Seitenfenster und Bezüge in wechselnder Reihenfolge, hell und
-  dunkel, Mac und iPhone, mit wechselnden Datenwelten – kein Skriptfehler, nichts überlappt oder ist abgeschnitten, keine waagrechte
-  Scrollleiste, Esc/Enter/⌘S wirken, Zustände bleiben beim erneuten Öffnen; ein Fehler nennt seinen Fall zum Wiederholen.
 - Erklärt: jedes Bedienelement hat einen Tooltip oder einen Sprung in die Hilfe, jede Hilfe-Stelle ist erreichbar, jede sichtbare Zahl
   ist in `docs/ui` beschrieben (die Karten und Tabellen prüft `test_tour` schon).
 - Auffindbar: je Funktion typische Suchwörter des Nutzers – die Suche der Hilfe und `search_help` des Assistenten finden die richtige

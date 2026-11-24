@@ -47,7 +47,7 @@ Jeder Schritt eines Chats liest den ganzen bisherigen Verlauf neu – Kosten wac
 
 ## Prüfen – zwei Stufen (Nutzer, 2026-11-24)
 GitHub prüft jede Version gleich, ob klein oder groß (`.github/workflows/tests.yml`: alle Tests, Kontors Python und 3.9 für den
-Starter, Chrome und Safari-Engine, macOS mit Mac-App und Abschirmung; nachts 1000 feste und neue Zufallsfälle, `nightly.yml`;
+Starter, Chrome und Safari-Engine, macOS mit Mac-App und Abschirmung; nachts 1000 feste und neue Zufallsfälle und Klickpfade durch die Oberfläche, `nightly.yml`;
 Einzelheiten: `docs/rules/tests.md`). Was Claude selbst prüft und mitpflegt, hängt von der Stufe ab:
 
 | | Kleine Version (dritte Stelle) | Großer Versionssprung (zweite Stelle) – Skill `major` |

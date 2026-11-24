@@ -26,22 +26,24 @@ FOUND: List[int] = [377654401, 357881360,     # 3.16.58: two payments of one amo
                      225758066]                   # 3.17.25: a mirrored booking moved beyond MIRROR_MOVED_DAYS, its original entered again: a note, by design
 
 
-def fuzz_seeds(name: str = "") -> Iterator[int]:
+def fuzz_seeds(name: str = "", fixed_env: str = "KONTOR_FUZZ_SEEDS", fixed_default: int = 40, found: List[int] = None) -> Iterator[int]:
     """The cases of a random test, one after the other: the fixed ones 0 .. KONTOR_FUZZ_SEEDS-1 (default 40; nightly.yml: 1000
     in its first job), those found before (FOUND), then new ones drawn anew every run from 1,000,000 on -- KONTOR_FUZZ_RANDOM of
     them, and more until KONTOR_FUZZ_MINUTES have passed since the test began (nightly.yml: as many as fit). A failure names
     its case ("seed …"); KONTOR_FUZZ_SEED=<number>[,<number>…] runs just those again. On GitHub the numbers go into the run's
-    summary. (Many cases: with Python 3.9's pytest, which keeps nothing of a passed case.)"""
+    summary. (Many cases: with Python 3.9's pytest, which keeps nothing of a passed case.) A slower test counts its fixed
+    cases apart (fixed_env, fixed_default) and keeps its own found ones (the click paths: KONTOR_CLICK_SEEDS, 3 per push)."""
     env = os.environ.get
+    found = FOUND if found is None else found
     only = env("KONTOR_FUZZ_SEED")
     if only:
         yield from (int(x) for x in only.replace(",", " ").split())
         return
-    fixed, new, n = int(env("KONTOR_FUZZ_SEEDS") or 40), random.SystemRandom(), int(env("KONTOR_FUZZ_RANDOM") or 0)
+    fixed, new, n = int(env(fixed_env) or fixed_default), random.SystemRandom(), int(env("KONTOR_FUZZ_RANDOM") or 0)
     until = time.monotonic() + 60 * float(env("KONTOR_FUZZ_MINUTES") or 0)
     done = 0
     try:
-        for seed in list(range(fixed)) + FOUND:
+        for seed in list(range(fixed)) + found:
             yield seed
         while done < n or time.monotonic() < until:
             yield new.randrange(10 ** 6, 10 ** 9)
@@ -50,7 +52,7 @@ def fuzz_seeds(name: str = "") -> Iterator[int]:
         summary = env("GITHUB_STEP_SUMMARY")
         if summary and name:
             with open(summary, "a", encoding="utf-8") as f:
-                f.write("- %s: %d feste, %d gefundene, %d neue Fälle\n" % (name, fixed, len(FOUND), done))
+                f.write("- %s: %d feste, %d gefundene, %d neue Fälle\n" % (name, fixed, len(found), done))
 
 
 @contextmanager

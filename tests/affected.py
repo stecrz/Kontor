@@ -18,7 +18,7 @@ TEXTS = {
     "CHANGELOG.md": ["test_rules.py", "test_hooks.py"], "HIGHLIGHTS.md": ["test_rules.py"], "VERSION": ["test_hooks.py"],
     "ROADMAP.md": ["test_rules.py"], "CLAUDE.md": ["test_rules.py", "test_hooks.py"], "README.md": ["test_rules.py", "test_privacy.py"],
     "docs/help.de.md": ["test_rules.py"], "docs/help.en.md": ["test_rules.py"], "docs/ui/": ["test_ui_docs.py"],
-    "web/": ["test_e2e.py", "test_tour.py", "test_ui_docs.py", "test_rules.py"], ".claude/": ["test_hooks.py"],
+    "web/": ["test_e2e.py", "test_tour.py", "test_clickpaths.py", "test_ui_docs.py", "test_rules.py"], ".claude/": ["test_hooks.py"],
     ".githooks/": ["test_hooks.py"], ".github/": ["test_workflows.py", "test_hooks.py"], "assistant_eval/": ["test_assistant_eval.py"],
 }
 

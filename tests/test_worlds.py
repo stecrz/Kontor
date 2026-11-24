@@ -581,7 +581,9 @@ class World:
             self.move(a, *rnd.choice([("bank", "k2"), ("k2", "bank")]), d, x, lag=lag)
 
     # -- Kontor's view of it -----------------------------------------------------------------------------------------------
-    def ledger(self):
+    def export(self):
+        """Accounts and bookings as MoneyMoney exports them (for the ledger here, and for the simulated MoneyMoney of the click
+        paths, test_clickpaths)."""
         raw = []
         for area in self.areas:
             self.uid[area] = F.uid("world-area/" + area)
@@ -600,15 +602,24 @@ class World:
             rows.append({"id": i, "accountUuid": self.uid[k], "bookingDate": datetime.datetime(day.year, day.month, day.day, 12), "amount": amount,
                          "currency": "EUR", "name": extra.pop("name", "x"), "purpose": extra.pop("purpose", ""), "categoryPath": extra.pop("cat", ""),
                          "accountNumber": extra.pop("iban", ""), "booked": True, "comment": ""})
+        return raw, rows
+
+    def ledger(self):
+        raw, rows = self.export()
         return Ledger(accounts_from_export(raw), tx_from_export(rows))
 
-    def config(self):
+    def settings(self):
+        """The settings of this world as Kontor keeps them (areas, companies, the accounts' positions) -- after export()."""
         roles = {self.uid[k]: v[2] for k, v in self.accounts.items()}
         areas = [{"id": self.uid[a], "name": a, "kind": "private" if a in self.privates else "company", "main_area": a == self.privates[0],
                   "accounts": [self.uid[a]], **({} if a in self.privates else {"share": round(sum(self.owners[a].values()) / len(self.owners[a]), 4)})}
                  for a in self.areas]
         companies = [{"area": self.uid[c], "participation": self.uid[self.holder[c] + "|stake:" + c]} for c in self.companies]
-        return core.merged_config({"balance": {"roles": roles}, "areas": areas, "companies": companies}), roles
+        return {"balance": {"roles": roles}, "areas": areas, "companies": companies}
+
+    def config(self):
+        s = self.settings()
+        return core.merged_config(s), dict(s["balance"]["roles"])
 
     def datasets(self):
         led = self.ledger()
