@@ -63,7 +63,10 @@ withdrawals from another area of the user, named by the area), Gewährte Darlehe
 received on a loan granted), Fremdwährung (money moved into an account in another currency), Sparen & Anlegen (saving whose account
 is unknown; a company's: "Anlagevermögen & Geldanlagen"). Buying securities into a depot (which has balances only, no bookings) and
 selling them back belongs here by a category with the position Sparen & Anlegen: the purchase −, the sale +, the depot's change in
-value shows only the prices; a category "Umbuchung" finds no counter-booking there and lands under Unklar. The price and the purchase
+value shows only the prices; without a category, or with a transfer's, Kontor recognises it by what the booking says (a securities trade, a savings plan, a
+purchase or sale with an ISIN, a fixed deposit -- never fees, dividends or contracts of their own) and counts it in the account's row -- an estimate, listed and changed under
+Konten & Regeln → Cashflow-Positionen → Zielkonto je Empfänger; a transfer that says nothing stands under Unklar until a target is
+chosen there. The price and the purchase
 costs of a property count here too, also from a category below the property's own (never as the property's costs; a price without
 a counter-booking in the property's account goes into no depot: "Anlage ohne Zielkonto"). Under each kind its accounts – or, for saving by a MoneyMoney category, the category ("… → <Konto>" when the user chose
 another account for a recipient; "… → kein Konto in MoneyMoney" = money that leaves the wealth Kontor sees). A kind's row is the sum

@@ -375,6 +375,30 @@ anhängen – nie löschen.
   alte Umsätze ohne Kategorie dauerhaft unter „Offen“ und in der Übersicht standen. Entschieden: eine optionale Einstellung unter
   Kategorisieren, als „Ignorieren vor dem …“ gedacht (nicht „Kategorisieren ab“) – ältere Umsätze erscheinen dort nicht und zählen
   nicht als offen, der Cashflow schätzt sie weiter; leer heißt alle. (umgesetzt in 3.17.80)
+- **Umschichtungen, deren Gegenseite keine Buchung ist** (Nutzer, 2026-11-25, nach der Prüfung der Cashflow-Positionen): Ein
+  Wertpapierkauf vom Verrechnungskonto erhöht das Depot, das nur Stände hat – eigentlich eine Umbuchung, aber ohne Gegenbuchung;
+  genauso Festanlagen, ein P2P-Konto, das sich auszahlt, und „mit Sicherheit noch andere Fälle“. Er will dafür klare Regeln und dass
+  Kontor es möglichst breit erkennt, auch ohne Kategorie, zukunftssicher für viele denkbare Fälle. Entschieden: (1) Kategorie mit der
+  Position Sparen & Anlegen bleibt der sichere Weg (Kauf −, Verkauf + in derselben Kategorie). (2) Ohne Kategorie oder mit
+  „Umbuchung“ ohne Gegenkonto erkennt Kontor es an dem, was die Buchung sagt – ein Wertpapierhandel (Wertpapierkauf, Sparplan,
+  Kauf/Verkauf mit ISIN) geht ins Depot, ein Festgeld ins Konto für Festanlagen –, und zählt es als Investition in das Konto
+  ohne Buchungen bei der Bank, die die Buchung nennt (sonst der eigenen), sonst das, das sie beim Namen nennt, sonst das einzige
+  seiner Art – als Schätzung, sichtbar und änderbar unter Zielkonto je Empfänger. (3) Jede Umbuchung ohne Gegenkonto steht dort
+  zur Wahl (das deckt, was sich am Text nicht sicher erkennen lässt, etwa ein P2P-Konto): einmal das Konto (oder „kein Konto in
+  MoneyMoney“) wählen, dann zählt jede solche Umbuchung an diesen Empfänger dort. Nicht: aus früheren Kategorien desselben
+  Empfängers auf Sparen schließen (die Rechnung eines Brokers ist kein Sparen); nicht Erträge, Gebühren oder Verträge mit eigenem
+  Zweck (Dividende, Zinsen, Depotgebühr, Vorabpauschale, Bausparen, Riester bleiben, was sie sind); die Wahl je Empfänger gilt
+  ohne Kategorie nur für das, was selbst eine Umschichtung nennt. Die Wortlisten sind eng gehalten (unabhängige Prüfung: breite
+  Wörter wie „Wertpapier“, „Depot“, „P2P“, „Anteile“ trafen Gebühren, Erträge und Fremdes) – lieber nicht erkannt als falsch.
+  (umgesetzt in 3.17.88)
+- **Zinsen im Cashflow** (Nutzer, 2026-11-25): Erhaltene Zinsen sind Kapitalerträge und zählen unter Einnahmen – auch die auf
+  gewährte Darlehen, die im Forderungskonto gebucht sind (sie standen unter Investitionen). Gezahlte Darlehenszinsen bleiben unter
+  Finanzierung („es ist ja der Finanzierungs-Cashflow“), nicht unter Ausgaben. Gilt genauso für Firmen.
+- **Darlehenskonten** (Nutzer, 2026-11-25): Ihm bekannt ist nur die Kontoführung „volle Annuität als Gutschrift, Zinsen als
+  eigene Buchung im Darlehenskonto“ – das bleibt der Regelfall. Andere Kontoführungen (nur der Tilgungsanteil wird gegengebucht;
+  Zinsen laufen ohne Zahlung auf) soll Kontor von sich aus richtig behandeln; dazu ist keine Entscheidung von ihm nötig.
+- **Mietkaution** (Nutzer, 2026-11-25): Eine erhaltene Kaution führt er als Verbindlichkeit – ein manuelles Konto mit Gegenbuchung;
+  sie ist keine Miete. Kontor soll dafür ein sauberes Setup beschreiben und eine Kautions-Kategorie nicht als Miete zählen.
 
 ## Offen (Entscheidung steht aus – mit Empfehlung vorlegen, wenn der Punkt dran ist)
 - Umsatzsteuer-Voranmeldung direkt an ELSTER senden (ELSTERs Programmbibliothek ERiC, Anmeldung als Hersteller, Zertifikat und

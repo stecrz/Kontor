@@ -1658,6 +1658,32 @@ class OpeningBalance(Reconciles):
         self.assertEqual(rows(ds, "valuation")["Tagesgeld / Anfangssaldo"]["amounts"]["2026-04"], -115.2)
 
 
+class MovesAreRecognised(unittest.TestCase):
+    """What a booking says about money moved into an account without bookings (report.said_move), against texts as banks and
+    brokers write them (made up, after their patterns) -- and against what must never count: what a depot pays or costs, a
+    contract of its own, a loan, a shop. From the independent check of 3.17.88."""
+    SURE = ["Trade Republic Savings plan execution IE00B4L5Y983 Welt-ETF, quantity: 0.5", "Buy trade DE000BASF111 Muster SE, quantity: 5",
+            "Sell trade IE00B4L5Y983 Welt-ETF, quantity: 6", "Wertpapierkauf", "Wertpapierverkauf IE00B4L5Y983 abzgl. Kapitalertragsteuer",
+            "Wertpapierkauf Bundesanleihe inkl. Stückzinsen", "Wertpapierabrechnung Kauf 10 Stk", "WP-Kauf 5 Stk", "WP Kauf 5 Stk",
+            "Sparplan Welt-Fonds High Dividend Yield IE00B8GKDB10", "Sparplan Ausführung", "Fondskauf Weltfonds", "Depotübertrag",
+            "Übertrag Verrechnungskonto Depot", "Kauf 12 Aktien Muster AG", "Kauf 3 Stk Welt-ETF"]
+    WEAK = ["Zeichnung Anleihe DE000A1234X5", "Kauf IE00B4L5Y983"]
+    TERM = ["Zinsportal Einzahlung Festgeld", "Festgeld Rückzahlung inkl. Zinsen", "Anlage Festgeld 12 Monate", "Sparbrief Anlage"]
+    NEVER = ["Depotführungsentgelt Wertpapierdepot 2026", "Wertpapierertrag Welt-ETF", "Vorabpauschale 2026 ISIN IE00B4L5Y983", "Wertpapierhandelsbank AG Rechnung 4711",
+             "Bausparkasse Sparplan Bausparvertrag", "Freund P2P Zahlung Essen", "Bürgerenergie eG Kauf 6 Anteile Mitglied 4711", "Ertr.Gutschr. WKN 123456",
+             "Fondsertrag WKN 123456", "Coupon ISIN DE0001102580", "Transaktionsentgelt Wertpapierorder", "Depotpreis Wertpapiere", "KESt Erstattung Wertpapiere",
+             "VL Sparplan", "Riester Fondssparplan", "Sparplan Tagesgeld Dauerauftrag", "Umbuchung Geldanlage Sparkonto", "Leasing Anlagebetrag",
+             "Auszahlung Geldautomat Depot Strasse 5", "Getränke Depot Auszahlung Pfand", "Lombardkredit Wertpapierkredit Auszahlung", "Storno Wertpapierkauf",
+             "Dividende IE00B4L5Y983", "Depotgebühr", "Versandhaus Bestellung DE1234567890", "Gehalt 11/2026", "Miete Wohnung", "Bezahldienst Order Ihr Einkauf",
+             "Baumarkt Depot Kauf Werkzeug", "Muster Investment GmbH Rechnung", "Zinsen Festgeld 2026", "Fondsgebundene Rentenversicherung Beitrag",
+             "Kreditkartenabrechnung", "Finanzamt Einkommensteuer", "Kauf 2 Stück Brot Bäckerei", "Kauf 3 Stk Weltindex"]
+
+    def test_what_a_booking_says(self):
+        for texts, want in ((self.SURE, ("securities", False)), (self.WEAK, ("securities", True)), (self.TERM, ("term", False)), (self.NEVER, ("", False))):
+            for text in texts:
+                self.assertEqual(report.said_move(report.fold_text(text)), want, text)
+
+
 class SavingByRecipient(Reconciles):
     """Saving that arrives as a booking on none of your accounts (a depot kept by balances): the account per recipient you
     chose, else the category's, else the only depot -- without one it never counts as a depot's gain but stands openly as
@@ -1685,6 +1711,127 @@ class SavingByRecipient(Reconciles):
                 (2, "giro", date(2026, 6, 3), -1000.0, {"cat": "Sparen", "name": "Broker Zwei AG", "iban": self.TWO}),
                 (3, "giro", date(2026, 6, 4), -300.0, {"cat": "Sparen / ETF", "name": "Broker Eins", "iban": self.ONE}),
                 (9, "depot2", date(2026, 1, 1), 1000.0, {})]          # depot two: worth 1000 today, 0 before (history below)
+
+    def unseen(self, txs, cfg=None, giro_bank="10010010"):
+        """As data(), the giro account at a bank of its own choice (default: the first depot's)."""
+        led = make_ledger(txs)
+        led.accounts["depot"].bank_code, led.accounts["depot2"].bank_code, led.accounts["giro"].bank_code = "10010010", "12030000", giro_bank
+        config = core.merged_config(dict({"balance": {"roles": {k: v[2] for k, v in ACCOUNTS.items()}}}, **(cfg or {})))
+        b = next(x for x in core.bereiche_for(led, config) if x["name"] == "Privat")
+        return b["id"], report.build_dataset(led, config, {}, TODAY, b, {k: v[2] for k, v in ACCOUNTS.items()})
+
+    def test_money_into_an_account_without_bookings_is_recognised(self):
+        """The user, 2026-11-25: a securities purchase from the broker's cash account raises the depot, which has balances only
+        -- a transfer without a counter-booking; "as widely recognised as possible, also where I do not categorise". Without a
+        category, or with a transfer's: by what the booking says, into the depot at the booking's own bank (else the one its
+        words name, else the only one); the sale back counts the other way. What a depot pays or costs stays income and
+        expense; a reference that looks like an ISIN is no trade; a broker's invoice is no saving."""
+        nz = lambda z: {m: v for m, v in z["amounts"].items() if v}
+        G = lambda i, day, amount, **x: (i, "giro", day, amount, x)
+        base = [G(1, date(2026, 1, 5), 9000.0, cat="Gehalt")]
+        _, ds = self.unseen(base + [
+            G(2, date(2026, 2, 3), -1000.0, name="Handelsbank", purpose="Savings plan execution IE00B4L5Y983 Welt-ETF, quantity: 9.5"),
+            G(3, date(2026, 3, 3), -500.0, name="Handelsbank", purpose="Wertpapierkauf", cat="Umbuchung"),
+            G(4, date(2026, 4, 10), 700.0, name="Handelsbank", purpose="Sell trade IE00B4L5Y983 Welt-ETF, quantity: 6"),
+            G(5, date(2026, 4, 11), 12.0, name="Handelsbank", purpose="Dividende IE00B4L5Y983"),
+            G(6, date(2026, 4, 12), -3.0, name="Handelsbank", purpose="Depotgebühr"),
+            G(7, date(2026, 4, 13), -40.0, name="Versandhaus", purpose="Bestellung DE1234567890"),
+            G(8, date(2026, 5, 2), -5000.0, name="Handelsbank", purpose="Rechnung 4711")])
+        self.assertAddsUp({"Privat": ds})
+        r, inv = rows(ds), rows(ds, "investing")
+        self.assertEqual((nz(inv["Depot"]), inv["Depot"]["group"], inv["Depot"]["nw"], inv["Depot"]["account"]),
+                         ({"2026-02": -1000.0, "2026-03": -500.0, "2026-04": 700.0}, "Wertpapiere & Geldanlagen", False, "depot"))
+        self.assertEqual((nz(r["Kapitalerträge"]), nz(r["Beratung & Gebühren"])), ({"2026-04": 12.0}, {"2026-04": -3.0}))
+        self.assertEqual(nz(r["Ohne Kategorie"]), {"2026-04": -40.0, "2026-05": -5000.0})
+        self.assertFalse(rows(ds, "unclear"))
+        rec = {a["name"]: a for a in ds["cashflow"]["saving_recipients"]}
+        self.assertEqual((rec["Handelsbank"]["target"], rec["Handelsbank"]["how"], rec["Handelsbank"]["count"], rec["Handelsbank"]["categories"]),
+                         ("depot", "estimated", 3, ["Umbuchung"]))
+        # the depot at another bank and a second one beside it: the one the booking names; none named: open, counted as before
+        _, ds = self.unseen(base + [G(2, date(2026, 2, 3), -1000.0, name="Broker Zwei", purpose="Wertpapierkauf"),
+                                    G(3, date(2026, 3, 3), -500.0, name="Sonstwer", purpose="Wertpapierkauf", cat="Umbuchung"),
+                                    G(4, date(2026, 3, 4), -60.0, name="Sonstwer", purpose="Kauf IE00B4L5Y983")], giro_bank="50010517")
+        r, inv = rows(ds), rows(ds, "investing")
+        self.assertEqual((nz(inv["Depot Zwei"]), "Depot" in inv), ({"2026-02": -1000.0}, False))
+        self.assertEqual(nz(r["Umbuchung ohne erkannten Partner"]), {"2026-03": -500.0})
+        self.assertEqual(nz(r["Ohne Kategorie"]), {"2026-03": -60.0})                              # an ISIN: only at the booking's own bank
+        rec = {a["name"]: a for a in ds["cashflow"]["saving_recipients"]}
+        self.assertEqual((rec["Sonstwer"]["target"], rec["Sonstwer"]["how"]), (None, ""))
+        self.assertAddsUp({"Privat": ds})
+        # the bank the booking names (its counter IBAN) goes before the booking's own bank
+        _, ds = self.unseen(base + [G(2, date(2026, 2, 3), -500.0, name="Handelshaus", purpose="Sparplan", iban=self.TWO)])
+        self.assertEqual(nz(rows(ds, "investing")["Depot Zwei"]), {"2026-02": -500.0})
+
+    def test_your_choice_for_a_recipient_is_for_his_moves_only(self):
+        """A recipient you gave an account (for saving, or for a transfer) also sends invoices, dividends and fees: without a
+        category they stay what they are -- only what says it is a move goes into the account. "No account in MoneyMoney" for
+        a recognised move without a category: counted as before (an expense), and shown as chosen."""
+        nz = lambda z: {m: v for m, v in z["amounts"].items() if v}
+        txs = [(1, "giro", date(2026, 1, 5), 9000.0, {"cat": "Gehalt"}),
+               (2, "giro", date(2026, 2, 3), -300.0, {"name": "Handelsbank", "cat": "Sparen"}),
+               (3, "giro", date(2026, 3, 3), -5000.0, {"name": "Handelsbank", "purpose": "Rechnung 4711"}),
+               (4, "giro", date(2026, 4, 3), 12.0, {"name": "Handelsbank", "purpose": "Dividende IE00B4L5Y983"}),
+               (5, "giro", date(2026, 4, 4), -3.0, {"name": "Handelsbank", "purpose": "Depotgebühr"}),
+               (6, "giro", date(2026, 5, 4), -700.0, {"name": "Handelsbank", "purpose": "Wertpapierkauf"})]
+        area, ds = self.unseen(txs, {"cashflow": {"positions": {"Sparen": "saving"}}})
+        key = next(a["key"] for a in ds["cashflow"]["saving_recipients"] if a["name"] == "Handelsbank")
+        _, ds = self.unseen(txs, {"cashflow": {"positions": {"Sparen": "saving"}, "recipient_to_account": {area: {key: "Depot Zwei"}}}})
+        self.assertAddsUp({"Privat": ds})
+        r, inv = rows(ds), rows(ds, "investing")
+        self.assertEqual(nz(inv["Depot Zwei"]), {"2026-05": -700.0})                                  # the purchase: where you said
+        self.assertEqual(nz(inv["Sparen → Depot Zwei"]), {"2026-02": -300.0})
+        self.assertEqual((nz(r["Ohne Kategorie"]), nz(r["Kapitalerträge"]), nz(r["Beratung & Gebühren"])), ({"2026-03": -5000.0}, {"2026-04": 12.0}, {"2026-04": -3.0}))
+        only = [(1, "giro", date(2026, 1, 5), 9000.0, {"cat": "Gehalt"}), (6, "giro", date(2026, 5, 4), -700.0, {"name": "Handelsbank", "purpose": "Wertpapierkauf"})]
+        _, ds = self.unseen(only, {"cashflow": {"recipient_to_account": {area: {key: "external"}}}})
+        self.assertAddsUp({"Privat": ds})
+        rec = ds["cashflow"]["saving_recipients"][0]
+        self.assertEqual((rec["target"], rec["how"], rec["auto_target"], rec.get("estimated")), (None, "external", "depot", 1))
+        self.assertEqual((nz(rows(ds)["Ohne Kategorie"]), "Depot" in rows(ds, "investing")), ({"2026-05": -700.0}, False))
+
+    def test_a_fixed_deposit_goes_into_its_own_account(self):
+        """A fixed deposit is no securities trade: it goes into the account for fixed investments kept by its balances -- never
+        into the depot (which showed a loss of that amount) -- and comes back from there, interest and all."""
+        nz = lambda z: {m: v for m, v in z["amounts"].items() if v}
+        ACCOUNTS["fest"] = ("Festgeld Sparbank", "Privat", "term_investments", None, "offline")
+        txs = [(1, "giro", date(2025, 12, 5), 30000.0, {"cat": "Gehalt"}),
+               (2, "giro", date(2026, 2, 3), -10000.0, {"name": "Sparbank", "purpose": "Anlage Festgeld 12 Monate"}),
+               (3, "giro", date(2026, 5, 3), 10150.0, {"name": "Sparbank", "purpose": "Festgeld Rückzahlung inkl. Zinsen"}),
+               (4, "giro", date(2026, 5, 20), 4.0, {"name": "Sparbank", "purpose": "Zinsen Festgeld"})]
+        led = make_ledger(txs)
+        roles = {k: v[2] for k, v in ACCOUNTS.items()}
+        config = core.merged_config({"balance": {"roles": roles, "history_source": {"Festgeld Sparbank": "balances"}}})
+        b = next(x for x in core.bereiche_for(led, config) if x["name"] == "Privat")
+        ds = report.build_dataset(led, config, {"history": {"fest": {"2026-01": 0.0, "2026-02": 10000.0, "2026-03": 10000.0, "2026-04": 10000.0, "2026-05": 0.0}}}, TODAY, b, roles)
+        self.assertAddsUp({"Privat": ds})
+        inv = rows(ds, "investing")
+        self.assertEqual((nz(inv["Festgeld Sparbank"]), inv["Festgeld Sparbank"]["group"], "Depot" in inv), ({"2026-02": -10000.0, "2026-05": 10150.0}, "Wertpapiere & Geldanlagen", False))
+        self.assertEqual(nz(rows(ds, "income")["Kapitalerträge"]), {"2026-05": 4.0})
+        self.assertEqual(sum(sum(z["amounts"].values()) for z in rows(ds, "valuation").values()), 150.0)          # what it earned: its change in value
+
+    def test_a_transfer_without_its_counterpart_goes_where_you_say(self):
+        """Not everything is seen between two accounts (the user, 2026-11-25: a P2P account paid out, shares bought as a fixed
+        investment ...): a transfer without its counterpart stands with the recipients, and what you choose there once counts
+        for every such transfer to that recipient -- an account, or none in MoneyMoney."""
+        nz = lambda z: {m: v for m, v in z["amounts"].items() if v}
+        txs = [(1, "giro", date(2026, 1, 5), 9000.0, {"cat": "Gehalt"}),
+               (2, "giro", date(2026, 2, 3), -2000.0, {"name": "Kreditplattform", "cat": "Umbuchung"}),
+               (3, "giro", date(2026, 4, 3), 800.0, {"name": "Kreditplattform", "cat": "Umbuchung"}),
+               (4, "giro", date(2026, 4, 5), -300.0, {"name": "Tante", "cat": "Umbuchung"})]
+        area, ds = self.unseen(txs)
+        self.assertAddsUp({"Privat": ds})
+        self.assertEqual(nz(rows(ds)["Umbuchung ohne erkannten Partner"]), {"2026-02": -2000.0, "2026-04": 500.0})
+        rec = {a["name"]: a for a in ds["cashflow"]["saving_recipients"]}
+        self.assertEqual([(rec[n]["target"], rec[n]["how"], rec[n]["count"], rec[n]["sum"]) for n in ("Kreditplattform", "Tante")],
+                         [(None, "", 2, -1200.0), (None, "", 1, -300.0)])
+        cfg = {"cashflow": {"recipient_to_account": {area: {rec["Kreditplattform"]["key"]: "Depot Zwei", rec["Tante"]["key"]: "external"}}}}
+        _, ds = self.unseen(txs, cfg)
+        self.assertAddsUp({"Privat": ds})
+        r = rows(ds, "investing")
+        self.assertEqual((nz(r["Depot Zwei"]), r["Depot Zwei"]["nw"]), ({"2026-02": -2000.0, "2026-04": 800.0}, False))
+        self.assertEqual((nz(r["Umbuchung → extern"]), r["Umbuchung → extern"]["nw"]), ({"2026-04": -300.0}, True))
+        self.assertFalse(rows(ds, "unclear"))
+        rec = {a["name"]: a for a in ds["cashflow"]["saving_recipients"]}
+        self.assertEqual([(rec[n]["target"], rec[n]["how"]) for n in ("Kreditplattform", "Tante")], [("depot2", "recipient"), (None, "external")])
 
     def test_without_a_target_it_is_no_gain_and_stands_openly(self):
         _, _, ds = self.data(self.txs(), hist={"depot2": {"2026-01": 0.0}})

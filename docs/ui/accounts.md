@@ -136,7 +136,12 @@ under "Tilgung" counts as a loan taken up; "Nicht
 
 ### accounts.positions.recipients — Zielkonto je Empfänger
 Shown when payments under "Sparen & Anlegen" arrive on none of the user's accounts (e.g. a portfolio or pension kept only by its
-balances). Per area (heading with its name when there are several) one table; a pill "N ohne Zielkonto" counts open rows.
+balances) -- and for bookings without a category of their own that Kontor recognised as such a move (a securities trade, a savings
+plan, a fixed deposit: Kategorie "ohne Kategorie, geschätzt" or the transfer category; Zielkonto "automatisch: <Konto>" = the
+account without bookings of that kind -- a depot for a trade, a fixed-investment account for a fixed deposit -- at the bank the
+booking names (its own bank without a counter IBAN), else the one its words name, else the only one of its kind; "Kein Konto in
+MoneyMoney" for such a row counts the booking as income or an expense again) and for transfers
+whose counter-booking is missing ("Bitte wählen": until chosen they stand under Unklar in the cash flow). Per area (heading with its name when there are several) one table; a pill "N ohne Zielkonto" counts open rows.
 - **Empfänger** (with IBAN), **Kategorie** (the saving categories of these payments).
 - **Umsätze**: number of payments; **Summe**: their total in whole euros (outflows negative) – both over all months of the area's cash
   flow; a click lists them.

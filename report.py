@@ -1098,6 +1098,50 @@ _WAGE_TAX = re.compile(r"lohnsteuer|\blst\b|lohnst")
 _VAT = re.compile(r"umsatzsteuer|\bust\b|ustva|ust-va|ust-vz|ust-voranmeldung|vorsteuer")
 
 
+# A booking that moves money into or out of an account with balances only (a depot, a fixed deposit, a P2P account), by what
+# it says -- folded text of name, purpose and booking text (checked against real-looking texts: tests, MovesAreRecognised).
+# Kinds, each with the accounts it may mean:
+#   securities  a trade said outright (Wertpapierkauf, WP-Kauf, buy trade, Sparplan, Fondskauf, Depotübertrag) -- or an ISIN
+#               or WKN beside a word of buying or selling: that only at the booking's own bank (_TRADE_WEAK; a reference
+#               number looks like an ISIN, and "Kauf 2 Stück" is bread as well)
+#   term        a fixed deposit (Festgeld, Termingeld, Sparbrief)
+# _TRADE_NEVER: what such an account pays or costs, or what is no trade at all -- income, an expense, a loan, a contract of
+# its own; it wins over every word. _TRADE_PAYS: income words that only count where no trade is said outright ("Sparplan ...
+# High Dividend ...", "Wertpapierkauf inkl. Stückzinsen" are trades).
+_TRADE_SURE = re.compile(r"wertpapier(?:kauf|verkauf|abrechnung|sparplan)|wertp\.? ?abrechn|\bwp[- ]?(?:kauf|verkauf|abrechnung)|\b(?:buy|sell) trade\b|savings ?plan"
+                         r"|\bsparplan|fonds(?:kauf|verkauf|sparplan)|effekten(?:kauf|verkauf)|depotuebertrag|\buebertrag\b.*\bdepot"
+                         r"|\b(?:kauf|verkauf)\b.*\b(?:aktien?|etfs?|fondsanteile?)\b|\b(?:aktien?|etfs?|fondsanteile?)\b.*\b(?:kauf|verkauf)\b")
+_TRADE_TERM = re.compile(r"festgeld|termingeld|festanlage|sparbrief")
+_TRADE_ISIN = re.compile(r"\b(?:de|us|ie|lu|fr|nl|gb|ch|at|ca|jp|se|dk|fi|es|it|be|au|ky|bm|je|gg|li|xs)[a-z0-9]{9}[0-9]\b|\bisin\b|\bwkn\b")
+_TRADE_WEAK = re.compile(r"\b(?:kauf|verkauf|buy|sell|trade|zeichnung|stk|stueck|quantity)\b")
+_TRADE_NEVER = re.compile(r"storno|entgelt|gebuehr|depotfuehrung|depotpreis|\brechnung\b|vorabpauschale|ertragsgutschrift|\bertr\.|ertraegnis|wertpapierertrag|fondsertrag"
+                          r"|dividendengutschrift|coupon|kupon|thesaur|kredit|lombard|bauspar|riester|\bvl\b|vermoegenswirksam|tagesgeld|gehalt|\blohn\b|erstattung")
+_TRADE_PAYS = re.compile(r"\bdividenden?\b|\bzinsen?\b|zinsgutschrift|habenzins|ausschuettung|\bsteuer")
+_TERM_MOVE = re.compile(r"anlage|einzahlung|auszahlung|rueckzahlung|faellig|prolong")
+
+
+def said_move(text: str) -> Tuple[str, bool]:
+    """(kind, weak) of the move a booking's folded text says: "securities", "term" or "" (none); weak: only for an account
+    at the booking's own bank."""
+    if _TRADE_NEVER.search(text):
+        return "", False
+    if _TRADE_SURE.search(text):
+        return "securities", False
+    if _TRADE_TERM.search(text) and (_TERM_MOVE.search(text) or not _TRADE_PAYS.search(text)):
+        return "term", False
+    if not _TRADE_PAYS.search(text) and _TRADE_WEAK.search(text) and _TRADE_ISIN.search(text):
+        return "securities", True
+    return "", False
+
+
+_NAME_GENERIC = {"bank", "gmbh", "depot", "konto", "sparkasse", "volksbank", "capital", "invest", "verrechnungskonto", "wertpapiere"}
+
+
+def name_words(text: str) -> Set[str]:
+    """The words of a name that tell it apart (four letters or more, no "Bank", "Depot" ...)."""
+    return {w for w in re.sub(r"[^\wäöüß]+", " ", (text or "").lower()).split() if len(w) >= 4 and w not in _NAME_GENERIC}
+
+
 def fold_text(s: str) -> str:
     return (s or "").lower().replace("ä", "ae").replace("ö", "oe").replace("ü", "ue").replace("ß", "ss")
 
@@ -1624,6 +1668,72 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
         else:
             R.add("investing", row=acc.name, mk=mk, amount=-t.amount, account=acc.uuid, kind="account", nw=False, tx=-1, **_grp(INVEST_GROUPS, role))
 
+    # Money moved into (or out of) an account that has balances only -- a depot, a fixed deposit, a P2P account: its other
+    # side is no booking, so nothing pairs. A booking without a category of its own (none, or a transfer's without a counterpart)
+    # is recognised (user, 2026-11-25: "as widely as possible, also where I do not categorise"): by your choice for the
+    # recipient, or by what it says (a securities trade, a savings plan, an ISIN beside a word of buying, a fixed deposit ...)
+    # -- into the one such account at the booking's own bank, else the one its words name, else the area's only one. An
+    # estimate: listed with the recipients (Cashflow-Positionen), where you change it. Not by how you categorised the
+    # recipient before: a broker's invoice is no saving (test_an_estimate_is_never_saving_or_repayment).
+    held = [u for u in sorted(root_leaves) if u in ledger.accounts and verlauf.get(u) == "balances" and roles.get(u) in ASSET_LIKE]
+    bank_of = lambda u: re.sub(r"\D", "", ledger.accounts[u].bank_code or "")
+
+    def held_account(t: Tx, kind: str, weak: bool = False) -> Optional[str]:
+        """The account without bookings a move of this kind goes into: of its kind (a trade: securities; a fixed deposit:
+        fixed investments) the one at the bank the booking names (its counter IBAN, without one the booking's own bank), else
+        the one whose name the booking says, else -- said outright -- the only one of its kind."""
+        of_kind = [u for u in held if roles.get(u) == ("term_investments" if kind == "term" else "securities")]
+        iban = (t.counter_iban or "").replace(" ", "").upper()
+        own = bank_of(t.account_uuid)
+        at = [u for u in of_kind if len(bank_of(u)) >= 4 and (iban[4:4 + len(bank_of(u))] == bank_of(u) if iban else bank_of(u) == own)]
+        if len(at) == 1:
+            return at[0]
+        if weak:
+            return None
+        said = name_words((t.name or "") + " " + (t.purpose or ""))
+        named = [u for u in (at or of_kind) if said & name_words(ledger.accounts[u].name)]
+        return named[0] if len(named) == 1 else of_kind[0] if len(of_kind) == 1 and not at else None
+
+    def note_recipient(t: Tx, key: str, cat: str, target: Optional[str], how: str, auto: Tuple[Optional[str], str]) -> None:
+        """A booking whose money goes where no booking shows it, kept by its recipient (for the list under Cashflow-Positionen)."""
+        sv = savings.get(key)
+        if sv is None:
+            sv = savings[key] = {"key": key, "name": (t.name or t.purpose or t.booking_text)[:80], "iban": (t.counter_iban or "").replace(" ", "").upper()[:34],
+                                 "count": 0, "sum": 0.0, "date_from": t.booking_date.isoformat(), "date_to": t.booking_date.isoformat(),
+                                 "categories": [], "target": target, "how": how, "auto_target": auto[0], "auto_how": auto[1], "ids": []}
+        sv["count"] += 1
+        if len(sv["ids"]) < 500:                   # the bookings behind it (a click shows them)
+            sv["ids"].append(t.id)
+        sv["sum"] = round(sv["sum"] + t.amount, 2)
+        sv["date_from"], sv["date_to"] = min(sv["date_from"], t.booking_date.isoformat()), max(sv["date_to"], t.booking_date.isoformat())
+        if cat and cat not in sv["categories"]:
+            sv["categories"].append(cat)
+        if not cat:
+            sv["estimated"] = sv.get("estimated", 0) + 1          # of them: without a category (Kontor's estimate)
+        # by category: the recipient's bookings may go to different accounts (the same account found another way is no mix)
+        if sv["target"] != target or (not target and sv["how"] != how):
+            sv["how"], sv["target"] = "mixed", None
+        if (sv["auto_target"], sv["auto_how"]) != auto:
+            sv["auto_how"], sv["auto_target"] = "mixed", None
+
+    def unseen(t: Tx, transfer: bool) -> Optional[Tuple[Optional[str], str, Optional[str]]]:
+        """(account or None, how, Kontor's own estimate) for a booking whose other side is an account without bookings -- None:
+        not such a booking. how: "recipient" / "external" (your choice), "estimated", "" (a move, but into which account?).
+        transfer: it has a transfer's category (and no counterpart). Your choice for the recipient counts for his transfers
+        and for what says it is a move -- never for the rest he sends without a category (an invoice, a dividend, a fee)."""
+        kind, weak = said_move(fold_text(" ".join((t.name or "", t.purpose or "", t.booking_text or ""))))
+        est = held_account(t, kind, weak) if kind else None
+        if not transfer and (not kind or (weak and est is None)):
+            return None
+        e_to = emp_zu_konto.get(party_key(t))
+        if e_to == "external":
+            return None, "external", est
+        if e_to in root_leaves:
+            return e_to, "recipient", est
+        if est:
+            return est, "estimated", est
+        return (None, "", None) if transfer or held else None
+
     # money back under a category that undoes a payment of the same amount within ten days (a returned debit): no loan taken up
     neg_by: Dict[Tuple[str, int], List[Tx]] = defaultdict(list)
     for o in in_root:
@@ -1756,6 +1866,25 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
             R.add("unclear", "Umbuchung", "Umbuchung nach " + ledger.accounts[p].path, mk, t.amount, kind="unclear", tx=t.id,
                   lbl=("cf_umbuchung_mit", ledger.accounts[p].path), glbl=("cf_umbuchung",)); unclear += 1
             continue
+        hit = unseen(t, bool(by_cat[t.id])) if (by_cat[t.id] or not t.category_path) and guess is None else None
+        if hit is not None:
+            target, how, est = hit
+            cat0 = norm_cat(t.category_path)
+            note_recipient(t, party_key(t), cat0, target, how, (est, "depot" if est else ""))
+            if target:
+                kind = roles.get(target) if roles.get(target) in INVEST_GROUPS else "other"
+                R.add("investing", row=ledger.accounts[target].name, mk=mk, amount=t.amount, account=target, kind="account", nw=False, **_grp(INVEST_GROUPS, kind))
+                if target in depots:
+                    inbound[target][mk] += -t.amount
+                elif verlauf.get(target) == "balances" and roles.get(target) in ASSET_LIKE:
+                    mapped_in[target][mk] += -t.amount
+                continue
+            if how == "external" and cat0:               # a transfer to no account in MoneyMoney: the money leaves the net worth
+                R.add("investing", row=cat0 + " → extern", mk=mk, amount=t.amount, kind="category", nw=True, lbl=("cf_anlage_extern", cat0),
+                      **_saving_grp("saving_group", company))
+                continue
+            # (open -- a move, but into which account -- or "no account" for a booking without a category: counted as before,
+            # as a transfer without its counterpart or as income or an expense)
         if by_cat[t.id]:
             R.add("unclear", "Umbuchung", "Umbuchung ohne erkannten Partner", mk, t.amount, kind="unclear", tx=t.id,
                   lbl=("cf_ohne_partner",), glbl=("cf_umbuchung",)); unclear += 1
@@ -1828,22 +1957,7 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
                 mapped_in[target][mk] += -t.amount      # an asset kept by balances: paid in, not a correction of its balance
             elif not target and how != "external":
                 no_target[mk] += t.amount
-            sv = savings.get(key)
-            if sv is None:
-                sv = savings[key] = {"key": key, "name": (t.name or t.purpose or t.booking_text)[:80], "iban": (t.counter_iban or "").replace(" ", "").upper()[:34],
-                                     "count": 0, "sum": 0.0, "date_from": t.booking_date.isoformat(), "date_to": t.booking_date.isoformat(),
-                                     "categories": [], "target": target, "how": how, "auto_target": auto[0], "auto_how": auto[1], "ids": []}
-            sv["count"] += 1
-            if len(sv["ids"]) < 500:                   # the bookings behind it (a click shows them)
-                sv["ids"].append(t.id)
-            sv["sum"] = round(sv["sum"] + t.amount, 2)
-            sv["date_from"], sv["date_to"] = min(sv["date_from"], t.booking_date.isoformat()), max(sv["date_to"], t.booking_date.isoformat())
-            if cat not in sv["categories"]:
-                sv["categories"].append(cat)
-            if (sv["target"], sv["how"]) != (target, how):         # by category: the recipient's bookings may go to different accounts
-                sv["how"], sv["target"] = "mixed", None
-            if (sv["auto_target"], sv["auto_how"]) != auto:
-                sv["auto_how"], sv["auto_target"] = "mixed", None
+            note_recipient(t, key, cat, target, how, auto)
         elif pos == "repayment" and t.amount > 0 and t.id not in undone:
             # money in under a repayment category: a loan paid out -- taken up, never a negative repayment
             R.add("financing", row="Darlehensaufnahme", mk=mk, amount=t.amount, kind="drawdown", nw=False, lbl=("cf_g_aufnahme",), detail=det,
@@ -1904,8 +2018,7 @@ def _savings_list(ledger: Ledger, savings: Dict[str, dict], depots: List[str]) -
     """The recipients of saving without a counter-booking, largest first, each with Kontor's proposal for its account where it
     is clear (not where you chose one): the one depot of the area at the bank of the recipient's IBAN, else the one whose name
     shares a word with the recipient's. Only a proposal -- it counts once you choose it."""
-    generic = {"bank", "gmbh", "depot", "konto", "sparkasse", "volksbank", "capital", "invest", "verrechnungskonto", "wertpapiere"}
-    words = lambda s: {w for w in re.sub(r"[^\wäöüß]+", " ", (s or "").lower()).split() if len(w) >= 4 and w not in generic}
+    words = name_words
     code = {u: re.sub(r"\D", "", ledger.accounts[u].bank_code or "") for u in depots}
     out = []
     for sv in sorted(savings.values(), key=lambda x: (-abs(x["sum"]), x["name"])):

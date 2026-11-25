@@ -1,5 +1,10 @@
 # Änderungen
 
+## 3.17.88 (2026-11-25 01:26)
+- Cashflow: Wertpapierkauf und -verkauf, Sparplan und Festgeld werden auch ohne Kategorie oder mit „Umbuchung“ als Umschichtung erkannt – ins Depot bzw. Festanlagekonto, nicht mehr als Ausgabe oder „Unklar“
+- Cashflow-Positionen: jede Umbuchung ohne Gegenbuchung steht unter „Zielkonto je Empfänger“ – einmal das Konto wählen, dann zählt sie dort
+- Hilfe: Regeln für Geld auf Konten, die nur Stände haben (Depot, Festanlage, P2P)
+
 ## 3.17.87 (2026-11-24 23:38)
 - Cashflow: Kaufpreis und Kaufnebenkosten einer Immobilie zählen als Investition, auch unter der Kategorie der Immobilie – nicht mehr als Kosten des Objekts (Cashflow, Soll/Ist, Steuerübersicht)
 - Planung: Darlehen und Wert einer Immobilie gehen vom tatsächlichen Kontostand weiter statt auf die Kalkulation zu springen – eine Sondertilgung senkt die geplanten Zinsen

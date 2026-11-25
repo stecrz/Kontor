@@ -5952,7 +5952,7 @@ function vAnlageEmpfaenger() {
       const prop = a.proposal && !own ? ` <button class="small secondary ka-take" data-v="${esc(a.proposal)}">${esc(t('vorschlag_0', nm(a.proposal)))}</button>` : '';
       const stale = own && own !== 'external' && a.how !== 'recipient' && S.KONTEN.some(k => k.uuid === ownId);   // in another area now: Kontor's choice applies
       h += `<tr data-area="${esc(id)}" data-key="${esc(a.key)}" data-init="${esc(own)}" class="${a.how === '' || (own && own !== 'external' && a.how !== 'recipient') ? 'ka-open' : ''}"${stale ? ` title="${esc(t('anl_nicht_im_bereich'))}"` : ''}><td>${esc(a.name)}${a.iban ? `<div class="small muted">${esc(a.iban)}</div>` : ''}</td>
-        <td class="small kp-n">${a.categories.map(k => esc(CP(k))).join(', ')}</td><td class="num small kp-n"><a href="#" class="ka-tx" data-ids="${(a.ids || []).join(',')}">${a.count}</a></td><td class="num small kp-n ${a.sum < 0 ? 'neg' : ''}"><a href="#" class="ka-tx" data-ids="${(a.ids || []).join(',')}">${F0(a.sum)}</a></td>
+        <td class="small kp-n">${[...a.categories.map(k => esc(CP(k))), ...(a.estimated ? [esc(t('cf_geschaetzt'))] : [])].join(', ')}</td><td class="num small kp-n"><a href="#" class="ka-tx" data-ids="${(a.ids || []).join(',')}">${a.count}</a></td><td class="num small kp-n ${a.sum < 0 ? 'neg' : ''}"><a href="#" class="ka-tx" data-ids="${(a.ids || []).join(',')}">${F0(a.sum)}</a></td>
         <td class="kp-arrow" aria-hidden="true">→</td><td><select class="ka-ziel">${opts}</select>${prop}</td></tr>`;
     }
     h += '</tbody></table></div>';
