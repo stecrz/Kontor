@@ -401,6 +401,9 @@ anhängen – nie löschen.
 - **Mietkaution** (Nutzer, 2026-11-25): Eine erhaltene Kaution führt er als Verbindlichkeit – ein manuelles Konto mit Gegenbuchung;
   sie ist keine Miete. Kontor soll dafür ein sauberes Setup beschreiben und eine Kautions-Kategorie nicht als Miete zählen.
   (umgesetzt in 3.17.90: Kategorie „Kaution“ zählt als Aufnahme und Tilgung, als Mieter gezahlt als Sparen & Anlegen)
+- **Nachtlauf gegen 4 Uhr** (Nutzer, 2026-11-25): Der Nachtlauf soll nachts laufen, angestoßen gegen 4 Uhr deutscher Zeit; ein
+  laufender Lauf wird dafür nicht abgebrochen. Er stand auf 01:17 UTC (2:17 Winter-, 3:17 Sommerzeit), GitHub startete ihn aber
+  7–9 h später (9–11 Uhr). Jetzt 3:47 Europe/Berlin, ganzjährig; die Verspätung unter Last bestimmt GitHub. (umgesetzt in 3.17.94)
 
 ## Offen (Entscheidung steht aus – mit Empfehlung vorlegen, wenn der Punkt dran ist)
 - Umsatzsteuer-Voranmeldung direkt an ELSTER senden (ELSTERs Programmbibliothek ERiC, Anmeldung als Hersteller, Zertifikat und

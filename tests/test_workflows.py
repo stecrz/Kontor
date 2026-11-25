@@ -222,5 +222,46 @@ class NightJobs(unittest.TestCase):
         self.assertEqual(sorted(t for _, _, t in chosen(jobs[0][1])), ["test_random_months_add_up", "test_random_plans_add_up"])
 
 
+def schedule(text):
+    """[{key: value}] of the entries under `on: schedule:`, values unquoted."""
+    m = re.search(r"^  schedule:[^\n]*\n((?:(?:    | *#)[^\n]*\n)+)", text, re.M)
+    out = []
+    for line in (m.group(1) if m else "").splitlines():
+        k = re.match(r"^    (- |  )(\w+): *(\"[^\"]*\"|'[^']*'|[^#\s][^#]*?)\s*(#.*)?$", line)
+        if not k:
+            continue
+        if k.group(1) == "- " or not out:
+            out.append({})
+        out[-1][k.group(2)] = k.group(3).strip("\"'")
+    return out
+
+
+class NightTime(unittest.TestCase):
+    """The night runs at night in Germany: around 4 o'clock (the user, 2026-11-25), summer and winter -- so with the time zone,
+    not in UTC (01:17 UTC was 02:17 in winter, 03:17 in summer). GitHub's parser takes only `cron` and `timezone` in an entry
+    (@actions/workflow-parser: "Invalid schedule key" for anything else -- the file would be rejected, no night at all)."""
+
+    def test_around_four_german_time(self):
+        with open(os.path.join(ROOT, ".github", "workflows", "nightly.yml"), encoding="utf-8") as f:
+            got = schedule(f.read())
+        self.assertEqual(len(got), 1, got)
+        e = got[0]
+        self.assertLessEqual(set(e), {"cron", "timezone"})
+        self.assertEqual(e.get("timezone"), "Europe/Berlin")
+        minute, hour, *rest = e["cron"].split()
+        self.assertEqual(rest, ["*", "*", "*"], "every night")
+        at = int(hour) * 60 + int(minute)
+        # (and never 02:00-02:59: that hour is missing in spring and comes twice in autumn)
+        self.assertTrue(3 * 60 + 30 <= at <= 4 * 60 + 30, "%s:%s is not around four" % (hour, minute))
+        self.assertNotIn(int(minute), (0, 30), "at the full or half hour GitHub is busiest")
+
+    def test_reads_the_schedule(self):
+        text = ("on:\n  schedule:                # a comment\n                           # more\n"
+                "    - cron: \"17 1 * * *\"\n      timezone: 'Europe/Berlin'  # c\n    - cron: \"5 2 * * 1\"\n"
+                "  workflow_dispatch:\n")
+        self.assertEqual(schedule(text), [{"cron": "17 1 * * *", "timezone": "Europe/Berlin"}, {"cron": "5 2 * * 1"}])
+        self.assertEqual(schedule("on:\n  push:\n"), [])
+
+
 if __name__ == "__main__":
     unittest.main()

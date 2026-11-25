@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.17.94 (2026-11-25 11:51)
+- Entwicklung: Nachtlauf startet gegen 4 Uhr deutscher Zeit (3:47, Sommer wie Winter) statt 01:17 UTC
+
 ## 3.17.93 (2026-11-25 11:47)
 - Hilfe: die Suche findet „Geld unterwegs“ (Geldtransit) und „Kredit“ (manuelle Darlehen) wieder
 

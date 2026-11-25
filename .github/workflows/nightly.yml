@@ -15,8 +15,11 @@ name: Zufallsläufe
 # ends) go through the whole service -- figures, requests, the assistant; and every page in Chrome, each fixed world in every
 # view, new random worlds after them.
 on:
-  schedule:
-    - cron: "17 1 * * *"
+  schedule:                         # around 4 in the morning German time, summer and winter (the user, 2026-11-25); GitHub
+                                    # starts it late under load (in Nov. 2026 7-9 hours) -- off the full hour, as GitHub advises.
+                                    # Only `cron` and `timezone` (IANA) per entry: any other key and GitHub rejects the file.
+    - cron: "47 3 * * *"
+      timezone: "Europe/Berlin"
   workflow_dispatch:                # by hand after a night that did not run (3.17.64-66: the file was invalid, 24.11. had none)
 
 permissions:

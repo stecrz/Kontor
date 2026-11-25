@@ -12,7 +12,9 @@ Teil von `CLAUDE.md` (Aufbau). Neue Testdatei oder neuer Prüfbereich: hier eint
   Kontors eigenes Python (`tests/mac_python.py`: echt laden, falsche Prüfsumme, Quarantäne und Signatur, Selbsttest, Helfer in der
   Sandbox, Dienst als Kind des Starters, Neustart durch launchd, beschädigt → Apples Python, Deinstallieren, Update von der Version
   davor); Linux prüft denselben Ablauf mit dem echten Build für Linux.
-- **GitHub, nachts** (`nightly.yml`): auf dem neuesten `main` die 1000 festen und so viele neue Zufallsfälle, wie in ~3 h passen,
+- **GitHub, nachts** (`nightly.yml`, angestoßen um 3:47 deutscher Zeit, Sommer wie Winter – `timezone: "Europe/Berlin"`;
+  Nutzer, 2026-11-25: gegen 4 Uhr; GitHub startet unter Last später, im Nov. 2026 7–9 h – `test_workflows.NightTime`):
+  auf dem neuesten `main` die 1000 festen und so viele neue Zufallsfälle, wie in ~3 h passen,
   auf mehreren Rechnern nebeneinander; dazu Klickpfade durch die Oberfläche (`tests/test_clickpaths.py`, 40 feste und neue, in
   Chromium und der Safari-Engine) – je Push laufen davon 3 feste mit (im Teil „Übrige“).
   Jeder Zufallstest zieht neue Fälle, bis `KONTOR_FUZZ_MINUTES` seit **seinem** Beginn um sind – zwei in einem Job brauchen die
