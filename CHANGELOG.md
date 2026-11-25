@@ -1,5 +1,10 @@
 # Änderungen
 
+## 3.17.96 (2026-11-25 18:57)
+- Hilfe: Tabellen am iPhone brechen Wörter nicht mehr mitten im Wort
+- Oberfläche: kein Skriptfehler der Titelleiste mehr beim Seitenwechsel (iPhone)
+- Entwicklung: Klickpfade tippen Formen auf ganzen Pixeln mit Rand (haarfeine Bänder im Flussdiagramm ausgelassen); jeder ResizeObserver wirkt im nächsten Frame (geprüft); gezielte Läufe je Ansicht beschrieben
+
 ## 3.17.95 (2026-11-25 14:50)
 - Cashflow: in der Heatmap ragt der letzte Monatsname am iPhone nicht mehr in die Spalte „Ø“
 - Entwicklung: Klickpfade – eine waagrecht aus dem Bild gescrollte Zelle gilt nicht als anklickbar

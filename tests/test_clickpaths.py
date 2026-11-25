@@ -49,6 +49,10 @@ FOUND_CLICKS = [24, 25, 29, 132684508, 520936342, 879068245, 447175332]     # ca
 FOUND_CLICKS += [220413250]
 FOUND_CLICKS += [882424172, 557437501]     # 3.17.95 (a night, iPhone, WebKit): the heat map's last month name in the average's heading; a cell
                                             # scrolled beyond its table's edge taken for free (the tap scrolled it under the names)
+FOUND_CLICKS += [874536567]     # 3.17.96 (by hand, iPhone, WebKit): a point half a pixel inside a hairline band of the flow chart, tapped on
+                                # the band beside it (WebKit taps on whole pixels)
+FOUND_CLICKS += [552234862]     # 3.17.96 (by hand, iPhone, WebKit, under load -- not again alone): "ResizeObserver loop completed with
+                                # undelivered notifications" on a page change -- the title bar's height was set inside its observer
 KINDS = ["test", "random", "demo", "empty"]
 WORLD_NAMES = {"test": "Testwelt", "random": "Zufallswelt", "demo": "Demo", "empty": "leeres Kontor"}
 MAC_SIZES = [(1440, 900), (1512, 945), (1280, 800)]          # a 14-inch MacBook, the window nearly full screen (and a bit smaller)
@@ -89,12 +93,15 @@ FREE = r"""(() => {
   return 'covered ' + h.tagName.toLowerCase() + (h.id ? '#' + h.id : '') + (typeof h.className === 'string' && h.className ? '.' + h.className.trim().split(/\s+/)[0] : '') + ' „' + (h.textContent || '').trim().slice(0, 30) + '“';
 })()"""
 # a point on the marked shape of a chart, from its box's top left (the middle of a ring's part lies in the ring's hole, that of
-# a bar under its label): where a user clicks it; null: none found
+# a bar under its label): where a user clicks it; null: none found. A whole pixel whose neighbours one pixel away hit the shape
+# too -- WebKit taps on whole pixels, so a point half a pixel inside a hairline band (a small amount beside a big one in the flow
+# chart) was tapped on the band next to it; a user taps such an item's name (a night's click path, iPhone, WebKit: 3.17.96)
 POINT = r"""(() => {
   const el = document.querySelector('[data-cp]'); if (!el) return null;
   const r = el.getBoundingClientRect(), f = [0.5, 0.25, 0.75, 0.12, 0.88];
-  for (const b of f) for (const a of f) { const x = r.left + r.width * a, y = r.top + r.height * b, e = document.elementFromPoint(x, y);
-    if (e && (e === el || el.contains(e))) return {x: x - r.left, y: y - r.top}; }
+  const on = (x, y) => { const e = document.elementFromPoint(x, y); return !!e && (e === el || el.contains(e)); };
+  for (const b of f) for (const a of f) { const x = Math.round(r.left + r.width * a), y = Math.round(r.top + r.height * b);
+    if (on(x, y) && on(x - 1, y) && on(x + 1, y) && on(x, y - 1) && on(x, y + 1)) return {x: x - r.left, y: y - r.top}; }
   return null;
 })()"""
 DRAWER_READY = "document.querySelector('#drawer').classList.contains('open') && !document.querySelector('#drawer .spin') && !document.querySelector('#drawer').textContent.includes(t('wird_geladen'))"
@@ -1149,6 +1156,40 @@ class CheckerTest(unittest.TestCase):
             free = pg.evaluate(FREE)
             b.close()
         self.assertEqual(free, "layer")
+
+    def test_a_hairline_shape_has_no_point_to_tap(self):
+        """A band thinner than a pixel beside a thick one (a small amount in the flow chart): no point to tap -- WebKit taps on
+        whole pixels and hit the band beside it (a night's click path, 3.17.96); a thick band: a whole pixel inside it."""
+        sync_playwright = TT._playwright()
+        page = """<html><body style="margin:0"><svg width="300" height="200" style="margin:7.3px">
+          <path id="big" d="M10,10L200,10L200,60.4L10,60.4Z" fill="#888"/>
+          <g id="thin"><path d="M10,59.7L200,59.7L200,60.7L10,60.7Z" fill="#444"/></g>
+          <g id="thick"><path d="M10,80.2L200,80.2L200,84.6L10,84.6Z" fill="#444"/></g></svg></body></html>"""
+        with sync_playwright() as p:
+            b = p.chromium.launch(); pg = b.new_page(viewport={"width": 400, "height": 300})
+            pg.set_content(page)
+            pg.evaluate("document.querySelector('#thin').dataset.cp = '1'")
+            thin = pg.evaluate(POINT)
+            pg.evaluate("document.querySelector('#thin').removeAttribute('data-cp'); document.querySelector('#thick').dataset.cp = '1'")
+            thick = pg.evaluate(POINT)
+            at = pg.evaluate("p => { const r = document.querySelector('#thick').getBoundingClientRect(); return [r.left + p.x, r.top + p.y]; }", thick)
+            b.close()
+        self.assertIsNone(thin)
+        self.assertIsNotNone(thick)
+        self.assertTrue(all(abs(v - round(v)) < 1e-6 for v in at), at)
+
+    def test_resize_observers_act_in_the_next_frame(self):
+        """Every ResizeObserver of the page acts in the next frame (onResizeFrame, requestAnimationFrame): a size or style changed
+        inside it while the browser still delivers sizes makes it report "ResizeObserver loop completed with undelivered
+        notifications" as an error (the title bar's height set inside one -- a click path on the iPhone, 3.17.96)."""
+        import re
+        src = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "web", "app.js"), encoding="utf-8").read()
+        found = [m.end() for m in re.finditer(r"new ResizeObserver\(", src)]
+        self.assertGreaterEqual(len(found), 6)
+        for at in found:
+            head = src[at:at + 120]
+            self.assertRegex(head, r"^(onResizeFrame\(|\(\) => (requestAnimationFrame\(|\{ if \(!raf\) raf = requestAnimationFrame\())",
+                             "line %d: %s" % (src.count("\n", 0, at) + 1, head[:80]))
 
     def test_cases_go_round(self):
         """The fixed cases of a push see the test world on the Mac, a random world on the iPhone, the demo in WebKit; every

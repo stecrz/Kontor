@@ -971,8 +971,11 @@ document.addEventListener('keydown', e => {
   if (c.id === 'save' && $('#main [data-cmd-s]')) e.preventDefault();          // (not the browser's "save page", also while nothing changed)
   if (c.on) { e.preventDefault(); c.run(); }
 });
-// the title bar's height (taller in a narrow window): what sticks right below it (the help's search) sits there
-try { const tb = $('.topbar'); if (tb) new ResizeObserver(() => document.documentElement.style.setProperty('--topbar-h', tb.offsetHeight + 'px')).observe(tb); } catch (e) {}
+// the title bar's height (taller in a narrow window): what sticks right below it (the help's search) sits there -- set in the
+// next frame and only when it changed: a style set inside the observer restyles the whole page while the browser still delivers
+// sizes, and it reports "ResizeObserver loop completed with undelivered notifications" (a click path on the iPhone, 3.17.96)
+try { const tb = $('.topbar'); let raf = 0, h = '';
+  if (tb) new ResizeObserver(() => { if (!raf) raf = requestAnimationFrame(() => { raf = 0; const v = tb.offsetHeight + 'px'; if (v !== h) { h = v; document.documentElement.style.setProperty('--topbar-h', v); } }); }).observe(tb); } catch (e) {}
 // to the Mac app: its menu entries (sent again only when they change; on/off too); the keys in the tooltips
 let SHELL_CMDS = '';
 function keysShow() {

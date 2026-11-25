@@ -822,7 +822,9 @@ details.adv { margin:14px 0 4px; } details.adv summary { cursor:pointer; color:v
 .help mark.hm { background:#ffe58a; color:#1d1d1f; border-radius:2px; } .help mark.hm.on { background:#ff9f0a; box-shadow:0 0 0 2px #ff9f0a; }
 pre.code { background:var(--head); border:1px solid var(--line); border-radius:8px; padding:10px 12px; font:12px/1.5 ui-monospace, Menlo, monospace; overflow:auto; white-space:pre; }
 a.more { white-space:nowrap; }
-@media (max-width: 800px) { .help-layout { grid-template-columns:minmax(0, 1fr); } .help-layout > :last-child { overflow-wrap:anywhere; } .help-toc { position:static; max-height:none; flex-direction:row; flex-wrap:wrap; } .help-toc a.help-toc-x { margin:0; padding-top:5px; border-top:0; border-left:1px solid var(--line); } }
+/* narrow: long addresses in the text break anywhere -- in a table only where a word would overflow (else its columns shrink to a few
+   letters, words broken letter by letter: 3.17.96); its first column without the cap of a page's names */
+@media (max-width: 800px) { .help-layout { grid-template-columns:minmax(0, 1fr); } .help-layout > :last-child { overflow-wrap:anywhere; } .help-layout > :last-child table { overflow-wrap:break-word; } .help-layout > :last-child table :is(th, td):first-child { max-width:none; } .help-toc { position:static; max-height:none; flex-direction:row; flex-wrap:wrap; } .help-toc a.help-toc-x { margin:0; padding-top:5px; border-top:0; border-left:1px solid var(--line); } }
 .wrap td .cnt { font-weight:400; }              /* number of accounts or securities next to a row: not bold */
 
 /* rule proposals for MoneyMoney: the expression, selectable as a whole */

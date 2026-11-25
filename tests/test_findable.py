@@ -188,5 +188,51 @@ class PageFinds(unittest.TestCase):
         self.assertEqual(miss, [], "the help page does not find:\n" + "\n".join(miss))
 
 
+# every word (up to a hyphen or slash, where a line may break) of the help's tables wider than the column it stands in
+BROKEN_WORDS = r"""(() => {
+  const out = [], m = document.createElement('span'); m.style.cssText = 'position:absolute;visibility:hidden;white-space:nowrap';
+  document.body.appendChild(m);
+  for (const c of document.querySelectorAll('#help-body table td, #help-body table th')) {
+    if (!c.getClientRects().length) continue;
+    const s = getComputedStyle(c), room = c.clientWidth - parseFloat(s.paddingLeft) - parseFloat(s.paddingRight);
+    m.style.font = s.font; m.style.letterSpacing = s.letterSpacing;
+    for (const w of c.textContent.split(/\s+/).flatMap(x => x.split(/(?<=[-\/‑–])/)).filter(Boolean)) {
+      m.textContent = w; const need = m.getBoundingClientRect().width;
+      if (need > room + 1) out.push(w + ' (' + Math.round(need) + ' px in ' + Math.round(room) + ')');
+    }
+  }
+  m.remove(); return out;
+})()"""
+
+
+class PageReads(unittest.TestCase):
+    """The help on the iPhone: no column of its tables narrower than a word in it -- a long address in the text breaks anywhere,
+    in a table it had squeezed the first column to a few letters, words broken letter by letter (3.17.96)."""
+
+    def test_table_words_stay_whole_on_the_iphone(self):
+        try:
+            from playwright.sync_api import sync_playwright
+        except ImportError:
+            self.skipTest("playwright fehlt")
+        import test_tour as T
+        T.PageTourTest.setUpClass()
+        try:
+            with sync_playwright() as p:
+                b = p.chromium.launch()
+                pg = b.new_page(**T.DEVICES["iphone"])
+                pg.goto(T.PageTourTest.base); pg.fill("#login-pw", T.PASSWORD)
+                if pg.is_visible("#login-pw2"):
+                    pg.fill("#login-pw2", T.PASSWORD)
+                pg.click("#login-btn"); pg.wait_for_selector("#shell:not(.hidden)", timeout=30000)
+                pg.evaluate("location.hash = '#help'"); pg.wait_for_selector("#help-q"); T.settle(pg)
+                tables = pg.evaluate("document.querySelectorAll('#help-body table').length")
+                broken = pg.evaluate(BROKEN_WORDS)
+                b.close()
+        finally:
+            T.PageTourTest.tearDownClass()
+        self.assertGreater(tables, 0)
+        self.assertEqual(broken, [], "words broken in the help's tables on the iPhone:\n" + "\n".join(broken))
+
+
 if __name__ == "__main__":
     unittest.main()
