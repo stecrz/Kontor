@@ -4577,6 +4577,18 @@ function cfDrawHeat() {
   el.innerHTML = h + '</div>';
   // too narrow for the amount (the change): a mark -- one, two or three by how far beyond the regular scale (3 and 10 times)
   for (const b of $$('.cf-heat-x:not(.neu)', el)) if (b.scrollWidth > b.parentNode.clientWidth - 4) { b.textContent = (b.dataset.up === '0' ? '▼' : '▲').repeat(+b.dataset.lvl || 1); b.classList.add('mark'); }
+  // the last month's name wider than its column (narrow on the iPhone, "Jan 24"): moved left until it ends with its column, not
+  // in the average's heading beside it; does it then touch the name before it, that one gives way (a night's click path, 3.17.95)
+  const named = $$('.cf-heat-m:not(.cf-heat-avg)', el).filter(x => x.textContent), last = named[named.length - 1];
+  if (last) {
+    const ext = x => { const r = document.createRange(); r.selectNodeContents(x); return r.getBoundingClientRect(); };
+    const over = ext(last).right - last.getBoundingClientRect().right;
+    if (over > 0.5) {
+      last.style.transform = `translateX(${-Math.ceil(over)}px)`;
+      const prev = named[named.length - 2];
+      if (prev && ext(prev).right > ext(last).left - 4) prev.textContent = '';
+    }
+  }
 }
 // 3. Where the money came from and where it went: everything that came in (income, loans taken up, sales, less cash) and
 // everything it was used for (expenses, investments, repayment, interest, more cash) -- both sides add up to the same sum

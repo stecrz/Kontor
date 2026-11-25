@@ -1,5 +1,9 @@
 # Änderungen
 
+## 3.17.95 (2026-11-25 14:50)
+- Cashflow: in der Heatmap ragt der letzte Monatsname am iPhone nicht mehr in die Spalte „Ø“
+- Entwicklung: Klickpfade – eine waagrecht aus dem Bild gescrollte Zelle gilt nicht als anklickbar
+
 ## 3.17.94 (2026-11-25 11:51)
 - Entwicklung: Nachtlauf startet gegen 4 Uhr deutscher Zeit (3:47, Sommer wie Winter) statt 01:17 UTC
 

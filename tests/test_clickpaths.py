@@ -47,6 +47,8 @@ FOUND_CLICKS = [24, 25, 29, 132684508, 520936342, 879068245, 447175332]     # ca
                                 # 3.17.84 (that night's other cases; the rest of them: FoundAtNightTest): the balance sheet on the iPhone
                                 # opened again stood 28 px from where it was left
 FOUND_CLICKS += [220413250]
+FOUND_CLICKS += [882424172, 557437501]     # 3.17.95 (a night, iPhone, WebKit): the heat map's last month name in the average's heading; a cell
+                                            # scrolled beyond its table's edge taken for free (the tap scrolled it under the names)
 KINDS = ["test", "random", "demo", "empty"]
 WORLD_NAMES = {"test": "Testwelt", "random": "Zufallswelt", "demo": "Demo", "empty": "leeres Kontor"}
 MAC_SIZES = [(1440, 900), (1512, 945), (1280, 800)]          # a 14-inch MacBook, the window nearly full screen (and a bit smaller)
@@ -75,6 +77,10 @@ FREE = r"""(() => {
   const bar = document.querySelector('.topbar'), top = bar && !bar.closest('#drawer') ? bar.getBoundingClientRect().bottom : 0;
   const hit = () => { const r = el.getBoundingClientRect(), x = r.left + r.width / 2, y = r.top + r.height / 2;
     if (y < top + 4 || y > innerHeight - 4 || x < 0 || x > innerWidth) return null;
+    // (its middle outside a box that clips it -- a table's cell scrolled sideways beyond its edge: not to be seen there, though
+    // the point lies on the card around it; a tap would scroll it under the names that stay -- a night's click path, 3.17.95)
+    for (let a = el.parentElement; a && a !== document.body; a = a.parentElement) { const s = getComputedStyle(a);
+      if (s.overflowX !== 'visible' || s.overflowY !== 'visible') { const q = a.getBoundingClientRect(); if (x < q.left || x > q.right || y < q.top || y > q.bottom) return null; } }
     const e = document.elementFromPoint(x, y); return !e || e === el || el.contains(e) || e.contains(el) ? 'ok' : e; };
   let h = hit(); if (h === 'ok') return 'ok';
   el.scrollIntoView({block: 'center', inline: 'center'}); h = hit(); if (h === 'ok') return 'ok';
@@ -1125,6 +1131,24 @@ class CheckerTest(unittest.TestCase):
         self.assertEqual(len(r["over"]), 1, r["over"]); self.assertIn("span „Erster“ unter div › span#cover", r["over"][0])
         self.assertEqual(len(r["outside"]), 1, r["outside"]); self.assertIn("div#ctx", r["outside"][0])
         self.assertIsNone(r["wide"])
+
+    def test_a_cell_beyond_its_scrolled_edge_is_not_free(self):
+        """A table's cell scrolled sideways beyond its box's edge, its middle on the card around it: not free to click -- in view
+        it lies under the names that stay (a night's click path took it for free, the tap was caught by the names: 3.17.95)."""
+        sync_playwright = TT._playwright()
+        page = """<html><body style="margin:0;font:14px sans-serif"><div id="main" style="padding:60px">
+          <div id="w" style="width:300px;overflow-x:auto"><div style="display:flex;width:max-content">
+            <span style="order:-1;flex:0 0 100px;position:sticky;left:0;z-index:3;background:#fff;margin-right:-100px;height:20px">Namen</span>
+            <span id="ph" data-cp="1" style="flex:0 0 100px;height:20px"></span><span style="flex:0 0 900px;height:20px">Zahlen</span>
+          </div></div></div></body></html>"""
+        with sync_playwright() as p:
+            b = p.chromium.launch(); pg = b.new_page(viewport={"width": 800, "height": 600})
+            pg.set_content(page)
+            pg.evaluate("document.querySelector('#w').scrollLeft = 60")
+            self.assertEqual(pg.evaluate("Math.round(document.querySelector('#ph').getBoundingClientRect().left)"), 0)
+            free = pg.evaluate(FREE)
+            b.close()
+        self.assertEqual(free, "layer")
 
     def test_cases_go_round(self):
         """The fixed cases of a push see the test world on the Mac, a random world on the iPhone, the demo in WebKit; every
