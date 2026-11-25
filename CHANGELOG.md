@@ -1,5 +1,10 @@
 # Änderungen
 
+## 3.17.89 (2026-11-25 02:08)
+- Cashflow: eine Zahlung an einen anderen Bereich übernimmt keine von Hand gebuchte Darlehensbuchung mehr, die den Namen eines anderen Zahlers trägt
+- Beteiligung: Wert bleibt auch dann auf den Cent genau, wenn eine früher erfasste Buchung der Gesellschaft später datiert ist
+- Entwicklung: Klickpfade – zugeklappte Abschnitte gehören nicht zum verglichenen Zustand; Seite wird im nächsten Bild an ihrer Stelle gehalten
+
 ## 3.17.88 (2026-11-25 01:26)
 - Cashflow: Wertpapierkauf und -verkauf, Sparplan und Festgeld werden auch ohne Kategorie oder mit „Umbuchung“ als Umschichtung erkannt – ins Depot bzw. Festanlagekonto, nicht mehr als Ausgabe oder „Unklar“
 - Cashflow-Positionen: jede Umbuchung ohne Gegenbuchung steht unter „Zielkonto je Empfänger“ – einmal das Konto wählen, dann zählt sie dort

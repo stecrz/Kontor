@@ -6991,9 +6991,11 @@ function holdPlace(y) {
   const box = $('#main').firstElementChild;
   if (!(y > 0) || !box || typeof ResizeObserver !== 'function') return;
   const evs = ['wheel', 'touchstart', 'pointerdown', 'keydown'];
-  const ro = new ResizeObserver(() => { if (Math.abs(pageY() - y) > 1) pageTo(y); });
+  // (in the next frame, not inside the observer: moving the page there can make the browser report "ResizeObserver loop
+  // completed with undelivered notifications" as an error -- a night's click path, 3.17.89)
+  const ro = new ResizeObserver(() => requestAnimationFrame(() => { if (STAY.off === off && Math.abs(pageY() - y) > 1) pageTo(y); }));
   const tm = setTimeout(freePlace, 5000);
-  STAY.off = () => { ro.disconnect(); clearTimeout(tm); evs.forEach(e => removeEventListener(e, freePlace, true)); };
+  const off = STAY.off = () => { ro.disconnect(); clearTimeout(tm); evs.forEach(e => removeEventListener(e, freePlace, true)); };
   evs.forEach(e => addEventListener(e, freePlace, {capture: true, passive: true}));
   ro.observe(box);
 }

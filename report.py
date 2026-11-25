@@ -1539,8 +1539,13 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
         # near or nearer, within PAIR_DAYS -- unpaired, or paired by amount alone with another booking by hand: among many of
         # one amount the pairs may have shifted by one) is not this payment's: it stays as it was, the payment a plain
         # contribution -- on both sides (found by a night's random case: 3.17.16)
+        # ... nor one that names the very counterparty such a payment names and this payment does not (a friend's loan booked
+        # a day after his payment, a transfer to the children's area on the day itself: the name says whose it is, not the
+        # day -- the night's cash flow cases, 3.17.89)
+        named = lambda r, o: bool((o.name or "").strip()) and (r.name or "").strip().casefold() == o.name.strip().casefold() \
+            and (t.name or "").strip().casefold() != o.name.strip().casefold()
         c = [o for o in c if o in lk or not any(
-            abs((r.booking_date - o.booking_date).days) <= min(PAIR_DAYS, abs((o.booking_date - t.booking_date).days))
+            abs((r.booking_date - o.booking_date).days) <= (PAIR_DAYS if named(r, o) else min(PAIR_DAYS, abs((o.booking_date - t.booking_date).days)))
             for r in rivals.get(cents_(t.amount), ()))]
         if c:
             claims_by.append((t, lk, c))

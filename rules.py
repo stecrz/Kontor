@@ -643,6 +643,10 @@ class ValueSeries:
         i = len(self._came_days) if day is None else bisect_right(self._came_days, day)
         return self._came_top[i - 1] if i else 0
 
+    def moved(self, after: date, day: Optional[date]) -> bool:
+        """One of these accounts has a transaction dated after `after`, up to `day` (None: up to now)."""
+        return bisect_right(self._came_days, after) < (len(self._came_days) if day is None else bisect_right(self._came_days, day))
+
     def at(self, day: Optional[date]) -> Tuple[float, float, List[str]]:
         """(factor x value, value, unknown accounts) at the end of `day`; None: now."""
         if day is None:
@@ -705,8 +709,10 @@ def _keep_value(ledger: Ledger, res: RuleResult, rule: str, target, series: Valu
             return False
         i = len(mine_days) if d is None else bisect_right(mine_days, d)
         # Kontor's latest adjustment up to that day is also the one it made last (none made later for an earlier day moved
-        # the balance since) -- and it came after everything in the company
-        return i > 0 and mine[i - 1][1] == mine_top[i - 1] > series.newest(d)
+        # the balance since) -- and it came after everything in the company, none of which is dated after it: a booking
+        # entered before the adjustment but dated later changes the value of this day, not of the adjustment's (a night's
+        # case, 3.17.89 -- the balance then is the exact value of the earlier day, a cent from this day's by chance)
+        return i > 0 and mine[i - 1][1] == mine_top[i - 1] > series.newest(d) and not series.moved(mine[i - 1][0], d)
     want_now, src_now, unknown_now = series.at(None)
     if abs(want_now - target.balance) >= 0.005 and not unknown_now and stays(None, round(target.balance - twice, 2), src_now):
         want_now = round(target.balance - twice, 2)

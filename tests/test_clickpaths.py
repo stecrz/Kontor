@@ -96,9 +96,12 @@ SNAP = r"""(root => {
   const box = document.querySelector(root); if (!box) return null;
   // (seen: also not in a folded <details> -- Chromium keeps its contents' boxes, only checkVisibility() knows: 3.17.80)
   const vis = el => el.getClientRects().length > 0 && getComputedStyle(el).visibility !== 'hidden' && (!el.checkVisibility || el.checkVisibility());
-  const who = el => el.id ? '#' + el.id : el.tagName.toLowerCase() + Object.entries(el.dataset).filter(([k]) => k !== 'cp' && k !== 'cftip').map(([k, v]) => `[${k}=${v}]`).join('') + ' „' + (el.textContent || '').trim().slice(0, 24) + '“';
-  const on = [...box.querySelectorAll('button.on, [aria-pressed="true"], [aria-selected="true"], input[type="checkbox"]:checked, input[type="radio"]:checked')].filter(vis).map(who);
-  const rows = [...box.querySelectorAll('tr')].filter(vis).length;
+  const who = el => el.id ? '#' + el.id : el.tagName.toLowerCase() + Object.entries(el.dataset).filter(([k]) => k !== 'cp' && k !== 'cftip').map(([k, v]) => `[${k}=${v}]`).join('') + (el instanceof SVGElement ? '' : ' „' + (el.textContent || '').trim().slice(0, 24) + '“');          // (a chart's part: its label is drawn by the chart, now or a moment later)
+  // the page's own state: what stands in a folded section (<details>) is none of it -- Kontor folds them again when another page
+  // was open in between (KEEP_OPEN: "folded sections open only while the same page is drawn again"); the side window's are compared (open)
+  const page = el => root !== '#main' || !el.closest('details');
+  const on = [...box.querySelectorAll('button.on, [aria-pressed="true"], [aria-selected="true"], input[type="checkbox"]:checked, input[type="radio"]:checked')].filter(vis).filter(page).map(who);
+  const rows = [...box.querySelectorAll('tr')].filter(vis).filter(page).length;
   const open = root === '#drawer' ? [...box.querySelectorAll('details[open]')].map(who) : [];
   // what stands in the middle of the window (the same view, also when pictures above it got their height a moment later)
   const m = box.getBoundingClientRect(), mid = document.elementFromPoint(m.left + m.width / 2, innerHeight / 2);
@@ -422,7 +425,9 @@ class Walk:
             # where it stands: only when it was opened from the menu or a tab (a figure or a card leads to its place on purpose),
             # and only against the view it was left in (one place per page: scrolled later beside the assistant's panel, the
             # page is not where its view without the panel was)
-            placed = plain and self.latest.get(h) == key
+            # ... and not where the page is shorter now than its place (a folded section was open when it was left): it stands at its end
+            ended = self.js("(() => { const sc = pageScroller(); return pageY() >= sc.scrollHeight - sc.clientHeight - 2; })()") and snap["y"] < was["y"]
+            placed = plain and self.latest.get(h) == key and not ended
             diff = {k: (was[k], snap[k]) for k in snap if was.get(k) != snap[k] and k != "mid"
                     and not (k == "y" and (not placed or abs(was[k] - snap[k]) <= 2 or was["mid"] == snap["mid"]))}
             if diff:
