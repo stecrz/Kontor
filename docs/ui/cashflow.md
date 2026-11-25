@@ -29,7 +29,7 @@ Umschichtungen). A row with ▸ is closed, ▾ open; a closed row still holds th
 ### cashflow.table.operating — Überschuss, Einnahmen, Ausgaben
 Überschuss (CFO) = Einnahmen + Ausgaben of the column: income minus expenses of everyday life or business (in companies the
 operating cash flow), without investing, repayment and paid interest (those are under Investitionen/Finanzierung); received interest
-and dividends count here (position Kapitalerträge). Einnahmen and Ausgaben are each the sum of their positions.
+and dividends count here (position Kapitalerträge) -- also interest on a loan the user granted that is booked in the loan's account. Einnahmen and Ausgaben are each the sum of their positions.
 
 Positions (fixed outline for every area): income Arbeitseinkommen (salary, bonus, profit-related pay, minijob, side earnings from own work), Umsatzerlöse, Rente & Sozialleistungen
 (pension, child benefit, parental allowance …; companies: Zuschüsse & Förderungen), Vermietung, Kapitalerträge (interest,
@@ -59,8 +59,8 @@ Investitionen (CFI): buying (−) and selling (+) assets – money leaves the ba
 (rows below it, by the kind of the account the money went to): Immobilien, Wertpapiere & Geldanlagen, Sachwerte, Sonstige Anlagen,
 Beteiligungen (money paid into or out of a company of the user, named by the company; "Einlagen & Entnahmen" = a category with
 that position in a private area: money into or out of a company Kontor does not keep), Andere Bereiche (contributions to and
-withdrawals from another area of the user, named by the area), Gewährte Darlehen (the account; "<account> / Zinsen" = interest
-received on a loan granted), Fremdwährung (money moved into an account in another currency), Sparen & Anlegen (saving whose account
+withdrawals from another area of the user, named by the area), Gewährte Darlehen (the account: paid out −, paid back +; interest booked in it counts under Kapitalerträge and
+raises the receivable here until it is paid), Fremdwährung (money moved into an account in another currency), Sparen & Anlegen (saving whose account
 is unknown; a company's: "Anlagevermögen & Geldanlagen"). Buying securities into a depot (which has balances only, no bookings) and
 selling them back belongs here by a category with the position Sparen & Anlegen: the purchase −, the sale +, the depot's change in
 value shows only the prices; without a category, or with a transfer's, Kontor recognises it by what the booking says (a securities trade, a savings plan, a
@@ -79,7 +79,9 @@ had to come from loans or from cash. Shown from the level "Positionen".
 
 ### cashflow.table.financing — Finanzierung
 Finanzierung (CFF): payments to and from lenders and partners. Kinds: Darlehensaufnahme (+, a loan paid out – never a "negative
-repayment"), Tilgung (−, repayment), Zinsen (−, interest paid – costs net worth, unlike repayment), Einlagen & Entnahmen der
+repayment"; also interest charged to a loan account in a month in which less than that was credited to it -- deferred, due at the
+end, a rate below its interest: it raises the debt, the same amount stands under Zinsen; a rent deposit received by category
+"Kaution"), Tilgung (−, repayment), Zinsen (−, interest paid – costs net worth, unlike repayment), Einlagen & Entnahmen der
 Gesellschafter (companies). Under each kind the loan accounts by name; "Nach Kategorie" = repayment or interest booked by a
 MoneyMoney category beside the loans (money in under a repayment category counts as Darlehensaufnahme, "Nach Kategorie"); "<area>:
 <account>" = a payment between two areas booked against a capital or loan account. Einlagen & Entnahmen der Gesellschafter also holds

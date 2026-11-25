@@ -393,12 +393,13 @@ anhängen – nie löschen.
   (umgesetzt in 3.17.88)
 - **Zinsen im Cashflow** (Nutzer, 2026-11-25): Erhaltene Zinsen sind Kapitalerträge und zählen unter Einnahmen – auch die auf
   gewährte Darlehen, die im Forderungskonto gebucht sind (sie standen unter Investitionen). Gezahlte Darlehenszinsen bleiben unter
-  Finanzierung („es ist ja der Finanzierungs-Cashflow“), nicht unter Ausgaben. Gilt genauso für Firmen.
+  Finanzierung („es ist ja der Finanzierungs-Cashflow“), nicht unter Ausgaben. Gilt genauso für Firmen. (umgesetzt in 3.17.90)
 - **Darlehenskonten** (Nutzer, 2026-11-25): Ihm bekannt ist nur die Kontoführung „volle Annuität als Gutschrift, Zinsen als
   eigene Buchung im Darlehenskonto“ – das bleibt der Regelfall. Andere Kontoführungen (nur der Tilgungsanteil wird gegengebucht;
   Zinsen laufen ohne Zahlung auf) soll Kontor von sich aus richtig behandeln; dazu ist keine Entscheidung von ihm nötig.
 - **Mietkaution** (Nutzer, 2026-11-25): Eine erhaltene Kaution führt er als Verbindlichkeit – ein manuelles Konto mit Gegenbuchung;
   sie ist keine Miete. Kontor soll dafür ein sauberes Setup beschreiben und eine Kautions-Kategorie nicht als Miete zählen.
+  (umgesetzt in 3.17.90: Kategorie „Kaution“ zählt als Aufnahme und Tilgung, als Mieter gezahlt als Sparen & Anlegen)
 
 ## Offen (Entscheidung steht aus – mit Empfehlung vorlegen, wenn der Punkt dran ist)
 - Umsatzsteuer-Voranmeldung direkt an ELSTER senden (ELSTERs Programmbibliothek ERiC, Anmeldung als Hersteller, Zertifikat und

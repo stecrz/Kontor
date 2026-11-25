@@ -236,7 +236,7 @@ def loan_to_a_friend(d, lag, k, i):
                (i + 2, "dar_an_fr", month_end(d2), interest, {"purpose": "Zinsen"}),
                (i + 3, "giro", d3, x + interest, {"iban": "DE92", "name": "Freund"}), (i + 4, "dar_an_fr", d3, -(x + interest), {"purpose": "Rückzahlung"})],
               nw={"Privat": interest},
-              rows=[("Privat", "investing", "Darlehen an Freund / Zinsen", interest, True)])
+              rows=[("Privat", "income", "Kapitalerträge", interest, True)])          # interest received: investment income (user, 2026-11-25; it stood under investing)
 
 
 def bill_booked_when_due(d, lag, k, i):

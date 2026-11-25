@@ -976,6 +976,13 @@ PURCHASE_OF = ("immobil", "vermiet", "objekt", "grundstueck", "eigentumswohnung"
 PURCHASE_NOT = ("zins", "tilgung", "darlehen", "kredit", "finanzierung", "annuit", "hypothek")
 
 
+def deposit_category(path: str) -> bool:
+    """A category for a rent deposit ("Kaution") -- held for the tenant, or paid to a landlord: money owed back, neither rent
+    nor a cost. Not its insurance or its interest."""
+    low = fold_text(path)
+    return "kaution" in low and not any(w in low for w in ("versicher", "zins", "buergschaft"))
+
+
 def purchase_kind(path: str) -> str:
     """"price" (the purchase of an investment), "costs" (what buying it cost: notary, land transfer tax) or "" -- by the
     category's words."""
@@ -1200,6 +1207,10 @@ def recognised_position(path: str, income: bool, company: bool = False) -> Optio
     texts = list(dict.fromkeys((name_l, low_l, name, low)))
     if not income and purchase_kind(path):
         return "saving"
+    if deposit_category(path):
+        # received for a property you let: a debt (taken up, paid back) -- best kept in an account of its own; paid as a
+        # tenant: money you get back (saving). Never rent, never housing costs (user, 2026-11-25).
+        return "repayment" if income or any(_has(words, low) for words, _, _ in POSITION_CONTEXT) else "saving"
     for text in texts:
         for words, pin, pout, start in POSITION_FIRST:
             if pin != "capital_income" and any(w in text for w in FIRST_NOT):
@@ -1645,6 +1656,8 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
             return False
         return True
 
+    charged: Dict[str, Dict[str, List[Tx]]] = defaultdict(lambda: defaultdict(list))      # loan -> month -> its interest bookings
+
     def own_row(t: Tx, acc: Account, role: str, mk: str) -> None:
         """A booking of an account that is no bank account (loan, receivable, asset): interest, income or an expense by its
         category, or a change of its value. Interest and the category come with the account's other side -- the debt repaid,
@@ -1659,8 +1672,12 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
         interest = loan and (_is_cost(t, cost_words) or (not obj and (pos == "loan_interest" or (role == "receivables" and pos == "capital_income"))))
         if interest and role == "liabilities":
             R.add("financing", row=acc.name + " / Zinsen", mk=mk, amount=t.amount, account=acc.uuid, kind="interest", nw=True, lbl=("cf_name", acc.name), **_grp(FIN_GROUPS, "interest"))
+            charged[acc.uuid][mk].append(t)
         elif interest:
-            R.add("investing", row=acc.name + " / Zinsen", mk=mk, amount=t.amount, account=acc.uuid, kind="interest", nw=True, lbl=("cf_zinsen", acc.name), **_grp(INVEST_GROUPS, "receivables"))
+            # interest on a loan you granted is investment income like any interest received (user, 2026-11-25; it stood under
+            # investing, beside the loan) -- interest you pay stays with financing
+            row, key = position_row("capital_income", company)
+            R.add("income", row, row, mk, t.amount, ord=POS["capital_income"][2], lbl=(key,), detail=norm_cat(t.category_path))
         elif not category_row(t, pos, obj, mk):
             R.add("valuation", acc.name, acc.name, mk, t.amount, account=acc.uuid, kind="account", nw=True)
             return
@@ -1987,6 +2004,30 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
             R.add(psec, row, row, mk, t.amount, ord=pord, lbl=(key,), detail=det)
 
     R.cur = None
+    # Interest charged to a loan in a month in which less than that was credited to it (nothing: due at its end, deferred; or a
+    # rate below its interest) raises the debt: what is left of it above the credits is taken up -- never a "repayment above
+    # zero", as with a loan paid out. By the loan account's own bookings, not by the month's net: a rate that left the bank
+    # in one month and its interest in the next is still a rate (the independent check of 3.17.87). The repayment row keeps
+    # what it was for the plan (plan_hist): the usual payment, and a debt that keeps growing by its interest.
+    R.plan_hist = {}
+    for u, per in charged.items():
+        key = ("financing", ledger.accounts[u].name + " / Tilgung")
+        if key not in R.vals or roles.get(u) != "liabilities":
+            continue
+        credits: Dict[str, float] = defaultdict(float)
+        for x in ledger.transactions(u):
+            if x.booked and x.amount > 0:
+                credits[month_key(x.booking_date)] += x.amount
+        before = dict(R.vals[key])
+        for mk, ts in per.items():
+            more = round(min(max(R.vals[key].get(mk, 0.0), 0.0), max(-sum(x.amount for x in ts) - credits.get(mk, 0.0), 0.0)), 2)
+            if more >= 0.005:
+                R.vals[key][mk] -= more
+                name = ledger.accounts[u].name
+                for i, x in enumerate(ts):
+                    R.add("financing", row=name + " / Aufnahme", mk=mk, amount=more if i == 0 else 0.0, account=u, kind="drawdown", nw=False, lbl=("cf_name", name),
+                          tx=x.id, **_grp(FIN_GROUPS, "drawdown"))
+                R.plan_hist[key] = before
     for u, fm, op in openings:
         acc = ledger.accounts[u]
         R.add("valuation", acc.name, acc.name + " / Anfangssaldo", fm, op, account=u, kind="opening", nw=True, lbl=("cf_anfangssaldo", acc.name))
@@ -2270,6 +2311,8 @@ def build_dataset(ledger: Ledger, config: dict, state: dict, today: date, bereic
             for k in ("lbl", "glbl", "ord", "property_name"):
                 if m.get(k) is not None:
                     z[k] = m[k]
+            if (s, row) in getattr(R, "plan_hist", {}):  # what the plan goes on from, where interest not paid was moved out (classify)
+                z["plan_hist"] = {mk: round(R.plan_hist[(s, row)].get(mk, 0.0), 2) for mk in mkeys}
             ids = R.ids.get((s, row))
             if ids:                                      # how many bookings per month (the ids themselves: kept apart, fetched on a click)
                 z["n"] = {mk: len(v) for mk, v in ids.items() if v}
@@ -2590,7 +2633,8 @@ def plan_position(z: dict, sec: str, cfg: dict, rule: dict, future: List[str], f
     if not dets:                                         # a row of its own (no categories): planned as a whole
         bud = budgets.get(z["row"])
         bud = round(sign(bud), 2) if bud is not None else None
-        basis, info = _plan_basis(method, [z["amounts"].get(mk, 0.0) for mk in full_months], full_months, amount, bud)
+        was = z.get("plan_hist") or z["amounts"]
+        basis, info = _plan_basis(method, [was.get(mk, 0.0) for mk in full_months], full_months, amount, bud)
         p = z["plan"] = {"method": method, "amount": amount, "increase_percent_pa": g, "budget": bud,
                          "amounts": {}, "proposal": {}, "overwritten": sorted(ov), "rule": head, "base": info}
         for i, mk in enumerate(future):
@@ -2979,7 +3023,7 @@ def apply_plan(dataset: dict, plan: dict, config: dict, fremd_nw: Optional[Dict[
         if rate is None:
             continue
         tilg, zins = parts.get("repayment"), parts.get("interest")
-        pay_hist = [(tilg["amounts"][mk] if tilg else 0.0) + (zins["amounts"][mk] if zins else 0.0) for mk in full_months[-12:]]
+        pay_hist = [((tilg.get("plan_hist") or tilg["amounts"])[mk] if tilg else 0.0) + (zins["amounts"][mk] if zins else 0.0) for mk in full_months[-12:]]
         payment = float(lp.get("payment") or (round(-sum(pay_hist) / len(pay_hist), 2) if pay_hist else 0.0))
         kind = lp.get("kind") or ("liability" if acc.get("role") == "liabilities" else "forderung" if acc.get("role") == "receivables" else None)
         loan_state[uuid] = {"rate": rate, "payment": payment, "model": lp.get("model", "remaining_debt_monthly"), "kind": kind,

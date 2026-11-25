@@ -22,7 +22,7 @@ from model import UUID_RE, Account, Ledger, Tx, accounts_from_export, add_months
 import mm_categories
 import realestate
 import categorize
-from report import COST_WORDS, POS, PROPERTY_CONTEXT, ROLES, account_roles, build_dataset, equity_ratio, holding_key, my_positions, purchase_kind
+from report import COST_WORDS, POS, PROPERTY_CONTEXT, ROLES, account_roles, build_dataset, equity_ratio, holding_key, my_positions, purchase_kind, deposit_category
 import rules
 from rules import Proposal, parse_start, plan_all
 from storage import Store
@@ -1235,8 +1235,8 @@ def immo_soll_ist(ledger: Ledger, config: dict, im: dict, res: dict, roles: Dict
                     continue
                 cl = norm_cat(t.category_path).lower()
                 if cl == cat or cl.startswith(cat + " / "):
-                    if purchase_kind(norm_cat(t.category_path)):
-                        continue                         # price and purchase costs: an investment, none of its running costs
+                    if purchase_kind(norm_cat(t.category_path)) or deposit_category(norm_cat(t.category_path)):
+                        continue                         # price and purchase costs: an investment; a deposit: owed back -- no rent, no costs
                     if t.amount > 0:
                         miete += t.amount
                     else:

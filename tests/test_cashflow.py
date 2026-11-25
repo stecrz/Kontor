@@ -1138,6 +1138,95 @@ class Positions(Reconciles):
                  if "Parkweg" in e["years"].get("2026", {}).get("properties_list", {})]
         self.assertEqual(kinds, [{"Hausgeld": -800.0, "Miete": 1500.0}])
 
+    def test_interest_received_is_income_and_interest_not_paid_a_debt_taken_up(self):
+        """The user, 2026-11-25: interest received is investment income, also on a loan you granted and keep in an account
+        (it stood under investing); interest you pay stays with financing. Interest charged to a loan in a month in which
+        less was credited to it raises the debt -- taken up, never a repayment above zero; by the loan account's own bookings,
+        so a rate that left the bank in January and was credited in February still nets with February's interest."""
+        nz = lambda z: {m: v for m, v in z["amounts"].items() if v}
+        data = build([(1, "giro", date(2025, 12, 5), 50000.0, {"cat": "Gehalt"}),
+                      (2, "giro", date(2026, 1, 15), -10000.0, {"name": "Freund"}), (3, "ford", date(2026, 1, 15), 10000.0, {"name": "Freund"}),
+                      (4, "ford", date(2026, 2, 28), 50.0, {"purpose": "Zinsen"}),
+                      (5, "giro", date(2026, 3, 1), 550.0, {"name": "Freund"}), (6, "ford", date(2026, 3, 1), -550.0, {"name": "Freund"})])
+        self.assertAddsUp(data)
+        p = data["Privat"]
+        self.assertEqual((nz(rows(p, "income")["Kapitalerträge"]), [d["category"] for d in rows(p, "income")["Kapitalerträge"]["details"]]), ({"2026-02": 50.0}, [""]))
+        self.assertEqual(nz(rows(p, "investing")["Darlehen an Freund / Rückzahlung"]), {"2026-01": -10000.0, "2026-02": -50.0, "2026-03": 550.0})
+        self.assertNotIn("Darlehen an Freund / Zinsen", rows(p))
+        loan = [(1, "giro", date(2025, 12, 5), 5000.0, {"cat": "Gehalt"}),
+                (2, "kredit", date(2026, 1, 2), -20000.0, {"cat": "Umbuchung"}), (3, "giro", date(2026, 1, 2), 20000.0, {"cat": "Umbuchung"}),
+                (4, "kredit", date(2026, 2, 28), -100.0, {"purpose": "Zinsen 02/2026"}), (5, "kredit", date(2026, 3, 31), -100.0, {"purpose": "Zinsen 03/2026"}),
+                (6, "kredit", date(2026, 4, 30), -100.0, {"purpose": "Zinsen 04/2026"}),
+                (7, "giro", date(2026, 4, 15), -600.0, {"name": "Onkel"}), (8, "kredit", date(2026, 4, 15), 600.0, {"name": "Onkel"}),
+                (9, "giro", date(2026, 5, 15), -60.0, {"name": "Onkel"}), (10, "kredit", date(2026, 5, 15), 60.0, {"name": "Onkel"}),
+                (11, "kredit", date(2026, 5, 31), -100.0, {"purpose": "Zinsen 05/2026"})]
+        data = build(loan)
+        self.assertAddsUp(data)
+        f = rows(data["Privat"], "financing")
+        self.assertEqual(nz(f["Privatkredit / Aufnahme"]), {"2026-01": 20000.0, "2026-02": 100.0, "2026-03": 100.0, "2026-05": 40.0})          # May: a rate below its interest
+        self.assertEqual((nz(f["Privatkredit / Tilgung"]), f["Privatkredit / Aufnahme"]["nw"]), ({"2026-04": -500.0}, False))
+        self.assertEqual(nz(f["Privatkredit / Zinsen"]), {"2026-02": -100.0, "2026-03": -100.0, "2026-04": -100.0, "2026-05": -100.0})
+        self.assertEqual({m: v for m, v in f["Privatkredit / Tilgung"]["plan_hist"].items() if v}, {"2026-02": 100.0, "2026-03": 100.0, "2026-04": -500.0, "2026-05": 40.0})
+        # a rate that left the bank on 29 January, credited to the loan on 1 February, its interest booked on the 28th: as before
+        f = rows(build([(1, "giro", date(2025, 12, 5), 5000.0, {"cat": "Gehalt"}), (2, "kredit", date(2025, 12, 6), -9000.0, {}),
+                        (3, "giro", date(2026, 1, 29), -1000.0, {"name": "Onkel"}), (4, "kredit", date(2026, 2, 1), 1000.0, {"name": "Onkel"}),
+                        (5, "kredit", date(2026, 2, 28), -250.0, {"purpose": "Zinsen"})])["Privat"], "financing")
+        self.assertEqual((nz(f["Privatkredit / Tilgung"]), "Privatkredit / Aufnahme" in f), ({"2026-01": -1000.0, "2026-02": 250.0}, False))
+        # the plan: a debt that only grows by its interest keeps growing -- nothing leaves the bank for it
+        grows = [(1, "giro", date(2025, 3, 5), 5000.0, {"cat": "Gehalt"}), (2, "kredit", date(2025, 3, 6), -20000.0, {"cat": "Umbuchung"}),
+                 (3, "giro", date(2025, 3, 6), 20000.0, {"cat": "Umbuchung"})]
+        d = date(2025, 4, 28)
+        while d < TODAY:
+            grows.append((len(grows) + 10, "kredit", d, -100.0, {"purpose": "Zinsen"}))
+            d = date(d.year + d.month // 12, d.month % 12 + 1, 28)
+        ds = build(grows)["Privat"]
+        report.apply_plan(ds, {}, core.merged_config({}))
+        first, last = ds["plan_months"][0], ds["months"][-1]
+        f = rows(ds, "financing")
+        self.assertEqual((f["Privatkredit / Tilgung"]["plan"]["amounts"][first], f["Privatkredit / Zinsen"]["plan"]["amounts"][first]), (100.0, -100.0))
+        proj = {r["id"]: r["amounts"][first] for r in ds["balance"]["projection"]["rows"]}
+        owed = next(r for r in ds["balance"]["rows"] if r["id"] == "kredit")["amounts"][last]
+        self.assertEqual((round(proj["kredit"] - owed, 2), round(ds["balance"]["projection"]["cash"][first] - 25000.0, 2)), (-100.0, 0.0))
+
+    def test_a_rent_deposit_is_owed_back(self):
+        """The user, 2026-11-25: a deposit received from a tenant is a liability -- best an account of its own with the
+        counter-booking; by a category it is debt taken up and paid back, never rent (it counted as the property's rent, in
+        the cash flow, its target/actual and the tax overview). Paid as a tenant: money you get back, no housing cost."""
+        for path, inc, firm, want in (("Vermietung / Parkweg / Kaution", True, False, "repayment"), ("Vermietung / Parkweg / Kaution", False, False, "repayment"),
+                                      ("Mietkaution", False, False, "saving"), ("Mietkaution", True, False, "repayment"),
+                                      ("Kautionsversicherung", False, False, "insurance"), ("Vermietung / Parkweg / Kautionszinsen", True, False, "capital_income")):
+            self.assertEqual(report.propose_position(path, inc, firm), want, (path, inc, firm))
+        nz = lambda z: {m: v for m, v in z["amounts"].items() if v}
+        cfg = {"real_estate": [{"id": "i1", "name": "Parkweg", "area": "g-Muster GbR", "category": "Vermietung\\Parkweg"}]}
+        txs = [(1, "kk", date(2025, 12, 3), 1500.0, {"cat": "Vermietung\\Parkweg\\Miete"}),
+               (2, "kk", date(2026, 1, 3), 3000.0, {"cat": "Vermietung\\Parkweg\\Kaution"}), (3, "kk", date(2026, 2, 3), 1500.0, {"cat": "Vermietung\\Parkweg\\Miete"}),
+               (4, "kk", date(2026, 4, 3), -3000.0, {"cat": "Vermietung\\Parkweg\\Kaution"})]
+        data = build(txs, cfg)
+        self.assertAddsUp(data)
+        g = rows(data["Muster GbR"])
+        self.assertEqual(nz(g["Parkweg · Miete"]), {"2025-12": 1500.0, "2026-02": 1500.0})
+        self.assertEqual((nz(g["Darlehensaufnahme"]), nz(g["Tilgung"])), ({"2026-01": 3000.0}, {"2026-04": -3000.0}))
+        led = make_ledger(txs)
+        roles = {k: v[2] for k, v in ACCOUNTS.items()}
+        im = dict(cfg["real_estate"][0], calcs=[{"id": "k", "active": True, "inputs": {"name": "Parkweg", "purchase_price": 100000, "transfer_date": "2025-12-01",
+                                                                                         "rent": {"net_rent_month": 1500}}}])
+        config = core.merged_config({"balance": {"roles": roles}, "real_estate": [im], "companies": [{"area": "Muster GbR"}]})
+        years = {y["year"]: y for y in core.immo_soll_ist(led, config, im, core.immo_results(config, TODAY)["i1"], roles, TODAY)}
+        self.assertEqual((years[2026]["rent_actual"], years[2026]["costs_actual"]), (1500.0, 0.0))
+        import tax
+        kinds = [dict(e["years"]["2026"]["properties_list"]["Parkweg"]["kinds"]) for e in tax.build_tax(led, config, TODAY)["entities"]
+                 if "Parkweg" in e["years"].get("2026", {}).get("properties_list", {})]
+        self.assertEqual(kinds, [{"Miete": 1500.0}])
+        # the user's way: an account for the deposit (a liability), the counter-booking in it -- taken up and paid back by the account
+        from unittest import mock
+        with mock.patch.dict(ACCOUNTS, {"kaut": ("Kaution Mieter", "Muster GbR", "liabilities", None, "offline")}):
+            data = build([(1, "kk", date(2025, 12, 3), 1500.0, {"cat": "Vermietung\\Parkweg\\Miete"}),
+                          (2, "kk", date(2026, 1, 3), 3000.0, {}), (3, "kaut", date(2026, 1, 3), -3000.0, {}),
+                          (4, "kk", date(2026, 4, 3), -3000.0, {}), (5, "kaut", date(2026, 4, 3), 3000.0, {})], cfg)
+            self.assertAddsUp(data)
+            f = rows(data["Muster GbR"], "financing")
+            self.assertEqual((nz(f["Kaution Mieter / Aufnahme"]), nz(f["Kaution Mieter / Tilgung"])), ({"2026-01": 3000.0}, {"2026-04": -3000.0}))
+
     def test_a_propertys_plan_goes_on_from_its_accounts(self):
         """A property calculation knows its own course only. Where the loan account owes less (an extra repayment it does not
         hold) or the property's account shows another value, the plan goes on from the accounts with the calculation's terms

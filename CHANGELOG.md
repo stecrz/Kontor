@@ -1,5 +1,10 @@
 # Änderungen
 
+## 3.17.90 (2026-11-25 02:44)
+- Cashflow: erhaltene Zinsen auf gewährte Darlehen zählen unter Einnahmen → Kapitalerträge (standen unter Investitionen); gezahlte bleiben unter Finanzierung
+- Darlehen: Zinsen ohne Zahlung (endfällig, gestundet, Rate unter den Zinsen) erscheinen als Aufnahme statt als positive Tilgung
+- Mietkaution: zählt nicht mehr als Miete – als Kategorie Aufnahme und Tilgung, als Mieter gezahlt Sparen & Anlegen; Hilfe beschreibt das Konto dafür
+
 ## 3.17.89 (2026-11-25 02:08)
 - Cashflow: eine Zahlung an einen anderen Bereich übernimmt keine von Hand gebuchte Darlehensbuchung mehr, die den Namen eines anderen Zahlers trägt
 - Beteiligung: Wert bleibt auch dann auf den Cent genau, wenn eine früher erfasste Buchung der Gesellschaft später datiert ist
