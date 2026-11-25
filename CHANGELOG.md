@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.17.93 (2026-11-25 11:47)
+- Hilfe: die Suche findet „Geld unterwegs“ (Geldtransit) und „Kredit“ (manuelle Darlehen) wieder
+
 ## 3.17.92 (2026-11-25 03:59)
 - Darlehen: Schreibt ein Darlehenskonto nur den Tilgungsanteil einer Rate gut und bucht die Zinsen nicht, teilt Kontor die Rate selbst – die Gutschrift ist die Tilgung, der Rest die Zinsen (bisher: Rate unter „Unklar“, Gutschrift als Wertänderung). Die Rate muss das Darlehen nennen: IBAN, Kontonummer oder ein Wort wie „Darlehen“/„Tilgung“; nichts wird geteilt, wo es nicht eindeutig ist.
 
