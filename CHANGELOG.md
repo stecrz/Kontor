@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.17.92 (2026-11-25 03:59)
+- Darlehen: Schreibt ein Darlehenskonto nur den Tilgungsanteil einer Rate gut und bucht die Zinsen nicht, teilt Kontor die Rate selbst – die Gutschrift ist die Tilgung, der Rest die Zinsen (bisher: Rate unter „Unklar“, Gutschrift als Wertänderung). Die Rate muss das Darlehen nennen: IBAN, Kontonummer oder ein Wort wie „Darlehen“/„Tilgung“; nichts wird geteilt, wo es nicht eindeutig ist.
+
 ## 3.17.91 (2026-11-25 03:40)
 - Cashflow: Umbuchungs-Kategorie auch mit Zusatz in Klammern erkannt (etwa „Umbuchung (Tagesgeld)“) – ohne Gegenbuchung offen statt Sonstige Ausgaben
 - Immobilien: eine Umbuchung unter der Kategorie der Immobilie zählt im Soll-Ist-Vergleich weder als Miete noch als Kosten

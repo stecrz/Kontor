@@ -1223,6 +1223,99 @@ class Positions(Reconciles):
         owed = next(r for r in ds["balance"]["rows"] if r["id"] == "kredit")["amounts"][last]
         self.assertEqual((round(proj["kredit"] - owed, 2), round(ds["balance"]["projection"]["cash"][first] - 25000.0, 2)), (-100.0, 0.0))
 
+    def test_a_loan_that_credits_only_the_repayment(self):
+        """The user, 2026-11-25: the loan accounts he knows credit the whole rate and book the interest apart; others should
+        work as well. A lender's account that credits only the repayment part: the rate that left the bank names the loan
+        (its IBAN), the credit there is smaller -- the credit is the repayment, the rest the interest (the rate stood under
+        "unclear", the credit as a change in value). Not where the loan books its interest itself, the credit is no part of
+        the rate, or the rate does not name the loan."""
+        from unittest import mock
+        from model import MARK
+        nz = lambda z: {m: v for m, v in z["amounts"].items() if v}
+        base = [(1, "giro", date(2025, 12, 5), 50000.0, {"cat": "Gehalt"}), (2, "darl", date(2025, 12, 6), -90000.0, {})]
+        data = build(base + [(3, "giro", date(2026, 2, 1), -1000.0, {"iban": "DE13"}), (4, "darl", date(2026, 2, 1), 800.0, {"iban": "DE11"}),
+                             (5, "giro", date(2026, 3, 30), -1000.0, {"iban": "DE13"}), (6, "darl", date(2026, 4, 1), 803.0, {"iban": "DE11"}),
+                             (7, "giro", date(2026, 5, 2), -1000.0, {"iban": "DE13", "cat": "Wohnen"}), (8, "darl", date(2026, 5, 4), 806.0, {})])
+        self.assertAddsUp(data, allow=("ue_unterwegs",))
+        p = data["Privat"]
+        f = rows(p, "financing")
+        self.assertEqual(nz(f["Darlehen Hausbau / Tilgung"]), {"2026-02": -800.0, "2026-03": -803.0, "2026-05": -806.0})
+        self.assertEqual((nz(f["Darlehen Hausbau / Zinsen"]), f["Darlehen Hausbau / Zinsen"]["nw"]), ({"2026-02": -200.0, "2026-03": -197.0, "2026-05": -194.0}, True))
+        self.assertFalse(rows(p, "unclear"))
+        self.assertFalse([z for z in rows(p, "valuation").values() if any(v for m, v in z["amounts"].items() if m >= "2026-01")])   # the credits: no change in value
+        self.assertNotIn("Wohnen", rows(p, "expenses"))                                              # the rate: no expense, whatever its category
+        owed = next(r for r in p["balance"]["rows"] if r["id"] == "darl")["amounts"]
+        self.assertEqual((owed["2026-03"], owed["2026-04"]), (-89200.0, -88397.0))                   # over the month end: credited in April
+        # the loan books its interest itself (and the credit is the whole rate): as before, by the transfer
+        f = rows(build(base + [(3, "giro", date(2026, 2, 1), -1000.0, {"iban": "DE13"}), (4, "darl", date(2026, 2, 1), 1000.0, {"iban": "DE11"}),
+                               (5, "darl", date(2026, 2, 1), -200.0, {"purpose": "Zinsen"})])["Privat"], "financing")
+        self.assertEqual((nz(f["Darlehen Hausbau / Tilgung"]), nz(f["Darlehen Hausbau / Zinsen"])), ({"2026-02": -800.0}, {"2026-02": -200.0}))
+        # which loan, and which credit (found by the independent review: every one of them went wrong at first). d(n): February n
+        d = lambda n: date(2026, 2, n)
+        rate, part = (3, "giro", d(1), -1000.0, {"iban": "DE13"}), (4, "darl", d(2), 800.0, {})
+        for what, extra, want in (
+                ("its text says a loan and names it", [(3, "giro", d(1), -1000.0, {"name": "Bausparkasse", "purpose": "Darlehensrate Hausbau 02/2026"}), part], (-800.0, -200.0)),
+                ("... but you gave it a category", [(3, "giro", d(1), -1000.0, {"purpose": "Darlehensrate Hausbau", "cat": "Wohnen"}), part], None),
+                ("... the name alone is no rate of a loan (the house's other costs, a tax in rates)",
+                 [(5, "giro", d(1), -1000.0, {"purpose": "Leistung 4711"}), (3, "giro", d(3), -900.0, {"name": "Stadtkasse", "purpose": "Abgaben Hausbau 5 Rate 1"}), part], None),
+                ("a loan's rate, but which of two loans?", [(3, "giro", d(1), -1000.0, {"name": "Bank", "purpose": "Annuität Darlehensvertrag"}), part], None),
+                ("another payment names the loan less surely: the IBAN has the credit",
+                 [(5, "giro", date(2026, 1, 30), -900.0, {"purpose": "Darlehen Hausbau Sonderzahlung"}), rate, part], (-800.0, -200.0)),
+                ("two payments name it alike: neither", [(5, "giro", d(1), -900.0, {"purpose": "Darlehensrate Hausbau"}), (3, "giro", d(1), -1000.0, {"purpose": "Darlehensrate Hausbau"}), part], None),
+                ("money in of the rate's amount is no rate come back (a standing order, a rent)",
+                 [(5, "tg", d(1), -1000.0, {"iban": "DE11"}), (6, "giro", d(1), 1000.0, {"iban": "DE12"}), (7, "giro", d(3), 1000.0, {"purpose": "Miete Februar", "cat": "Miete"}), rate, part], (-800.0, -200.0)),
+                ("an invoice of the credit's amount is not its counterpart", [rate, part, (5, "giro", d(3), -800.0, {"purpose": "Rechnung 17", "cat": "Wohnen"})], (-800.0, -200.0)),
+                ("... a payment without a category could be", [rate, part, (5, "giro", d(3), -800.0, {"purpose": "Leistung 17"})], None),
+                ("a rate made up for: two rates, two credits, in the order of their days",
+                 [(5, "giro", date(2026, 1, 30), -1000.0, {"iban": "DE13"}), (6, "darl", date(2026, 1, 30), 797.0, {}), rate, part], (-800.0, -200.0)),
+                ("two credits, one names the bank account", [rate, (5, "darl", d(1), 600.0, {"purpose": "Zuschuss"}), (4, "darl", d(2), 800.0, {"iban": "DE11"})], (-800.0, -200.0)),
+                ("two credits, none says more", [rate, (5, "darl", d(1), 600.0, {}), part], None),
+                ("the rate credited in two parts", [rate, (5, "darl", d(1), 600.0, {}), (4, "darl", d(2), 400.0, {})], None),
+                ("an extra repayment beside the rate: each has its credit",
+                 [(5, "giro", d(1), -20000.0, {"purpose": "Sondertilgung Darlehen Hausbau"}), (3, "giro", d(1), -1000.0, {"purpose": "Rate Darlehen Hausbau"}),
+                  (4, "darl", d(1), 800.0, {}), (6, "darl", d(1), 20000.0, {})], (-800.0, -200.0)),
+                ("a credit far below the payment is no part of it", [(3, "giro", d(1), -20000.0, {"purpose": "Sondertilgung Darlehen Hausbau"}), part], None),
+                ("interest and repayment as two payments", [(3, "giro", d(1), -600.0, {"purpose": "Darlehenszinsen Hausbau", "cat": "Zinsen"}),
+                                                             (5, "giro", d(1), -250.0, {"purpose": "Tilgung Darlehen Hausbau", "cat": "Tilgung"}), (4, "darl", d(1), 250.0, {})], None),
+                ("the rate came back", [rate, part, (5, "giro", d(3), 1000.0, {"purpose": "Rücklastschrift"}), (6, "darl", d(3), -800.0, {"purpose": "Storno"})], None),
+                ("a booking of Kontor's own", [rate, (4, "darl", d(2), 800.0, {"purpose": "Wertanpassung " + MARK + "wert-2026-02"})], None)):
+            data = build(base + extra)
+            self.assertAddsUp(data)
+            f = rows(data["Privat"], "financing")
+            got = tuple(f.get("Darlehen Hausbau / " + k, {"amounts": {}})["amounts"].get("2026-02") or None for k in ("Tilgung", "Zinsen"))
+            if want:
+                self.assertEqual(got, want, what)
+            else:
+                self.assertIsNone(got[1], what)
+        # its number in the text
+        with mock.patch.dict(ACCOUNTS, {"darl": ("Darlehen Hausbau", "Privat", "liabilities", "6001234567", "bank")}):
+            data = build(base + [(3, "giro", d(1), -1000.0, {"name": "Bank", "purpose": "Vertrag 600 123 4567 Februar"}), part])
+        self.assertAddsUp(data)
+        f = rows(data["Privat"], "financing")
+        self.assertEqual((nz(f["Darlehen Hausbau / Tilgung"]), nz(f["Darlehen Hausbau / Zinsen"])), ({"2026-02": -800.0}, {"2026-02": -200.0}))
+        # a company with one loan: a word for a loan is enough -- and its partners' capital account is no loan
+        gbr = [(1, "kk", date(2025, 12, 5), 50000.0, {"cat": "Miete"}), (2, "vd", date(2025, 12, 6), -30000.0, {})]
+        data = build(gbr + [(3, "kk", d(1), -1000.0, {"name": "Bank", "purpose": "Annuität Darlehen"}), (4, "vd", d(2), 800.0, {}),
+                            (5, "kk", d(10), -2000.0, {"purpose": "Entnahme Kapitalkonto"}), (6, "kap", d(10), 1500.0, {}), (7, "kap", d(10), 300.0, {})])
+        self.assertAddsUp(data)
+        f = rows(data["Muster GbR"], "financing")
+        self.assertEqual((nz(f["Verkäuferdarlehen / Tilgung"]), nz(f["Verkäuferdarlehen / Zinsen"])), ({"2026-02": -800.0}, {"2026-02": -200.0}))
+        self.assertFalse([k for k in f if k.startswith("Kapitalkonto / ")])
+        # no split: a credit beside a booking of interest, a credit above the rate, one with a category of its own (somebody
+        # else's money), a rate that says nothing of a loan, a credit too far away, a rate that names another account of yours
+        for extra in ([(3, "giro", date(2026, 2, 1), -1000.0, {"iban": "DE13"}), (4, "darl", date(2026, 2, 2), 800.0, {}), (5, "darl", date(2026, 2, 3), -90.0, {"purpose": "Zinsen"})],
+                      [(3, "giro", date(2026, 2, 1), -1000.0, {"iban": "DE13"}), (4, "darl", date(2026, 2, 2), 1500.0, {})],
+                      [(3, "giro", date(2026, 2, 1), -1000.0, {"iban": "DE13"}), (4, "darl", date(2026, 2, 2), 800.0, {"cat": "Gehalt"})],
+                      [(3, "giro", date(2026, 2, 1), -1000.0, {"name": "Bank"}), (4, "darl", date(2026, 2, 2), 800.0, {})],
+                      [(3, "giro", date(2026, 2, 1), -1000.0, {"iban": "DE13"}), (4, "darl", date(2026, 2, 12), 800.0, {})],
+                      [(3, "giro", date(2026, 2, 1), -1000.0, {"iban": "DE12", "purpose": "Tilgung Darlehen"}), (4, "darl", date(2026, 2, 2), 800.0, {})]):
+            data = build(base + extra)
+            self.assertAddsUp(data)
+            f = rows(data["Privat"], "financing")
+            self.assertFalse(nz(f.get("Darlehen Hausbau / Zinsen", {"amounts": {}})).get("2026-02", 0) == -200.0, extra)
+            rest = sum(z["amounts"].get("2026-02", 0) for sec in ("unclear", "expenses") for z in rows(data["Privat"], sec).values())
+            self.assertEqual(round(rest, 2), -1000.0, extra)                                         # the rate: where it stood
+
     def test_a_rent_deposit_is_owed_back(self):
         """The user, 2026-11-25: a deposit received from a tenant is a liability -- best an account of its own with the
         counter-booking; by a category it is debt taken up and paid back, never rent (it counted as the property's rent, in

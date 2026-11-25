@@ -397,6 +397,7 @@ anhängen – nie löschen.
 - **Darlehenskonten** (Nutzer, 2026-11-25): Ihm bekannt ist nur die Kontoführung „volle Annuität als Gutschrift, Zinsen als
   eigene Buchung im Darlehenskonto“ – das bleibt der Regelfall. Andere Kontoführungen (nur der Tilgungsanteil wird gegengebucht;
   Zinsen laufen ohne Zahlung auf) soll Kontor von sich aus richtig behandeln; dazu ist keine Entscheidung von ihm nötig.
+  (auflaufende Zinsen umgesetzt in 3.17.90, nur der Tilgungsanteil gegengebucht umgesetzt in 3.17.92)
 - **Mietkaution** (Nutzer, 2026-11-25): Eine erhaltene Kaution führt er als Verbindlichkeit – ein manuelles Konto mit Gegenbuchung;
   sie ist keine Miete. Kontor soll dafür ein sauberes Setup beschreiben und eine Kautions-Kategorie nicht als Miete zählen.
   (umgesetzt in 3.17.90: Kategorie „Kaution“ zählt als Aufnahme und Tilgung, als Mieter gezahlt als Sparen & Anlegen)

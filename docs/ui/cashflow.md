@@ -81,7 +81,13 @@ had to come from loans or from cash. Shown from the level "Positionen".
 Finanzierung (CFF): payments to and from lenders and partners. Kinds: Darlehensaufnahme (+, a loan paid out – never a "negative
 repayment"; also interest charged to a loan account in a month in which less than that was credited to it -- deferred, due at the
 end, a rate below its interest: it raises the debt, the same amount stands under Zinsen; a rent deposit received by category
-"Kaution"), Tilgung (−, repayment), Zinsen (−, interest paid – costs net worth, unlike repayment), Einlagen & Entnahmen der
+"Kaution"), Tilgung (−, repayment), Zinsen (−, interest paid – costs net worth, unlike repayment; where a loan account credits
+only the repayment part of a rate and books no interest, the credit is the Tilgung and the rest of the rate the Zinsen -- the rate
+must say which loan: the loan account's IBAN; else, without a category of its own, the loan's number in its text, or a word for
+a loan ("Darlehen", "Tilgung", "Annuität", "Kreditrate") -- with several loans beside a word of the loan's name no other loan has;
+one fitting credit at most five days from the rate, smaller than it (at least a twentieth), without a category, no interest or fee
+booked in the loan in those days; never a capital account or a deposit; otherwise as before:
+the rate under Unklar or expenses, the credit a change in value), Einlagen & Entnahmen der
 Gesellschafter (companies). Under each kind the loan accounts by name; "Nach Kategorie" = repayment or interest booked by a
 MoneyMoney category beside the loans (money in under a repayment category counts as Darlehensaufnahme, "Nach Kategorie"); "<area>:
 <account>" = a payment between two areas booked against a capital or loan account. Einlagen & Entnahmen der Gesellschafter also holds

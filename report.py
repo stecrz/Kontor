@@ -1144,6 +1144,10 @@ def said_move(text: str) -> Tuple[str, bool]:
 _NAME_GENERIC = {"bank", "gmbh", "depot", "konto", "sparkasse", "volksbank", "capital", "invest", "verrechnungskonto", "wertpapiere"}
 
 
+_LOAN_GENERIC = {"darlehen", "darlehenskonto", "kredit", "kreditkonto", "ratenkredit", "hypothek", "finanzierung", "baufinanzierung", "immobiliendarlehen", "annuitätendarlehen", "loan", "mortgage"}
+_RATE_SAID = re.compile(r"darlehen|annuit|tilgung|kreditrate|kreditvertrag|hypothek|baufinanz|\bloan\b|\bmortgage")   # a payment that says it is a loan's rate
+
+
 def name_words(text: str) -> Set[str]:
     """The words of a name that tell it apart (four letters or more, no "Bank", "Depot" ...)."""
     return {w for w in re.sub(r"[^\wäöüß]+", " ", (text or "").lower()).split() if len(w) >= 4 and w not in _NAME_GENERIC}
@@ -1789,6 +1793,100 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
         named = [n for n, m in prop_marks if m[0] and marks_fit(m, text)]
         return named[0] if len(named) == 1 else props[0] if len(props) == 1 and not named else None
 
+    # A lender's account that credits only the repayment part of a rate (the interest it keeps is no booking there; the user
+    # knows accounts that credit the whole rate and book the interest apart -- those pair as transfers -- and asked for the
+    # others to work as well, 2026-11-25). The rate left the bank without a counterpart and says which loan it is for: its
+    # IBAN (or a mark); else, only without a category of its own (none, a transfer's, a repayment's): the loan's number in
+    # its text, or a word for a loan there (_RATE_SAID) and a word of the loan's name no other loan has, or such a word and
+    # the area has one loan only. The loan has one credit that can be its part: within PAIR_DAYS_IBAN days, less than the rate (not below
+    # a twentieth), without a counterpart or a category of its own, not booked by Kontor, not taken back, not the amount
+    # of another payment that could be its counterpart -- and the loan books no interest or fee near it, and no credits
+    # that are the whole rate, in one or in parts. Of several credits the one that names the account the rate left; as many
+    # rates as credits go in the order of their days; else nothing is split. Where two payments want the same credit, the
+    # one that names the loan best has it; equal ones leave it. The credit is the repayment, the rest of the rate the
+    # interest. Never a capital account or a deposit owed back.
+    part_of: Dict[int, Tx] = {}                          # the rate -> the loan's credit
+    part_done: Set[int] = set()
+    claimed = {r_.id for r_ in reserved.values()}       # bookings by hand a payment to another area took
+    lone = lambda x: mate.get(x.id) is None and x.id not in reserved and x.id not in claimed
+    capital = shareholder_ids(ledger)
+    by_loan: Dict[str, List[Tx]] = {u: [] for u in sorted(root_leaves) if roles.get(u) == "liabilities" and u in ledger.accounts
+                                    and u not in capital and "kaution" not in fold_text(ledger.accounts[u].name)}
+    paid: Dict[int, List[Tx]] = defaultdict(list)       # cents -> payments from the bank without a counterpart
+    own_cat = lambda x: bool(x.category_path) and not is_transfer(x.category_path) and place(x.category_path)[0] != "repayment"
+    for x in in_root:
+        if x.account_uuid in by_loan:
+            by_loan[x.account_uuid].append(x)
+        elif roles.get(x.account_uuid) == "cash" and x.amount < 0 and lone(x) and not own_cat(x):
+            paid[int(round(-x.amount * 100))].append(x)       # (one with a category of its own is no counterpart of a credit)
+    close = lambda a, b: abs((a.booking_date - b.booking_date).days) <= PAIR_DAYS_IBAN
+    loan_no = {u: re.sub(r"\D", "", ledger.accounts[u].account_number or "") for u in by_loan}
+    loan_words = {u: name_words(ledger.accounts[u].name) - _LOAN_GENERIC for u in by_loan}
+    for u in by_loan:                                    # a word two loans share names neither
+        loan_words[u] = {w for w in loan_words[u] if not any(w in name_words(ledger.accounts[v].name) for v in by_loan if v != u)}
+
+    def rate_for(t: Tx) -> Tuple[Optional[str], int]:
+        """(the loan account a payment says it is a rate of, how surely) -- (None, 0): none, or not one alone."""
+        p_t = partner.get(t.id)
+        if p_t is not None:
+            return (p_t, 4) if p_t in by_loan else (None, 0)
+        text = " ".join((t.name or "", t.purpose or ""))
+        low = fold_text(text)
+        if (t.counter_iban and own_ibans_.get(t.counter_iban)) or own_cat(t):
+            return None, 0                               # it names another account of yours, or you gave it a category
+        digits = re.sub(r"[^0-9a-z]", "", low)
+        said = [u for u in by_loan if len(loan_no[u]) >= 6 and loan_no[u] in digits]
+        if len(said) == 1:
+            return said[0], 3
+        if not _RATE_SAID.search(low):
+            return None, 0                               # it says nothing of a loan
+        said = [u for u in by_loan if loan_words[u] & name_words(text)] if not said else []
+        if len(said) == 1:
+            return said[0], 2
+        return (next(iter(by_loan)), 1) if not said and len(by_loan) == 1 else (None, 0)
+
+    could: Dict[int, List[Tx]] = {}                      # the rate -> the credits that can be its part
+    rates: Dict[int, Tuple[Tx, str, int]] = {}          # the rate, its loan, how surely
+    for t in in_root:
+        if t.amount >= 0 or roles.get(t.account_uuid) != "cash" or not by_loan or not lone(t):
+            continue
+        p_t, sure = rate_for(t)
+        if p_t is None:
+            continue
+        cents = int(round(-t.amount * 100))
+        near = [x for x in by_loan[p_t] if close(x, t)]
+        if any(x.amount < 0 and _is_cost(x, cost_words) for x in near):
+            continue                                     # the loan books its interest itself: nothing to split
+        got = [x for x in near if x.amount > 0.005 and lone(x)]
+        if any(int(round(x.amount * 100)) == cents for x in got) or (len(got) > 1 and int(round(sum(x.amount for x in got) * 100)) == cents):
+            continue                                     # the whole rate was credited (in one, or in parts)
+        c = [x for x in got if -t.amount * 0.05 <= x.amount < -t.amount - 0.005 and (not x.category_path or is_transfer(x.category_path))
+             and MARK not in (x.purpose or "") and not _is_cost(x, cost_words)
+             and not any(y.id != t.id and close(y, x) for y in paid.get(int(round(x.amount * 100)), ()))
+             and not any(y.amount == -x.amount and close(y, x) for y in by_loan[p_t])]
+        named = [x for x in c if x.counter_iban and own_ibans_.get(x.counter_iban) == t.account_uuid]
+        if c:
+            could[t.id], rates[t.id] = (named if len(named) == 1 else c), (t, p_t, sure)
+    by_day = lambda x: (x.booking_date, x.id)
+    for i in sorted(could):                              # as many rates as credits (a rate made up for): in the order of their days
+        ids = {x.id for x in could[i]}
+        same = sorted((rates[k][0] for k in could if rates[k][1:] == rates[i][1:] and {x.id for x in could[k]} == ids), key=by_day)
+        if len(ids) > 1 and len(same) == len(ids):
+            for t, x in zip(same, sorted(could[i], key=by_day)):
+                could[t.id] = [x]
+    wants: Dict[int, List[Tuple[int, Tx]]] = defaultdict(list)      # the credit -> (how surely, the payment) that want it
+    credit: Dict[int, Tx] = {}
+    for i, c in could.items():
+        if len(c) == 1:
+            wants[c[0].id].append((rates[i][2], rates[i][0]))
+            credit[c[0].id] = c[0]
+    for i, ws in wants.items():
+        top = max(sure for sure, _ in ws)
+        best = [t for sure, t in ws if sure == top]
+        if len(best) == 1:
+            part_of[best[0].id] = credit[i]
+            part_done.add(i)
+
     for t in in_root:
         R.cur = t.id                                     # every row added for it holds it (a click shows the bookings behind a figure)
         acc = ledger.accounts[t.account_uuid]
@@ -1808,9 +1906,20 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
         if role == "ignore":
             continue
         if role != "cash":
-            if o is not None:
+            if o is not None or t.id in part_done:
                 continue                                 # the other side (or the bank account) shows the transfer
             own_row(t, acc, role, mk)
+            continue
+        if t.id in part_of:                              # a rate of which the loan credits only the repayment (see above)
+            x = part_of[t.id]
+            name = ledger.accounts[x.account_uuid].name
+            paired.add(t.id)
+            R.add("financing", row=name + " / Tilgung", mk=mk, amount=-x.amount, account=x.account_uuid, kind="repayment", nw=False, lbl=("cf_name", name),
+                  **_grp(FIN_GROUPS, "repayment"))
+            R.add("financing", row=name + " / Zinsen", mk=mk, amount=round(t.amount + x.amount, 2), account=x.account_uuid, kind="interest", nw=True,
+                  lbl=("cf_name", name), **_grp(FIN_GROUPS, "interest"))
+            if month_key(x.booking_date) != mk:          # credited in another month: that part is in transit over the month end
+                pairs.append((t.booking_date, x.booking_date, x.amount, t.account_uuid, x.account_uuid, t.id, x.id))
             continue
         if o is not None:                                # transfer within the area
             o_role = roles.get(o.account_uuid, "other")
