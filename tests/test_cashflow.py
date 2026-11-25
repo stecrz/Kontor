@@ -981,6 +981,41 @@ class Positions(Reconciles):
             self.assertFalse(chk(path), path)
         self.assertFalse(R.transfer_check(core.merged_config({"cashflow": {"positions": {"Übertrag": "other_expenses"}}}))("Übertrag"))
 
+    def test_transfer_names_with_a_note(self):
+        """A usual transfer name with a note in brackets after it -- "Umbuchung (zwischen eigenen Konten)", "Umbuchung (Parkweg)"
+        below a property -- is a transfer as well (3.17.90; before, one without its counterpart counted as other expenses, below
+        a property as its costs, and the property's actual figures and the tax overview took it for rent or costs)."""
+        import report as R
+        import tax
+        chk = R.transfer_check(core.merged_config({}))
+        for path in ("Umbuchungen / Umbuchung (zwischen eigenen Konten)", "Vermietung / Parkweg / Umbuchung (Parkweg)", "Übertrag (Tagesgeld)",
+                     "Eigene Konten (Bank)"):
+            self.assertTrue(chk(path), path)
+        for path in ("Gebühren (Umbuchung)", "Reisen (Transfer)", "Umbuchungen / Sparen & Anlegen / Rentenversicherung", "Umbuchung Sparen"):
+            self.assertFalse(chk(path), path)
+        for cat in ("Umbuchungen\\Umbuchung (zwischen eigenen Konten)", "Vermietung\\Parkweg\\Umbuchung (Parkweg)"):
+            data = build([(1, "kk", date(2026, 3, 1), 900.0, {"cat": "Vermietung\\Parkweg\\Miete"}),
+                          (2, "kk", date(2026, 3, 10), -50.0, {"cat": cat})],                    # its counterpart is missing
+                         {"real_estate": [{"id": "i1", "name": "Parkweg", "area": "g-Muster GbR", "category": "Vermietung\\Parkweg"}]})
+            self.assertAddsUp(data)
+            g = rows(data["Muster GbR"])
+            spent = {r: z["amounts"].get("2026-03") for sec in ("income", "expenses") for r, z in rows(data["Muster GbR"], sec).items() if z["amounts"].get("2026-03")}
+            self.assertEqual(spent, {"Parkweg · Miete": 900.0}, cat)
+            self.assertEqual(g["Umbuchung ohne erkannten Partner"]["amounts"]["2026-03"], -50.0, cat)
+        # the property's actual figures of the year (Immobilien -> Soll/Ist) and the tax overview leave it out
+        txs = [(1, "kk", date(2026, 2, 5), 1500.0, {"cat": "Vermietung\\Parkweg\\Miete"}), (2, "kk", date(2026, 2, 3), -800.0, {"cat": "Vermietung\\Parkweg\\Hausgeld"}),
+               (3, "kk", date(2026, 2, 10), -5000.0, {"cat": "Vermietung\\Parkweg\\Umbuchung (Parkweg)"})]
+        led = make_ledger(txs)
+        roles = {k: v[2] for k, v in ACCOUNTS.items()}
+        im = {"id": "i1", "name": "Parkweg", "area": "g-Muster GbR", "category": "Vermietung\\Parkweg",
+              "calcs": [{"id": "k", "active": True, "inputs": {"name": "Parkweg", "purchase_price": 100000, "transfer_date": "2026-01-01", "rent": {"net_rent_month": 1500}}}]}
+        config = core.merged_config({"balance": {"roles": roles}, "real_estate": [im], "companies": [{"area": "Muster GbR"}]})
+        year = core.immo_soll_ist(led, config, im, core.immo_results(config, TODAY)["i1"], roles, TODAY)[0]
+        self.assertEqual((year["year"], year["rent_actual"], year["costs_actual"]), (2026, 1500.0, -800.0))
+        kinds = [dict(e["years"]["2026"]["properties_list"]["Parkweg"]["kinds"]) for e in tax.build_tax(led, config, TODAY)["entities"]
+                 if "Parkweg" in e["years"].get("2026", {}).get("properties_list", {})]
+        self.assertEqual(kinds, [{"Hausgeld": -800.0, "Miete": 1500.0}])
+
     def test_transfer_follows_your_choice(self):
         cfg = {"cashflow": {"positions": {"Haushalt": "living", "Umbuchung / Sparplan": "other_expenses"}}}
         data = build([(1, "giro", date(2026, 2, 5), -30.0, {"cat": "Haushalt\\Umbuchung"}),

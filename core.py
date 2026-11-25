@@ -22,7 +22,7 @@ from model import UUID_RE, Account, Ledger, Tx, accounts_from_export, add_months
 import mm_categories
 import realestate
 import categorize
-from report import COST_WORDS, POS, PROPERTY_CONTEXT, ROLES, account_roles, build_dataset, equity_ratio, holding_key, my_positions, purchase_kind, deposit_category
+from report import COST_WORDS, POS, PROPERTY_CONTEXT, ROLES, account_roles, build_dataset, equity_ratio, holding_key, my_positions, purchase_kind, deposit_category, transfer_check
 import rules
 from rules import Proposal, parse_start, plan_all
 from storage import Store
@@ -1226,6 +1226,7 @@ def immo_soll_ist(ledger: Ledger, config: dict, im: dict, res: dict, roles: Dict
     years = sorted({j["year"] for j in res.get("years", [])} & {t.booking_date.year for t in ledger.txs})
     out = []
     cost_words = [w.lower() for w in COST_WORDS]
+    is_transfer = transfer_check(config)                 # a transfer below the property's category ("Umbuchung (AHS)"): no rent, no cost
     for y in years:
         soll = next(j for j in res["years"] if j["year"] == y)
         miete = kosten = 0.0
@@ -1237,6 +1238,8 @@ def immo_soll_ist(ledger: Ledger, config: dict, im: dict, res: dict, roles: Dict
                 if cl == cat or cl.startswith(cat + " / "):
                     if purchase_kind(norm_cat(t.category_path)) or deposit_category(norm_cat(t.category_path)):
                         continue                         # price and purchase costs: an investment; a deposit: owed back -- no rent, no costs
+                    if is_transfer(t.category_path):
+                        continue                         # a transfer below the property's category ("Umbuchung (AHS)"): no rent, no costs either
                     if t.amount > 0:
                         miete += t.amount
                     else:
@@ -1316,7 +1319,7 @@ def positions_overview(ledger: Ledger, config: dict, categories: List[dict], tod
     """Kategorien -> Cashflow-Positionen: each of MoneyMoney's categories with bookings in your areas (in MoneyMoney's order):
     bookings, sum of the last 12 months, Kontor's proposal, what you chose, the property it belongs to, the account saving goes
     into, transfer category."""
-    from report import POSITIONS, category_totals, foreign_currency, propose_position, transfer_check
+    from report import POSITIONS, category_totals, foreign_currency, propose_position
     config = with_property_categories(config, ledger)
     bereiche = bereiche_for(ledger, config)
     keep = {a.uuid for b in bereiche for a in b["leaves"]}

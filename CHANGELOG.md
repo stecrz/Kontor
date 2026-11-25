@@ -1,5 +1,9 @@
 # Änderungen
 
+## 3.17.91 (2026-11-25 03:40)
+- Cashflow: Umbuchungs-Kategorie auch mit Zusatz in Klammern erkannt (etwa „Umbuchung (Tagesgeld)“) – ohne Gegenbuchung offen statt Sonstige Ausgaben
+- Immobilien: eine Umbuchung unter der Kategorie der Immobilie zählt im Soll-Ist-Vergleich weder als Miete noch als Kosten
+
 ## 3.17.90 (2026-11-25 02:44)
 - Cashflow: erhaltene Zinsen auf gewährte Darlehen zählen unter Einnahmen → Kapitalerträge (standen unter Investitionen); gezahlte bleiben unter Finanzierung
 - Darlehen: Zinsen ohne Zahlung (endfällig, gestundet, Rate unter den Zinsen) erscheinen als Aufnahme statt als positive Tilgung

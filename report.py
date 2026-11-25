@@ -1271,6 +1271,9 @@ def my_positions(config: dict) -> Dict[str, str]:
 
 # the usual names of a transfer category -- the category's own name only (not one above it: "Übertrag / Familie" may be anything)
 TRANSFER_NAMES = {"umbuchung", "umbuchungen", "uebertrag", "uebertraege", "kontouebertrag", "eigene konten", "eigenes konto"}
+# ... also with a note in brackets after it, which transfer it is: "Umbuchung (zwischen eigenen Konten)", "Umbuchung (AHS)" (3.17.90:
+# such a name was no transfer -- one without its counterpart counted as other expenses, below a property as its costs)
+_NAME_NOTE = re.compile(r"\s*\([^()]*\)$")
 
 
 def transfer_check(config: dict) -> Callable[[str], bool]:
@@ -1296,7 +1299,8 @@ def transfer_check(config: dict) -> Callable[[str], bool]:
                 r = False
                 for ps in (parts, legacy_cat(p).split(" / ") if p else []):
                     low = [fold_text(x) for x in ps]
-                    if ps and (low[-1] in names or low[-1] in TRANSFER_NAMES or any(" / ".join(low[:i]) in names for i in range(1, len(low) + 1))):
+                    own = {low[-1], _NAME_NOTE.sub("", low[-1])} if ps else set()
+                    if ps and (own & names or own & TRANSFER_NAMES or any(" / ".join(low[:i]) in names for i in range(1, len(low) + 1))):
                         r = True
                         break
             memo[p] = r
