@@ -203,6 +203,7 @@ const H = {
   voll_lesen: t('voll_lesen_tip'),
   sync_knoepfe: t('sync_knoepfe_tip'),
   kz_eingetragen: t('kz_eingetragen_tip'),
+  kz_sicher: t('kz_sicher_tip'),
   belege_ordner: t('belege_werden_als_normale_dateien'),
   belege_sub: t('platzhalter_jahr_monat_entitaet_bereic'),
   months_back: t('wie_viele_monate_historie_gelesen'),
@@ -262,7 +263,7 @@ const H = {
 const HELP_AT = {als_app: 'app', berechtigung: 'setup', immo_abrechnung: 'properties', immo_abziehbar: 'properties', immo_afa: 'properties', immo_aussch: 'properties', immo_darlehen_art: 'properties', immo_darlehen_konten: 'properties', immo_faellig: 'properties', immo_geb: 'properties', immo_ges: 'properties', immo_index: 'properties', immo_kategorie: 'properties', immo_kosten: 'properties', immo_nk: 'properties', immo_objektkonto: 'properties', immo_ruecklage: 'properties', immo_sonder: 'properties', immo_uebergang: 'properties', immo_verkauf: 'properties', immo_wert: 'properties', immo_zinsbindung: 'properties',
   area: 'areas', main_area: 'areas', share: 'areas', gruppenwahl: 'areas', anzeige: 'accounts', position_kurz: 'accounts', position: 'accounts',
   inactive: 'accounts', verlauf_kurz: 'history', history_source: 'history', verlauf_import: 'history', depotverlauf: 'history', mmhist: 'balances',
-  zuordnen: 'categories', regeln_mm: 'categories-rules', kz_eingetragen: 'categories-write-back', position_kat: 'categories-positions', kb_empfohlen: 'categories-tree', zielkonto: 'positions-recipients', anl_empfaenger: 'positions-recipients', sicherung: 'backup',
+  zuordnen: 'categories', kz_sicher: 'categories', regeln_mm: 'categories-rules', kz_eingetragen: 'categories-write-back', position_kat: 'categories-positions', kb_empfohlen: 'categories-tree', zielkonto: 'positions-recipients', anl_empfaenger: 'positions-recipients', sicherung: 'backup',
   cf_operativ: 'cash-flow', cf_invest: 'cash-flow', cf_finanz: 'cash-flow', cf_unklar: 'cash-flow', cf_wert: 'cash-flow',
   cf_bank: 'cash-flow', cf_umsch: 'cash-flow', cf_fcf: 'cash-flow', cf_nv: 'cash-flow', cf_abgleich_bank: 'cash-flow', cf_abgleich_nv: 'cash-flow', cf_bruecke: 'cash-flow-bridge', cf_verm_bruecke: 'cash-flow-wealth', cf_je_monat_t: 'cash-flow-months', cf_herkunft_verwendung: 'cash-flow-total',
   cf_ausgaben_kuchen: 'cash-flow-ring', cf_heatmap: 'cash-flow-heatmap',
@@ -6078,6 +6079,16 @@ function assignMsg(r) {
 const katList = id => `<datalist id="${id}">${(S.KATS || []).filter(k => !k.group && !k.default).map(k => `<option value="${esc(CP(k.path))}">`).join('')}</datalist>`;
 // alle gewählten Umsätze mit Vorschlag: [id, Kategorie] (der Vorschlag gilt je Umsatz, nicht je Gegenpartei)
 const vorschlagIds = off => off.groups.flatMap(g => g.ids.filter(i => !(KZ.aus[g.key] || new Set()).has(i) && g.proposals[i]).map(i => [i, g.proposals[i]]));
+// how much of what the filters show is placed surely (a category from MoneyMoney or assigned here) and how much the cash flow
+// estimates: by number and by amount (euros; never 100 % while anything is open)
+function kzProgress(off) {
+  const n = (off.assigned || 0) + (off.open || 0), all = (off.assigned_sum || 0) + (off.open_sum || 0);
+  if (!n) return '';
+  const raw = all > 0 ? 100 * (off.assigned_sum || 0) / all : off.open ? 0 : 100;
+  const pct = off.open ? Math.min(99, Math.floor(raw)) : 100, w = off.open ? Math.min(99.5, raw) : 100;
+  const txt = off.open ? t('kz_sicher', F0(off.assigned || 0), F0(n), pct) : tn('kz_sicher_alle', n, F0(n));
+  return `<div class="note kz-prog" data-ex="categories.progress"><span class="kz-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}" aria-label="${esc(t('kz_sicher_aria', pct))}"><i style="width:${w.toFixed(1)}%"></i></span><span>${txt}</span>${hq('kz_sicher')}</div>`;
+}
 async function vZuordnen() {
   if (!S.DATA) return noData;
   const off = await api(`/api/categories/unassigned?year=${KZ.year}&min=${KZ.min}`);
@@ -6094,7 +6105,7 @@ async function vZuordnen() {
     <select id="kz-jahr"><option value="">${t('alle_jahre')}</option>${years.map(y => `<option ${KZ.year === y ? 'selected' : ''}>${y}</option>`).join('')}</select>
     <label class="chk small">${t('ab')} <input type="number" id="kz-min" value="${esc(KZ.min)}" placeholder="0" style="width:80px"> €</label>
     <span class="sp"></span>${can && mitVorschlag.length ? `<button id="kz-alle" class="secondary small">${t('alle_vorschlaege_n', mitVorschlag.length)}</button>` : ''}</div>
-    <div class="note" data-ex="categories.open">${tn('n_ohne_kategorie_gruppen', off.open, hq('zuordnen'))}</div>` + katList('kz-kats');
+    ${kzProgress(off)}<div class="note" data-ex="categories.open">${tn('n_ohne_kategorie_gruppen', off.open, hq('zuordnen'))}</div>` + katList('kz-kats');
   if (off.waiting) h += `<div class="banner info">${tn('n_warten_auf_mac', off.waiting, off.waiting)}</div>`;
   if (!off.groups.length) return h + `<div class="card" data-ex="categories.open"><div class="v s">${t('nichts_offen_2')}</div><div class="d">${t('alle_umsaetze_haben_eine_kategorie')}</div></div>`;
   h += '<div class="list" data-ex="categories.open">';

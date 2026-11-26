@@ -21,6 +21,16 @@ Kategorie in MoneyMoney" counts the transactions matching these filters (not the
 from another device that wait to be written at the next sync at the Mac (they already count in Kontor). "Alle Vorschläge übernehmen
 (N)": N = transactions that have a suggestion and are not deselected. The card "Nichts offen" means no transaction matches.
 
+### categories.progress — Fortschritt (sicher zugeordnet / geschätzt)
+Above the note: a bar and "N von M Umsätzen sicher zugeordnet · P % des Betrags". M = the transactions under the same filters as the
+list (ticked areas, "Ignorieren vor", year, "ab … €"; only those that need a category: booked, on bank accounts, not Kontor's own
+bookings, not a transfer between accounts of the same area). N = of them, those with a category – MoneyMoney's or assigned in Kontor and
+waiting to be written; the cash flow counts these where their category says (surely placed). M − N = the open ones the list shows; the
+cash flow estimates their position (by the user's earlier categories or by name and purpose). P = the share of the absolute amounts
+(signs ignored) of the N in those of all M, in euros only (accounts in another currency count in N and M but add no amount); rounded
+down and at most 99 % while anything is open. The bar's length is that share. Everything placed: "Alle M Umsätze sicher zugeordnet".
+Not shown when the filters leave no transaction.
+
 ### categories.open.group — Gegenpartei (eine Gruppe)
 One counterparty. Bold: its name (or the start of the purpose). Grey: the accounts its transactions are in, and its IBAN. Tag "N×":
 number of its open transactions; "n / N×" when only n of them are selected for assigning. Amount in € (green positive, red

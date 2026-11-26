@@ -282,16 +282,17 @@ def open_items(d: dict, ledger: Ledger, bereich_of: Dict[str, str], jahr: Option
     """Transactions without a category (in MoneyMoney, nothing waiting), grouped by counterparty, with a suggestion.
     banks: the accounts a category matters for (bank accounts); None: all. Transfers between your accounts are left out, and
     so are the areas you do not categorise (hidden: their ids) and what was booked before the day you chose (before) -- the
-    cash flow estimates their positions."""
+    cash flow estimates their positions. assigned / assigned_sum / open_sum: the progress under the same filters -- how many
+    have a category (MoneyMoney's or waiting) and the absolute sums in euros of those with and without one."""
     groups: Dict[str, dict] = {}
     total = 0
+    # the progress: of the transactions these filters show, how many have a category (MoneyMoney's or waiting -- the cash flow
+    # counts them where it says) and how many the cash flow estimates; amounts in cents, accounts in euros only (never converted)
+    done, done_c, open_c = 0, 0, 0
     skip = transfers(ledger, bereich_of)
     own = ledger.own_ibans()
     for t in ledger.txs:
         if not needs_category(t, banks) or t.id in skip:
-            continue
-        path, q = effective(d, t)
-        if path:
             continue
         if jahr and t.booking_date.year != jahr:
             continue
@@ -303,8 +304,15 @@ def open_items(d: dict, ledger: Ledger, bereich_of: Dict[str, str], jahr: Option
             continue
         if min_betrag and abs(t.amount) < min_betrag:
             continue
-        total += 1
         cur = ((ledger.accounts[t.account_uuid].currency if t.account_uuid in ledger.accounts else "") or "EUR").upper()
+        cents = int(round(abs(t.amount) * 100)) if cur == "EUR" else 0
+        path, q = effective(d, t)
+        if path:
+            done += 1
+            done_c += cents
+            continue
+        total += 1
+        open_c += cents
         key = party_key(t) + ("" if cur == "EUR" else " " + cur)       # another currency: a group of its own (its sum in it, never mixed)
         g = groups.get(key)
         if g is None:
@@ -333,7 +341,8 @@ def open_items(d: dict, ledger: Ledger, bereich_of: Dict[str, str], jahr: Option
         # the group's suggestion only where every transaction has the same one (e.g. rent and service charges differ)
         g["proposal"] = next(iter(kinds)) if len(kinds) == 1 and len(g["proposals"]) == g["count"] else None
         g["proposals"] = {str(k): v for k, v in g["proposals"].items()}
-    return {"open": total, "groups": out[:limit], "groups_total": len(out)}
+    return {"open": total, "groups": out[:limit], "groups_total": len(out),
+            "assigned": done, "assigned_sum": done_c / 100, "open_sum": open_c / 100}
 
 
 def stats(d: dict, ledger: Ledger, banks: Optional[set] = None, area_of: Optional[Dict[str, str]] = None,

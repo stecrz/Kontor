@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.17.97 (2026-11-26 02:35)
+- Kategorisieren: Fortschritt über der Liste – wie viele Umsätze sicher zugeordnet sind und welcher Anteil am Betrag (den Rest schätzt der Cashflow), für die gewählten Filter
+
 ## 3.17.96 (2026-11-25 18:57)
 - Hilfe: Tabellen am iPhone brechen Wörter nicht mehr mitten im Wort
 - Oberfläche: kein Skriptfehler der Titelleiste mehr beim Seitenwechsel (iPhone)

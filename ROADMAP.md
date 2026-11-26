@@ -569,7 +569,7 @@ Fertig, wenn
 
 ## Als Nächstes (Cashflow und Kategorien)
 - Hinweis bei gemischten Kategorien (etwa eine Immobilien-Kategorie mit Kaufpreis, Auszahlung und Miete), Kategorisieren je Empfänger
-  in einem Schritt, Fortschritt „sicher zugeordnet / geschätzt“.
+  in einem Schritt.
 
 ## Demo (Wunsch des Nutzers, 2026-11-22; umgesetzt in 3.16.87 und 3.16.96)
 - Später: Assistent mit vorbereiteten Beispielfragen in der Demo; Firmenwert der UG aus EBITDA, sobald es die gibt.

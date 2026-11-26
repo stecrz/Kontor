@@ -80,6 +80,39 @@ class Truth(unittest.TestCase):
         self.assertEqual([(g["name"], g["proposal"], g["ids"]) for g in off["groups"]], [("Baumarkt", "Haushalt", [3])])
 
 
+class Progress(unittest.TestCase):
+    """How much is surely placed and how much the cash flow estimates -- under the page's filters, on the cent."""
+
+    def test_counts_and_sums_on_the_cent(self):
+        L = ledger([(1, "Shop", "", -100.10, "Haushalt", ""), (2, "Shop", "", -50.05, "", ""), (3, "Kiosk", "", -30.10, "", ""),
+                    (4, "Kunde", "", 20.20, "", ""), (5, "Bank", "Zinsen · #kontor-zins-2026-01", -9.99, "", ""),
+                    (6, "Ich", "", -500.0, "", "DE22")])         # to another account of the area: a transfer, no category needed
+        L.accounts["tag"] = Account(uuid="tag", name="Tagesgeld", type="Giro", group=False, indentation=0, balance=0.0, currency="EUR", iban="DE22")
+        d = C.empty(); C.set_waiting(d, [2], "Haushalt")
+        off = C.open_items(d, L, {"giro": "a", "tag": "a"})
+        self.assertEqual((off["assigned"], off["open"]), (2, 2))
+        self.assertEqual((off["assigned_sum"], off["open_sum"]), (150.15, 50.30))
+        groups = sum(g["count"] for g in off["groups"])
+        self.assertEqual(groups, off["open"])                             # the list and the progress count the same
+
+    def test_filters_apply_to_both_sides(self):
+        L = ledger([(1, "Shop", "", -100.0, "Haushalt", ""), (2, "Shop", "", -5.0, "", ""), (3, "Shop", "", -40.0, "", "")])
+        off = C.open_items(C.empty(), L, {}, min_betrag=10)
+        self.assertEqual((off["assigned"], off["open"], off["assigned_sum"], off["open_sum"]), (1, 1, 100.0, 40.0))
+        off = C.open_items(C.empty(), L, {}, before=date(2026, 1, 3))   # booked on the 2nd, 3rd, 4th: the first left out
+        self.assertEqual((off["assigned"], off["open"]), (0, 2))
+        off = C.open_items(C.empty(), L, {}, jahr=2025)
+        self.assertEqual((off["assigned"], off["open"], off["assigned_sum"], off["open_sum"]), (0, 0, 0, 0))
+
+    def test_another_currency_counts_but_adds_no_amount(self):
+        L = ledger([(1, "Shop", "", -100.0, "", "")])
+        L.accounts["usd"] = Account(uuid="usd", name="USD", type="Giro", group=False, indentation=0, balance=0.0, currency="USD", iban="US11")
+        L.txs.append(Tx(id=2, account_uuid="usd", booking_date=date(2026, 2, 1), value_date=None, amount=-70.0, currency="USD", name="Shop",
+                        purpose="", category_path="Haushalt", counter_iban=""))
+        off = C.open_items(C.empty(), L, {})
+        self.assertEqual((off["assigned"], off["open"], off["assigned_sum"], off["open_sum"]), (1, 1, 0, 100.0))
+
+
 class Proposals(unittest.TestCase):
     def setUp(self):
         C._TXT.clear()
