@@ -420,6 +420,15 @@ anhängen – nie löschen.
   ohne eigenen Zeitplan: ein Nachtstart alle 2 h wartet auf 3:05 und startet ihn direkt (nicht verzögert); nach 4 Uhr nie, eine
   fehlende Nacht meldet das Lagebild. Verworfen: ein Anstoß von außen (Claude-Zeitplan oder fremder Cron-Dienst) – kostet Credits
   bzw. braucht einen Zugangsschlüssel bei Dritten; der Nachtstart kommt mit GitHub allein aus. (umgesetzt in 3.17.99)
+- **Zwei Arten von Tests, schlank** (Nutzer, 2026-11-27): Auf GitHub nur zwei Workflows – je Version kurze Tests in wenigen
+  Minuten (`tests.yml`) und jede Nacht der umfangreiche Lauf mit vielen Zufallswelten, der Stunden dauern darf (`nightly.yml`, der
+  echte Nachtlauf); nichts darf dabei verloren gehen. Grund: zu viele verschiedene Läufe; der eigene Nachtstart (`night_start.yml`)
+  war ein dritter Workflow, und auch er startete die Nacht nicht (GitHub ließ drei von vier Weckern aus, der vierte kam zu früh
+  für dessen Wartezeit von 2 h 45). Deshalb der Wecker im Nachtlauf selbst, alle 2 h, mit bis zu 5 h 30 Wartezeit auf 3:05 (eine
+  Nacht braucht einen von drei oder mehr Weckern; 3 oder bei der Zeitumstellung 4 Uhr ist ihm recht). Der Lauf je Version in
+  sechs kürzeren Teilen nebeneinander statt vier langen (16 → rund 9 min); die Klickpfade (drei je Push: 4 min) nur nachts.
+  Der alte Workflow „Mac-App (Testzweig)“ (`ci-mac-app.yml`, Zweig `ci/mac-app`, gelöscht) ist ohne Belang: was er prüfte, steht im
+  macOS-Teil von `tests.yml`; er steht nur noch wegen seiner alten Läufe in GitHubs Liste. (umgesetzt in 3.17.103)
 
 ## Offen (Entscheidung steht aus – mit Empfehlung vorlegen, wenn der Punkt dran ist)
 - Umsatzsteuer-Voranmeldung direkt an ELSTER senden (ELSTERs Programmbibliothek ERiC, Anmeldung als Hersteller, Zertifikat und

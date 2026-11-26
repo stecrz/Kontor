@@ -1,30 +1,52 @@
-name: Zufallsläufe
+name: Nachtlauf
+run-name: ${{ github.event_name == 'schedule' && 'Wecker (startet den Nachtlauf um 3 Uhr)' || 'Nachtlauf' }}
 
-# every night on the newest main, as many random cases as fit: each job first the fixed cases (the first job of a test the
-# 1000 fixed ones, instead of 40 per push) and those found before (tests/fixtures.py, FOUND), then new ones drawn anew each
-# night until its time is up (KONTOR_FUZZ_MINUTES; the run's summary shows how many). Each random test takes that whole time
-# from when it begins, so every job runs exactly one of them (two in a file: one job each, picked with -k) -- the cash flow's
-# file has two, both in one job ran past the job's limit and GitHub cancelled it night after night (until 3.17.80;
-# tests/test_workflows.py, NightJobs, holds it). The booking rules are slowest per case:
-# several machines side by side. The click paths (tests/test_clickpaths.py: pages, dialogs, side windows and references in a
-# changing order, light and dark, Mac and iPhone, on changing worlds) walk in Chromium and Safari's engine: 40 fixed walks
-# (3 per push) and their found ones (FOUND_CLICKS), then new ones. A failure names its case: KONTOR_FUZZ_SEED=<number> runs
-# it again. Only the random tests; the rest of a version is checked by its push run (tests.yml). About 3 hours, well under
-# the user's limit of 5; red: the next chat fixes it (CLAUDE.md, "Nachtlauf rot").
-# The data worlds (tests/data_worlds.py: long names, large amounts, empty and full areas, other currencies, month and year
-# ends) go through the whole service -- figures, requests, the assistant; and every page in Chrome, each fixed world in every
-# view, new random worlds after them.
+# The night: every night between 3 and 4 a.m. German time, summer and winter (the user, 2026-11-26/27), on the newest main; the
+# tests of every version: tests.yml. Two kinds of run in this one workflow:
+# - "Wecker" (schedule, every two hours): GitHub starts scheduled runs here hours late and now and then not at all, a run by
+#   workflow_dispatch at once. The first wake-up within 5 1/2 hours before 3:05 waits and starts the night (this workflow, by
+#   workflow_dispatch); the others end in seconds (.github/nightly.py; tests/test_workflows.py, Night, plays every delay through).
+# - "Nachtlauf" (workflow_dispatch, by the wake-up or by hand with "Run workflow" -- then at once): as many random cases as fit.
+#   Each job first the fixed cases (the first job of a test the 1000 fixed ones, instead of 12 per push) and those found before
+#   (tests/fixtures.py, FOUND), then new ones drawn anew each night until its time is up (KONTOR_FUZZ_MINUTES; the run's summary
+#   shows how many). Each random test takes that whole time from when it begins, so every job runs exactly one of them (two in a
+#   file: one job each, picked with -k) -- the cash flow's file has two, both in one job ran past the job's limit and GitHub
+#   cancelled it night after night (until 3.17.80; tests/test_workflows.py, NightJobs, holds it). The booking rules are slowest
+#   per case: several machines side by side. The click paths (tests/test_clickpaths.py: pages, dialogs, side windows and
+#   references in a changing order, light and dark, Mac and iPhone, on changing worlds) walk in Chromium and Safari's engine: 40
+#   fixed walks and their found ones (FOUND_CLICKS), then new ones -- only here, not per push. The data worlds
+#   (tests/data_worlds.py: long names, large amounts, empty and full areas, other currencies, month and year ends) go through the
+#   whole service -- figures, requests, the assistant; and every page in Chrome, each fixed world in every view, new random worlds
+#   after them. A failure names its case: KONTOR_FUZZ_SEED=<number> runs it again. About 3 hours, well under the user's limit
+#   of 5; red: the next chat fixes it ("fix nightly", CLAUDE.md).
 on:
-  # no schedule of its own: between 3 and 4 a.m. German time night_start.yml starts it (the user, 2026-11-26) -- GitHub started
-  # its schedule here 7-9 hours late (3.17.94: 3:47 Europe/Berlin, started 12:29), into the day and beside every push's run.
-  workflow_dispatch:                # the start at night, or by hand after a night that did not run (3.17.64-66: the file was invalid)
+  schedule:
+    - cron: "13 */2 * * *"          # the wake-ups, every two hours, off the full hour (GitHub is busiest there); UTC -- the script counts German time
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
+  wake:
+    name: Wecker – startet den Nachtlauf um 3 Uhr
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 350            # the longest wait (5 h 30 min) and the tries to start; GitHub ends a job after six hours
+    permissions:
+      actions: write                # to start the night: a workflow_dispatch by the run's own token does start a run
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: .github
+      - run: python3 .github/nightly.py
+        env:
+          GH_TOKEN: ${{ github.token }}
+
   fuzz:
     name: ${{ matrix.name }}
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     timeout-minutes: 240              # the cases stop after KONTOR_FUZZ_MINUTES (plus the fixed ones); this only catches a hang
     strategy:

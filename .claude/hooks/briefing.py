@@ -91,7 +91,7 @@ def tests_on_github():
     if push is None:                    # said, never silent: a red run must not go unnoticed
         return ("Tests auf GitHub: nicht erreichbar (weder `gh` noch GitHubs Schnittstelle) – von Hand: "
                 "`gh run list -R %s/%s -L 3`" % (m.group(1), m.group(2))), "github-unreachable"
-    night = runs("workflows/nightly.yml/runs?branch=main&per_page=5") or []
+    night = runs("workflows/nightly.yml/runs?branch=main&event=workflow_dispatch&per_page=5") or []      # the nights, not the wake-ups
     since = lambda iso: git("log", "--since=" + iso, "--format=%s%x1f%b%x1e", "origin/main")[1] if iso else ""
     who = lambda sha: chat(git("log", "-1", "--format=%b", sha)[1])
     return ci_summary(push, night, since, who, datetime.datetime.now(datetime.timezone.utc))
@@ -107,8 +107,10 @@ def ci_summary(push, night, since, who, now=None):
     nightly.yml (newest first); since(iso) = subjects and bodies of the commits on main since then, who(sha) = the chat of a
     commit. A red run -- of a version or of the night -- is fixed by the next chat that sees it (the chat that pushed does not
     wait for GitHub): "fix ci" / "fix nightly" in the fix's commit subject marks it, so the others leave it. With `now` (aware):
-    a night that did not start (night_start.yml starts it between 3 and 4 German time) is said, not left behind an old run."""
+    a night that did not start (the wake-ups of nightly.yml start it between 3 and 4 German time) is said, not left behind an
+    old run. The wake-ups themselves (event schedule) are no night: left out."""
     name = lambda r: str(r.get("display_title") or "").split(":")[0][:20] or str(r.get("head_sha"))[:7]
+    night = [r for r in night if r.get("event") != "schedule"]
     done = [r for r in push if r.get("status") == "completed" and r.get("conclusion") in ("success", "failure")]
     parts, keys = [], []
     if push and push[0].get("status") != "completed":
@@ -163,8 +165,9 @@ def ci_summary(push, night, since, who, now=None):
         late = False
     if late:
         keys.append("night-missing %s" % night[0].get("id"))
-        parts.append("Nachtlauf fehlt – zuletzt angestoßen am %s; der Nachtstart (`.github/workflows/night_start.yml`, zwischen 3 und "
-                     "4 Uhr) hat ihn nicht gestartet: dessen Läufe ansehen; von Hand: GitHub → Actions → Zufallsläufe → „Run workflow“"
+        parts.append("Nachtlauf fehlt – zuletzt angestoßen am %s; die Wecker (`.github/workflows/nightly.yml`, Läufe „Wecker“ alle "
+                     "2 h, `.github/nightly.py`) haben ihn zwischen 3 und 4 Uhr nicht gestartet: deren Läufe ansehen; von Hand: "
+                     "GitHub → Actions → Nachtlauf → „Run workflow“ (startet sofort)"
                      % created(night[0]).strftime("%d.%m."))
     if not parts:
         return "", ""

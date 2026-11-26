@@ -3,33 +3,37 @@
 Teil von `CLAUDE.md` (Aufbau). Neue Testdatei oder neuer Prüfbereich: hier eintragen.
 
 ## Wo was läuft
-- **GitHub, jeder Push** (`.github/workflows/tests.yml`, rund 10 min, für kleine und große Versionen gleich): Linux mit Kontors
-  eigenem Python, Chrome und Safari-Engine, Code-Checks, in vier Teilen nebeneinander (Seiten = `tests/test_e2e.py` und `tests/test_data_worlds.py`; Assistent und
-  Rundgang; Rechnen mit Zufallsfällen – je Push 12 feste; alles andere – eine neue Testdatei landet dort von selbst), dazu Python 3.9
-  nur für den Starter (`tests/test_python.py`); `--durations` nennt die langsamsten Tests. macOS: Apples Python, Swift-Helfer,
-  Mac-App (bauen, Kontor darin laden, Mikrofon ohne Nachfrage; jede Seite in macOS' WebKit mit echtem Rechtsklick), Abschirmung der
-  Modelle (`tests/test_mac_model.py`: kein Netz außer der eigenen Socket-Datei; echtes llama.cpp), MoneyMoney-Brücke, Installation,
-  Kontors eigenes Python (`tests/mac_python.py`: echt laden, falsche Prüfsumme, Quarantäne und Signatur, Selbsttest, Helfer in der
-  Sandbox, Dienst als Kind des Starters, Neustart durch launchd, beschädigt → Apples Python, Deinstallieren, Update von der Version
-  davor); Linux prüft denselben Ablauf mit dem echten Build für Linux.
-- **GitHub, nachts** (`nightly.yml`, gestartet zwischen 3 und 4 Uhr deutscher Zeit, Sommer wie Winter; Nutzer, 2026-11-26):
-  `nightly.yml` hat keinen eigenen Zeitplan – GitHubs Zeitplan startete ihn hier 7–9 h zu spät (3:47 geplant, 12:29 gestartet),
-  `timezone` legt nur die gewünschte Stunde fest. Der Nachtstart (`night_start.yml`, `.github/night_start.py`) wacht alle 2 h auf,
-  jedes Mal so spät, wie GitHub ihn startet; der erste, der bis 2 h 45 vor 3:05 ankommt, wartet und startet die Nacht mit
-  `workflow_dispatch` (nicht verzögert), die anderen enden nach Sekunden (`concurrency`: einer zur Zeit). Nach 4 Uhr startet er
-  nicht mehr – fehlt eine Nacht, meldet es das Lagebild („Nachtlauf fehlt“). `test_workflows.NightStart` spielt jede
-  Verspätung von 0–20 h durch, auch schwankend und über die Zeitumstellung:
-  auf dem neuesten `main` die 1000 festen und so viele neue Zufallsfälle, wie in ~3 h passen,
-  auf mehreren Rechnern nebeneinander; dazu Klickpfade durch die Oberfläche (`tests/test_clickpaths.py`, 40 feste und neue, in
-  Chromium und der Safari-Engine) – je Push laufen davon 3 feste mit (im Teil „Übrige“).
+Zwei Arten auf GitHub, je ein Workflow (Nutzer, 2026-11-27: schlank, nichts verloren): `tests.yml` je Version in wenigen Minuten,
+`nightly.yml` jede Nacht stundenlang mit vielen Zufallsfällen. `test_workflows` hält beide fest (`PushJobs`, `NightJobs`, `Night`).
+- **GitHub, jeder Push** (`.github/workflows/tests.yml`, rund 9 min, für kleine und große Versionen gleich): Linux mit Kontors
+  eigenem Python, Chrome und Safari-Engine, in sechs Teilen nebeneinander – Seiten (`test_e2e`); Rundgang (`test_tour`);
+  Datenwelten und Rechnen mit je Push 12 festen Zufallsfällen; Assistent und Gedächtnis; Updates, eigenes Python, PDF-Tabellen;
+  Übrige mit Code-Checks (eine neue Testdatei landet dort von selbst; `PushJobs`: jede Datei genau einmal, die Klickpfade nur
+  nachts) –, dazu Python 3.9 nur für den Starter (`tests/test_python.py`); `--durations` nennt die langsamsten Tests. macOS:
+  Apples Python, Swift-Helfer, Mac-App (bauen, Kontor darin laden, Mikrofon ohne Nachfrage; jede Seite in macOS' WebKit mit echtem
+  Rechtsklick), Abschirmung der Modelle (`tests/test_mac_model.py`: kein Netz außer der eigenen Socket-Datei; echtes llama.cpp),
+  MoneyMoney-Brücke, Installation, Kontors eigenes Python (`tests/mac_python.py`: echt laden, falsche Prüfsumme, Quarantäne und
+  Signatur, Selbsttest, Helfer in der Sandbox, Dienst als Kind des Starters, Neustart durch launchd, beschädigt → Apples Python,
+  Deinstallieren, Update von der Version davor); Linux prüft denselben Ablauf mit dem echten Build für Linux.
+- **GitHub, nachts** (`.github/workflows/nightly.yml` „Nachtlauf“, gestartet zwischen 3 und 4 Uhr deutscher Zeit, Sommer wie
+  Winter; Nutzer, 2026-11-26/27): GitHubs Zeitplan startete hier 7–9 h zu spät (3:47 geplant, 12:29 gestartet) und ließ Läufe
+  aus (26.11.: drei von vier); `timezone` legt nur die gewünschte Stunde fest. Deshalb zwei Arten Lauf im selben Workflow: der
+  **Wecker** (Zeitplan alle 2 h, Job `wake`, `.github/nightly.py`) – der erste, der bis 5 h 30 vor 3:05 ankommt, wartet und
+  startet um 3:05 den **Nachtlauf** (dasselbe Workflow per `workflow_dispatch`, nicht verzögert; Job `fuzz`); später ankommende
+  sehen ihn warten und enden nach Sekunden, ebenso zu frühe. So reicht einer von drei oder mehr Weckern je Nacht. Nach 4 Uhr
+  startet keiner mehr – fehlt eine Nacht, meldet es das Lagebild („Nachtlauf fehlt“; es zählt nur Läufe per `workflow_dispatch`).
+  `test_workflows.Night` spielt jede Verspätung von 0–20 h durch, schwankend, mit ausfallenden Weckern und über die Zeitumstellung.
+  Der Nachtlauf: auf dem neuesten `main` die 1000 festen und so viele neue Zufallsfälle, wie in ~3 h passen, auf mehreren Rechnern
+  nebeneinander; dazu Klickpfade durch die Oberfläche (`tests/test_clickpaths.py`, 40 feste und neue, in Chromium und der
+  Safari-Engine – nur nachts, je Push kosteten drei 4 min).
   Jeder Zufallstest zieht neue Fälle, bis `KONTOR_FUZZ_MINUTES` seit **seinem** Beginn um sind – zwei in einem Job brauchen die
   doppelte Zeit und GitHub bricht den Job an seiner Grenze ab (bis 3.17.80 der Cashflow-Job, Nacht für Nacht: Cashflow und
   Planung in einer Datei; die neuen Planungsfälle liefen nie). Deshalb je Zufallstest ein eigener Job, bei zwei in einer Datei
   mit `-k` getrennt (`test_workflows.NightJobs` prüft es bei jedem Push).
   Dazu die Datenwelten (`test_data_worlds`): Zahlen, Anfragen, Assistent und – mit Chrome – jede Seite, die festen Welten in jeder
   Ansicht, dann neue Zufallswelten.
-  Fiel eine Nacht aus (3.17.64–3.17.66: `nightly.yml` ungültig, am 24.11. lief nichts; das Lagebild meldet es), startet ihn
-  der Nutzer von Hand: GitHub → Actions → Zufallsläufe → „Run workflow“ (oder `gh workflow run nightly.yml -R stecrz/Kontor`).
+  Von Hand (fiel eine Nacht aus, oder nach einer Korrektur): GitHub → Actions → Nachtlauf → „Run workflow“ startet ihn sofort
+  (oder `gh workflow run nightly.yml -R stecrz/Kontor`); ein Lauf von Hand, der um 3:05 noch läuft, gilt als die Nacht.
 - **Lokal** (`.claude/tools/release.py`, Skill `release`): Code-Checks, betroffene Tests (`tests/affected.py`) ohne Browser, bei
   Rechenlogik 400 Zufallsfälle, Starter mit Python 3.9, dazu die mit `--tests` genannten (mit Browser). Alles lokal
   (`python3 -m pytest -q tests`, ~30 min) nur, wenn es wirklich nötig ist – GitHub macht es ohnehin.
@@ -64,8 +68,8 @@ Teil von `CLAUDE.md` (Aufbau). Neue Testdatei oder neuer Prüfbereich: hier eint
   wechselnder Reihenfolge, hell/dunkel, Mac/iPhone, Chromium/WebKit, auf wechselnden Welten: Testwelt, Demo, Zufallswelt aus
   `test_worlds`, leeres Kontor; nach jedem Schritt kein Skriptfehler, keine waagrechte Scrollleiste, nichts überlappt, nichts
   abgeschnitten, Aufgehendes im Fenster; Esc, Enter und ⌘S wirken; Zustände bleiben beim erneuten Öffnen von Seite und
-  Seitenfenster. Ein Fehler nennt Fall, Ansicht und jeden Schritt: `KONTOR_FUZZ_SEED=<Nummer>`; je Push 3 feste
-  (`KONTOR_CLICK_SEEDS`), nachts so viele, wie passen; Gefundenes nach der Korrektur in `FOUND_CLICKS`. Den Weg eines
+  Seitenfenster. Ein Fehler nennt Fall, Ansicht und jeden Schritt: `KONTOR_FUZZ_SEED=<Nummer>`; von Hand 3 feste
+  (`KONTOR_CLICK_SEEDS`), auf GitHub nur nachts, so viele, wie passen; Gefundenes nach der Korrektur in `FOUND_CLICKS`. Den Weg eines
   bestandenen Falls zeigt `KONTOR_CLICK_LOG=1` mit `-s`; was sie fanden, hält `FoundTest` fest: Menü am iPhone mit esc und
   Tipp auf die offene Seite, über der Assistenten-Seite, Demo ohne Wertpapiersuche; Skala auch für einen gleichbleibenden,
   nicht runden Wert (sonst `NaN`), Zahlen der Übersicht neben dem Assistenten in ihren Karten, Kopf der ersten Bilanzspalte am iPhone,

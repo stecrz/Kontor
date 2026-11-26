@@ -13,7 +13,7 @@ click, a focused card or field), ⌘S saves the booking rules (and saves nothing
 or a side window is opened again: the same view of the same data shows what was opened, chosen and scrolled before.
 
 A failure names its case, its view and every step: KONTOR_FUZZ_SEED=<number> walks it again
-(python3 -m pytest -q tests/test_clickpaths.py). Per push 3 fixed cases (KONTOR_CLICK_SEEDS), at night as many as fit
+(python3 -m pytest -q tests/test_clickpaths.py). By hand 3 fixed cases (KONTOR_CLICK_SEEDS); on GitHub only at night, as many as fit
 (nightly.yml); a case a night found goes into FOUND_CLICKS once fixed. All names and amounts are made up."""
 import datetime
 import json

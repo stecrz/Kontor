@@ -1,6 +1,6 @@
 name: Tests
 
-# every version, as it lands on main (no branches, no pull requests); the many random runs at night: nightly.yml
+# every version, as it lands on main (no branches, no pull requests): a few minutes; the long random runs every night: nightly.yml
 on:
   push:
     branches: [main]
@@ -29,30 +29,39 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # four parts for Kontor's own Python, each on a machine of its own (Apple's 3.9: only the starter, user 2026-11-23) (one after the other ~25 min, side by side ~8): the pages; the
-        # assistant and the tour; the calculations with their random cases (few fixed ones here -- nightly.yml runs 1000 and
-        # new ones every night); everything else -- a new test file lands in "everything else" by itself, nothing is left out
+        # Kontor's own Python in six parts, each on a machine of its own, a few minutes each (one after the other ~40 min, side
+        # by side ~9); Apple's 3.9 only for the starter (user 2026-11-23). A new test file lands in "Übrige" by itself, nothing
+        # is left out (tests/test_workflows.py, PushJobs); random cases here only a few fixed ones -- the night (nightly.yml)
+        # runs 1000 and new ones; the click paths only at night (random walks, 4 min for three: user 2026-11-27, few minutes per push)
         include:
           - name: "Python 3.9 (wie auf dem Mac) · nur der Starter"
             python: "3.9"           # Apple's Python only starts the starter (kontor.py up to pyboot.ready(), pyboot.py): only that stays 3.9-able
             os: ubuntu-24.04
             tests: tests/test_python.py
-          - name: "Python 3.15 · Chrome + Safari-Engine · Seiten"
+          - name: "Seiten · Chrome + Safari-Engine"
             python: "3.15"
             os: ubuntu-24.04          # not ubuntu-latest: on 26.04 the browser libraries come from a crawling mirror (17+ min)
-            tests: tests/test_data_worlds.py tests/test_e2e.py
-          - name: "Python 3.15 · Chrome + Safari-Engine · Assistent, Rundgang"
+            tests: tests/test_e2e.py
+          - name: "Rundgang · Chrome + Safari-Engine"
             python: "3.15"
             os: ubuntu-24.04
-            tests: tests/test_assistant.py tests/test_assistant_eval.py tests/test_memory.py tests/test_tour.py
-          - name: "Python 3.15 · Chrome + Safari-Engine · Rechnen, Zufallsfälle"
+            tests: tests/test_tour.py
+          - name: "Datenwelten · Rechnen mit festen Zufallsfällen"
             python: "3.15"
             os: ubuntu-24.04
-            tests: tests/test_fuzz.py tests/test_cashflow.py tests/test_scenarios.py tests/test_worlds.py tests/test_rule_worlds.py tests/test_rules.py tests/test_categories.py
-          - name: "Python 3.15 · Chrome + Safari-Engine · Übrige · Code-Checks"
+            tests: tests/test_data_worlds.py tests/test_fuzz.py tests/test_cashflow.py tests/test_scenarios.py tests/test_worlds.py tests/test_rule_worlds.py tests/test_rules.py tests/test_categories.py
+          - name: "Assistent · Gedächtnis"
             python: "3.15"
             os: ubuntu-24.04
-            tests: tests --ignore=tests/test_e2e.py --ignore=tests/test_data_worlds.py --ignore=tests/test_assistant.py --ignore=tests/test_assistant_eval.py --ignore=tests/test_memory.py --ignore=tests/test_tour.py --ignore=tests/test_fuzz.py --ignore=tests/test_cashflow.py --ignore=tests/test_scenarios.py --ignore=tests/test_worlds.py --ignore=tests/test_rule_worlds.py --ignore=tests/test_rules.py --ignore=tests/test_categories.py
+            tests: tests/test_assistant.py tests/test_assistant_eval.py tests/test_memory.py
+          - name: "Updates · eigenes Python · PDF-Tabellen"
+            python: "3.15"
+            os: ubuntu-24.04
+            tests: tests/test_update_guard.py tests/test_python.py tests/test_pdf_tables.py
+          - name: "Übrige · Code-Checks"
+            python: "3.15"
+            os: ubuntu-24.04
+            tests: tests --ignore=tests/test_e2e.py --ignore=tests/test_tour.py --ignore=tests/test_data_worlds.py --ignore=tests/test_fuzz.py --ignore=tests/test_cashflow.py --ignore=tests/test_scenarios.py --ignore=tests/test_worlds.py --ignore=tests/test_rule_worlds.py --ignore=tests/test_rules.py --ignore=tests/test_categories.py --ignore=tests/test_assistant.py --ignore=tests/test_assistant_eval.py --ignore=tests/test_memory.py --ignore=tests/test_update_guard.py --ignore=tests/test_python.py --ignore=tests/test_pdf_tables.py --ignore=tests/test_clickpaths.py
             checks: true
     steps:
       - uses: actions/checkout@v7
@@ -100,7 +109,7 @@ jobs:
           npm install -s --no-save --no-package-lock eslint@9 globals
           npx --no-install eslint -c .github/eslint.config.mjs web
       - name: A real build of Python (tests of Kontor's own Python start the service in it; python-build-standalone, checked)
-        if: ${{ !endsWith(matrix.tests, 'test_e2e.py') }}
+        if: contains(matrix.tests, 'test_python.py')
         run: |
           # the same version Kontor names for the Mac (pyruntime.py), built for this machine; not there: that test is skipped
           f="cpython-3.15.2+20261110-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz"
@@ -109,7 +118,7 @@ jobs:
             echo "KONTOR_PYTHON_ARCHIVE=$RUNNER_TEMP/$f" >> "$GITHUB_ENV"
           fi
       - name: Tests
-        timeout-minutes: 30                 # a few minutes per part: room for many more tests
+        timeout-minutes: 30                 # a few minutes per part (--durations names the slowest): room for more tests
         env:
           TZ: Europe/Berlin
           KONTOR_FUZZ_SEEDS: "12"      # few fixed random cases per push (and all found before): the nightly run checks 1000 and new ones

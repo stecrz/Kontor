@@ -37,7 +37,7 @@ def fuzz_seeds(name: str = "", fixed_env: str = "KONTOR_FUZZ_SEEDS", fixed_defau
     them, and more until KONTOR_FUZZ_MINUTES have passed since the test began (nightly.yml: as many as fit). A failure names
     its case ("seed …"); KONTOR_FUZZ_SEED=<number>[,<number>…] runs just those again. On GitHub the numbers go into the run's
     summary. (Many cases: with Python 3.9's pytest, which keeps nothing of a passed case.) A slower test counts its fixed
-    cases apart (fixed_env, fixed_default) and keeps its own found ones (the click paths: KONTOR_CLICK_SEEDS, 3 per push)."""
+    cases apart (fixed_env, fixed_default) and keeps its own found ones (the click paths: KONTOR_CLICK_SEEDS, 3 by hand; only at night on GitHub)."""
     env = os.environ.get
     found = FOUND if found is None else found
     only = env("KONTOR_FUZZ_SEED")

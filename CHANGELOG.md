@@ -1,5 +1,10 @@
 # Änderungen
 
+## 3.17.103 (2026-11-27 00:40)
+- Entwicklung: Nachtlauf in einem Workflow – Wecker alle 2 h wartet bis zu 5½ h und startet die Zufallsläufe um 3:05 deutscher Zeit (eigener Nachtstart entfällt)
+- Entwicklung: Tests je Version in sechs kürzeren Teilen nebeneinander (rund 9 statt 16 min), Klickpfade nur nachts; jede Testdatei läuft genau einmal (geprüft)
+- Entwicklung: Lagebild zählt nur echte Nachtläufe, nicht die Wecker
+
 ## 3.17.102 (2026-11-27 00:07)
 - Hilfe: „GbR anlegen“ und ähnliche Suchen finden den Abschnitt Bereiche wieder
 
