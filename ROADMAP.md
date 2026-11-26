@@ -394,6 +394,16 @@ anhängen – nie löschen.
 - **Zinsen im Cashflow** (Nutzer, 2026-11-25): Erhaltene Zinsen sind Kapitalerträge und zählen unter Einnahmen – auch die auf
   gewährte Darlehen, die im Forderungskonto gebucht sind (sie standen unter Investitionen). Gezahlte Darlehenszinsen bleiben unter
   Finanzierung („es ist ja der Finanzierungs-Cashflow“), nicht unter Ausgaben. Gilt genauso für Firmen. (umgesetzt in 3.17.90)
+  Geändert (Nutzer, 2026-11-26 – „Deutsches Handelsrecht (DRS 21): Hier besteht kein Wahlrecht. Erhaltene Zinsen stammen aus
+  Kapitalanlagen oder vergebenen Darlehen und gehören zwingend in den CFI. Gezahlte Zinsen sind Kosten der Kapitalbeschaffung und
+  gehören in den CFF.“): Erhaltene Zinsen, Dividenden und Gewinnausschüttungen (Position Kapitalerträge, auch Zinsen auf gewährte
+  Darlehen) stehen unter Investitionen als eigene Gruppe, nicht mehr unter Einnahmen; gezahlte Zinsen und Ausschüttungen bleiben
+  unter Finanzierung. Gilt für alle Bereiche, auch privat – gewählt aus „DRS 21 überall“ (empfohlen), „nur bei Firmen“, „so
+  lassen“: eine Logik für Privat und Gesellschaften (sonst zählte das Gesamtbild zwei Definitionen des Überschusses zusammen), und
+  der Überschuss zeigt, ob Arbeit bzw. Geschäft allein tragen; der Free Cashflow bleibt gleich. Kapitalerträge mehren weiter das
+  Nettovermögen (Vermögensbrücke: eigener Schritt) und werden wie Einnahmen geplant; die Sparquote rechnet ohne sie. DRS 21 bindet
+  nur Konzernabschlüsse und kapitalmarktorientierte Gesellschaften, für die übrigen ist es die anerkannte Empfehlung.
+  (umgesetzt in 3.17.101)
 - **Darlehenskonten** (Nutzer, 2026-11-25): Ihm bekannt ist nur die Kontoführung „volle Annuität als Gutschrift, Zinsen als
   eigene Buchung im Darlehenskonto“ – das bleibt der Regelfall. Andere Kontoführungen (nur der Tilgungsanteil wird gegengebucht;
   Zinsen laufen ohne Zahlung auf) soll Kontor von sich aus richtig behandeln; dazu ist keine Entscheidung von ihm nötig.

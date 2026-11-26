@@ -14,7 +14,8 @@ The plan's settings for the whole area. "Einnahmen" and "Ausgaben": the area's d
 the method (Ø 12 Monate, Ø 6 Monate = average of the last 12 or 6 closed months, of fewer when fewer are known; Vorjahresmonat =
 the same month a year before; MoneyMoney-Budget = the budgets in MoneyMoney, a category without one: Ø 12 Monate; Keine = 0) and
 "mit Steigerung" (the rates below) or "ohne Steigerung" (0 %). The Ausgaben rule also plans the rows of Investitionen and
-Finanzierung that follow a method (their increase is 0 % unless a row sets one). "Horizont … Monate" (1–240, default 24),
+Finanzierung that follow a method (their increase is 0 % unless a row sets one) -- except Kapitalerträge (interest and dividends
+received, under Investitionen): the Einnahmen rule and its increase plan them, as income. "Horizont … Monate" (1–240, default 24),
 "Inflation" (% p.a., default 2: the increase of expenses unless "Steigerung Ausgaben" is filled; also the rate of
 "inflationsbereinigt"), "Steigerung Einnahmen" (% p.a., default 0), "Steigerung Ausgaben" (% p.a.; empty = the inflation), "Rendite
 Wertpapiere/Anlagen" (% p.a., default 0: the yearly change in value of portfolios, securities and term investments without an entry
@@ -30,7 +31,8 @@ with a rule of their own keep it, unless the user chooses "Ersetzen" when asked.
 
 ## planning.figures — Sparquote, Reichweite, Zinslast
 Three key figures of the plan, each over the next 12 plan months (the months named in its tooltip). Sparquote: Überschuss ÷
-Einnahmen of those months, in % (Überschuss = Einnahmen + Ausgaben, expenses negative); "–" without planned income. Reichweite: the
+Einnahmen of those months, in % (Überschuss = Einnahmen + Ausgaben, expenses negative; interest and dividends received are not
+in either – they stand under Investitionen, DRS 21); "–" without planned income. Reichweite: the
 bank balance at the end of the running month ÷ the planned average fall of the bank balance per month (the row "Veränderung
 Bankguthaben" of those months) = how many months the money lasts; "–" when the bank balance does not fall in the plan; 0 when it is
 already at or below zero. Zinslast: planned interest on loans (the interest rows of Finanzierung, as a positive amount) ÷ Einnahmen of

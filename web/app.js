@@ -3529,6 +3529,8 @@ function planSrc(from, isCat, P) {          // where a rule's field comes from
   if (from === 'area') return P.model ? t('pw_von_modell', t(`pm_${P.model}`)) : t('pw_von_bereich');
   return from === 'kind' ? t('pw_von_art') : '';
 }
+// the side a row is planned on: interest and dividends received (investing, DRS 21) like income -- as report.plan_sec
+const planSec = (sec, z) => z && z.kind === 'capital_income' ? 'income' : sec;
 function planIncSrc(r, isCat, sec, P) {
   if (r.inc_from !== 'standard') return planSrc(r.inc_from, isCat, P);
   return t(sec === 'income' ? 'pw_std_einnahmen' : sec === 'expenses' ? (P.expense_rate_own ? 'pw_std_ausgaben' : 'pw_std_inflation') : 'pw_std_sonst');
@@ -3550,9 +3552,9 @@ function planWhy(D, sec, z, d, m) {
     if (p.own_cats) L.push(tn('pw_kat_eigen', p.own_cats));
     if ((p.ignored || []).includes(m)) L.push(t('pw_ignoriert', F(((((D.plan || {}).rows || {})[sec + '/' + z.row] || {}).amounts || {})[m])));
     else if (own) L.push(t('pw_verteilt'));
-    return L.concat(planRuleLines(r, false, sec, P)).join('\n');
+    return L.concat(planRuleLines(r, false, planSec(sec, z), P)).join('\n');
   }
-  if (d && (p.from_position || []).includes(m)) return L.concat([t('pw_aus_position', F((z.plan.amounts || {})[m]), F(v)), t('vorschlag_0', F(s))], planRuleLines(r, true, sec, P)).join('\n');
+  if (d && (p.from_position || []).includes(m)) return L.concat([t('pw_aus_position', F((z.plan.amounts || {})[m]), F(v)), t('vorschlag_0', F(s))], planRuleLines(r, true, planSec(sec, z), P)).join('\n');
   const n = (D.plan_months || []).indexOf(m) + 1, g = +(r.increase || 0);
   if (r.method === 'none') L.push(t('pw_keine'));
   else if (r.method === 'prev_year') {
@@ -3568,18 +3570,18 @@ function planWhy(D, sec, z, d, m) {
     if (g) L.push(r.method === 'prev_year' ? t('pw_faktor_vj', FN(1 + g / 100, 4), FN(g, 1)) : t('pw_faktor', FN(Math.pow(1 + g / 100, n / 12), 4), FN(g, 1), tn('pw_monate', n)));
     L.push(t('pw_ergebnis', F(s)));
   }
-  return L.concat(planRuleLines(r, !!d, sec, P)).join('\n');
+  return L.concat(planRuleLines(r, !!d, planSec(sec, z), P)).join('\n');
 }
 // a column of several months (a year): how many plan months it adds up, how many of them are your own, the rule
 function planWhyCol(D, sec, z, d, c) {
   const p = (d || z).plan || {}, pm = new Set(D.plan_months || []), k = c.months.filter(m => pm.has(m)), own = k.filter(m => (p.overwritten || []).includes(m)).length;
-  return [tn('pw_summe_monate', k.length)].concat(own ? [tn('pw_eigene_n', own)] : [], !d && p.cats ? [tn('pw_summe_kat_kurz', p.cats)] : [], planRuleLines(p.rule, !!d, sec, D.plan || {})).join('\n');
+  return [tn('pw_summe_monate', k.length)].concat(own ? [tn('pw_eigene_n', own)] : [], !d && p.cats ? [tn('pw_summe_kat_kurz', p.cats)] : [], planRuleLines(p.rule, !!d, planSec(sec, z), D.plan || {})).join('\n');
 }
 // the rule of a row as a tag beside its name (own: marked), its tooltip saying where each part comes from
 function planTag(D, sec, z, d) {
   const p = (d || z).plan || {}, r = p.rule || {}; if (!r.method || r.from === 'fixed') return '';
   const own = r.from === (d ? 'category' : 'position') || r.inc_from === (d ? 'category' : 'position');
-  const tip = planRuleLines(r, !!d, sec, D.plan || {}).concat(!d && p.own_cats ? [tn('pw_kat_eigen', p.own_cats)] : [], p.budget ? [t('pw_budget_mm', F0(p.budget))] : []).join('\n');
+  const tip = planRuleLines(r, !!d, planSec(sec, z), D.plan || {}).concat(!d && p.own_cats ? [tn('pw_kat_eigen', p.own_cats)] : [], p.budget ? [t('pw_budget_mm', F0(p.budget))] : []).join('\n');
   return `<span class="tag tipped${own ? ' own' : ''}" tabindex="0" data-tip="${esc(tip)}">${esc(METH[r.method] || r.method)}${p.budget ? esc(t('budget') + F0(p.budget)) : ''}${!d && p.own_cats ? ' · ' + esc(tn('pw_kat_eigen_kurz', p.own_cats)) : ''}</span>`;
 }
 // the fields of a row's own rule: method (Standard / as the position), amount (fixed or annual amount only), increase (Standard / none / own)
@@ -4102,7 +4104,7 @@ function cfBridgeTree(D, months, prev) {
     let zs = [];
     if (s.act === 'op') zs = sek(s.label === t('einnahmen') ? 'income' : 'expenses').rows;
     else if (s.act === 'inv' || s.act === 'fin') { const g = cfGroups(D, s.act === 'inv' ? 'investing' : 'financing', months).find(x => x.label === s.label); zs = g ? g.rows : []; }
-    const k = rows(id, zs);
+    const k0 = rows(id, zs), k = k0.length === 1 && k0[0].label === s.label ? k0[0].kids || [] : k0;     // one row of its name (Kapitalerträge): its categories
     return {id, label: s.label, v: s.v, p: s.p ?? null, kids: k.length > 1 || (k.length === 1 && k[0].label !== s.label) ? k : null};
   };
   const ACT = {op: 'operating', inv: 'investing', fin: 'financing'}, out = [];
@@ -4122,7 +4124,8 @@ function cfBridgeTree(D, months, prev) {
 // net worth: investing or repaying a loan moves money from one account to another and is left out.
 // what a row of the cash flow does to net worth: saved (income, expenses, interest), between you and others (contributions,
 // withdrawals, money moved out of what Kontor sees), a change in value, unclear -- or nothing (investing, repaying: null)
-const cfNwKind = (sec, z) => !z.nw ? null : sec === 'valuation' ? 'value' : z.kind === 'interest' ? 'spar' : sec === 'income' || sec === 'expenses' ? 'spar' : sec === 'unclear' ? 'unk' : 'ext';
+// (interest and dividends received stand under investing -- DRS 21 -- but they bring net worth: saved, a step of their own)
+const cfNwKind = (sec, z) => !z.nw ? null : sec === 'valuation' ? 'value' : z.kind === 'interest' || z.kind === 'capital_income' ? 'spar' : sec === 'income' || sec === 'expenses' ? 'spar' : sec === 'unclear' ? 'unk' : 'ext';
 function cfWealthTree(D, months, prev) {
   const has = prev.length > 0, bil = D.balance || {}, allM = cfPick(D), nwAt = m => (bil.net_worth || {})[m] ?? ((bil.projection || {}).net_worth || {})[m];
   const before = allM[allM.indexOf(months[0]) - 1] || (D.months || [])[(D.months || []).indexOf(months[0]) - 1], last = months[months.length - 1];
@@ -4145,8 +4148,8 @@ function cfWealthTree(D, months, prev) {
       const k = c.length ? c : more; return {...r, kids: k.length > 1 || (k.length === 1 && k[0].label !== r.label) ? k : null}; }));
     return {id, label, v: sum(zs, z => cfRowSum(z, months)), p: has ? sum(zs, z => cfRowSum(z, prev)) : null, kids: kids.length > 1 || (kids.length === 1 && kids[0].label !== label) ? kids : null};
   };
-  const by = {ein: [], aus: [], interest: [], ext: [], value: [], unk: []};
-  for (const sek of D.cashflow.sections) for (const z of sek.rows) { const k = cfNwKind(sek.name, z); if (k) by[k === 'spar' ? (z.kind === 'interest' ? 'interest' : sek.name === 'income' ? 'ein' : 'aus') : k].push(z); }
+  const by = {ein: [], aus: [], yield: [], interest: [], ext: [], value: [], unk: []};
+  for (const sek of D.cashflow.sections) for (const z of sek.rows) { const k = cfNwKind(sek.name, z); if (k) by[k === 'spar' ? (z.kind === 'interest' ? 'interest' : z.kind === 'capital_income' ? 'yield' : sek.name === 'income' ? 'ein' : 'aus') : k].push(z); }
   // plan months: what the plan expects the assets to gain or lose beyond these rows (the table's changes in value hold it too)
   const sums = D.cashflow.sums || {}, wz = (D.cashflow.sections.find(x => x.name === 'valuation') || {rows: []}).rows, planW = {};
   for (const m of [...months, ...prev]) if ((D.plan_months || []).includes(m)) { const x = (sums[m]?.valuation ?? 0) - wz.reduce((a, z) => a + (cfVals(z)[m] ?? 0), 0); if (Math.abs(x) >= 0.005) planW[m] = x; }
@@ -4155,9 +4158,11 @@ function cfWealthTree(D, months, prev) {
   const out = [], grp = (act, label, zs, kids, id = act) => { const v = sum(zs, z => cfRowSum(z, months)); if (Math.abs(v) < 0.005 && !kids.length) return;
     out.push({id, kind: 'act', act, label, v, p: has ? sum(zs, z => cfRowSum(z, prev)) : null, kids: kids.filter(k => Math.abs(k.v) >= 0.5)}); };
   if (known) out.push({id: 'nw0', kind: 'tot', bal: 'nw|' + before, label: t('cf_nv_anfang'), v: start});
-  // as in the table: the surplus (income and expenses), then the interest (financing, but it costs net worth -- repaying does not)
+  // as in the table: the surplus (income and expenses), then investment income and interest (investing and financing, but they
+  // bring or cost net worth -- investing and repaying do not)
   grp('op', SEC_LABEL.operating, [...by.ein, ...by.aus], [node('op|ein', t('einnahmen'), by.ein, zLabel), node('op|aus', t('ausgaben'), by.aus, zLabel)]);
-  // colours only where the table has them (surplus, changes in value): interest and contributions without one
+  // colours only where the table has them (surplus, changes in value): investment income, interest and contributions without one
+  grp('plain', t('pos_capital_income'), by.yield, by.yield.length ? cats('yield', by.yield) : [], 'yield');
   grp('plain', t('zinsen'), by.interest, by.interest.length ? node('interest', '', by.interest, zLabel).kids || [] : [], 'interest');
   const opRow = out.find(r => r.id === 'op'); if (opRow) opRow.abbr = SEC_ABBR.operating;          // named as in the cash bridge
   grp('plain', t('cf_einlagen_entnahmen'), by.ext, by.ext.length ? node('ext', '', by.ext, zLabel).kids || [] : [], 'ext');
@@ -4629,7 +4634,8 @@ function cfFlowItems(D, months) {
   }
   for (const [sec, act] of [['investing', 'inv'], ['financing', 'fin']]) for (const g of cfGroups(D, sec, months)) {
     const by = new Map(); for (const z of g.rows) by.set(zLabel(z), (by.get(zLabel(z)) || 0) + cfRowSum(z, months));
-    put(g.label, g.v, act, [...by.entries()].map(([label, v]) => ({label, v})));
+    // a kind that is one row of its name (Kapitalerträge): its categories, as for income
+    put(g.label, g.v, act, by.size === 1 && by.has(g.label) ? cats(g.rows) : [...by.entries()].map(([label, v]) => ({label, v})));
   }
   put(t('cf_unklar'), cfSum(D, 'unclear', months), 'unk');
   let change = cfSum(D, 'cash_change', months);
@@ -5888,7 +5894,7 @@ async function vPositionen() {
 // financing it is as with any investment (a company's shares alike): Sparen & Anlegen, Darlehen -- no row of its own.
 // One side at a time (Privat | Geschäftlich, remembered), each with its own names and tips and the categories of yours on that side
 const KB_TREE = [['work_income', 'einnahmen', ['work_income'], 'p'], ['revenue', 'einnahmen', ['revenue'], 'f'],
-  ['benefits', 'einnahmen', ['benefits'], ''], ['capital_income', 'einnahmen', ['capital_income'], ''],
+  ['benefits', 'einnahmen', ['benefits'], ''],
   ['gifts_in', 'einnahmen', ['gifts_in'], 'p'], ['refunds', 'einnahmen', ['refunds'], ''], ['other_income', 'einnahmen', ['other_income'], 'p'],
   ['goods', 'ausgaben', ['goods'], 'f'], ['staff', 'ausgaben', ['staff'], 'f'], ['housing', 'ausgaben', ['housing'], ''],
   ['operations', 'ausgaben', ['operations'], 'f'], ['living', 'ausgaben', ['living'], 'p'], ['mobility', 'ausgaben', ['mobility'], ''],
@@ -5898,7 +5904,7 @@ const KB_TREE = [['work_income', 'einnahmen', ['work_income'], 'p'], ['revenue',
   ['taxes', 'ausgaben', ['taxes'], ''], ['vat', 'ausgaben', ['vat'], 'f'], ['donations', 'ausgaben', ['donations'], 'p'],
   ['advances', 'ausgaben', ['advances'], ''],
   ['property', 'kb_g_property', ['property', 'rental', 'property_costs'], ''],
-  ['saving', 'sek_investitionen', ['saving'], ''],
+  ['saving', 'sek_investitionen', ['saving'], ''], ['capital_income', 'sek_investitionen', ['capital_income'], ''],
   ['loans', 'finanzierung', [], ''], ['repayment', 'finanzierung', ['repayment'], '', 1], ['loan_interest', 'finanzierung', ['loan_interest'], '', 1],
   ['partners', 'finanzierung', ['partners'], 'f'], ['transfer', 'sonstiges', ['transfer'], '']];
 const KB_SAME_TIP = ['mobility', 'insurance', 'health', 'leisure', 'taxes'];      // one reason for these (kb_more_tip)

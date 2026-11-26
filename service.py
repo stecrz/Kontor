@@ -68,7 +68,7 @@ from core import (REPORT_LOCK, with_property_categories, assign_cutoff, assign_s
                      immo_results, import_package, ledger_fp, merge_holdings, merged_config, not_booked_entry, plan_pending, refresh_accounts, rule_accounts, run_once, unavailable_text, version, version_on_disk, MM_HISTORY_FILE)
 from model import Ledger, Tx, accounts_from_export, ledger_from_bytes, ledger_to_bytes
 from report import ROLES, account_balance_series, account_months, account_roles, apply_plan, role_label
-from report import PLAN_AREA_METHODS, PLAN_METHODS, PLAN_MODELS, PLAN_SIDES, plan_defaults, plan_one_off, plan_rule
+from report import PLAN_AREA_METHODS, PLAN_METHODS, PLAN_MODELS, PLAN_SIDES, moved_plan_rows, plan_defaults, plan_one_off, plan_rule, plan_sec
 from model import marks_in
 from rules import Seen, TAG_RE, bkey as rules_bkey, plan_all as plan_rules
 from storage import DAMAGED as storage_damaged, Store, StoreDamaged, StoreError, StoreLocked, _names as storage_names, _remove as _remove_quietly
@@ -1774,7 +1774,12 @@ class App:
     # -- Daten fuer die Oberflaeche ---------------------------------------
     def plan_all(self) -> dict:
         plan = self.store.load("plan.json", {}) or {}
-        return plan if isinstance(plan.get("areas"), dict) else {"areas": {}}
+        if not isinstance(plan.get("areas"), dict):
+            return {"areas": {}}
+        for a in plan["areas"].values():               # rows that moved (report.PLAN_ROWS_MOVED): under their new key, saved so
+            if isinstance(a, dict) and isinstance(a.get("rows"), dict):     # with the next change -- one key to change or reset
+                a["rows"] = moved_plan_rows(a["rows"])
+        return plan
 
     def plan_for(self, bereich: str) -> dict:
         return (self.plan_all().get("areas") or {}).get(bereich) or {}
@@ -2656,10 +2661,14 @@ def _plan_conflicts(app: "App", bereich: str, before: dict, after: dict, change:
     def reaches(key: str) -> bool:                       # a position the area's default plans (not a fixed row, not a one-off)
         sec, z = zs.get(key, (key.split("/", 1)[0], {}))
         return ((z.get("plan") or {}).get("rule") or {}).get("from") != "fixed" and not plan_one_off(sec, z)
+
+    def side_of(key: str) -> str:                        # the side that plans a row: investment income income's (report.plan_sec)
+        sec, z = zs.get(key, (key.split("/", 1)[0], {}))
+        return plan_sec(sec, z)
     if change["level"] == "area":
         for side, fields in change["sides"].items():
             for key, cfg in rows.items():
-                sec = key.split("/", 1)[0]
+                sec = side_of(key)
                 here = {f for f in fields if sec in (PLAN_SIDES[side] if f == "method" else (side,))}
                 if not here or not isinstance(cfg, dict) or not reaches(key):
                     continue

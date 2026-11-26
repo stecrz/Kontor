@@ -607,7 +607,8 @@ INVEST_GROUPS = {"real_estate": ("Immobilien", "cf_g_immobilien", 610), "tangibl
                  "securities": ("Wertpapiere & Geldanlagen", "cf_g_anlagen", 630), "term_investments": ("Wertpapiere & Geldanlagen", "cf_g_anlagen", 630),
                  "other": ("Sonstige Anlagen", "cf_g_sonstige", 635), "participations": ("Beteiligungen", "cf_g_beteiligungen", 640),
                  "areas": ("Andere Bereiche", "cf_g_bereiche", 645), "receivables": ("Gewährte Darlehen", "cf_g_forderungen", 650),
-                 "foreign": ("Fremdwährung", "cf_fremdwaehrung_g", 660), "saving_group": ("Sparen & Anlegen", "pos_saving", 628)}
+                 "foreign": ("Fremdwährung", "cf_fremdwaehrung_g", 660), "saving_group": ("Sparen & Anlegen", "pos_saving", 628),
+                 "capital_income": ("Kapitalerträge", "pos_capital_income", 670)}       # interest and dividends received (DRS 21)
 FIN_GROUPS = {"drawdown": ("Darlehensaufnahme", "cf_g_aufnahme", 710), "repayment": ("Tilgung", "cf_g_tilgung", 720),
               "interest": ("Zinsen", "cf_g_zinsen", 730), "partners": ("Einlagen/Entnahmen Gesellschafter", "cf_einlagen_gesellschafter", 740)}
 
@@ -919,7 +920,7 @@ def pair_transfers(ledger: Ledger, txs: List[Tx], root: Set[str], roles: Dict[st
 POSITIONS = [  # (key, section, row -- German, the key of your planning; shown in your language via pos_<key>); one outline for
     # every area (a row shows only where there is money in it)
     ("work_income", "income", "Arbeitseinkommen"), ("revenue", "income", "Umsatzerlöse"), ("benefits", "income", "Rente & Sozialleistungen"),
-    ("rental", "income", "Vermietung"), ("capital_income", "income", "Kapitalerträge"), ("gifts_in", "income", "Unterhalt & Geschenke"),
+    ("rental", "income", "Vermietung"), ("gifts_in", "income", "Unterhalt & Geschenke"),
     ("refunds", "income", "Erstattungen"), ("other_income", "income", "Sonstige Einnahmen"),
     ("goods", "expenses", "Wareneinkauf"), ("staff", "expenses", "Personal"), ("operations", "expenses", "Betriebskosten"),
     ("housing", "expenses", "Wohnen"), ("living", "expenses", "Lebenshaltung"), ("mobility", "expenses", "Mobilität"),
@@ -929,7 +930,10 @@ POSITIONS = [  # (key, section, row -- German, the key of your planning; shown i
     ("vat", "expenses", "Umsatzsteuer"),
     ("donations", "expenses", "Unterhalt, Geschenke & Spenden"), ("advances", "expenses", "Auslagen"),
     ("other_expenses", "expenses", "Sonstige Ausgaben"),
-    ("saving", "investing", "Sparen & Anlegen"), ("repayment", "financing", "Tilgung"), ("loan_interest", "financing", "Zinsen"),
+    # interest and dividends received are investing, interest paid financing -- DRS 21 (German GAAP: no choice), the same for
+    # every area, private ones too (user, 2026-11-26; from 3.17.90 they counted as income)
+    ("saving", "investing", "Sparen & Anlegen"), ("capital_income", "investing", "Kapitalerträge"),
+    ("repayment", "financing", "Tilgung"), ("loan_interest", "financing", "Zinsen"),
     ("partners", "financing", "Einlagen & Entnahmen"),
     ("ignore", "", ""),
 ]
@@ -943,6 +947,17 @@ def position_row(pos: str, company: bool) -> Tuple[str, str]:
     if company and pos in COMPANY_ROWS:
         return COMPANY_ROWS[pos], "pos_%s_g" % pos
     return POS[pos][1], "pos_" + pos
+
+
+def earned(pos: Optional[str]) -> bool:
+    """Income, an expense or investment income (interest and dividends received -- under investing, as DRS 21 has them): money
+    that changes net worth by its category; not saving, a repayment, a contribution or what is left out."""
+    return pos in POS and (POS[pos][0] in ("income", "expenses") or pos == "capital_income")
+
+
+def plan_sec(section: str, z: dict) -> str:
+    """The side a row is planned on: investment income like income (its growth, its sign), wherever it stands."""
+    return "income" if z.get("kind") == "capital_income" else section
 # words in a category's name -> (position when the money comes in, when it goes out); the first hit wins. Context words in the
 # path first (a category under "Vermietung" is about a property), then the category's own name, then its whole path.
 # words in a category's name -> (position when the money comes in, when it goes out); the first hit wins: saving, financing and
@@ -1216,6 +1231,8 @@ def recognised_position(path: str, income: bool, company: bool = False) -> Optio
         # received for a property you let: a debt (taken up, paid back) -- best kept in an account of its own; paid as a
         # tenant: money you get back (saving). Never rent, never housing costs (user, 2026-11-25).
         return "repayment" if income or any(_has(words, low) for words, _, _ in POSITION_CONTEXT) else "saving"
+    if participation_income(low):
+        return "capital_income" if income else "partners"
     for text in texts:
         for words, pin, pout, start in POSITION_FIRST:
             if pin != "capital_income" and any(w in text for w in FIRST_NOT):
@@ -1244,6 +1261,13 @@ def recognised_position(path: str, income: bool, company: bool = False) -> Optio
 
 
 _UNTERHALT = re.compile(r"(?<![a-z])unterhalts?(?![a-z])")
+
+
+def participation_income(low: str) -> bool:
+    """Income from participations as a company's accounts name it -- "Erträge aus Beteiligungen" (HGB § 275 (2) no. 9, DATEV),
+    "Beteiligungserträge", "Erträge / Beteiligungen": investment income, not saving's "Beteiligung" (a share bought or sold).
+    "Ertrag" only at the start of a word ("Beteiligungsvertrag" is none). low: the folded path."""
+    return "beteiligungsertr" in low or ("beteiligung" in low and _has(("ertrag", "ertraeg"), low, True))
 
 
 def category_totals(ledger: Ledger, accounts: Optional[Set[str]] = None) -> Dict[str, float]:
@@ -1378,7 +1402,7 @@ def mixed_categories(ledger: Ledger, config: dict, bereiche: List[dict], banks: 
             if only_props and not prop:
                 continue
             counts = (prop and not (pos in ("repayment", "loan_interest") or (yours and pos in ("saving", "ignore", "partners"))))\
-                or POS.get(pos, ("",))[0] in ("income", "expenses")
+                or earned(pos)
             if not counts:
                 continue
             ids = [i for i in standing_out(amounts) if i not in ok]
@@ -1484,7 +1508,7 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
         return c0, (g0 if yours else recognised_position(c0, totals.get(c0, 0.0) > 0, company)), yours
 
     def paid_for(g0: Optional[str]) -> bool:
-        return g0 in POS and (POS[g0][0] in ("income", "expenses") or g0 == "loan_interest")      # interest paid is a cost as well
+        return earned(g0) or g0 == "loan_interest"      # interest paid is a cost as well
 
     def paid_for_something(t: Tx) -> bool:
         """A payment to another area that pays for something (a salary, rent): no contribution, it claims no booking."""
@@ -1740,12 +1764,19 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
         payment: not here."""
         if obj:
             property_row(t, norm_cat(t.category_path), obj, mk, norm_cat(t.category_path))
-        elif pos in POS and POS[pos][0] in ("income", "expenses"):
+        elif pos == "capital_income":
+            capital_row(t, mk, norm_cat(t.category_path))
+        elif earned(pos):
             row, key = position_row(pos, company)
             R.add(POS[pos][0], row, row, mk, t.amount, ord=POS[pos][2], lbl=(key,), detail=norm_cat(t.category_path))
         else:
             return False
         return True
+
+    def capital_row(t: Tx, mk: str, det: str) -> None:
+        """Interest and dividends received: investing, a group of their own (DRS 21) -- they raise net worth as income does."""
+        R.add("investing", row=POS["capital_income"][1], mk=mk, amount=t.amount, kind="capital_income", nw=True,
+              lbl=("pos_capital_income",), detail=det, **_grp(INVEST_GROUPS, "capital_income"))
 
     charged: Dict[str, Dict[str, List[Tx]]] = defaultdict(lambda: defaultdict(list))      # loan -> month -> its interest bookings
 
@@ -1765,10 +1796,9 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
             R.add("financing", row=acc.name + " / Zinsen", mk=mk, amount=t.amount, account=acc.uuid, kind="interest", nw=True, lbl=("cf_name", acc.name), **_grp(FIN_GROUPS, "interest"))
             charged[acc.uuid][mk].append(t)
         elif interest:
-            # interest on a loan you granted is investment income like any interest received (user, 2026-11-25; it stood under
-            # investing, beside the loan) -- interest you pay stays with financing
-            row, key = position_row("capital_income", company)
-            R.add("income", row, row, mk, t.amount, ord=POS["capital_income"][2], lbl=(key,), detail=norm_cat(t.category_path))
+            # interest on a loan you granted is investment income like any interest received (user, 2026-11-25) -- under
+            # investing with it (DRS 21, user 2026-11-26); interest you pay stays with financing
+            capital_row(t, mk, norm_cat(t.category_path))
         elif not category_row(t, pos, obj, mk):
             R.add("valuation", acc.name, acc.name, mk, t.amount, account=acc.uuid, kind="account", nw=True)
             return
@@ -2195,6 +2225,8 @@ def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], confi
             else:
                 R.add("investing", row="Einlagen & Entnahmen", mk=mk, amount=t.amount, kind="external", nw=True, lbl=("pos_partners",),
                       detail=det, **_grp(INVEST_GROUPS, "participations"))
+        elif pos == "capital_income":
+            capital_row(t, mk, det)
         else:
             row, key = position_row(pos, company)
             R.add(psec, row, row, mk, t.amount, ord=pord, lbl=(key,), detail=det)
@@ -2690,6 +2722,30 @@ PLAN_MODELS = {
 PLAN_SIDES = {"income": ("income",), "expenses": ("expenses", "investing", "financing")}     # the sections each side's default plans
 
 
+# plan keys of rows that moved: interest and dividends received went from income to investing (DRS 21, 3.17.101)
+PLAN_ROWS_MOVED = {"income/Kapitalerträge": "investing/Kapitalerträge"}
+
+
+def moved_plan_rows(rows: Dict[str, Any]) -> Dict[str, Any]:
+    """The plan's rows (key -> your settings) with the keys of moved rows renamed: your plan of a row goes with it, the old key
+    goes. Where both stand, they are joined field by field -- the new key's settings, own values and categories win. The
+    service renames them in plan.json as it reads it, so that a change or a reset afterwards works on the one key."""
+    out = dict(rows)
+    for old, new in PLAN_ROWS_MOVED.items():
+        if old not in out:
+            continue
+        was, now = out.pop(old), out.get(new)
+        if not isinstance(was, dict) or not isinstance(now, dict):
+            out[new] = now if isinstance(now, dict) else was
+            continue
+        joined = dict(was, **now)
+        for k in ("amounts", "categories"):
+            if isinstance(was.get(k), dict) and isinstance(now.get(k), dict):
+                joined[k] = dict(was[k], **now[k])
+        out[new] = joined
+    return out
+
+
 def plan_side(section: str) -> str:
     return "income" if section == "income" else "expenses"
 
@@ -2819,7 +2875,7 @@ def plan_position(z: dict, sec: str, cfg: dict, rule: dict, future: List[str], f
     a budget: the average of 12 months. A value of your own for the position goes to its categories without a value of their
     own by their suggestion."""
     key = sec + "/" + z["row"]
-    sign = (lambda v: v) if sec == "income" else (lambda v: -abs(v))
+    sign = (lambda v: v) if plan_sec(sec, z) == "income" else (lambda v: -abs(v))
     ov = _overrides(cfg, future)
     method, amount, g = rule["method"], rule.get("amount"), rule["increase"]
     head = {"method": method, "from": rule["from"], "increase": g, "inc_from": rule["inc_from"]}
@@ -3009,6 +3065,7 @@ def apply_plan(dataset: dict, plan: dict, config: dict, fremd_nw: Optional[Dict[
     rendite = float(plan.get("return_percent_pa") or 0.0)
     budgets: Dict[str, float] = dataset.get("budgets") or {}
     rows_cfg: Dict[str, dict] = {k: v for k, v in (plan.get("rows", {}) or {}).items() if isinstance(v, dict)}
+    rows_cfg = moved_plan_rows(rows_cfg)               # a row that moved to another section keeps your plan of it
     row_of_cat: Dict[str, str] = {}               # category -> the row it counts in (budgets of a category above several rows)
     for sek in dataset.get("cashflow", {}).get("sections", []):
         for z in sek["rows"]:
@@ -3155,8 +3212,9 @@ def apply_plan(dataset: dict, plan: dict, config: dict, fremd_nw: Optional[Dict[
 
     # 1. Planwerte je Zeile: the deepest rule counts, field by field -- the category's, the position's, the area's default
     for sek in sektionen:
-        side = plan_side(sek["name"])
         for z in sek["rows"]:
+            ps = plan_sec(sek["name"], z)
+            side = plan_side(ps)
             key = sek["name"] + "/" + z["row"]
             cfg = rows_cfg.get(key, {})
             own = plan_rule(cfg)
@@ -3178,10 +3236,10 @@ def apply_plan(dataset: dict, plan: dict, config: dict, fremd_nw: Optional[Dict[
                 rule = {"method": defaults[side]["method"], "from": "area"}
             if "increase_percent_pa" in own:
                 rule["increase"], rule["inc_from"] = own["increase_percent_pa"], "position"
-            elif sek["name"] in ("income", "expenses") and "increase_percent_pa" in defaults[side]:
+            elif ps in ("income", "expenses") and "increase_percent_pa" in defaults[side]:
                 rule["increase"], rule["inc_from"] = defaults[side]["increase_percent_pa"], "area"
             else:
-                rule["increase"], rule["inc_from"] = growth_default.get(sek["name"], 0.0), "standard"
+                rule["increase"], rule["inc_from"] = growth_default.get(ps, 0.0), "standard"
             plan_position(z, sek["name"], cfg, rule, future, full_months, budgets, row_of_cat)
 
     # 2. Darlehensplan

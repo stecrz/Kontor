@@ -1,5 +1,11 @@
 # Änderungen
 
+## 3.17.101 (2026-11-26 18:50)
+- Cashflow: erhaltene Zinsen, Dividenden und Gewinnausschüttungen nach DRS 21 unter Investitionen (Zeile Kapitalerträge), nicht mehr im Überschuss – in jedem Bereich; gezahlte bleiben unter Finanzierung
+- Cashflow: Vermögensbrücke mit eigenem Schritt Kapitalerträge; Kategorien in beiden Brücken und im Gesamtcashflow aufklappbar
+- Planung: Kapitalerträge wie Einnahmen geplant (Steigerung der Einnahmen), bisheriger Plan der Zeile bleibt; Sparquote ohne Kapitalerträge
+- Cashflow-Positionen: „Erträge aus Beteiligungen“ und „Beteiligungserträge“ zählen als Kapitalerträge statt als Anlage
+
 ## 3.17.100 (2026-11-26 17:24)
 - Entwicklung: Klickpfade – Weg in die Demo mit noch laufenden Anfragen der gesperrten Sitzung kein Fehler mehr (Nachtlauf)
 

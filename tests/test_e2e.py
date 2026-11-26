@@ -3202,6 +3202,43 @@ class FeatureTests(_AppBase):
         self.assertEqual((w["amounts"][fm[0]], w["rule"]["method"], w["rule"]["from"]), (-1100.0, "fix", "position"))
         self.assertEqual(rows(b)["income/Arbeitseinkommen"]["plan"]["rule"]["method"], "prev_year")
 
+    def test_plan_of_a_moved_row_goes_with_it(self):
+        """Interest and dividends received moved from income to investing (DRS 21, 3.17.101): a plan saved under the old key
+        counts for the row and is renamed with the next change -- a value typed in keeps the old rule and values, a reset clears
+        them for good. The area's default for income plans the row (asks about it), the one for expenses does not."""
+        import report
+        y, m = 2025, 1
+        while date(y, m, 1) <= TODAY:
+            MockBridge.state["txs"].append(F.tx("priv.giro", date(y, m, 15), 100.0, "Broker", "Dividende", "Einnahmen\\Kapitalerträge"))
+            y, m = (y + 1, 1) if m == 12 else (y, m + 1)
+        self.login(); self.run_and_wait()
+        code, ds = self.call("/api/dataset"); P = ds["main_area"]; fm = ds["areas"][P]["plan_months"]
+        plan = lambda: self.app.plan_all()["areas"].get(P) or {}
+        row = lambda: next(z for s in self.call("/api/dataset")[1]["areas"][P]["cashflow"]["sections"] if s["name"] == "investing"
+                           for z in s["rows"] if z["row"] == "Kapitalerträge")
+        self.assertNotIn("Kapitalerträge", [z["row"] for s in ds["areas"][P]["cashflow"]["sections"] if s["name"] == "income" for z in s["rows"]])
+        self.app.store.save("plan.json", {"areas": {P: {"rows": {"income/Kapitalerträge": {"method": "fix", "amount": 200, "increase_percent_pa": 0,
+                                                                                             "amounts": {fm[3]: 999.0}}}}}})
+        z = row()
+        self.assertEqual((z["plan"]["rule"]["method"], z["plan"]["amounts"][fm[0]], z["plan"]["amounts"][fm[3]]), ("fix", 200.0, 999.0))
+        self.assertEqual(self.call("/api/plan", {"area": P, "row": "investing/Kapitalerträge", "month": fm[1], "value": "150"})[0], 200)
+        self.assertEqual(plan()["rows"], {"investing/Kapitalerträge": {"method": "fix", "amount": 200.0, "increase_percent_pa": 0,
+                                                                      "amounts": {fm[3]: 999.0, fm[1]: 150.0}}})     # one key, nothing lost
+        z = row()
+        self.assertEqual([z["plan"]["amounts"][k] for k in fm[:4]], [200.0, 150.0, 200.0, 999.0])
+        # the area's defaults: income's plans the row -- your rule beneath it is asked about; expenses' does not reach it
+        code, r = self.call("/api/plan", {"area": P, "defaults": {"expenses": {"method": "rolling6"}}, "conflicts": "ask"})
+        self.assertNotIn("investing/Kapitalerträge", [x["row"] for x in (r.get("conflicts") or {}).get("rules", [])])
+        code, r = self.call("/api/plan", {"area": P, "defaults": {"income": {"method": "rolling6"}}, "conflicts": "ask"})
+        self.assertIn("investing/Kapitalerträge", [x["row"] for x in r["conflicts"]["rules"]])
+        # a reset of its own values: gone for good (the old key does not bring them back)
+        self.call("/api/plan", {"area": P, "row": "investing/Kapitalerträge", "clear_all_overrides": True})
+        self.assertEqual(plan()["rows"], {"investing/Kapitalerträge": {"method": "fix", "amount": 200.0, "increase_percent_pa": 0}})
+        self.assertEqual(row()["plan"]["amounts"][fm[3]], 200.0)
+        self.assertEqual(report.moved_plan_rows({"income/Kapitalerträge": {"method": "fix", "amount": 1, "amounts": {"a": 1, "b": 2}},
+                                                 "investing/Kapitalerträge": {"amounts": {"b": 3}}, "expenses/Wohnen": {}}),
+                         {"investing/Kapitalerträge": {"method": "fix", "amount": 1, "amounts": {"a": 1, "b": 3}}, "expenses/Wohnen": {}})
+
     def test_plan_keeps_or_replaces_exactly_what_was_shown(self):
         """Behalten/Ersetzen act on exactly the list that was shown: changed meanwhile (here: a longer horizon brings another value of
         yours under the rule), nothing is done. An amount lives only with a method that uses it; a rule the change would set
@@ -4534,6 +4571,24 @@ class BrowserTest(unittest.TestCase):
                 self.assertNotIn("off", ids); self.assertNotIn("unk", ids)
                 self.assertEqual(ids["value"][1], 1001.6); self.assertEqual(ids["ext"][1], -200); self.assertEqual(ids["op"][1:], [300, 1000]); self.assertNotIn("interest", ids)   # interest: 0 in the period
                 self.assertEqual(round(ids["nw0"][1] + ids["op"][1] + ids["ext"][1] + ids["value"][1], 2), ids["nw1"][1])
+                # interest and dividends received (investing, DRS 21): a step of their own in the net worth bridge -- not "between you
+                # and others" --, their categories open in both bridges and in the money flow; planned with income's increase
+                ci = pg.evaluate("""(() => { const M = ['2025-01', '2025-02'], w = o => Object.fromEntries(M.map(m => [m, o[m] || 0]));
+                  const det = (category, amounts) => ({category, amounts: w(amounts)});
+                  const z = {row: 'Kapitalerträge', group: 'Kapitalerträge', glbl: ['pos_capital_income'], lbl: ['pos_capital_income'], kind: 'capital_income', nw: true,
+                    amounts: w({'2025-01': 12.34, '2025-02': 250.01}), details: [det('Kapitalerträge / Zinsen', {'2025-01': 12.34}), det('Kapitalerträge / Dividenden', {'2025-02': 250.01})]};
+                  const D = {months: ['2024-12', ...M], plan_months: [], balance: {net_worth: {}}, cashflow: {sums: {}, sections: ['income', 'expenses', 'investing', 'financing', 'valuation', 'unclear'].map(name => ({name, rows: name === 'investing' ? [z] : []}))}};
+                  const wt = cfWealthTree(D, M, []), y = wt.find(r => r.id === 'yield'), L = t('pos_capital_income');
+                  const inv = cfBridgeTree(D, M, []).find(r => r.act === 'inv'), k = inv.kids.find(x => x.label === L), fl = cfFlowItems(D, M).src.find(x => x.label === L);
+                  const r = {method: 'rolling12', from: 'area', increase: 3, inc_from: 'standard'};
+                  return {ids: wt.map(x => x.id), y: [Math.round(y.v * 100) / 100, y.label, (y.kids || []).map(x => x.label).sort()], bridge: (k.kids || []).map(x => x.label).sort(),
+                    flow: (fl.kids || []).map(x => x.label).sort(), inc: planRuleLines(r, false, planSec('investing', z), {}).join('|'), std: t('pw_std_einnahmen'),
+                    other: planRuleLines(r, false, planSec('investing', {kind: 'category'}), {}).join('|')}; })()""")
+                both = ["Kapitalerträge › Dividenden", "Kapitalerträge › Zinsen"]
+                self.assertIn("yield", ci["ids"]); self.assertNotIn("ext", ci["ids"])
+                self.assertEqual(ci["y"], [262.35, "Kapitalerträge", both])
+                self.assertEqual((ci["bridge"], ci["flow"]), (both, both))
+                self.assertIn(ci["std"], ci["inc"]); self.assertNotIn(ci["std"], ci["other"])
                 flh = lambda: pg.evaluate("document.querySelector('#cf-flow svg').getBoundingClientRect().height")
                 h0 = flh()
                 pg.click("#cf-wbridge .cf-br-row[data-br='op|aus']"); pg.wait_for_timeout(150)

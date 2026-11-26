@@ -874,6 +874,11 @@ class Positions(Reconciles):
         cases = {("Einkommen / Tantieme", True, False): "work_income", ("Tantieme", False, True): "staff",
                  ("Gewinnausschüttung", True, False): "capital_income", ("Gewinnausschüttung", True, True): "capital_income",     # a holding
                  ("Gewinnausschüttung", False, True): "partners", ("Entnahme GbR", True, False): "partners",
+                 ("Beteiligungserträge", True, True): "capital_income", ("Erträge / Beteiligungserträge", True, False): "capital_income",     # not saving's "Beteiligung"
+                 ("Erträge aus Beteiligungen", True, True): "capital_income", ("Erträge / Beteiligungen", True, True): "capital_income",     # HGB, DATEV
+                 ("Ertrag aus Beteiligung", True, False): "capital_income",
+                 ("Beteiligungen", False, False): "saving", ("Beteiligung Muster GmbH", False, True): "saving",
+                 ("Beteiligungsvertrag", False, True): "saving",                                  # "Ertrag" only at a word start
                  ("Auslagen", False, False): "advances", ("Auslagen", True, False): "advances", ("Auslagenerstattung", True, False): "advances",
                  ("Firma / Auslagen", False, True): "advances", ("Durchlaufende Posten", False, True): "advances",
                  ("Kleinanzeigen", True, False): "other_income", ("Einnahmen / Verkäufe", True, False): "other_income",
@@ -958,7 +963,9 @@ class Positions(Reconciles):
         self.assertEqual(r["Sparen / Firmenanteile"]["group"], "Wertpapiere & Geldanlagen")  # saving: no expense, an investment
         self.assertEqual(r["Lebenshaltung"]["amounts"]["2026-02"], -40.0)                         # proposed by name
         order = [z["row"] for z in data["Privat"]["cashflow"]["sections"][0]["rows"]]
-        self.assertEqual(order, ["Arbeitseinkommen", "Kapitalerträge"])                                    # the fixed outline
+        self.assertEqual(order, ["Arbeitseinkommen"])                                    # the fixed outline: interest received is investing (DRS 21)
+        inv = [z["row"] for z in rows(data["Privat"], "investing").values()]
+        self.assertEqual(inv, ["Sparen / Firmenanteile", "Kapitalerträge"])              # after the investments, as DRS 21 lists them
 
     def test_without_category_estimated_alike_in_every_area(self):
         # the company has no categories at all: Kontor estimates by the words; the rest stays without a category
@@ -1256,7 +1263,10 @@ class Positions(Reconciles):
                       (5, "giro", date(2026, 3, 1), 550.0, {"name": "Freund"}), (6, "ford", date(2026, 3, 1), -550.0, {"name": "Freund"})])
         self.assertAddsUp(data)
         p = data["Privat"]
-        self.assertEqual((nz(rows(p, "income")["Kapitalerträge"]), [d["category"] for d in rows(p, "income")["Kapitalerträge"]["details"]]), ({"2026-02": 50.0}, [""]))
+        # received: investment income under investing (DRS 21, user 2026-11-26), beside the loan -- it raises net worth
+        z = rows(p, "investing")["Kapitalerträge"]
+        self.assertEqual((nz(z), [d["category"] for d in z["details"]], z["group"], z["kind"], z["nw"]), ({"2026-02": 50.0}, [""], "Kapitalerträge", "capital_income", True))
+        self.assertNotIn("Kapitalerträge", rows(p, "income"))
         self.assertEqual(nz(rows(p, "investing")["Darlehen an Freund / Rückzahlung"]), {"2026-01": -10000.0, "2026-02": -50.0, "2026-03": 550.0})
         self.assertNotIn("Darlehen an Freund / Zinsen", rows(p))
         loan = [(1, "giro", date(2025, 12, 5), 5000.0, {"cat": "Gehalt"}),
@@ -2093,7 +2103,7 @@ class SavingByRecipient(Reconciles):
         self.assertAddsUp({"Privat": ds})
         inv = rows(ds, "investing")
         self.assertEqual((nz(inv["Festgeld Sparbank"]), inv["Festgeld Sparbank"]["group"], "Depot" in inv), ({"2026-02": -10000.0, "2026-05": 10150.0}, "Wertpapiere & Geldanlagen", False))
-        self.assertEqual(nz(rows(ds, "income")["Kapitalerträge"]), {"2026-05": 4.0})
+        self.assertEqual(nz(inv["Kapitalerträge"]), {"2026-05": 4.0})                         # its interest: investing (DRS 21)
         self.assertEqual(sum(sum(z["amounts"].values()) for z in rows(ds, "valuation").values()), 150.0)          # what it earned: its change in value
 
     def test_a_transfer_without_its_counterpart_goes_where_you_say(self):
@@ -2240,6 +2250,73 @@ class SavingByRecipient(Reconciles):
         area = next(x for x in core.bereiche_for(led, cfg) if x["name"] == "Privat")["id"]          # an account of another area: a note
         found = core.check_config(led, [], dict(cfg, cashflow=dict(cfg["cashflow"], recipient_to_account={area: {self.TWO: "Kontokorrent"}})))
         self.assertTrue(any(f["severity"] == "warning" and "Kontokorrent" in f["text"] for f in found))
+
+
+class InterestAndDividends(Reconciles, PlanAddsUp):
+    """DRS 21 (German GAAP, no choice; user 2026-11-26, for every area, private ones too): interest and dividends received are
+    investing (a group of their own, Kapitalerträge), interest paid and distributions paid financing -- none of them in the
+    surplus. Received ones still raise net worth and are planned like income."""
+
+    def test_received_under_investing_paid_under_financing(self):
+        nz = lambda z: {m: v for m, v in z["amounts"].items() if v}
+        data = build([(1, "giro", date(2026, 2, 1), 3000.0, {"cat": "Gehalt"}),
+                      (2, "tg", date(2026, 2, 28), 12.34, {"cat": "Kapitalerträge\\Zinsen"}),
+                      (3, "giro", date(2026, 2, 15), 250.01, {"cat": "Kapitalerträge\\Dividenden"}),
+                      (4, "giro", date(2026, 2, 3), -45.67, {"cat": "Darlehen\\Zinsen"}),
+                      (5, "giro", date(2026, 2, 9), -100.0, {"cat": "Lebensmittel"}),
+                      (6, "giro", date(2026, 3, 15), -0.01, {"cat": "Kapitalerträge\\Dividenden", "purpose": "Korrektur Dividende"})])
+        self.assertAddsUp(data)
+        p = data["Privat"]
+        self.assertEqual(sorted(rows(p, "income")), ["Arbeitseinkommen"])                   # the surplus: work alone
+        z = rows(p, "investing")["Kapitalerträge"]
+        self.assertEqual((nz(z), z["group"], z["glbl"], z["kind"], z["nw"]), ({"2026-02": 262.35, "2026-03": -0.01}, "Kapitalerträge", ["pos_capital_income"], "capital_income", True))
+        self.assertEqual({d["category"]: nz(d) for d in z["details"]}, {"Kapitalerträge / Dividenden": {"2026-02": 250.01, "2026-03": -0.01}, "Kapitalerträge / Zinsen": {"2026-02": 12.34}})
+        self.assertEqual(nz(rows(p, "financing")["Zinsen"]), {"2026-02": -45.67})
+        secs = {x["name"]: round(sum(z["amounts"].get("2026-02", 0.0) for z in x["rows"]), 2) for x in p["cashflow"]["sections"]}
+        cash = round(sum(secs.get(k, 0.0) for k in ("income", "expenses", "investing", "financing", "unclear")), 2)
+        nw = round(sum(z["amounts"].get("2026-02", 0.0) for x in p["cashflow"]["sections"] for z in x["rows"] if z["nw"]), 2)
+        self.assertEqual((secs["income"] + secs["expenses"], secs["investing"], secs["financing"], cash, nw),
+                         (2900.0, 262.35, -45.67, 3116.68, 3116.68))                    # to the cent: all of it changes net worth
+        self.assertEqual(round(sum(z["amounts"].get("2026-02", 0.0) for x in p["cashflow"]["sections"] for z in x["rows"] if z["kind"] == "interest"), 2),
+                         -45.67)                                                         # interest paid only (the interest burden)
+
+    def test_a_company_receives_and_pays_out(self):
+        nz = lambda z: {m: v for m, v in z["amounts"].items() if v}
+        data = build([(1, "kk", date(2026, 4, 30), 0.83, {"purpose": "Habenzinsen"}),                         # by the words: estimated
+                      (2, "kk", date(2026, 4, 10), 1500.0, {"iban": "DE77", "cat": "Beteiligungserträge\\Dividenden", "name": "Andere AG"}),
+                      (3, "kk", date(2026, 4, 20), -2000.0, {"iban": "DE88", "cat": "Gewinnausschüttung", "name": "Mitgesellschafterin"}),
+                      (4, "kk", date(2026, 4, 25), -310.5, {"cat": "Zinsen Verkäuferdarlehen"})])
+        self.assertAddsUp(data)
+        g = data["Muster GbR"]
+        self.assertNotIn("Kapitalerträge", rows(g, "income"))
+        self.assertEqual(nz(rows(g, "investing")["Kapitalerträge"]), {"2026-04": 1500.83})
+        self.assertEqual(nz(rows(g, "financing")["Einlagen/Entnahmen Gesellschafter"]), {"2026-04": -2000.0})
+        self.assertEqual(nz(rows(g, "financing")["Zinsen"]), {"2026-04": -310.5})
+        self.assertEqual(round(sum(z["amounts"].get("2026-04", 0.0) for x in g["cashflow"]["sections"] if x["name"] in ("income", "expenses") for z in x["rows"]), 2), 0.0)
+
+    def test_planned_like_income_and_your_plan_kept(self):
+        txs = plan_txs()
+        n = len(txs)
+        for k in range(18):
+            y, m = 2025 + (k // 12), 1 + k % 12
+            txs.append((n + 1 + k, "giro", date(y, m, 15), 100.0, {"cat": "Kapitalerträge\\Dividenden"}))
+        ds = plan_ds({"income_increase_percent_pa": 3, "expense_increase_percent_pa": 1.5}, txs=txs)
+        self.assertPlanAddsUp(ds)
+        z = rows(ds, "investing")["Kapitalerträge"]
+        self.assertEqual((z["plan"]["rule"]["increase"], z["plan"]["rule"]["inc_from"]), (3.0, "standard"))    # income's rate
+        pm = ds["plan_months"]
+        self.assertTrue(all(z["plan"]["amounts"][mk] > 0 for mk in pm))                    # received: positive, as income
+        self.assertEqual(z["plan"]["amounts"][pm[0]], round(100.0 * 1.03 ** (1 / 12), 2))
+        f = ds["plan_figures"]
+        self.assertEqual(f["income"], round(sum(ds["cashflow"]["sums"][mk]["income"] for mk in pm[:12]), 2))
+        self.assertTrue(all(abs(ds["cashflow"]["sums"][mk]["investing"] - z["plan"]["amounts"][mk]) < 0.005 for mk in pm))
+        # a plan made while the row stood under income (before 3.17.101) still counts; one under its new key wins
+        old = plan_ds({"rows": {"income/Kapitalerträge": {"method": "fix", "amount": 200, "increase_percent_pa": 0}}}, txs=txs)
+        z = rows(old, "investing")["Kapitalerträge"]
+        self.assertEqual((z["plan"]["rule"]["method"], z["plan"]["rule"]["from"], z["plan"]["amounts"][pm[0]]), ("fix", "position", 200.0))
+        both = plan_ds({"rows": {"income/Kapitalerträge": {"method": "fix", "amount": 200, "increase_percent_pa": 0},
+                                 "investing/Kapitalerträge": {"method": "fix", "amount": 80, "increase_percent_pa": 0}}}, txs=txs)
+        self.assertEqual(rows(both, "investing")["Kapitalerträge"]["plan"]["amounts"][pm[0]], 80.0)
 
 
 class MirrorsAndCompanies(Reconciles):

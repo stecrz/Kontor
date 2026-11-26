@@ -63,8 +63,8 @@ known): a rise (more debt) red, a fall (repaid) green.
 ## overview.wealth — Vermögensbrücke
 Where the change of net worth over the last twelve closed months came from, as a waterfall: each bar starts where the one
 before ended. Rows from the top: "Anfangsvermögen" = net worth at the month end before the twelve months (grey bar from zero);
-then only what changes net worth – "Überschuss" (income minus expenses), "Zinsen" (interest on loan accounts: paid, negative,
-or received on a loan given), "Einlagen & Entnahmen" (money between the area and others: contributions, withdrawals),
+then only what changes net worth – "Überschuss" (income minus expenses), "Kapitalerträge" (interest and dividends received,
+also on a loan given – in the cash flow under investing, DRS 21), "Zinsen" (interest paid, negative), "Einlagen & Entnahmen" (money between the area and others: contributions, withdrawals),
 "Wertänderungen" (changes in value without a payment: prices of portfolios, revaluations, participations, balance
 corrections), "Unklar" (what Kontor could not place), "Abgleich Bilanz" (what the balance sheet shows beyond these rows, e.g.
 an unknown balance); last "Endvermögen" = net worth at the end of the last closed month. Rows without an amount are left out.

@@ -18,9 +18,10 @@ not finished); "12 Monate" means the last twelve closed months. The running mont
 after the running one) are faded and hatched. Year columns: flows as the year's sum ("Σ 2026"), balances as the year-end value.
 
 Cash flow (Cashflow), the same outline for every area: **Überschuss** (surplus: Einnahmen income minus Ausgaben expenses of everyday
-life or business, by fixed positions with the user's MoneyMoney categories in them; interest and dividends received count here),
-**Investitionen** (investing: buying and selling assets – money leaves the bank account but stays wealth), **Finanzierung**
-(financing: loans taken up, repayment, interest paid, partners' contributions and withdrawals). Their sum, together with
+life or business, by fixed positions with the user's MoneyMoney categories in them; no interest or dividends – as German GAAP's
+cash flow statement has it, DRS 21, in every area), **Investitionen** (investing: buying and selling assets – money leaves the bank
+account but stays wealth; also **Kapitalerträge**, interest and dividends received, which do raise net worth), **Finanzierung**
+(financing: loans taken up, repayment, interest paid, partners' contributions and withdrawals, distributions paid). Their sum, together with
 what is unclear, is the **Veränderung Bankguthaben** (change in cash). **Veränderung Nettovermögen** (change in net worth) =
 Veränderung Bankguthaben + **Umschichtungen** (money that left the bank accounts but stays wealth: investments, repayment of
 loans, money taken up as a loan with a minus) + **Wertänderungen** (changes in value without a payment: prices, revaluations,

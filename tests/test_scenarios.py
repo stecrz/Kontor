@@ -236,7 +236,7 @@ def loan_to_a_friend(d, lag, k, i):
                (i + 2, "dar_an_fr", month_end(d2), interest, {"purpose": "Zinsen"}),
                (i + 3, "giro", d3, x + interest, {"iban": "DE92", "name": "Freund"}), (i + 4, "dar_an_fr", d3, -(x + interest), {"purpose": "Rückzahlung"})],
               nw={"Privat": interest},
-              rows=[("Privat", "income", "Kapitalerträge", interest, True)])          # interest received: investment income (user, 2026-11-25; it stood under investing)
+              rows=[("Privat", "investing", "Kapitalerträge", interest, True)])       # interest received: investment income (user, 2026-11-25), under investing (DRS 21, 2026-11-26)
 
 
 def bill_booked_when_due(d, lag, k, i):
@@ -276,12 +276,12 @@ def holding_lends_to_the_partnership(d, lag, k, i):
 
 
 def dividend(d, lag, k, i):
-    """The GmbH pays you a dividend: investment income for you, as from any company (user, 2026-11-24), a withdrawal for the
-    company."""
+    """The GmbH pays you a dividend: investment income for you, as from any company (user, 2026-11-24) -- under investing (DRS 21,
+    user 2026-11-26) --, for the company paid out to its partners: financing."""
     x = 8000 * k
     return Sc([(i, "h_kk", d, -x, {"iban": "DE11", "purpose": "Gewinnausschüttung"}), (i + 1, "giro", d + timedelta(lag), x, {"iban": "DE21", "cat": "Dividenden"})],
               nw={"Privat": x, "Holding GmbH": -x},
-              rows=[("Privat", "income", "Kapitalerträge", x, True), ("Holding GmbH", "financing", "Einlagen/Entnahmen Gesellschafter", -x, True)])
+              rows=[("Privat", "investing", "Kapitalerträge", x, True), ("Holding GmbH", "financing", "Einlagen/Entnahmen Gesellschafter", -x, True)])
 
 
 def transfer_to_savings(d, lag, k, i):

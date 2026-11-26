@@ -28,13 +28,14 @@ Umschichtungen). A row with ▸ is closed, ▾ open; a closed row still holds th
 
 ### cashflow.table.operating — Überschuss, Einnahmen, Ausgaben
 Überschuss (CFO) = Einnahmen + Ausgaben of the column: income minus expenses of everyday life or business (in companies the
-operating cash flow), without investing, repayment and paid interest (those are under Investitionen/Finanzierung); received interest
-and dividends count here (position Kapitalerträge) -- also interest on a loan the user granted that is booked in the loan's account. Einnahmen and Ausgaben are each the sum of their positions.
+operating cash flow), without investing, repayment and interest or dividends: as German GAAP prescribes for the cash flow statement
+(DRS 21, no choice) -- the same for every area, private ones too -- interest and dividends received stand under Investitionen (row
+Kapitalerträge, also interest on a loan the user granted that is booked in the loan's account), interest paid under Finanzierung
+(Zinsen), dividends and profit distributions paid under Finanzierung (Einlagen/Entnahmen Gesellschafter). Until 3.17.100 received
+ones counted here. Einnahmen and Ausgaben are each the sum of their positions.
 
 Positions (fixed outline for every area): income Arbeitseinkommen (salary, bonus, profit-related pay, minijob, side earnings from own work), Umsatzerlöse, Rente & Sozialleistungen
-(pension, child benefit, parental allowance …; companies: Zuschüsse & Förderungen), Vermietung, Kapitalerträge (interest,
-dividends, profit distributions from any company, the user's own GmbH or GbR too – its participation's value falls by it at
-the same time, a change in value; capital taken out or paid in is "Einlage/Entnahme"), Unterhalt &
+(pension, child benefit, parental allowance …; companies: Zuschüsse & Förderungen), Vermietung, Unterhalt &
 Geschenke (support, pocket money, gifts, inheritance received – no earned income), Erstattungen, Sonstige Einnahmen (e.g. selling
 used things privately; "Verkauf" in a company is Umsatzerlöse); expenses
 Wareneinkauf, Personal, Betriebskosten, Wohnen (companies: Raumkosten), Lebenshaltung (incl. food and drink at home and eating out,
@@ -60,7 +61,10 @@ Investitionen (CFI): buying (−) and selling (+) assets – money leaves the ba
 Beteiligungen (money paid into or out of a company of the user, named by the company; "Einlagen & Entnahmen" = a category with
 that position in a private area: money into or out of a company Kontor does not keep), Andere Bereiche (contributions to and
 withdrawals from another area of the user, named by the area), Gewährte Darlehen (the account: paid out −, paid back +; interest booked in it counts under Kapitalerträge and
-raises the receivable here until it is paid), Fremdwährung (money moved into an account in another currency), Sparen & Anlegen (saving whose account
+raises the receivable here until it is paid), Fremdwährung (money moved into an account in another currency), Kapitalerträge (position:
+interest, dividends, profit distributions received from any company, the user's own GmbH or GbR too – its participation's value falls
+by it at the same time, a change in value; capital taken out or paid in is "Einlage/Entnahme"; unlike the other rows here it raises
+net worth, it is what the assets yield; planned like income), Sparen & Anlegen (saving whose account
 is unknown; a company's: "Anlagevermögen & Geldanlagen"). Buying securities into a depot (which has balances only, no bookings) and
 selling them back belongs here by a category with the position Sparen & Anlegen: the purchase −, the sale +, the depot's change in
 value shows only the prices; without a category, or with a transfer's, Kontor recognises it by what the booking says (a securities trade, a savings plan, a
@@ -194,7 +198,8 @@ Umschichtungen, Wertänderungen, "= Veränderung Nettovermögen" – all flows o
 ## cashflow.wealth — Vermögensbrücke
 A waterfall like the Liquiditätsbrücke, but from net worth at the start ("Anfangsvermögen": end of the month before the period) to
 net worth at the end ("Endvermögen", "(Plan)" if planned), with only what changes net worth: Überschuss (Einnahmen, Ausgaben),
-Zinsen (paid and received interest – under Finanzierung/Investitionen in the table, but they cost or bring net worth), "Einlagen &
+Kapitalerträge (interest and dividends received – under Investitionen in the table, but they bring net worth), Zinsen (interest paid –
+under Finanzierung, but it costs net worth), "Einlagen &
 Entnahmen" (money between this area and others, money out of the wealth Kontor sees), Wertänderungen (per account; plan months also
 "Wertentwicklung laut Plan"), Unklar, "Abgleich Bilanz" (what the balance sheet shows beyond these rows, e.g. an unknown balance).
 Investing, repaying and taking up loans are missing: they only move money between the user's accounts. All rows start closed; ▸
