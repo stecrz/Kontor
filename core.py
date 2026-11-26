@@ -22,7 +22,7 @@ from model import UUID_RE, Account, Ledger, Tx, accounts_from_export, add_months
 import mm_categories
 import realestate
 import categorize
-from report import COST_WORDS, POS, PROPERTY_CONTEXT, ROLES, account_roles, build_dataset, equity_ratio, holding_key, my_positions, purchase_kind, deposit_category, transfer_check
+from report import COST_WORDS, POS, PROPERTY_CONTEXT, ROLES, account_roles, build_dataset, equity_ratio, holding_key, mixed_categories, my_positions, purchase_kind, deposit_category, transfer_check
 import rules
 from rules import Proposal, parse_start, plan_all
 from storage import Store
@@ -1365,6 +1365,9 @@ def positions_overview(ledger: Ledger, config: dict, categories: List[dict], tod
     objekte = {norm_cat(str(im.get("category"))): str(im.get("name") or "") for im in config.get("real_estate") or []
                if isinstance(im, dict) and im.get("category")}
     mine = my_positions(config)
+    area_of = {a.uuid: str(b["id"]) for b in bereiche for a in b["leaves"]}
+    mixed = {m["path"]: m for m in mixed_categories(ledger, config, bereiche, bank_accounts(account_roles(ledger, config)),
+                                                    categorize.transfers(ledger, area_of), assign_skipped(config, bereiche), assign_cutoff(config))}
     out = []
     for p in paths:
         sub = [q for q in count if q == p or q.startswith(p + " / ")]
@@ -1381,6 +1384,8 @@ def positions_overview(ledger: Ledger, config: dict, categories: List[dict], tod
                     "proposal": prop, "proposal_also": also, "purchase": bool(purchase_kind(p)),
                     "own": mine.get(p), "account": konto.get(p) or "", "property_name": obj,
                     "company": 2 * sum(in_firm[q] for q in sub) > sum(count[q] for q in sub)})
+        if p in mixed:                  # payments that stand out from the rest (a purchase beside the rent?): a hint
+            out[-1]["mixed"] = {"ids": mixed[p]["ids"], "sum": mixed[p]["sum"]}
     return {"categories": out, "positions": [[k, sec] for k, sec, _ in POSITIONS], "transfer": list(kf.get("transfer_categories") or ["Umbuchung"]),
             "kinds": sorted({b.get("kind") or "private" for b in bereiche})}
 
@@ -1411,6 +1416,13 @@ def save_positions(config: dict, body: dict, ledger: Optional[Ledger]) -> dict:
                 ledger.resolve(str(v))          # KeyError: unknown account
             acc[p] = str(v)
     kf["positions"], kf["category_to_account"] = pos, acc
+    # payments you confirmed as belonging to their category (no more "mixed?" for them); the newest 5000 kept
+    ok_new = body.get("mixed_ok")
+    if ok_new is not None:
+        if not isinstance(ok_new, list) or not all(isinstance(i, int) and not isinstance(i, bool) for i in ok_new):
+            raise ValueError("mixed_ok")
+        have = [int(i) for i in (kf.get("mixed_ok") or []) if isinstance(i, int)]
+        kf["mixed_ok"] = (have + [i for i in ok_new if i not in set(have)])[-5000:]
     # the account saving goes into, per area and recipient: {area: {recipient: account | "extern" | "" (Kontor's)}}
     emp = {a: dict(m) for a, m in (kf.get("recipient_to_account") or {}).items() if isinstance(m, dict)}
     sent = body.get("recipient", {})
@@ -1623,6 +1635,17 @@ def build_report(store: Store, ledger: Ledger, config: dict, state: dict, today:
     if isinstance(getattr(ledger, "_paired", None), dict):
         ledger._paired = {k: v for k, v in ledger._paired.items() if k in {str(b["id"]) for b in bereiche}}     # areas that still exist
     transfer_sig = hash(frozenset(categorize.transfers(ledger, area_of)))
+    # categories that mix payments of another kind with their usual ones (a property's purchase beside its rent): a hint
+    mixed_sig = (ledger._kat_sig, tuple(sorted(bank_accounts(roles))), transfer_sig, tuple(sorted(assign_skipped(config, bereiche))), assign_cutoff(config),
+                 _bereiche_sig(bereiche), json.dumps([config.get("cashflow"), [im.get("category") for im in config.get("real_estate") or [] if isinstance(im, dict)]],
+                                                     sort_keys=True, default=str))
+    try:
+        mixed = _cached(ledger, "_mixed_cache", mixed_sig, lambda: mixed_categories(ledger, config, bereiche, bank_accounts(roles),
+                                                                                     categorize.transfers(ledger, area_of), assign_skipped(config, bereiche),
+                                                                                     assign_cutoff(config)))
+    except Exception:  # pragma: no cover
+        log.exception("Mixed categories failed")
+        mixed = []
     dataset = {
         "created": datetime.now().strftime("%Y-%m-%d %H:%M"),
         "today": today.isoformat(),
@@ -1642,7 +1665,7 @@ def build_report(store: Store, ledger: Ledger, config: dict, state: dict, today:
         "warnings": warnings,
         "categories": dict((step(0.86, "Kategorienstatistik"), _cached(ledger, "_katstats_cache", (ledger._kat_sig, tuple(sorted(bank_accounts(roles))), transfer_sig, tuple(sorted(assign_skipped(config, bereiche))), assign_cutoff(config)),
                                                                                   lambda: categorize.stats(kat, ledger, bank_accounts(roles), area_of, assign_skipped(config, bereiche), assign_cutoff(config))))[1],
-                           positions=len(my_positions(config))),
+                           positions=len(my_positions(config)), mixed=mixed),
         "accounts_new": neu,
     }
     step(0.88, "Speichern")

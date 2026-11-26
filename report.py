@@ -34,6 +34,7 @@ from collections import Counter, defaultdict
 from datetime import date, timedelta
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
+import categorize
 from categorize import party_key, suggest as suggest_category
 from model import Account, Ledger, Tx, add_months, month_end, month_key, months_between, norm_cat, legacy_cat
 from model import MARK, marks_in
@@ -1310,6 +1311,88 @@ def transfer_check(config: dict) -> Callable[[str], bool]:
             memo[p] = r
         return r
     return check
+
+
+# A category that mixes payments of another kind with its usual ones: a property's category with its purchase price and the
+# loan's payout beside the rent, say. In the cash flow everything in a category counts in its one position, so the purchase
+# would count as a cost of the property and the payout as rent. A payment stands out when it is at least MIXED_MIN euros and
+# MIXED_RATIO times the median of the rest of its category -- a hint, never a figure: Kontor changes nothing by it.
+MIXED_MIN = 5000.0
+MIXED_RATIO = 10.0
+
+
+def standing_out(amounts: Dict[int, float]) -> List[int]:
+    """The payments (id -> amount in euros) that stand out from the rest: the largest, as long as it is at least MIXED_MIN and
+    MIXED_RATIO times the median of those left, and at least two are left to compare with. Largest first."""
+    rest = sorted(amounts.items(), key=lambda x: (abs(x[1]), x[0]))
+    out: List[int] = []
+    while len(rest) >= 3:
+        i, a = rest[-1]
+        left = [abs(v) for _, v in rest[:-1]]
+        n = len(left)
+        med = left[n // 2] if n % 2 else (left[n // 2 - 1] + left[n // 2]) / 2
+        if abs(a) < MIXED_MIN or abs(a) < MIXED_RATIO * med:
+            break
+        out.append(i)
+        rest.pop()
+    return out
+
+
+def mixed_categories(ledger: Ledger, config: dict, bereiche: List[dict], banks: Optional[Set[str]] = None,
+                     skip: Optional[Set[int]] = None, hidden: Optional[Set[str]] = None, before: Optional[date] = None) -> List[dict]:
+    """The categories with payments that stand out (standing_out) among those that count as income or an expense -- or in a
+    property's rows -- in the areas you categorise; in the others (hidden: their ids; a company with countless bookings, say)
+    only a property's categories, where the cash flow goes most wrong. On your bank accounts (banks; None: all),
+    booked on or after the day you chose (before). Left out: transfers between your accounts (skip: their ids), transfer
+    categories, a purchase's category (price or costs: an investment by its name), categories you count elsewhere (saving,
+    financing, left out), accounts in another currency, and the payments you confirmed as belonging there
+    (cashflow.mixed_ok). [{path, ids (largest first), sum (of those, signed, euros), count (bookings of the category)}],
+    the largest sums first; a category of several areas once."""
+    kf = config.get("cashflow") or {}
+    ok = {int(i) for i in (kf.get("mixed_ok") or []) if str(i).lstrip("-").isdigit()}
+    is_transfer = transfer_check(config)
+    objekte = [norm_cat(str(im.get("category"))) for im in config.get("real_estate") or [] if isinstance(im, dict) and im.get("category")]
+    skip = skip or set()
+    found: Dict[str, dict] = {}
+    for b in bereiche:
+        only_props = bool(hidden and str(b.get("id")) in hidden)
+        accs = {a.uuid for a in b.get("leaves") or [] if (banks is None or a.uuid in banks) and not foreign_currency(a)}
+        if not accs:
+            continue
+        company = b.get("kind") == "company"
+        per: Dict[str, Dict[int, float]] = defaultdict(dict)
+        for t in ledger.txs:
+            if t.account_uuid not in accs or not t.booked or not t.category_path or t.id in skip or (before and t.booking_date < before):
+                continue
+            if MARK in t.purpose:                 # Kontor's own bookings
+                continue
+            c = norm_cat(t.category_path)
+            if c and c not in categorize.STANDARD:     # MoneyMoney's default ("Unkategorisiert") is none
+                per[c][t.id] = t.amount
+        totals = category_totals(ledger, accs)
+        for path, amounts in per.items():
+            if len(amounts) < 3 or is_transfer(path) or purchase_kind(path):
+                continue
+            pos, yours = position_of(path, config, totals, company)
+            prop = any(path == c or path.startswith(c + " / ") for c in objekte)
+            if only_props and not prop:
+                continue
+            counts = (prop and not (pos in ("repayment", "loan_interest") or (yours and pos in ("saving", "ignore", "partners"))))\
+                or POS.get(pos, ("",))[0] in ("income", "expenses")
+            if not counts:
+                continue
+            ids = [i for i in standing_out(amounts) if i not in ok]
+            if not ids:
+                continue
+            f = found.setdefault(path, {"path": path, "ids": [], "sum": 0.0, "count": 0, "_amt": {}})
+            f["ids"] += ids
+            f["_amt"].update((i, amounts[i]) for i in ids)
+            f["sum"] = round(f["sum"] + sum(amounts[i] for i in ids), 2)
+            f["count"] += len(amounts)
+    for f in found.values():
+        amt = f.pop("_amt")
+        f["ids"].sort(key=lambda i: (-abs(amt[i]), i))
+    return sorted(found.values(), key=lambda f: (-abs(f["sum"]), f["path"]))
 
 
 def classify(ledger: Ledger, leaves: List[Account], roles: Dict[str, str], config: dict, months: List[Tuple[int, int]],

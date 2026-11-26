@@ -1,5 +1,9 @@
 # Änderungen
 
+## 3.17.98 (2026-11-26 03:03)
+- Cashflow-Positionen: Hinweis „gemischt?“ bei einer Kategorie mit einzelnen, viel größeren Zahlungen (etwa Kaufpreis oder Darlehensauszahlung neben der Miete) – Klick zeigt sie, „Passt so“ bestätigt sie; auch unter Offen in der Übersicht
+- Kategorisieren: „Alle … Umsätze sicher zugeordnet“ mit Tausenderpunkt
+
 ## 3.17.97 (2026-11-26 02:35)
 - Kategorisieren: Fortschritt über der Liste – wie viele Umsätze sicher zugeordnet sind und welcher Anteil am Betrag (den Rest schätzt der Cashflow), für die gewählten Filter
 

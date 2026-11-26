@@ -1320,6 +1320,8 @@ async function openItems(D) {
   if (lastRun && lastRun.dry_run && lastRun.proposals && lastRun.proposals.length) items.push(['warn', tn('0_buchungsvorschlaege', lastRun.proposals.length), '#bookings', 'bookings']);
   if (ok.hits) items.push(['warn', tn('n_umsaetze', ok.hits) + ' ' + yr + t('ohne_kategorie_zuordnen'), '#categories', 'categorize']);
   if ((S.DATA.accounts_new || []).length) items.push(['warn', nKonten(S.DATA.accounts_new.length) + t('ohne_bestaetigte_zuordnung_bereich_pos'), '#accounts', '']);
+  const mix = (S.DATA.categories || {}).mixed || [];         // categories with payments far larger than the rest (a purchase beside the rent?)
+  if (mix.length) items.push(['warn', mix.length === 1 ? tn('ov_gemischt_1', mix[0].ids.length, CP(mix[0].path)) : t('ov_gemischt_n', mix.length), '#accounts/positions', '']);
   if (ob.hits) items.push(['neutral', tn('n_ausgaben', ob.hits) + ' ' + yr + t('ohne_beleg'), '#transactions?no_receipt=1', 'receipts']);
   const ue = (D.cashflow.reconciliation || {})[cur]; if (ue && Math.abs(ue.unexplained) > 1) items.push(['warn', t('unerklaerte_vermoegensaenderung_im_lau') + F(ue.unexplained) + t('pruefzeile'), '#cashflow', 'unexplained']);
   for (const w of (D.warnings || []).slice(0, 3)) items.push(['warn', w, '#bookings', '']);
@@ -5848,6 +5850,10 @@ function bindEingetragen(main) {
 const POS_SEC = {income: 'einnahmen', expenses: 'ausgaben', investing: 'sek_investitionen', financing: 'finanzierung'};
 const posLabel = (k, firma) => t(firma && I18N[`pos_${k}_g`] ? `pos_${k}_g` : `pos_${k}`);   // one name: a company's where the category is a company's
 const OBJ_OUT = ['saving', 'repayment', 'loan_interest', 'partners', 'ignore'];            // pos_<key>: every position has its text (tests: Positions)
+// payments far larger than the rest of their category (a purchase price beside the rent?): a hint -- a click shows them,
+// "Passt so" confirms they belong there (they are not reported again)
+const kpMixed = r => !r.mixed ? '' : ` <a href="#" class="tag warn tipped kp-mix" data-ids="${r.mixed.ids.join(',')}" data-ex="accounts.positions.mixed" data-tip="${esc(tn('kp_gemischt_tip', r.mixed.ids.length, F0(r.mixed.sum)))}">${t('kp_gemischt')}</a>`
+  + ` <button type="button" class="small secondary kp-ok" data-ids="${r.mixed.ids.join(',')}" title="${esc(t('kp_passt_tip'))}">${t('kp_passt')}</button>`;
 async function vPositionen() {
   const d = await api('/api/categories/positions'); KB_KINDS = d.kinds || ['private'];
   if (!d.categories.length) return `<div class="card" data-ex="accounts.positions"><div class="d">${esc(d.hint || t('noch_keine_kategorien_geladen_abgleich'))}</div></div>`;
@@ -5864,7 +5870,7 @@ async function vPositionen() {
   for (const b of Object.values((S.DATA && S.DATA.areas) || {})) for (const [c, v] of Object.entries(((b || {}).cashflow || {}).uncertain || {})) UNS[npath(c)] = Math.max(UNS[npath(c)] || 0, Math.abs(v));
   d.categories.forEach((r, i) => {
     const parent = (d.categories[i + 1] || {}).depth > r.depth, own = r.own || '', uns = !own ? UNS[npath(r.path)] : null;
-    h += `<tr data-p="${esc(r.path)}" data-v="${esc(r.proposal)}" data-v2="${esc((r.proposal_also || []).join(','))}" data-init="${esc(own)}" data-konto="${esc(r.account)}" data-own="${r.count ? 1 : 0}" data-firma="${r.company ? 1 : ''}" data-buy="${r.purchase ? 1 : ''}"><td style="padding-left:${10 + 18 * r.depth}px">${parent ? `<b>${esc(r.name)}</b>` : esc(r.name)}${uns != null ? ` <span class="tag warn tipped kp-uns" tabindex="0" data-tip="${esc(t('kp_unsicher_tip', F0(Math.abs(uns))))}">${t('kp_unsicher')}</span>` : ''}</td>
+    h += `<tr data-p="${esc(r.path)}" data-v="${esc(r.proposal)}" data-v2="${esc((r.proposal_also || []).join(','))}" data-init="${esc(own)}" data-konto="${esc(r.account)}" data-own="${r.count ? 1 : 0}" data-firma="${r.company ? 1 : ''}" data-buy="${r.purchase ? 1 : ''}"><td style="padding-left:${10 + 18 * r.depth}px">${parent ? `<b>${esc(r.name)}</b>` : esc(r.name)}${uns != null ? ` <span class="tag warn tipped kp-uns" tabindex="0" data-tip="${esc(t('kp_unsicher_tip', F0(Math.abs(uns))))}">${t('kp_unsicher')}</span>` : ''}${kpMixed(r)}</td>
       <td class="num small kp-n">${r.count_all ? `<a href="#" class="kp-tx" data-tx="all">${r.count_all}</a>` : ''}</td><td class="num small kp-n ${r.sum_12m < 0 ? 'neg' : ''}">${r.sum_12m ? `<a href="#" class="kp-tx" data-tx="12m">${F0(r.sum_12m)}</a>` : ''}</td><td class="kp-arrow" aria-hidden="true">→</td>
       <td><select class="kp-pos"${r.property_name ? ` data-obj="${esc(r.property_name)}"` : ''}>${r.property_name ? objOpts(own) : opts(own, r.company)}</select></td>
       <td>${(() => { const at = autoTarget(r.path); return `<select class="kp-konto${at.miss && !r.account ? ' kp-miss' : ''}">${acctOptions(r.account, k => !k.group && (k.depot || k.role === 'term_investments' || k.role === 'cash' || k.role === 'participations' || k.role === 'real_estate')).replace(t('waehlen'), () => esc(at.text))}</select>`; })()}</td></tr>`;
@@ -5978,8 +5984,16 @@ function vAnlageEmpfaenger() {
 function bindPositionen(main) {
   // the bookings behind a number: a category (all its bookings, or those of the last 12 months), a recipient's payments
   $$('.kp-table', main).forEach(tb => tb.addEventListener('click', e => {          // (the tables are new with every drawing)
-    const a = e.target.closest('.kp-tx, .ka-tx'); if (!a) return; e.preventDefault();
+    const ok = e.target.closest('.kp-ok');
+    if (ok) {                                  // confirmed: saved at once (only this -- the positions keep their own Save)
+      e.preventDefault(); const ids = ok.dataset.ids.split(',').filter(Boolean).map(Number); ok.disabled = true;
+      api('/api/categories/positions', {mixed_ok: ids}).then(r => { S.CFG = r.config; $$('.kp-mix, .kp-ok', ok.closest('td')).forEach(x => x.remove()); afterRebuild(r); })
+        .catch(err => { ok.disabled = false; toast(err.message, 6000); });
+      return;
+    }
+    const a = e.target.closest('.kp-tx, .ka-tx, .kp-mix'); if (!a) return; e.preventDefault();
     const tr = a.closest('tr');
+    if (a.classList.contains('kp-mix')) { txPanel(CP(tr.dataset.p), {ids: a.dataset.ids.split(',').filter(Boolean).map(Number)}); return; }
     if (a.classList.contains('ka-tx')) { const ids = a.dataset.ids.split(',').filter(Boolean).map(Number); txPanel($('td', tr).firstChild.textContent.trim(), {ids}); return; }
     // as counted there: booked, with MoneyMoney's category; the twelve months up to today
     const p = tr.dataset.p, y = a.dataset.tx === '12m'; txPanel(CP(p), {kats: [p], counted: true, date_from: y ? yearAgo() : '', date_to: y ? isoToday() : ''});

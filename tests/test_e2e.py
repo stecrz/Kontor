@@ -1369,6 +1369,28 @@ class AppTests(_AppBase):
         one = self.call("/api/transactions?limit=5000&categories=%s&from=%s-01&to=%s-31" % (q, m, m))[1]["transactions"]
         self.assertTrue(one and all(x["date"].startswith(m) for x in one))
 
+    def test_mixed_category_hint_and_confirmed(self):
+        """A payment far larger than the rest of its category (a purchase among the insurance premiums): "gemischt?" under
+        Cashflow-Positionen and in the overview's data; "Passt so" confirms it (saved, not reported again). No figure changes."""
+        MockBridge.state["txs"].append(F.tx("priv.giro", TODAY - timedelta(days=40), -50000.0, "Autohaus", "Kaufvertrag", "Versicherungen\\Haftpflicht"))
+        self.login(); self.run_and_wait()
+        mixed = self.store.load("dataset.json")["categories"]["mixed"]
+        self.assertEqual([(m["path"], len(m["ids"]), m["sum"]) for m in mixed], [("Versicherungen / Haftpflicht", 1, -50000.0)])
+        code, p = self.call("/api/categories/positions")
+        k = {r["path"]: r for r in p["categories"]}
+        self.assertEqual(k["Versicherungen / Haftpflicht"]["mixed"], {"ids": mixed[0]["ids"], "sum": -50000.0})
+        self.assertNotIn("mixed", k["Lebensmittel"])
+        cf_vorher = json.dumps(self.store.load("dataset.json")["areas"][F.uid("priv")]["cashflow"]["sections"], sort_keys=True)
+        code, r = self.call("/api/categories/positions", {"mixed_ok": mixed[0]["ids"], "wait": True})
+        self.assertEqual(code, 200); self.assertEqual(r["config"]["cashflow"]["mixed_ok"], mixed[0]["ids"])
+        self.assertEqual(r["config"]["cashflow"]["positions"], {})                          # the positions untouched
+        self.assertEqual(self.store.load("dataset.json")["categories"]["mixed"], [])
+        code, p = self.call("/api/categories/positions")
+        self.assertNotIn("mixed", {r["path"]: r for r in p["categories"]}["Versicherungen / Haftpflicht"])
+        self.assertEqual(json.dumps(self.store.load("dataset.json")["areas"][F.uid("priv")]["cashflow"]["sections"], sort_keys=True), cf_vorher)
+        code, r = self.call("/api/categories/positions", {"mixed_ok": ["1"]})
+        self.assertEqual(code, 400)
+
     def test_cashflow_positionen(self):
         """Kategorien -> Cashflow-Positionen: Kontor schlaegt je Kategorie eine Position vor, deine Wahl gilt auch darunter;
         Steuer und MoneyMoney bleiben unberuehrt."""

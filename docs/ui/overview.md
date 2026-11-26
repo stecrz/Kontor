@@ -145,6 +145,8 @@ when nothing is open. Lines (yellow dot: to look at; grey: for information; blue
 - "n Buchungen warten auf Freigabe" – bookings the booking rules prepared, waiting for approval under Auto-Buchungen.
 - "n Umsätze 2026 ohne Kategorie – zuordnen" – transactions of the running year in this area without a category in MoneyMoney.
 - "n Konten ohne bestätigte Zuordnung (Bereich, Position)" – new accounts (of all areas).
+- "Kategorie „X“ gemischt? n große Einzelzahlungen" / "n Kategorien gemischt? …" – categories with payments far larger than
+  the rest (of all areas; see Konten & Regeln → Cashflow-Positionen, "gemischt?").
 - "n Ausgaben 2026 ohne Beleg" (grey) – outgoing transactions of the running year in this area without a receipt in Kontor.
 - "Cashflow weicht im laufenden Monat vom Nettovermögen ab: X €" – in the running month the cash flow does not explain the
   change of net worth (difference over 1 €; Cashflow, check row).

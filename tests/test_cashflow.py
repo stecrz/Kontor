@@ -740,6 +740,77 @@ class ReviewCases(Reconciles):
         self.assertFalse([x for x in data["Privat"]["balance"]["rows"] if x["id"] == "transit"])
 
 
+class MixedCategories(unittest.TestCase):
+    """A category that mixes payments of another kind with its usual ones (a property's purchase beside its rent): a hint on
+    the payments that stand out -- at least 5,000 euros and ten times the median of the rest; never a figure."""
+
+    def mixed(self, txs, cfg=None, hidden=None):
+        L = make_ledger(txs)
+        config = core.merged_config(dict({"balance": {"roles": {k: v[2] for k, v in ACCOUNTS.items()}}}, **(cfg or {})))
+        bereiche = core.bereiche_for(L, config)
+        hid = {str(b["id"]) for b in bereiche if b["name"] in (hidden or ())}
+        return report.mixed_categories(L, config, bereiche, None, set(), hid)
+
+    def test_standing_out(self):
+        so = report.standing_out
+        self.assertEqual(so({1: -300000.0, 2: 250000.0, 3: 1000.0, 4: 1000.0}), [1, 2])      # a purchase and a payout beside two rents
+        self.assertEqual(so({1: 9000.0, 2: 1000.0, 3: 1000.0}), [])                          # nine times: not yet
+        self.assertEqual(so({1: 10000.0, 2: 1000.0, 3: 1000.0}), [1])                        # ten times and 5,000 euros: stands out
+        self.assertEqual(so({1: 4999.99, 2: 10.0, 3: 10.0}), [])                             # small amounts never
+        self.assertEqual(so({1: 50000.0, 2: 1000.0}), [])                                    # one to compare with is not enough
+        self.assertEqual(so({1: 50000.0, 2: 40000.0, 3: 30000.0}), [])                       # all large alike: nothing mixed
+        self.assertEqual(so({i: -1000.0 for i in range(24)} | {99: -40000.0}), [99])
+
+    def test_a_property_category_with_purchase_and_payout(self):
+        cat = {"cat": "Vermietung / Parkweg"}
+        txs = [(1, "kk", date(2025, 3, 1), -300000.0, dict(cat, name="Notar Anderkonto", purpose="Kaufpreis")),
+               (2, "kk", date(2025, 3, 1), 250000.0, dict(cat, name="Hausbank", purpose="Auszahlung Darlehen")),
+               (3, "kk", date(2025, 4, 1), 1000.0, dict(cat, name="Mieter")), (4, "kk", date(2025, 5, 1), 1000.0, dict(cat, name="Mieter")),
+               (5, "kk", date(2025, 5, 3), -250.0, dict(cat, name="Hausverwaltung")),
+               (6, "giro", date(2025, 3, 1), -50.0, {"cat": "Lebensmittel"})]
+        cfg = {"real_estate": [{"id": "p1", "name": "Parkweg", "category": "Vermietung\\Parkweg"}]}
+        got = self.mixed(txs, cfg)
+        self.assertEqual([(m["path"], m["ids"], m["sum"], m["count"]) for m in got], [("Vermietung / Parkweg", [1, 2], -50000.0, 5)])
+        # the areas you do not categorise: a property's category is checked all the same
+        self.assertEqual([m["ids"] for m in self.mixed(txs, cfg, hidden=["Muster GbR"])], [[1, 2]])
+        # confirmed as belonging there: no more hint for them
+        cfg["cashflow"] = {"mixed_ok": [1, 2]}
+        self.assertEqual(self.mixed(txs, cfg), [])
+
+    def test_only_where_it_counts_as_income_or_expense(self):
+        big = [(1, "giro", date(2025, 1, 2), -40000.0, {}), (2, "giro", date(2025, 2, 2), -100.0, {}), (3, "giro", date(2025, 3, 2), -110.0, {}),
+               (4, "giro", date(2025, 4, 2), -90.0, {})]
+        def with_cat(c, **x):
+            return [(i, k, d, a, dict(e, cat=c, **x)) for i, k, d, a, e in big]
+        self.assertEqual([m["ids"] for m in self.mixed(with_cat("Auto"))], [[1]])          # an expense: the car beside the fuel
+        self.assertEqual(self.mixed(with_cat("Sparen / ETF")), [])                         # saving: large and small alike
+        self.assertEqual(self.mixed(with_cat("Darlehen / Tilgung")), [])                   # financing
+        self.assertEqual(self.mixed(with_cat("Umbuchung")), [])                            # a transfer category
+        self.assertEqual(self.mixed(with_cat("Immobilienkauf / Kaufpreis")), [])          # a purchase by its name
+        self.assertEqual(self.mixed(with_cat("Auto"), {"cashflow": {"positions": {"Auto": "saving"}}}), [])     # you count it as saving
+        self.assertEqual(self.mixed(with_cat("Auto"), hidden=["Privat"]), [])              # not categorised, no property: not checked
+        # Kontor's own bookings and accounts in another currency are left out
+        self.assertEqual(self.mixed(with_cat("Auto", purpose="#kontor-zins-2025-01")), [])
+        usd = [(i, "usd", d, a, dict(e, cat="Auto")) for i, k, d, a, e in big]
+        self.assertEqual(self.mixed(usd), [])
+
+    def test_transfers_between_your_accounts_are_left_out(self):
+        txs = [(1, "giro", date(2025, 1, 2), -40000.0, {"cat": "Auto"}), (2, "giro", date(2025, 2, 2), -100.0, {"cat": "Auto"}),
+               (3, "giro", date(2025, 3, 2), -110.0, {"cat": "Auto"}), (4, "giro", date(2025, 4, 2), -90.0, {"cat": "Auto"})]
+        L = make_ledger(txs)
+        config = core.merged_config({"balance": {"roles": {k: v[2] for k, v in ACCOUNTS.items()}}})
+        bereiche = core.bereiche_for(L, config)
+        self.assertEqual(report.mixed_categories(L, config, bereiche, None, {1}), [])
+        self.assertEqual(report.mixed_categories(L, config, bereiche, None, set(), None, date(2025, 2, 1)), [])   # before the day you chose
+
+    def test_save_confirms_and_keeps_what_was_there(self):
+        cfg = core.save_positions({"cashflow": {"mixed_ok": [7]}}, {"mixed_ok": [7, 8, 9]}, None)
+        self.assertEqual(cfg["cashflow"]["mixed_ok"], [7, 8, 9])
+        for bad in ("8", [True], ["8"], [1.5]):
+            with self.assertRaises(ValueError):
+                core.save_positions({}, {"mixed_ok": bad}, None)
+
+
 class Positions(Reconciles):
     """Income and expenses by Kontor's fixed outline; MoneyMoney's categories inside, assigned once (proposed by name)."""
 

@@ -134,6 +134,19 @@ under "Tilgung" counts as a loan taken up; "Nicht
 - **Zielkonto** (only with "Sparen & Anlegen"): the account the money goes into – "nicht nötig" (the money arrives on own accounts,
   Kontor sees the counter-booking), "automatisch: <Konto>" (found), "fehlt – bitte wählen" (marked; choose one).
 
+### accounts.positions.mixed — gemischt?
+Orange tag "gemischt?" after a category's name (with the button "Passt so"): payments of this category that stand out from its other
+ones – a sign that the category mixes things of another kind with its usual ones, such as a property's purchase price and the loan's
+payout beside its rent. In the cash flow everything in a category counts in its one position, so such a purchase would count as a
+cost and the payout as rent. A payment stands out when it is at least 5,000 € and at least ten times the median of the rest of the
+category (largest first, as long as at least two others are left to compare with). Checked: categories with at least three booked
+transactions on bank accounts (euros only) that count as income or an expense or in a property's rows – not transfer categories, a
+purchase's category (price or costs), nor categories counted as saving, financing or left out; transfers between the user's own
+accounts, Kontor's own bookings and what lies before "Ignorieren vor" (Kategorisieren) are left out. In the areas the user does not
+categorise (Kategorisieren) only a property's categories are checked. Hover: how many payments and their sum in € (signed); a click
+lists them. "Passt so" confirms they belong there – they are not reported again (new large payments are). The overview's "Offen"
+names such categories too. A hint only: no figure changes by it.
+
 ### accounts.positions.recipients — Zielkonto je Empfänger
 Shown when payments under "Sparen & Anlegen" arrive on none of the user's accounts (e.g. a portfolio or pension kept only by its
 balances) -- and for bookings without a category of their own that Kontor recognised as such a move (a securities trade, a savings
