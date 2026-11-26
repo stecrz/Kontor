@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.17.100 (2026-11-26 17:24)
+- Entwicklung: Klickpfade – Weg in die Demo mit noch laufenden Anfragen der gesperrten Sitzung kein Fehler mehr (Nachtlauf)
+
 ## 3.17.99 (2026-11-26 15:06)
 - Entwicklung: Zufallsläufe starten jede Nacht zwischen 3 und 4 Uhr (Nachtstart alle 2 h wartet auf 3:05 – GitHubs Zeitplan war 7–9 h verspätet)
 - Entwicklung: Lagebild meldet eine ausgefallene Nacht

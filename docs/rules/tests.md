@@ -68,7 +68,8 @@ Teil von `CLAUDE.md` (Aufbau). Neue Testdatei oder neuer Prüfbereich: hier eint
   (`KONTOR_CLICK_SEEDS`), nachts so viele, wie passen; Gefundenes nach der Korrektur in `FOUND_CLICKS`. Den Weg eines
   bestandenen Falls zeigt `KONTOR_CLICK_LOG=1` mit `-s`; was sie fanden, hält `FoundTest` fest: Menü am iPhone mit esc und
   Tipp auf die offene Seite, über der Assistenten-Seite, Demo ohne Wertpapiersuche; Skala auch für einen gleichbleibenden,
-  nicht runden Wert (sonst `NaN`), Zahlen der Übersicht neben dem Assistenten in ihren Karten, Kopf der ersten Bilanzspalte am iPhone;
+  nicht runden Wert (sonst `NaN`), Zahlen der Übersicht neben dem Assistenten in ihren Karten, Kopf der ersten Bilanzspalte am iPhone,
+  Weg in die Demo mit noch laufenden Anfragen der eben gesperrten Sitzung (ihre 401 sind kein Fehler, alles danach zählt);
   `FoundAtNightTest` (erste ganze Nacht, 3.17.71): eine wieder geöffnete Seite steht, wo sie verlassen wurde – auch wenn Diagramme
   ihre Höhe erst danach bekommen oder Teile nachkommen (Vorschauen der Buchungsregeln); Karte der Übersicht und Suchwort der Hilfe
   führen weiter an ihre Stelle; Bereichsknöpfe eines Diagramms auch ohne Werte im Zeitraum; Seitenfenster nach Klick daneben

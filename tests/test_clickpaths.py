@@ -54,6 +54,7 @@ FOUND_CLICKS += [874536567]     # 3.17.96 (by hand, iPhone, WebKit): a point hal
 FOUND_CLICKS += [552234862]     # 3.17.96 (by hand, iPhone, WebKit, under load -- not again alone): "ResizeObserver loop completed with
                                 # undelivered notifications" on a page change -- the title bar's height was set inside its observer
 KINDS = ["test", "random", "demo", "empty"]
+LOCKED_401 = "the server responded with a status of 401"      # a request of a session that was just locked (demo_in)
 WORLD_NAMES = {"test": "Testwelt", "random": "Zufallswelt", "demo": "Demo", "empty": "leeres Kontor"}
 MAC_SIZES = [(1440, 900), (1512, 945), (1280, 800)]          # a 14-inch MacBook, the window nearly full screen (and a bit smaller)
 # pages that only show (a click there opens, folds or picks a view -- never changes data); the others hold forms
@@ -815,7 +816,7 @@ class _Kontor:
             TA.install(app)
         return app, store, day
 
-    def sign_in(self, pg, base, c):
+    def sign_in(self, pg, base, c, errors=None):
         pg.goto(base)
         pg.wait_for_selector("#login-pw")
         pg.fill("#login-pw", PASSWORD)
@@ -824,16 +825,22 @@ class _Kontor:
         pg.click("#login-btn")
         T.wait_shell(pg)
         if c.kind == "demo":
-            self.demo_in(pg)
+            self.demo_in(pg, errors)
         TT.settle(pg)
 
-    def demo_in(self, pg):
-        """The demo: locked, the sign-in switched to it (the small link below), the same password."""
+    def demo_in(self, pg, errors=None):
+        """The demo: locked, the sign-in switched to it (the small link below), the same password. A request of the real
+        Kontor still under way when it locks (the overview's open items, the status) comes back 401 -- its session ended on
+        purpose: the browser's "Failed to load resource ... 401" in errors from the lock until the demo's page stands is no
+        fault (night of 3.17.98: 11 demo cases on a slow runner). The demo's page standing proves its own session works."""
+        n = len(errors) if errors is not None else 0
         pg.evaluate("lockNow()")
         pg.wait_for_selector("#demo-btn", state="visible")
         pg.click("#demo-btn"); pg.fill("#login-pw", PASSWORD); pg.click("#login-btn")
         T.wait_shell(pg)
         T.until(pg, "typeof demoOn === 'function' && demoOn() && DEMO_PAGE && !!S.KONTEN.length", 30)
+        if errors is not None:
+            errors[n:] = [e for e in errors[n:] if LOCKED_401 not in e]
 
 
 class ClickPathTest(_Kontor, unittest.TestCase):
@@ -860,7 +867,7 @@ class ClickPathTest(_Kontor, unittest.TestCase):
                 pg = ctx.new_page()
                 pg.set_default_timeout(15000)
                 walk = Walk(self, c, pg, store)
-                self.sign_in(pg, base, c)
+                self.sign_in(pg, base, c, walk.errors)
                 walk.log.append("0. angemeldet")
                 walk.check()
                 walk.walk(c.steps)
@@ -946,7 +953,7 @@ class FoundTest(_Kontor, unittest.TestCase):
                 self.assertIs(on_top, True)                                                    # the menu above the assistant
                 pg.tap("#nav a[href='#categories']", timeout=5000)                            # above the assistant: reachable
                 T.until(pg, "location.hash === '#categories' && !document.body.classList.contains('as-page')")
-                self.demo_in(pg)
+                self.demo_in(pg, errors)
                 pg.evaluate("location.hash = '#accounts/history'"); pg.wait_for_selector("#mmh-names", state="attached"); T.quiet(pg)
                 self.assertFalse([u for u in asked if "/api/securities/lookup" in u])
                 self.assertEqual(errors, [])
@@ -995,6 +1002,56 @@ class FoundTest(_Kontor, unittest.TestCase):
         finally:
             srv.shutdown(); srv.server_close()
             app.assistant_stop(); app.stop.set()
+            shutil.rmtree(d, ignore_errors=True)
+
+    def test_demo_after_requests_of_the_locked_session(self):
+        # the night of 3.17.98 (11 demo cases, step 0): the way into the demo locks the real Kontor first; what the overview had
+        # asked just before (open items, the assistant's status, the offline copy) came back 401 on a slow runner -- the session
+        # ended on purpose, no fault. Held here until the lock, those requests always come back 401: demo_in drops just those;
+        # the demo's page stands, nothing else is dropped (a script error stays a fault)
+        from urllib.parse import urlsplit
+        from playwright.sync_api import sync_playwright
+        c = Case(0, False)
+        c.kind, c.device, c.assistant, c.lang = "demo", "mac", False, "de"
+        d = tempfile.mkdtemp(prefix="kontor-found-")
+        app, store, day = self.world(c, d)
+        locked, refused = threading.Event(), []
+        base_handler = make_handler(app)
+
+        class Held(base_handler):
+            def do_GET(self):
+                if urlsplit(self.path).path in ("/api/transactions", "/api/assistant/status", "/api/offline/verifier") and not locked.is_set():
+                    if locked.wait(10) and self._session() is None:
+                        refused.append(urlsplit(self.path).path)
+                return super().do_GET()
+
+            def do_POST(self):
+                r = super().do_POST()
+                if urlsplit(self.path).path == "/api/lock":
+                    locked.set()
+                return r
+
+        srv = ThreadingHTTPServer(("127.0.0.1", 0), Held)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        base = "http://127.0.0.1:%d/" % srv.server_address[1]
+        try:
+            with sync_playwright() as p:
+                b = p.chromium.launch()
+                pg = b.new_context(viewport={"width": 1440, "height": 900}).new_page()
+                errors = []
+                pg.on("pageerror", lambda e: errors.append("Skriptfehler: %s" % e))
+                pg.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
+                self.sign_in(pg, base, c, errors)
+                self.assertTrue(refused)                                      # the race happened ...
+                self.assertTrue(pg.evaluate("demoOn() && DEMO_PAGE"))         # ... the demo stands ...
+                self.assertEqual(errors, [])                                  # ... and its 401s are no fault
+                pg.evaluate("setTimeout(() => { throw new Error('nach der Demo') }, 0)"); T.until(pg, "true")
+                pg.wait_for_timeout(200)
+                self.assertEqual(errors, ["Skriptfehler: nach der Demo"])      # what comes after still counts
+                b.close()
+        finally:
+            srv.shutdown(); srv.server_close()
+            app.stop.set()
             shutil.rmtree(d, ignore_errors=True)
 
 
