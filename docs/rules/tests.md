@@ -12,8 +12,13 @@ Teil von `CLAUDE.md` (Aufbau). Neue Testdatei oder neuer Prüfbereich: hier eint
   Kontors eigenes Python (`tests/mac_python.py`: echt laden, falsche Prüfsumme, Quarantäne und Signatur, Selbsttest, Helfer in der
   Sandbox, Dienst als Kind des Starters, Neustart durch launchd, beschädigt → Apples Python, Deinstallieren, Update von der Version
   davor); Linux prüft denselben Ablauf mit dem echten Build für Linux.
-- **GitHub, nachts** (`nightly.yml`, angestoßen um 3:47 deutscher Zeit, Sommer wie Winter – `timezone: "Europe/Berlin"`;
-  Nutzer, 2026-11-25: gegen 4 Uhr; GitHub startet unter Last später, im Nov. 2026 7–9 h – `test_workflows.NightTime`):
+- **GitHub, nachts** (`nightly.yml`, gestartet zwischen 3 und 4 Uhr deutscher Zeit, Sommer wie Winter; Nutzer, 2026-11-26):
+  `nightly.yml` hat keinen eigenen Zeitplan – GitHubs Zeitplan startete ihn hier 7–9 h zu spät (3:47 geplant, 12:29 gestartet),
+  `timezone` legt nur die gewünschte Stunde fest. Der Nachtstart (`night_start.yml`, `.github/night_start.py`) wacht alle 2 h auf,
+  jedes Mal so spät, wie GitHub ihn startet; der erste, der bis 2 h 45 vor 3:05 ankommt, wartet und startet die Nacht mit
+  `workflow_dispatch` (nicht verzögert), die anderen enden nach Sekunden (`concurrency`: einer zur Zeit). Nach 4 Uhr startet er
+  nicht mehr – fehlt eine Nacht, meldet es das Lagebild („Nachtlauf fehlt“). `test_workflows.NightStart` spielt jede
+  Verspätung von 0–20 h durch, auch schwankend und über die Zeitumstellung:
   auf dem neuesten `main` die 1000 festen und so viele neue Zufallsfälle, wie in ~3 h passen,
   auf mehreren Rechnern nebeneinander; dazu Klickpfade durch die Oberfläche (`tests/test_clickpaths.py`, 40 feste und neue, in
   Chromium und der Safari-Engine) – je Push laufen davon 3 feste mit (im Teil „Übrige“).
@@ -23,8 +28,8 @@ Teil von `CLAUDE.md` (Aufbau). Neue Testdatei oder neuer Prüfbereich: hier eint
   mit `-k` getrennt (`test_workflows.NightJobs` prüft es bei jedem Push).
   Dazu die Datenwelten (`test_data_worlds`): Zahlen, Anfragen, Assistent und – mit Chrome – jede Seite, die festen Welten in jeder
   Ansicht, dann neue Zufallswelten.
-  Fiel eine Nacht aus (3.17.64–3.17.66: `nightly.yml` ungültig, am 24.11. lief nichts), startet ihn der Nutzer von Hand:
-  GitHub → Actions → Zufallsläufe → „Run workflow“ (oder `gh workflow run nightly.yml -R stecrz/Kontor`).
+  Fiel eine Nacht aus (3.17.64–3.17.66: `nightly.yml` ungültig, am 24.11. lief nichts; das Lagebild meldet es), startet ihn
+  der Nutzer von Hand: GitHub → Actions → Zufallsläufe → „Run workflow“ (oder `gh workflow run nightly.yml -R stecrz/Kontor`).
 - **Lokal** (`.claude/tools/release.py`, Skill `release`): Code-Checks, betroffene Tests (`tests/affected.py`) ohne Browser, bei
   Rechenlogik 400 Zufallsfälle, Starter mit Python 3.9, dazu die mit `--tests` genannten (mit Browser). Alles lokal
   (`python3 -m pytest -q tests`, ~30 min) nur, wenn es wirklich nötig ist – GitHub macht es ohnehin.
@@ -81,7 +86,7 @@ Teil von `CLAUDE.md` (Aufbau). Neue Testdatei oder neuer Prüfbereich: hier eint
 - `test_fuzz`, `test_privacy`, `test_security` (Sperre, Datenschlüssel, Belegordner; `NothingGoesOut`: welche Teile ins Netz können, zu welchen Hosts, welche Programme sie starten – ein neuer Weg nach außen wird dort eingetragen)
 - `test_update_guard` (Prüfung vor dem Update: untergeschobene Änderungen werden gefunden, gewöhnliche nicht; Einstufung – Untergeschobenes bleibt kritisch, Geändertes an bestehenden Wegen und der Filter der Internetsuche zu prüfen, nachweislich Strengeres ohne Freigabe; Erklärung und Zeilen je Eintrag; Warten und Freigabe, Archiv und Git-Klon)
 - `test_hooks` (Lagebild, Push-Sperre und Lese-Sperre für große Dateien, `release.py` auf Wegwerf-Repositories: ein Commit je Version, schnellerer Chat, Konflikt mit der fremden Version benannt, bewusst geänderte Zeilen dürfen, beim Konflikt verlorene fremde Zeilen sperren (fein: was die fremde Version in die Zeile schrieb – ein Absatz, den beide geändert und zusammengeführt haben, geht ohne Ausnahme; `AddedParts`), rote Prüfung; `git reset` auf einen fremden Stand gesperrt)
-- `test_workflows` (Workflow-Dateien: kein Schlüssel doppelt, kein „: “ in einem Wert ohne Anführungszeichen – sonst startet GitHub gar keinen Lauf, wie nach 3.17.21 und 3.17.64; `NightJobs`: jeder Job der Nacht fährt genau einen Zufallstest, jeder Zufallstest hat einen Job, seine Zeit passt in die Grenze des Jobs)
+- `test_workflows` (Workflow-Dateien: kein Schlüssel doppelt, kein „: “ in einem Wert ohne Anführungszeichen – sonst startet GitHub gar keinen Lauf, wie nach 3.17.21 und 3.17.64; `NightJobs`: jeder Job der Nacht fährt genau einen Zufallstest, jeder Zufallstest hat einen Job, seine Zeit passt in die Grenze des Jobs; `NightStart`: die Nacht startet jede Nacht genau einmal zwischen 3 und 4 Uhr, bei jeder Verspätung von GitHubs Zeitplan)
 - `test_passkeys` (Zugang vom iPhone: CBOR/COSE/DER streng, ECDSA mit RFC-6979-Vektoren, Registrierung und Anmeldung mit einem Software-Passkey samt allen Fehlfällen, Link und Herausforderungen, QR-Code; über HTTP Hinzufügen, Face-ID-Anmeldung, jede Änderung nur bestätigt und nur für genau diese Anfrage, jede POST-Anfrage, `MAC_ONLY`, Entfernen beendet Sitzungen, nach Neustart, Demo, Zurücksetzen)
 - `affected.py` (kein Test): nennt die Testdateien, die eine Änderung betrifft – für den lokalen Lauf vor dem Push
 - `test_components` (Fremdes benannt: jedes Modell der Listen mit Lizenz, jede Bibliothek mit Eintrag – Name, Version, Lizenz, Herkunft, abgeschirmt)

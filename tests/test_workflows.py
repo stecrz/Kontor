@@ -5,8 +5,11 @@ Also a plain (unquoted) value with ": " in it (3.17.64: `- name: Browsers (the c
 key there, GitHub rejects the file and the nightly run never starts.
 And the night's jobs (NightJobs): each runs exactly one random test -- two in one job take twice the time and are cancelled."""
 import ast
+import datetime as dt
 import glob
+import importlib.util
 import os
+import random
 import re
 import shlex
 import shutil
@@ -236,24 +239,112 @@ def schedule(text):
     return out
 
 
-class NightTime(unittest.TestCase):
-    """The night runs at night in Germany: around 4 o'clock (the user, 2026-11-25), summer and winter -- so with the time zone,
-    not in UTC (01:17 UTC was 02:17 in winter, 03:17 in summer). GitHub's parser takes only `cron` and `timezone` in an entry
-    (@actions/workflow-parser: "Invalid schedule key" for anything else -- the file would be rejected, no night at all)."""
+class NightStart(unittest.TestCase):
+    """The night runs at night in Germany: started between 3 and 4 o'clock, summer and winter (the user, 2026-11-25: around 4;
+    2026-11-26: always 3 to 4). GitHub's own schedule started it 7-9 hours late (3.17.94: 3:47 Europe/Berlin, started 12:29) --
+    the `timezone` key sets the hour asked for, not the start. So nightly.yml has no schedule; night_start.yml wakes every two
+    hours (each as late as GitHub makes it) and .github/night_start.py waits for 3:05 and starts it with workflow_dispatch
+    (not delayed). GitHub's parser takes only `cron` and `timezone` in a schedule entry (@actions/workflow-parser: "Invalid
+    schedule key" for anything else -- the file would be rejected)."""
 
-    def test_around_four_german_time(self):
+    @classmethod
+    def setUpClass(cls):
+        spec = importlib.util.spec_from_file_location("night_start", os.path.join(ROOT, ".github", "night_start.py"))
+        cls.N = importlib.util.module_from_spec(spec); spec.loader.exec_module(cls.N)
+        with open(os.path.join(ROOT, ".github", "workflows", "night_start.yml"), encoding="utf-8") as f:
+            cls.wake = f.read()
+
+    def at(self, text):
+        """An aware time from 'YYYY-MM-DD HH:MM' German time (the first, on the autumn hour that comes twice)."""
+        return dt.datetime.strptime(text, "%Y-%m-%d %H:%M").replace(tzinfo=self.N.BERLIN)
+
+    def test_the_night_has_no_schedule_of_its_own(self):
         with open(os.path.join(ROOT, ".github", "workflows", "nightly.yml"), encoding="utf-8") as f:
-            got = schedule(f.read())
+            text = f.read()
+        self.assertEqual(schedule(text), [], "GitHub would start it a second time, hours late, into the day")
+        self.assertRegex(text, r"(?m)^  workflow_dispatch:")
+
+    def test_wakes_every_two_hours(self):
+        got = schedule(self.wake)
         self.assertEqual(len(got), 1, got)
-        e = got[0]
-        self.assertLessEqual(set(e), {"cron", "timezone"})
-        self.assertEqual(e.get("timezone"), "Europe/Berlin")
-        minute, hour, *rest = e["cron"].split()
-        self.assertEqual(rest, ["*", "*", "*"], "every night")
-        at = int(hour) * 60 + int(minute)
-        # (and never 02:00-02:59: that hour is missing in spring and comes twice in autumn)
-        self.assertTrue(3 * 60 + 30 <= at <= 4 * 60 + 30, "%s:%s is not around four" % (hour, minute))
+        self.assertLessEqual(set(got[0]), {"cron", "timezone"})
+        minute, hour, *rest = got[0]["cron"].split()
+        self.assertEqual((hour, rest), ("*/%d" % (self.N.EVERY.seconds // 3600), ["*", "*", "*"]))
         self.assertNotIn(int(minute), (0, 30), "at the full or half hour GitHub is busiest")
+        # the wait spans more than the gap between two wake-ups, and the job's limit the wait and three tries to start
+        self.assertGreater(self.N.WAIT_MAX, self.N.EVERY)
+        limit = int(re.search(r"(?m)^    timeout-minutes: *(\d+)", self.wake).group(1))
+        self.assertGreaterEqual(limit, self.N.WAIT_MAX.total_seconds() / 60 + 5)
+        self.assertLessEqual(limit, 360, "GitHub ends a job after six hours")
+        self.assertRegex(self.wake, r"(?m)^  actions: write")
+        self.assertRegex(self.wake, r"(?m)^concurrency:\n  group: [\w-]+\n  cancel-in-progress: false")
+        self.assertIn("python3 .github/night_start.py", self.wake)
+
+    def test_plan(self):
+        P = self.N.plan
+        old = [(self.at("2026-11-25 03:05"), "completed")]
+        self.assertEqual(P(self.at("2026-11-25 22:00"), old)[0], "end")                 # too early: a later wake-up waits
+        self.assertEqual(P(self.at("2026-11-26 00:19"), old)[0], "end")                 # 2 h 46 min before
+        self.assertEqual(P(self.at("2026-11-26 01:00"), old)[:2], ("wait", 7500.0))      # 2 h 5 min
+        self.assertEqual(P(self.at("2026-11-26 03:05"), old)[0], "start")
+        self.assertEqual(P(self.at("2026-11-26 03:59"), old)[0], "start")               # a late wake-up still starts it
+        self.assertEqual(P(self.at("2026-11-26 04:00"), old)[0], "end")                 # never by day
+        self.assertEqual(P(self.at("2026-11-26 12:30"), old)[0], "end")
+        started = old + [(self.at("2026-11-26 03:05"), "in_progress")]
+        self.assertEqual(P(self.at("2026-11-26 03:20"), started)[0], "end")             # the next wake-up: started already
+        self.assertEqual(P(self.at("2026-11-26 03:20"), [(self.at("2026-11-26 03:05"), "completed")])[0], "end")
+        self.assertEqual(P(self.at("2026-11-26 03:05"), [(self.at("2026-11-26 01:00"), "in_progress")])[0], "end")   # one by hand
+        self.assertEqual(P(self.at("2026-11-26 03:05"), [(self.at("2026-11-26 02:58"), "completed")])[0], "end")
+        self.assertEqual(P(self.at("2026-11-26 03:05"), [(self.at("2026-11-26 01:00"), "completed")])[0], "start")
+        self.assertEqual(P(self.at("2026-11-26 03:05"), [])[0], "start")
+        self.assertEqual(P(self.at("2026-07-01 01:00"), [])[:2], ("wait", 7500.0))       # summer: the same German time
+        # spring forward (28.3.2027: 2:00 -> 3:00): from 0:30 it is 1 h 35 min, not 2 h 35 min, to 3:05
+        self.assertEqual(P(self.at("2027-03-28 00:30"), [])[:2], ("wait", 5700.0))
+        # fall back (25.10.2026: 3:00 -> 2:00): from the first 2:30 it is 1 h 35 min of real time
+        first = dt.datetime(2026, 10, 25, 0, 30, tzinfo=dt.timezone.utc)
+        self.assertEqual(P(first, [])[:2], ("wait", 5700.0))
+        self.assertEqual(P(dt.datetime(2026, 10, 24, 23, 0, tzinfo=dt.timezone.utc), [])[0], "end")      # 1:00: 3 h 5 min
+        for what, seconds, why in (P(self.at("2026-11-26 01:00"), old), P(self.at("2026-11-26 03:20"), started)):
+            self.assertIn("German time", why)
+
+    def simulate(self, delay, days, seed=None):
+        """German start times of the nights over `days` from 1.10.2026 (the autumn change of the clock among them), the
+        wake-ups (every two hours at the cron's minute, UTC) each arriving `delay` hours late (+- 45 min if `seed`); one job at a
+        time, the newest waiting one replacing an older (`concurrency`); a night's run takes three hours."""
+        rnd = random.Random(seed)
+        minute = int(schedule(self.wake)[0]["cron"].split()[0])
+        t0 = dt.datetime(2026, 10, 1, 0, minute, tzinfo=dt.timezone.utc)
+        arrive = sorted(t0 + i * self.N.EVERY + dt.timedelta(hours=delay, minutes=rnd.uniform(-45, 45) if seed is not None else 0)
+                        for i in range(days * 12))
+        runs, free, i = [], arrive[0] - dt.timedelta(days=1), 0
+        state = lambda q: [(c, "in_progress" if q < c + dt.timedelta(hours=3) else "completed") for c in reversed(runs)]
+        while i < len(arrive):
+            t = arrive[i]
+            if t < free:                    # waits for the running one; a newer one replaces it
+                while i + 1 < len(arrive) and arrive[i + 1] < free:
+                    i += 1
+                t = free
+            what, seconds, _ = self.N.plan(t, state(t))
+            if what == "wait":
+                t += dt.timedelta(seconds=seconds)
+                what, seconds, _ = self.N.plan(t, state(t))
+                self.assertNotEqual(what, "wait")
+            if what == "start":
+                runs.append(t)
+            free, i = t + dt.timedelta(seconds=20), i + 1
+        return [r.astimezone(self.N.BERLIN) for r in runs]
+
+    def test_every_night_once_between_three_and_four(self):
+        for delay in [x / 6 for x in range(0, 121)] + [9.0, 9.0, 9.0]:       # 0 to 20 hours late, in steps of 10 minutes
+            for seed in (None, int(delay * 6)):
+                got = self.simulate(delay, 40, seed)
+                nights = [g.date() for g in got]
+                first, last = nights[0], nights[-1]
+                self.assertEqual(nights, [first + dt.timedelta(days=d) for d in range((last - first).days + 1)],
+                                 "%.2f h late: a night missing or twice" % delay)
+                self.assertGreaterEqual(len(nights), 38, delay)
+                for g in got:
+                    self.assertTrue(dt.time(3, 0) <= g.time() < dt.time(4, 0), "%.2f h late: started %s" % (delay, g))
 
     def test_reads_the_schedule(self):
         text = ("on:\n  schedule:                # a comment\n                           # more\n"

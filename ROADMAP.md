@@ -404,6 +404,12 @@ anhängen – nie löschen.
 - **Nachtlauf gegen 4 Uhr** (Nutzer, 2026-11-25): Der Nachtlauf soll nachts laufen, angestoßen gegen 4 Uhr deutscher Zeit; ein
   laufender Lauf wird dafür nicht abgebrochen. Er stand auf 01:17 UTC (2:17 Winter-, 3:17 Sommerzeit), GitHub startete ihn aber
   7–9 h später (9–11 Uhr). Jetzt 3:47 Europe/Berlin, ganzjährig; die Verspätung unter Last bestimmt GitHub. (umgesetzt in 3.17.94)
+- **Nachtlauf immer zwischen 3 und 4 Uhr** (Nutzer, 2026-11-26): Die Zufallsläufe sollen immer zwischen 3 und 4 Uhr deutscher
+  Zeit starten. Grund: Auch mit 3:47 Europe/Berlin startete GitHub ihn erst 12:29 – GitHubs Zeitplan ist hier 7–9 h verspätet,
+  `timezone` legt nur die Stunde fest, nicht den Start; tagsüber belegt er die Rechner neben den Läufen jeder Version. Deshalb
+  ohne eigenen Zeitplan: ein Nachtstart alle 2 h wartet auf 3:05 und startet ihn direkt (nicht verzögert); nach 4 Uhr nie, eine
+  fehlende Nacht meldet das Lagebild. Verworfen: ein Anstoß von außen (Claude-Zeitplan oder fremder Cron-Dienst) – kostet Credits
+  bzw. braucht einen Zugangsschlüssel bei Dritten; der Nachtstart kommt mit GitHub allein aus. (umgesetzt in 3.17.99)
 
 ## Offen (Entscheidung steht aus – mit Empfehlung vorlegen, wenn der Punkt dran ist)
 - Umsatzsteuer-Voranmeldung direkt an ELSTER senden (ELSTERs Programmbibliothek ERiC, Anmeldung als Hersteller, Zertifikat und

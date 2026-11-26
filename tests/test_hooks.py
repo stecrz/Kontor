@@ -202,6 +202,21 @@ class TestsOnGitHub(unittest.TestCase):
         running = dict(self.night(11, True), status="in_progress", conclusion=None)
         self.assertEqual(self.summary(push, [running, self.night(10, False)])[1], "night-red 10")
 
+    def test_a_missing_night_is_said(self):
+        # night_start.yml starts the night between 3 and 4 German time; one that did not start must not hide behind the last run
+        push, last = [self.run_("aaa", "3.1.2: a")], self.night(7, True)        # started 22.11., 02:17 UTC
+        at = lambda iso: datetime.datetime.fromisoformat(iso + "+00:00")
+        line, key = self.B.ci_summary(push, [last], lambda iso: "", lambda sha: "", at("2026-11-23T08:00:00"))
+        self.assertIn("Nachtlauf fehlt – zuletzt angestoßen am 22.11.", line); self.assertIn("night_start.yml", line)
+        self.assertEqual(key, "night-missing 7")
+        self.assertIn("Nachtlauf (Zufallsfälle) für 3.1.2 grün", line)          # what the last one found stays said
+        self.assertEqual(self.B.ci_summary(push, [last], lambda iso: "", lambda sha: "", at("2026-11-23T05:00:00"))[1], "ok")   # 27 h
+        running = dict(self.night(8, True), status="in_progress", conclusion=None, created_at="2026-11-23T02:05:00Z")
+        self.assertEqual(self.B.ci_summary(push, [running, last], lambda iso: "", lambda sha: "", at("2026-11-23T08:00:00"))[1], "ok")
+        self.assertEqual(self.summary(push, [last])[1], "ok")                   # without the time: never
+        broken = dict(last, created_at="")
+        self.assertEqual(self.B.ci_summary(push, [broken], lambda iso: "", lambda sha: "", at("2026-11-23T08:00:00"))[1], "ok")
+
     def test_nothing_known_says_nothing(self):
         self.assertEqual(self.summary([], []), ("", ""))
 

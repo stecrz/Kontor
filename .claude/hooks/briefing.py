@@ -3,6 +3,7 @@ what the other chats have published on main since this clone last looked -- vers
 clone's own work, and the state of the tests on GitHub. It only reads from GitHub; locally it fast-forwards a clone that
 has nothing of its own and turns on the push check (.githooks/pre-push), and touches nothing else. As a hook it says nothing while nothing changed, and never blocks: any
 failure ends silently."""
+import datetime
 import json
 import os
 import re
@@ -93,7 +94,7 @@ def tests_on_github():
     night = runs("workflows/nightly.yml/runs?branch=main&per_page=5") or []
     since = lambda iso: git("log", "--since=" + iso, "--format=%s%x1f%b%x1e", "origin/main")[1] if iso else ""
     who = lambda sha: chat(git("log", "-1", "--format=%b", sha)[1])
-    return ci_summary(push, night, since, who)
+    return ci_summary(push, night, since, who, datetime.datetime.now(datetime.timezone.utc))
 
 
 def _ver(text):
@@ -101,11 +102,12 @@ def _ver(text):
     return tuple(int(x) for x in m.groups()) if m else (0, 0, 0)
 
 
-def ci_summary(push, night, since, who):
+def ci_summary(push, night, since, who, now=None):
     """The line and its key from GitHub's runs: push = the runs of the newest versions on main (newest first), night = those of
     nightly.yml (newest first); since(iso) = subjects and bodies of the commits on main since then, who(sha) = the chat of a
     commit. A red run -- of a version or of the night -- is fixed by the next chat that sees it (the chat that pushed does not
-    wait for GitHub): "fix ci" / "fix nightly" in the fix's commit subject marks it, so the others leave it."""
+    wait for GitHub): "fix ci" / "fix nightly" in the fix's commit subject marks it, so the others leave it. With `now` (aware):
+    a night that did not start (night_start.yml starts it between 3 and 4 German time) is said, not left behind an old run."""
     name = lambda r: str(r.get("display_title") or "").split(":")[0][:20] or str(r.get("head_sha"))[:7]
     done = [r for r in push if r.get("status") == "completed" and r.get("conclusion") in ("success", "failure")]
     parts, keys = [], []
@@ -154,6 +156,16 @@ def ci_summary(push, night, since, who):
                              "`KONTOR_FUZZ_SEED=<Nummer>`, ein neuer (ab 1000000) danach in FOUND (tests/fixtures.py); nachprüfen: "
                              "`KONTOR_FUZZ_SEEDS=1000 KONTOR_CLICK_SEEDS=40 TZ=Europe/Berlin python3 -m pytest -q <Datei des roten Jobs: %s>`"
                              % (ver, "" if r["conclusion"] == "failure" else " (%s)" % r["conclusion"], r.get("id"), NIGHT_TESTS))
+    created = lambda r: datetime.datetime.fromisoformat(str(r.get("created_at") or "").replace("Z", "+00:00"))
+    try:
+        late = now and night and now - created(night[0]) > datetime.timedelta(hours=28)
+    except (ValueError, TypeError):
+        late = False
+    if late:
+        keys.append("night-missing %s" % night[0].get("id"))
+        parts.append("Nachtlauf fehlt – zuletzt angestoßen am %s; der Nachtstart (`.github/workflows/night_start.yml`, zwischen 3 und "
+                     "4 Uhr) hat ihn nicht gestartet: dessen Läufe ansehen; von Hand: GitHub → Actions → Zufallsläufe → „Run workflow“"
+                     % created(night[0]).strftime("%d.%m."))
     if not parts:
         return "", ""
     return "Tests auf GitHub: " + "; ".join(parts), " ".join(keys) or "ok"

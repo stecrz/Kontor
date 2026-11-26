@@ -1,5 +1,9 @@
 # Änderungen
 
+## 3.17.99 (2026-11-26 15:06)
+- Entwicklung: Zufallsläufe starten jede Nacht zwischen 3 und 4 Uhr (Nachtstart alle 2 h wartet auf 3:05 – GitHubs Zeitplan war 7–9 h verspätet)
+- Entwicklung: Lagebild meldet eine ausgefallene Nacht
+
 ## 3.17.98 (2026-11-26 03:03)
 - Cashflow-Positionen: Hinweis „gemischt?“ bei einer Kategorie mit einzelnen, viel größeren Zahlungen (etwa Kaufpreis oder Darlehensauszahlung neben der Miete) – Klick zeigt sie, „Passt so“ bestätigt sie; auch unter Offen in der Übersicht
 - Kategorisieren: „Alle … Umsätze sicher zugeordnet“ mit Tausenderpunkt
