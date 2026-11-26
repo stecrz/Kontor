@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.17.102 (2026-11-27 00:07)
+- Hilfe: „GbR anlegen“ und ähnliche Suchen finden den Abschnitt Bereiche wieder
+
 ## 3.17.101 (2026-11-26 18:50)
 - Cashflow: erhaltene Zinsen, Dividenden und Gewinnausschüttungen nach DRS 21 unter Investitionen (Zeile Kapitalerträge), nicht mehr im Überschuss – in jedem Bereich; gezahlte bleiben unter Finanzierung
 - Cashflow: Vermögensbrücke mit eigenem Schritt Kapitalerträge; Kategorien in beiden Brücken und im Gesamtcashflow aufklappbar
