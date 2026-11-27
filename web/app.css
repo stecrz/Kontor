@@ -505,7 +505,7 @@ body.as-page .as-head { border-bottom:0; padding:0 10px 4px 16px; } body.as-page
 .as-msg.me .as-refs { justify-content:flex-end; max-width:88%; margin:0 0 4px; }
 .as-ref { display:inline-flex; align-items:center; max-width:100%; min-width:0; border-radius:8px; background:var(--accent-soft); color:var(--accent-fg); font-size:12px; line-height:1.35; }
 .as-ref-go { all:unset; display:inline-flex; align-items:baseline; gap:5px; min-width:0; padding:3px 8px; border-radius:8px; cursor:pointer; }
-.as-ref-go:hover .as-ref-l { text-decoration:underline; text-underline-offset:2px; } .as-ref-go:focus-visible, .as-ref-x:focus-visible { outline:2px solid var(--accent); }
+.as-ref-go:hover .as-ref-l { text-decoration:underline; text-underline-offset:2px; } .as-ref-go.still { cursor:default; } .as-ref-go.still:hover .as-ref-l { text-decoration:none; } .as-ref-go:focus-visible, .as-ref-x:focus-visible { outline:2px solid var(--accent); }
 .as-ref-pg { flex:none; font-weight:600; opacity:.75; } .as-ref-l { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 /* a quick explanation (right click): a small box at the pointer, the answer streaming in */
 .as-pop { position:fixed; z-index:390; width:min(340px, calc(100vw - 16px)); max-height:min(360px, calc(100vh - 16px)); display:flex; flex-direction:column; background:var(--head); border:1px solid var(--line); border-radius:12px; box-shadow:0 14px 40px rgba(0,0,0,.28); font-size:13px; }

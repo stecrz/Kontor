@@ -39,7 +39,7 @@ import time
 from datetime import date, datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, quote, urlparse
 
 import access
 import auth
@@ -2303,7 +2303,7 @@ DEMO_PREFIX = "kontor-demo-"           # its data folder: a temporary folder of 
 # assistant's questions; never anything about this Mac, its files, programs, network, updates, access or the real Kontor.
 DEMO_GET = frozenset(("/api/status", "/api/dataset", "/api/config", "/api/plan", "/api/accounts", "/api/categories", "/api/sync", "/api/runs",
                       "/api/transactions", "/api/receipts", "/api/receipts/file", "/api/export/property.xlsx", "/api/package/export",
-                      "/api/assistant/status", "/api/assistant/chats", "/api/assistant/chat", "/api/assistant/changes", "/api/assistant/poll",
+                      "/api/assistant/status", "/api/assistant/chats", "/api/assistant/chat", "/api/assistant/changes", "/api/assistant/poll", "/api/assistant/file",
                       "/api/help", "/api/check/status", "/api/history", "/api/categories/positions", "/api/categories/written",
                       "/api/categories/unassigned", "/api/categories/proposals", "/api/categories/doubts", "/api/properties", "/api/properties/template",
                       "/api/price_index"))      # (the demo: the index this version holds, never fetched)
@@ -3701,6 +3701,15 @@ def make_handler(app: App):
                     return self._json(403, {"error": tr("s_nur_von_diesem_mac_aus")})
                 out = app.assistant.memory_export(version())
                 return self._raw(200, out["text"].encode("utf-8"), "text/markdown; charset=utf-8", {"Content-Disposition": 'attachment; filename="%s"' % out["name"]})
+            if path == "/api/assistant/file":                     # a file given in the chat, opened again from its name: from memory, only in its conversation (assistant.file_shown)
+                if not self._assistant_ok(s):
+                    return self._json(403, {"error": tr("s_nur_von_diesem_mac_aus")})
+                if not assistant_mod.settings(app.config)["enabled"]:         # (opened in a window of its own: a line to read there, not JSON)
+                    return self._raw(403, tr("s_ki_aus").encode("utf-8"), "text/plain; charset=utf-8")
+                f = app.assistant.file_shown(q.get("id"), q.get("conversation"))
+                if f is None:
+                    return self._raw(404, tr("s_ki_datei_weg").encode("utf-8"), "text/plain; charset=utf-8")
+                return self._raw(200, f["data"], f["type"], {"Content-Disposition": _disposition("inline" if f["inline"] else "attachment", f["name"])})
             if path == "/api/assistant/poll":
                 if not self._assistant_ok(s):
                     return self._json(403, {"error": tr("s_nur_von_diesem_mac_aus")})
@@ -5644,6 +5653,13 @@ _KONTOR_FILE = re.compile(r"(?:^|\s)(?:(?:auth|cf-ids|config|dataset|plan|receip
                           r"\.json(?:\.enc)?(?:\.tmp|\.renew|\.left|\.damaged-[\d-]+)?"
                           r"|moneymoney-ledger\.bin(?:\.enc)?(?:\.tmp|\.renew|\.left)?|kontor\.log[\w.]*|service\.(?:out\.log|err\.log|lock)|key\.json(?:\.tmp)?|key\.lock"
                           r"|start\.json(?:\.tmp)?|tls|assistant|chats)(?=\s|$)")
+
+
+def _disposition(kind: str, name: str) -> str:
+    """Content-Disposition for a file of the user's, any name: an ASCII stand-in and the name itself (RFC 6266/5987) -- a header
+    holds only Latin-1, so a name with € or an emoji would otherwise break the answer."""
+    plain = "".join(c if " " <= c <= "~" and c not in '"\\;' else "_" for c in name) or "file"
+    return "%s; filename=\"%s\"; filename*=UTF-8''%s" % (kind, plain, quote(name, safe=""))
 
 
 def _remove_own_files(data: str, keep: List[str]) -> Tuple[List[str], List[str]]:

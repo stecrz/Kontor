@@ -498,10 +498,12 @@ def _decode(data: bytes) -> Tuple[str, str]:
     try:
         return data.decode("utf-8"), "UTF-8"
     except UnicodeDecodeError:
-        try:
-            return data.decode("cp1252"), "Windows-1252"
-        except UnicodeDecodeError:
-            return data.decode("latin-1"), "Latin-1"
+        return data.decode("latin-1").translate(_CP1252), "Windows-1252"
+
+
+# Windows-1252 is Latin-1 but for 0x80-0x9F: there its letters and signs (€, „, –), its five undefined bytes stay as Latin-1 reads
+# them -- one odd byte never turns the whole file into Latin-1 (where € would be a control character)
+_CP1252 = {b: bytes([b]).decode("cp1252") for b in range(0x80, 0xA0) if b not in (0x81, 0x8D, 0x8F, 0x90, 0x9D)}
 
 
 def _delimiter(text: str) -> str:

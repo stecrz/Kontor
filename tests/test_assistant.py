@@ -27,6 +27,7 @@ import unittest
 import unittest.mock
 from unittest import mock
 import urllib.error
+import urllib.parse
 import wave
 import zipfile
 
@@ -3936,6 +3937,45 @@ class Receipts(_Assist):
         self.assertEqual(self.store.load("receipts.json")["entry_list"], [])
         self.assertFalse(os.path.exists(os.path.join(self.belege, e["path"])))
 
+    def test_a_file_given_opens_again_from_memory(self):
+        """A click on a file's name in the chat opens it again: from memory as it was given, its kind from Kontor's list (a PDF and a
+        picture to look at, a CSV as UTF-8 text, Excel as a download) -- only in its conversation, only while Kontor keeps it."""
+        self.assertTrue(set(A.RECEIPT_TYPES) | {e for e, k in A.TABLE_TYPES.items() if k == "XLSX"} <= set(A.SHOWN_TYPES))
+        self.assertFalse([v for v in A.SHOWN_TYPES.values() if re.search(r"html|svg|xml$|^text/", v)])         # nothing a browser runs or reads as a page
+        get = lambda fid, conv: self.call("/api/assistant/file?id=%s&conversation=%s" % (fid, urllib.parse.quote(conv or "")), raw=True)
+        _, p = self.attach("Rechnung März € 🧾.pdf")
+        _, g = self.attach("Foto.png", self.PNG)
+        csv = "Datum;Händler;Betrag\n01.03.2026;Bäckerei Beispiel;-3,50\n".encode("cp1252")
+        _, c = self.attach("Liste.csv", csv)
+        _, x = self.attach("Plan.xlsx", b"PK erfunden")
+        code, body, hdr = get(p["id"], "")                                            # given, but not yet with a question: in no conversation
+        self.assertEqual((code, hdr["Content-Type"]), (404, "text/plain; charset=utf-8"))
+        self.assertIn("Arbeitsspeicher", body.decode("utf-8"))
+        r = self.a.ask({"question": "Was ist das?", "files": [p["id"], g["id"], c["id"], x["id"]]})
+        events(self.a, r["job"]); conv = r["conversation"]
+        code, body, hdr = get(p["id"], conv)
+        self.assertEqual((code, body, hdr["Content-Type"]), (200, self.PDF, "application/pdf"))
+        self.assertEqual(hdr["Content-Disposition"], "inline; filename=\"Rechnung M_rz _ _.pdf\"; filename*=UTF-8''"
+                         + urllib.parse.quote("Rechnung März € 🧾.pdf", safe=""))          # any name: the header stays Latin-1
+        self.assertEqual((hdr["X-Content-Type-Options"], hdr["Cache-Control"]), ("nosniff", "no-store"))        # never sniffed, never in the browser's cache
+        code, body, hdr = get(g["id"], conv)
+        self.assertEqual((code, body, hdr["Content-Type"], hdr["Content-Disposition"][:7]), (200, self.PNG, "image/png", "inline;"))
+        code, body, hdr = get(c["id"], conv)                                          # a CSV as text, whatever it was written in
+        self.assertEqual((code, hdr["Content-Type"], body.decode("utf-8")), (200, "text/plain; charset=utf-8", csv.decode("cp1252")))
+        code, body, hdr = get(x["id"], conv)                                          # Excel: no browser shows it -- a download
+        self.assertEqual((code, body, hdr["Content-Type"], hdr["Content-Disposition"][:11]), (200, b"PK erfunden", A.SHOWN_TYPES[".xlsx"], "attachment;"))
+        self.assertEqual(get(p["id"], "c" + "0" * 12)[0], 404)                        # another conversation: not there
+        self.assertEqual(get("b00000000", conv)[0], 404)
+        self.assertEqual(get("../" + p["id"], conv)[0], 404)
+        self.a.set({"enabled": False})                                                # (the assistant off: the file stays in memory, but not for viewing either)
+        self.assertEqual(get(p["id"], conv)[0], 403)
+        self.a.set({"enabled": True})
+        self.assertEqual(get(p["id"], conv)[0], 200)
+        saved = json.dumps(self.store.load(A.CHAT_FILE % conv))
+        self.assertNotIn(p["id"], saved)                                              # the saved conversation: the names only, never a way to the file
+        self.a.reset()                                                                # a new conversation: gone
+        self.assertEqual(get(p["id"], conv)[0], 404)
+
     PNG = b"\x89PNG\r\n\x1a\n erfundenes Bild"
 
     def test_a_picture_goes_to_the_model_as_a_whole(self):
@@ -5701,6 +5741,47 @@ class Http(_Assist):
         self.assertEqual((s["enabled"], s["rights"]["enter_values"]), (True, True))
         self.assertIn("qwen3.6-35b-a3b", self.a.ai.models())
 
+    def test_a_file_given_opens_again_only_where_one_may_ask(self):
+        """A file given in the chat, opened again from its name: signed in, from another device only with the right "remote",
+        never with the assistant off -- and only while Kontor keeps it (the oldest goes once more than ATTACH_MAX are given)."""
+        csv = ["Monat;Betrag\n2026-0%d;12,50\n" % (i + 1) for i in range(2)]
+        give = lambda name, text: self.call("/api/assistant/attach", {"name": name, "content": base64.b64encode(text.encode()).decode()})[1]["id"]
+        ids = [give("Liste %d.csv" % i, csv[i]) for i in range(2)]
+        code, r = self.call("/api/assistant/ask", {"question": "Was ist das?", "files": ids})
+        events(self.a, r["job"]); cid = r["conversation"]
+        self.assertEqual(r["files"], {ids[0]: ids[0], ids[1]: ids[1]})                # the id each file has now (the page opens it by that)
+        url = lambda fid, conv=cid: "/api/assistant/file?id=%s&conversation=%s" % (fid, conv)
+        self.assertEqual(self.call(url(ids[0]), raw=True)[:2], (200, csv[0].encode()))
+        self.assertEqual([self.call(u, raw=True)[0] for u in ("/api/assistant/file", "/api/assistant/file?id=" + ids[0], url("", cid))], [404, 404, 404])
+        jar = list(self.jar); self.jar.clear()                                         # not signed in: nothing
+        self.assertEqual(self.call(url(ids[0]), raw=True)[0], 401)
+        for c in jar:
+            self.jar.set_cookie(c)
+        self.remote()
+        try:
+            self.assertEqual(self.call(url(ids[0]), raw=True)[0], 403)                  # from another device: only with the right "remote"
+            self.a.set({"rights": {"remote": True}})
+            self.assertEqual(self.call(url(ids[0]), raw=True)[:2], (200, csv[0].encode()))
+        finally:
+            self.remote(False)
+        self.a.set({"enabled": False})                                                  # the assistant off: said so, nothing shown
+        code, body, hdr = self.call(url(ids[0]), raw=True)
+        self.assertEqual((code, hdr["Content-Type"], body.decode()), (403, "text/plain; charset=utf-8", MA.tr("s_ki_aus")))
+        self.a.set({"enabled": True})
+        again = give("Liste neu.csv", csv[0])                                           # the same file once more in this conversation: the one before, by its id
+        code, r = self.call("/api/assistant/ask", {"question": "Und jetzt?", "files": [again], "conversation": cid})
+        events(self.a, r["job"])
+        self.assertEqual(r["files"], {again: ids[0]})
+        code, body, hdr = self.call(url(ids[0]), raw=True)
+        self.assertEqual((code, body, hdr["Content-Disposition"].split(";")[1]), (200, csv[0].encode(), ' filename="Liste neu.csv"'))
+        self.assertEqual(self.call(url(again), raw=True)[0], 404)
+        more = [give("Neu %d.csv" % i, "x;%d\n" % i) for i in range(A.ATTACH_MAX - 1)]
+        self.assertEqual([self.call(url(f), raw=True)[0] for f in ids], [200, 404])     # one more than Kontor keeps: the oldest is gone (the one given again is the newest)
+        self.assertIn("Arbeitsspeicher", self.call(url(ids[1]), raw=True)[1].decode())
+        self.assertEqual(self.call(url(more[0]), raw=True)[0], 404)                     # given, never sent with a question: in no conversation
+        self.call("/api/assistant/chats/delete", {"id": cid})
+        self.assertEqual(self.call(url(ids[1]), raw=True)[0], 404)                      # the conversation deleted: its files go from memory too
+
     def test_saved_conversations_over_http(self):
         code, r = self.call("/api/assistant/ask", {"question": "Hallo"})
         events(self.a, r["job"])
@@ -6472,6 +6553,7 @@ class Browser(unittest.TestCase):
                 self.assertEqual(pg.evaluate("document.querySelector('#as-in').value"), "notiz.md:\n```\n# Notiz\nMiete 12,50\n```\n")
                 self.assertIn("bild.webp", pg.inner_text("#toast"))
                 self.assertEqual(pg.evaluate("[...document.querySelectorAll('#as-refs .as-file .as-ref-l')].map(e => e.textContent)"), ["tabelle.csv", "beleg.pdf", "mappe.xlsx"])
+                self.assertEqual(pg.evaluate("[document.querySelectorAll('#as-refs .as-file .as-ref-go.still').length, document.querySelectorAll('#as-refs .as-file a').length]"), [3, 0])          # not sent yet: only its name, nothing that looks like a link
                 pg.keyboard.press("Enter")
                 until(pg, "!AS.busy && AS.msgs.length && AS.msgs[AS.msgs.length - 1].state === 'done'")
                 self.assertIn("# Notiz", app.assistant.conv["messages"][-2]["content"])
@@ -6481,6 +6563,19 @@ class Browser(unittest.TestCase):
                 self.assertEqual([f["data"] for f in app.assistant.files.values()], [b"Monat;Betrag\r\n2026-01;12,50\n", bytes([37, 80, 68, 70, 0, 1, 2, 3]), bytes([80, 75, 3, 4, 0])])
                 self.assertEqual(pg.evaluate("[...[...document.querySelectorAll('#as-body .as-msg.me')].pop().querySelectorAll('.as-file .as-ref-l')].map(e => e.textContent)"),
                                  ["tabelle.csv", "beleg.pdf", "mappe.xlsx"])
+                # sent: each name opens the file again from Kontor's memory -- a PDF and a CSV in a window of their own, Excel as a download
+                links = pg.evaluate("[...[...document.querySelectorAll('#as-body .as-msg.me')].pop().querySelectorAll('.as-file a.as-file-go')].map(a => [a.getAttribute('href'), a.target, a.hasAttribute('download')])")
+                conv = app.assistant.conv["id"]
+                self.assertEqual([(l[1], l[2]) for l in links], [("_blank", False), ("_blank", False), ("", True)])
+                self.assertTrue(all(l[0].startswith("/api/assistant/file?id=b") and l[0].endswith("&conversation=" + conv) for l in links), links)
+                got = pg.evaluate("Promise.all(%s.map(u => fetch(u).then(async r => [r.status, r.headers.get('content-type'), [...new Uint8Array(await r.arrayBuffer())]])))" % json.dumps([l[0] for l in links]))
+                self.assertEqual(got, [[200, "text/plain; charset=utf-8", list(b"Monat;Betrag\r\n2026-01;12,50\n")], [200, "application/pdf", [37, 80, 68, 70, 0, 1, 2, 3]],
+                                       [200, A.SHOWN_TYPES[".xlsx"], [80, 75, 3, 4, 0]]])
+                with pg.expect_popup() as pop:                                                  # the click itself: a window of its own, the page stays
+                    pg.locator("#as-body .as-msg.me").last.locator(".as-file a.as-file-go").first.click()          # (the CSV: a headless browser shows text, a PDF it downloads)
+                pop.value.wait_for_load_state()
+                self.assertIn("/api/assistant/file?id=b", pop.value.url); self.assertIn("2026-01;12,50", pop.value.inner_text("body")); pop.value.close()
+                self.assertEqual(pg.evaluate("location.pathname + (AS.open ? ' open' : '')"), "/ open")
                 self.assertTrue(pg.evaluate("document.querySelector('#as-refs').classList.contains('hidden')"))
                 # a file alone: sent as it is (no question made up for it) and looked at for itself
                 pg.evaluate("asFiles([new File([new Uint8Array([37, 80, 68, 70, 9])], 'nur.pdf')])"); until(pg, "(AS.files || []).length === 1")

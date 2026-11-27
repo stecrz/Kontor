@@ -1,5 +1,9 @@
 # Änderungen
 
+## 3.17.118 (2026-11-27 20:49)
+- KI-Assistent: Klick auf den Namen einer Datei im Chat öffnet sie wieder (PDF, Bild, CSV im eigenen Fenster, Excel als Download) – aus dem Arbeitsspeicher, nur in ihrer Unterhaltung
+- KI-Assistent: CSV-Dateien in Windows-1252 mit einem ungewöhnlichen Zeichen: € und Umlaute bleiben richtig
+
 ## 3.17.117 (2026-11-27 19:45)
 - KI-Assistent: Denkt das Modell nach und antwortet nicht, fragt Kontor einmal nach – ohne neues Nachdenken, mit seinen Gedanken
 - KI-Assistent: Eine Frage ohne Antwort hängt die Unterhaltung nicht mehr auf – die nächsten Fragen werden wieder beantwortet

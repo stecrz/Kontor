@@ -2,7 +2,7 @@
 The assistant's window: a conversation with the language model on this Mac, as a panel beside any page (✦ or ⌘K) or as the page
 "KI-Assistent" (the same conversation). Head: the thinking effort for the next questions (Schnell, Ausgewogen, Gründlich), Verläufe,
 Neue Unterhaltung, wider/narrower, close. Below the answers: the question field with references to places on the page (chips
-"Seite · Stelle"), attached files, + for files, the microphone (with a dictation model) and send/stop. An empty conversation shows
+"Seite · Stelle"), attached files (in a question sent: a click on the name opens the file again from Kontor's memory – PDF, picture, CSV in a window of its own, Excel as a download – while Kontor still holds it for this conversation; before sending and in a reopened saved conversation only the name), + for files, the microphone (with a dictation model) and send/stop. An empty conversation shows
 what is open (as on the overview) and example questions. What the model says about money it reads from Kontor; it can be wrong –
 the page it points to is the reference.
 

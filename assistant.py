@@ -137,6 +137,8 @@ MAX_PROPOSALS = 60                                 # changes proposed in one ans
 RECEIPT_TYPES = {".pdf": "PDF", ".png": "PNG", ".jpg": "JPEG", ".jpeg": "JPEG", ".heic": "HEIC", ".gif": "GIF"}      # what can be read (macOS's text recognition)
 ATTACH_MAX, ATTACH_BYTES = 6, 20 * 1024 * 1024     # receipts given to the assistant: kept in memory only, this many at most, each this large
 FILE_READ = ("read", "book", "lay", "pics")        # what is read of a file given (kept with it in memory): its text, its tables, its words, its pages
+SHOWN_TYPES = {".pdf": "application/pdf", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".heic": "image/heic", ".gif": "image/gif",
+               ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", ".xlsm": "application/vnd.ms-excel.sheet.macroEnabled.12"}     # a file given, shown again (file_shown): never HTML or SVG
 # A picture given with a question (uploaded or pasted, alike) goes to a model that reads pictures as a whole, beside what the
 # text recognition reads of it (user, 2026-11-23) -- only in the request, only in memory, data like a receipt's text. Figures
 # still come only from the text recognition; the picture is for what text does not give (layout, stamps, graphics, photos).
@@ -1454,15 +1456,33 @@ class Assistant:
                 self.files.pop(next(iter(self.files)))
         return {"id": fid, "name": name, "size": len(data)}
 
+    def file_shown(self, fid: Any, conv_id: Any) -> Optional[dict]:
+        """A file given in the panel, to look at again with a click on its name in the chat: from memory as it was given (never
+        written anywhere) -- only in the conversation it was given with, and only while Kontor still keeps it (gone with a restart,
+        a new conversation, the conversation deleted, as the oldest of more than ATTACH_MAX). Its kind by its ending from Kontor's fixed
+        list (the endings attach takes), never guessed (mimetypes) or read from the content: a PDF and a picture to look at, a CSV as
+        UTF-8 text, an Excel table as a download (no browser shows one)."""
+        with self.files_lock:
+            f = self.files.get(str(fid or ""))
+        if f is None or not f["conv"] or f["conv"] != str(conv_id or "") or not self.settings()["enabled"]:
+            return None
+        data, ext = f["data"], os.path.splitext(f["name"])[1].lower()
+        if f["type"] == "CSV":
+            return {"name": f["name"], "data": table_text._decode(data)[0].encode("utf-8"), "type": "text/plain; charset=utf-8", "inline": True}
+        if f["type"] == "XLSX":
+            return {"name": f["name"], "data": data, "type": SHOWN_TYPES.get(ext, "application/octet-stream"), "inline": False}
+        return {"name": f["name"], "data": data, "type": SHOWN_TYPES[ext], "inline": True}
+
     def _no_helper_in_demo(self) -> None:
         """The demo starts (and builds) no helper at the Mac: a PDF or a picture is not read there -- attach refuses it, and
         should one get this far all the same, it counts as not readable."""
         if getattr(self.app, "DEMO", False):
             raise receipt_text.TextUnavailable(tr("s_demo_beleg_nicht"))
 
-    def _given(self, ids: Any, conv: dict) -> List[dict]:
+    def _given(self, ids: Any, conv: dict, kept: Optional[Dict[str, str]] = None) -> List[dict]:
         """The receipts given with a question: from now on they belong to its conversation (in no other one can they be read).
         One given in it before, byte for byte the same: that one again -- the same id for the model, kept once."""
+        # kept: each id given -> the id it has now (the page opens a file from its name in the chat by it)
         out: List[dict] = []
         with self.files_lock:
             for fid in (ids if isinstance(ids, list) else [])[:ATTACH_MAX]:
@@ -1478,6 +1498,8 @@ class Assistant:
                     self.files[twin["id"]] = self.files.pop(twin["id"])      # the newest now: the last to go
                     f = twin
                 f["conv"] = conv["id"]
+                if kept is not None:
+                    kept[str(fid)] = f["id"]
                 if not any(x is f for x in out):
                     out.append(f)
         return out
@@ -5331,10 +5353,11 @@ class Assistant:
             job.chat, job.conv = self.conv["id"], self.conv
             if old is not None and old.conv is not None and old.conv is not self.conv and old.conv.get("unnoticed") and not old.conv.get("deleted"):
                 self.conv.setdefault("unnoticed", []).extend(old.conv.pop("unnoticed"))       # said in the conversation before, not looked at yet: with this one
+            kept: Dict[str, str] = {}
             ctx = {"job": job, "conv": self.conv, "area": str((body.get("page") or {}).get("area") or "") if isinstance(body.get("page"), dict) else "",
                    "pasted": body.get("pasted") is True,      # text was pasted into the question (said by the page): notes from it say so
                    "notice": may_note,                        # (asked from a device that may only look: nothing is noted or forgotten; "offer": see job.offer_notes)
-                   "refs": _refs(body.get("refs")), "files": [self._file_info(f) for f in self._given(body.get("files"), self.conv)]}
+                   "refs": _refs(body.get("refs")), "files": [self._file_info(f) for f in self._given(body.get("files"), self.conv, kept)]}
             job.offer_notes = may_note == "offer"
             if not q and not ctx["files"]:
                 raise ValueError(tr("s_ki_frage_fehlt"))
@@ -5344,7 +5367,7 @@ class Assistant:
         except BaseException:
             job.finish()
             raise
-        return {"job": job.id, "conversation": self.conv["id"]}
+        return dict({"job": job.id, "conversation": self.conv["id"]}, **({"files": kept} if kept else {}))     # files: the id each given file has now (a twin: the one before)
 
     def set_page(self, page: Any, st: Optional[dict] = None) -> None:
         """The page on screen as the browser tells it (its text only with the right to read the page, never settings or log)."""

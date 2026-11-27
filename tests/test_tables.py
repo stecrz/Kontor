@@ -440,6 +440,9 @@ class Csv(unittest.TestCase):
             "| 1 | Konto | Beschriftung | EB-Wert | Soll | Haben | Saldo | Stand |", "| 2 | 0027 | EDV-Software, Lizenzen | 18420 | 0 | 920 | 17500 S | 2026-10-31 |",
             "| 3 | 0630 | Darlehen Musterbank 3,2 % | -412000 | 8500 | 0 | 403500 H |  |", "| 4 | 1000 | Kasse; bar ⏎ und Wechselgeld | 24380.6 | 291902.97 | 290891.68 | 25391.89 S | 2026-01-01 |",
             "| 5 |  | Summe | -369199.4 | 300402.97 | 291811.68 |  |  |", "| 6 |  | Prüfziffer ü | =1+1 | 12.5% |  |  |  |"])
+        # Windows-1252 with one of its five undefined bytes: that byte as Latin-1 reads it, the rest still Windows-1252 (€ stays €)
+        self.assertEqual(X._decode("Händler;Betrag €;„Zitat“ – Ende\n".encode("cp1252") + b"X\x81;1\n"), ("Händler;Betrag €;„Zitat“ – Ende\nX\x81;1\n", "Windows-1252"))
+        self.assertEqual(X._decode(bytes(range(0x80, 0xA0))), (bytes(range(0x80, 0xA0)).decode("cp1252", "replace").replace("�", "%s") % ("\x81", "\x8d", "\x8f", "\x90", "\x9d"), "Windows-1252"))
         sh = b["sheets"][0]
         self.assertEqual([sh["cells"][k][0] for k in ((1, 0), (3, 0), (1, 2), (1, 5), (1, 6), (5, 2), (5, 3))], ["t", "n", "n", "m", "d", "t", "p"])          # 0027 a code, =1+1 text
         self.assertEqual((X.sum_range(b, None, "D2:D4")["sum"], X.sum_range(b, None, "F2:F4")["with_mark"]["S"]["sum"]), ("300402.97", "42891.89"))

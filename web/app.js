@@ -8288,7 +8288,7 @@ async function asChGo(c, i, s) {
 const asText = m => (m.parts || []).filter(p => p.k === 'text').map(p => p.text).join('\n\n').trim();
 function asMsg(m, i) {
   const links = m.role === 'user' ? null : asLinks();
-  if (m.role === 'user') return `<div class="as-msg me">${(m.refs || []).length || (m.files || []).length ? `<div class="as-refs">${(m.refs || []).map((r, j) => asRefChip(r, `data-m="${i}" data-r="${j}"`, false)).join('')}${(m.files || []).map(f => asFileChip(String(f.name || ''))).join('')}</div>` : ''}${m.text ? `<div class="as-b">${esc(m.text)}</div>` : ''}</div>`;          // as typed or pasted (lines and spaces kept: tables, code); what it refers to before it
+  if (m.role === 'user') return `<div class="as-msg me">${(m.refs || []).length || (m.files || []).length ? `<div class="as-refs">${(m.refs || []).map((r, j) => asRefChip(r, `data-m="${i}" data-r="${j}"`, false)).join('')}${(m.files || []).map(f => asFileChip(f)).join('')}</div>` : ''}${m.text ? `<div class="as-b">${esc(m.text)}</div>` : ''}</div>`;          // as typed or pasted (lines and spaces kept: tables, code); what it refers to before it
   let h = '';
   const parts = m.parts || [];
   parts.forEach((p, j) => {
@@ -8667,8 +8667,16 @@ async function asFiles(files) {
   ta.dispatchEvent(new Event('input')); ta.focus();
 }
 const asFileB64 = f => new Promise((ok, no) => { const rd = new FileReader(); rd.onload = () => ok(String(rd.result).split(',')[1] || ''); rd.onerror = () => no(rd.error); rd.readAsDataURL(f); });
-const asFileChip = (name, i) => `<span class="as-ref as-file"><span class="as-ref-go" title="${esc(name)}"><span class="as-ref-pg">${esc(((name.match(/\.(\w+)$/) || [])[1] || '').toUpperCase())}</span><span class="as-ref-l">${esc(name)}</span></span>`
+// a file given with a question: once Kontor holds it for the conversation, its name opens it again from Kontor's memory (a PDF or a picture
+// in a window of its own, a CSV as text, an Excel table as a download); before it is sent and in a saved conversation: only its name
+function asFileChip(f, i) {
+  const name = String((f || {}).name || ''), ext = (name.match(/\.(\w+)$/) || [])[1] || '', xl = /^xls[xm]$/i.test(ext);
+  const inner = `<span class="as-ref-pg">${esc(ext.toUpperCase())}</span><span class="as-ref-l">${esc(name)}</span>`;
+  const at = f && /^b[0-9a-f]{8}$/.test(f.id || '') && f.conv ? `/api/assistant/file?id=${f.id}&conversation=${encodeURIComponent(f.conv)}` : '';
+  return `<span class="as-ref as-file">` + (at ? `<a class="as-ref-go as-file-go" href="${esc(at)}" ${xl ? 'download' : 'target="_blank"'} title="${esc(name + '\n\n' + t(xl ? 'ki_datei_laden_tip' : 'ki_datei_zeigen_tip'))}">${inner}</a>`
+    : `<span class="as-ref-go still" title="${esc(name)}">${inner}</span>`)
   + (i != null ? `<button type="button" class="as-ref-x" data-f="${i}" title="${esc(t('ki_beleg_weg'))}" aria-label="${esc(t('ki_beleg_weg'))}">${AS_CROSS}</button>` : '') + '</span>';
+}
 // What is open (the same list as on the overview), on an empty conversation: what the assistant can do about it starts with one click as a
 // question (its changes still wait for the click on their card), the rest opens its page. Loaded in the background, drawn when there.
 const AS_ACT = {categorize: ['categorize', 'transactions'], bookings: ['figures'], receipts: ['transactions'], unexplained: ['figures']};
@@ -8727,7 +8735,8 @@ async function asSend(text) {
   if (AS.list) { AS.list = false; asHead(); }
   const hist = AS.msgs.map(x => ({role: x.role, text: x.role === 'user' ? asRefPre(x.refs) + (x.files || []).map(f => `[${f.name}]\n`).join('') + x.text : asText(x)})).filter(x => x.text).slice(-12);
   const m = {role: 'assistant', parts: [], state: 'run', status: ''};
-  AS.msgs.push(Object.assign({role: 'user', text}, refs.length ? {refs} : {}, files.length ? {files: files.map(f => ({name: f.name}))} : {}), m);
+  const um = Object.assign({role: 'user', text}, refs.length ? {refs} : {}, files.length ? {files: files.map(f => ({name: f.name}))} : {});
+  AS.msgs.push(um, m);
   AS.job = null;          // (an answer that is over while Kontor still notes what was said: its loop no longer speaks for the panel)
   AS.busy = true; AS.refs = []; AS.files = []; asRefsDraw(); asMsgs(true);
   try {
@@ -8736,7 +8745,9 @@ async function asSend(text) {
     const ids = [];          // the receipts first, each on its own (in memory at Kontor until the question that names them)
     for (const f of files) ids.push((await api('/api/assistant/attach', {name: f.name, content: await asFileB64(f)})).id);
     const r = await api('/api/assistant/ask', Object.assign({question: text, conversation: AS.conv, history: hist, page: asPage(), effort: asEffort(), refs, web, receipt_text}, AS.pasted ? {pasted: true} : {}, ids.length ? {files: ids} : {})); AS.pasted = false;
-    AS.job = r.job; AS.conv = r.conversation; asPoll(m, r.job);
+    AS.job = r.job; AS.conv = r.conversation;
+    (um.files || []).forEach((f, k) => { const id = (r.files || {})[ids[k]]; if (id) Object.assign(f, {id, conv: r.conversation}); });          // its name opens it again (from Kontor's memory, in this conversation; the same file given before: by that one's id)
+    asPoll(m, r.job);
   } catch (e) { m.parts.push({k: 'err', text: e.message}); m.state = 'error'; AS.busy = false; asMsgs(); }
 }
 function asMemPart(p) {
@@ -9235,7 +9246,7 @@ const asRefChip = (r, attrs, x) => `<span class="as-ref"><button type="button" c
 function asRefsDraw() {
   const box = $('#as-refs'); if (!box) return;
   const refs = AS.refs || [], files = AS.files || [];
-  box.innerHTML = refs.map((r, i) => asRefChip(r, `data-r="${i}"`, true)).join('') + files.map((f, i) => asFileChip(f.name, i)).join(''); box.classList.toggle('hidden', !refs.length && !files.length);
+  box.innerHTML = refs.map((r, i) => asRefChip(r, `data-r="${i}"`, true)).join('') + files.map((f, i) => asFileChip({name: f.name}, i)).join(''); box.classList.toggle('hidden', !refs.length && !files.length);
 }
 function refMarkCol(col) {          // a column by its heading: the heading and its figures marked
   const want = asNorm(col);
@@ -9302,6 +9313,7 @@ async function asDelChats(id) {
 $('#assist-btn').addEventListener('click', () => { if (S.tab !== 'assistant') asShow(!AS.open); });
 $('#assist').addEventListener('click', async e => {
   const b = e.target.closest('button, a'); if (!b) return;
+  if (b.classList.contains('as-file-go')) return;          // a file given: opened (or downloaded) as the link says
   if (b.classList.contains('as-ref-x')) { if (b.dataset.f != null) (AS.files || []).splice(+b.dataset.f, 1); else (AS.refs || []).splice(+b.dataset.r, 1); asRefsDraw(); const ta = $('#as-in'); if (ta) ta.focus(); }
   else if (b.classList.contains('as-ref-go')) asRefOpen(b.dataset.m != null ? ((AS.msgs[+b.dataset.m] || {}).refs || [])[+b.dataset.r] : (AS.refs || [])[+b.dataset.r]);
   else if (b.classList.contains('as-close')) asShow(false);
