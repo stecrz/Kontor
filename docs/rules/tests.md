@@ -82,7 +82,9 @@ Zwei Arten auf GitHub, je ein Workflow (Nutzer, 2026-11-27: schlank, nichts verl
   gehört nicht zu ihrem verglichenen Zustand – Kontor klappt Abschnitte zu, sobald eine andere Seite offen war –, und eine Seite,
   die dadurch kürzer ist als ihre gemerkte Stelle, darf an ihrem Ende stehen; seit 3.17.96: eine Form wird auf einem ganzen Pixel
   angetippt, dessen Nachbarn sie auch treffen – WebKit tippt auf ganze Pixel, eine haarfeine Form lässt der Lauf aus; jeder
-  ResizeObserver der Seite wirkt erst im nächsten Frame – `CheckerTest`). Gezielt eine Ansicht prüfen, wo die Nacht meist findet
+  ResizeObserver der Seite wirkt erst im nächsten Frame – `CheckerTest`; seit 3.17.107: was nach dem Lesen einer Antwort oder
+  Datei weiterläuft, läuft in einer eigenen Aufgabe (`bodyOf`, `api`) – WebKit führte es sonst oft mitten in der Auslieferung
+  der ResizeObserver aus, und die dort gezeichnete Seite meldete „ResizeObserver loop …“ – `test_e2e.SafariAfterTheBodyTest`). Gezielt eine Ansicht prüfen, wo die Nacht meist findet
   (iPhone, WebKit): Nummern vorab mit `Case(<nummer>, True)` auswählen und als `KONTOR_FUZZ_SEED=<a>,<b>,…` laufen lassen
 - `test_findable` (auffindbar: je Abschnitt der Hilfe Suchwörter, wie der Nutzer sie sagt, in `tests/search_words.json` – die Suche der Hilfe-Seite (unter den ersten drei, springt zum besten) und `search_help` (unter den vier Treffern) finden ihn; jeder Abschnitt und Anker der Hilfe ist Ziel eines „?“ oder Links aus Kontor; beide Suchen falten gleich (Füllwörter aus `memory.STOP`, Endungen). Fehlt ein Treffer: das Wort des Nutzers in den Abschnitt schreiben, nicht die Suche verbiegen; neuer Abschnitt der Hilfe: dort zwei, drei Suchwörter eintragen; am iPhone ist keine Spalte einer Tabelle der Hilfe schmaler als ein Wort darin – `PageReads`)
 - `test_fuzz`, `test_privacy`, `test_security` (Sperre, Datenschlüssel, Belegordner; `NothingGoesOut`: welche Teile ins Netz können, zu welchen Hosts, welche Programme sie starten – ein neuer Weg nach außen wird dort eingetragen)

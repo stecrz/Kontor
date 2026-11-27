@@ -1,5 +1,9 @@
 # Änderungen
 
+## 3.17.107 (2026-11-27 14:59)
+- Oberfläche: in Safari läuft, was nach einer Antwort des Dienstes kommt, nie mehr mitten in der Größenmeldung des Browsers – kein „ResizeObserver loop“-Fehler mehr, auch abseits des Seitenwechsels
+- Entwicklung: jede gelesene Antwort über bodyOf (geprüft); WebKit-Test misst es an api() neben einer direkt gelesenen Antwort
+
 ## 3.17.106 (2026-11-27 14:46)
 - Einstellungen: „!“ bzw. Punkt auch am Reiter Updates (bzw. KI-Assistent) – Klick auf die Markierung in der Seitenleiste führt direkt dorthin
 - iPhone: Reiterleiste zeigt den geöffneten Reiter

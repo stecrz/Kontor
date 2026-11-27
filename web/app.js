@@ -422,6 +422,19 @@ for (const ev of ['pointerdown', 'pointermove', 'keydown', 'touchstart', 'wheel'
 // counts the sign-ins and locks of this page: an answer about the session asked for before one of them is old (it arrives after
 // the sign-in it knows nothing of -- after an update the service answers slowly -- and must not lock again)
 const AUTH = {n: 0};
+// Safari (WebKit) runs what waits for the body of a response (json, text, arrayBuffer -- a file's too) not when it has been read
+// but where it next runs waiting work: at times inside the ResizeObservers of the next frame. Whatever changes the page there
+// changes sizes while the browser still delivers them, and it reports "ResizeObserver loop completed with undelivered
+// notifications" (three of a night's click paths: 3.17.105 defused the page swap -- mainSet --, 3.17.107 the cause). So what
+// reads a body goes on in a task of its own -- a message to itself (a timer would be slowed down in a window in the background).
+const TASK = {ch: null, q: []};
+function inTask() {
+  return new Promise(r => {
+    if (!TASK.ch) { TASK.ch = new MessageChannel(); TASK.ch.port1.onmessage = () => { const f = TASK.q.shift(); if (f) f(); }; }
+    TASK.q.push(r); TASK.ch.port2.postMessage(0);
+  });
+}
+async function bodyOf(src, how) { try { return await src[how](); } finally { await inTask(); } }
 async function api(path, body, method, netMode, renewed, confirm) {
   const auth = AUTH.n;          // a 401 to a request sent before a sign-in (or a lock) since is old: it locks nothing
   const opts = { method: method || (body === undefined ? 'GET' : 'POST'), headers: {}, credentials: 'same-origin' };
@@ -445,8 +458,9 @@ async function api(path, body, method, netMode, renewed, confirm) {
   let data = null;
   if (r.headers.get('X-Kontor-Enc') === '1') {          // the stored copy: only readable with the key the password unlocks
     if (!OFFKEY) { S.csrf = null; OFFLINE.mode = true; showLogin(); throw new Error(t('err_offline_passwort')); }
-    try { data = await offOpen(await r.arrayBuffer()); } catch (e) { data = {}; }
-  } else { try { data = await r.json(); } catch (e) { data = {}; } }
+    try { data = await offOpen(await bodyOf(r, 'arrayBuffer')); } catch (e) { data = {}; }
+    await inTask();          // (the decryption, too, ends outside the page's script)
+  } else { try { data = await bodyOf(r, 'json'); } catch (e) { data = {}; } }
   if (r.headers.get('X-Kontor-Offline') === '1') {
     const at = r.headers.get('X-Kontor-Cached-At'); if (at) OFFLINE.as_of = at;
     if (IS_LOCAL) throw new Error(t('err_dienst_antwortet_nicht'));
@@ -460,7 +474,7 @@ async function api(path, body, method, netMode, renewed, confirm) {
   if (r.status === 401 && path !== '/api/session') { S.csrf = null; if (OFFLINE.mode) { OFFLINE.mode = false; OFFLINE.as_of = null; checkSession(); } else showLogin(); const e = new Error(t('nicht_angemeldet')); e.status = 401; throw e; }
   if (r.status === 403 && data.csrf === 'invalid' && !renewed) {
     // signed in again meanwhile (e.g. in another window): the token of this page is old -- take the current one, try once more
-    try { const s = await fetch('/api/session', {credentials: 'same-origin'}).then(x => x.json()); if (s.signed_in && s.csrf) { S.csrf = s.csrf; return await api(path, body, method, netMode, true, confirm); } } catch (e) {}
+    try { const s = await fetch('/api/session', {credentials: 'same-origin'}).then(x => bodyOf(x, 'json')); if (s.signed_in && s.csrf) { S.csrf = s.csrf; return await api(path, body, method, netMode, true, confirm); } } catch (e) {}
   }
   if (r.status === 403 && data.confirm === 'needed' && !faceId && !IS_LOCAL) return await api(path, body, method, netMode, renewed, 'force');      // the service wants Face ID for this one
   if (!r.ok) { const e = new Error(data.error || (t('fehler') + r.status)); e.data = data; e.status = r.status; throw e; }
@@ -719,7 +733,7 @@ async function waitAndReload(newVersion, text) {
   while (Date.now() < until) {
     await new Promise(r => setTimeout(r, 1500));
     let s = null;
-    try { const r = await fetch('/api/session', {credentials: 'same-origin', cache: 'no-store'}); if (r.ok) s = await r.json(); } catch (e) {}
+    try { const r = await fetch('/api/session', {credentials: 'same-origin', cache: 'no-store'}); if (r.ok) s = await bodyOf(r, 'json'); } catch (e) {}
     if (s && s.version && !s.offline && (!newVersion || !PAGE_VERSION || s.version !== PAGE_VERSION)) break;
   }
   location.reload();
@@ -867,7 +881,7 @@ async function revalidate() {
   REVAL = Date.now();
   let s;
   const auth = AUTH.n;
-  try { s = await fetch('/api/session', {credentials: 'same-origin'}).then(r => r.json()); } catch (e) { return; }
+  try { s = await fetch('/api/session', {credentials: 'same-origin'}).then(r => bodyOf(r, 'json')); } catch (e) { return; }
   // a sign-in began or ended meanwhile (the Touch ID window closing brings the focus back while its answer is on its way):
   // this answer is from before it -- not signed in -- and would lock again at once
   if (auth !== AUTH.n || TID.pending || PK.pending || LOGIN.busy) return;
@@ -5810,7 +5824,7 @@ async function restartTo(port, before) {
   for (let i = 0; i < 60; i++) {
     await sleep(1000);
     let j = null;
-    try { const r = await fetch('/api/session', {credentials: 'same-origin', cache: 'no-store', headers: {'X-Kontor-Net': 'direct'}}); j = r.ok ? await r.json() : {}; } catch (e) { j = null; }
+    try { const r = await fetch('/api/session', {credentials: 'same-origin', cache: 'no-store', headers: {'X-Kontor-Net': 'direct'}}); j = r.ok ? await bodyOf(r, 'json') : {}; } catch (e) { j = null; }
     if (samePort && j && j.instance && j.instance !== before) { location.reload(); return; }
     if (!samePort && (!j || (j.instance && j.instance !== before))) { await sleep(2500); leave(); return; }
   }
@@ -6606,7 +6620,7 @@ function pkgPreview() {
 }
 async function readPkgFile(file) {
   try {
-    const obj = JSON.parse(await file.text());
+    const obj = JSON.parse(await bodyOf(file, 'text'));
     if (obj.kontor_backup_encrypted) {
       const pw = await askPassword(t('sicherung_laden_frage', esc(obj.created || '?'), esc(obj.version || '?')));
       if (!pw) return;
@@ -6741,7 +6755,7 @@ async function pyRestart(before, own) {
   for (let i = 0; i < 90; i++) {                 // until the service answers as another start than this one, then the page anew (you sign in once)
     await new Promise(r => setTimeout(r, 1000));
     let j = null;
-    try { const r = await fetch('/api/session', {credentials: 'same-origin', cache: 'no-store', headers: {'X-Kontor-Net': 'direct'}}); j = r.ok ? await r.json() : null; } catch (e) { j = null; }
+    try { const r = await fetch('/api/session', {credentials: 'same-origin', cache: 'no-store', headers: {'X-Kontor-Net': 'direct'}}); j = r.ok ? await bodyOf(r, 'json') : null; } catch (e) { j = null; }
     if (j && j.instance && j.instance !== before) break;
   }
   location.reload();
@@ -7290,7 +7304,7 @@ function bind(main) {
       if (MMH.busy) return; MMH.busy = true; md.classList.add('busy'); res.innerHTML = `<div class="working"><span class="spin"></span>${t('datei_wird_uebergeben')}</div>`;
       try {
         const r = await fetch('/api/history/mm-import', {method: 'POST', credentials: 'same-origin', headers: {'Content-Type': 'application/octet-stream', 'X-CSRF-Token': S.csrf, 'X-Kontor-Net': 'direct'}, body: file});
-        const j = await r.json().catch(() => ({}));
+        const j = await bodyOf(r, 'json').catch(() => ({}));
         if (!r.ok) throw new Error(j.error || (t('fehler') + r.status));
         if (j.running) await mmhFollow(); else showFindings($('#mmh-res') || res, [], j.text, 'error');
       } catch (e) { showFindings($('#mmh-res') || res, [], e.message, 'error'); }
@@ -8467,7 +8481,7 @@ async function asFiles(files) {
       continue;
     }
     let text = '';
-    try { text = f.size <= 4e6 ? await f.text() : ''; } catch (e) {}
+    try { text = f.size <= 4e6 ? await bodyOf(f, 'text') : ''; } catch (e) {}
     if (!text || /[\u0000-\u0008\u000e-\u001f]/.test(text.slice(0, 4000))) { toast(t('ki_datei_kein_text', f.name), 5000); continue; }          // too large, or not text (a PDF, a picture, a spreadsheet file)
     const block = f.name + ':\n```\n' + text.replace(/\r\n?/g, '\n').trimEnd() + '\n```\n';
     if (ta.value.length + block.length > room) { toast(t('ki_datei_zu_lang', f.name), 5000); continue; }
@@ -9350,7 +9364,7 @@ async function asMemImport(file) {
   };
   let text, r;
   const big = file.size > 1e6; if (big) toast(t('pruefe'), 120000);          // thousands of notes take a moment to check
-  try { text = await file.text(); r = await api('/api/assistant/memory/import', {text, check: true}); }
+  try { text = await bodyOf(file, 'text'); r = await api('/api/assistant/memory/import', {text, check: true}); }
   catch (e) { return say([], t('ki_g_import_abgelehnt', e.message)); }
   finally { if (big) $('#toast').classList.add('hidden'); }
   if (!r.ok) return refused(r);

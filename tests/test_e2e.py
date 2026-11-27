@@ -7006,6 +7006,86 @@ class SettingsMarkTest(unittest.TestCase):
             shutil.rmtree(d, ignore_errors=True)
 
 
+class SafariAfterTheBodyTest(unittest.TestCase):
+    """WebKit (Safari's engine) runs what waits for the body of a response (json, text) not at once but where it next runs
+    waiting work -- that can be between two ResizeObservers it delivers in a frame (Chromium: never). Whatever changes the page
+    there changes sizes while the browser still delivers them, and it reports "ResizeObserver loop completed with undelivered
+    notifications" (three of a night's click paths; 3.17.105 defused the page swap: PageSwapObserversTest; 3.17.107 the cause).
+    What reads a body goes on in a task of its own (bodyOf; api after decrypting too) -- measured with api itself, beside a
+    body read straight away (there, in WebKit, a few percent of the continuations run inside the delivery)."""
+
+    def test_every_body_read_goes_on_in_a_task(self):
+        src = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "web", "app.js"), encoding="utf-8").read()
+        helper = re.search(r"\nasync function bodyOf\(src, how\) \{[^\n]*\n", src)
+        self.assertIsNotNone(helper, "bodyOf")
+        self.assertIn("await inTask()", helper.group(0))
+        rest = src.replace(helper.group(0), "\n")
+        found = [(rest.count("\n", 0, m.start()) + 1, rest[max(0, m.start() - 40):m.end()].strip())
+                 for m in re.finditer(r"\.(json|text|arrayBuffer|blob|formData)\(\)", rest)]
+        self.assertEqual(found, [], "a body read without bodyOf")
+        self.assertIsNone(re.search(r"getReader\(\)", src), "a stream read: its parts go on in a task too")
+        api = src[src.index("\nasync function api("):]
+        api = api[:api.index("\n}\n")]
+        self.assertIn("data = await offOpen(await bodyOf(r, 'arrayBuffer')); } catch (e) { data = {}; }\n    await inTask();", api)
+        self.assertIn("data = await bodyOf(r, 'json');", api)
+
+    def test_never_between_resize_observers(self):
+        try:
+            from playwright.sync_api import sync_playwright
+        except ImportError:
+            self.skipTest("playwright fehlt")
+        d = tempfile.mkdtemp(prefix="kontor-wk-body-")
+        store = new_store(d); store.save("config.json", config_for_test(os.path.join(d, "Belege")))
+        reset_mock(); patch_today()
+        app = App(store, d, bridge_factory=MockBridge)
+        app.do_run(False, True)
+        srv = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(app)); port = srv.server_address[1]
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        # two observers made one after the other are delivered one after the other: what runs while the first has said "in"
+        # and the second not yet "out" runs inside the delivery. Both elements change together from a timer, and a third
+        # observer takes a new element each time -- that makes the browser deliver sizes (headless WebKit draws no frame for a
+        # mere change of style); no frame callback, no animation (they would run what waits before the observers)
+        probe = """async viaApi => {
+            const box = () => { const x = document.createElement('div'); x.style.cssText = 'position:fixed;left:0;bottom:0;width:100px;height:4px;background:#888;z-index:99;pointer-events:none'; document.body.appendChild(x); return x; };
+            const a = box(), b = box(); let inside = false, hits = 0, n = 0, frames = 0, w = 100, fresh = null;
+            const ra = new ResizeObserver(() => { inside = true; }), rb = new ResizeObserver(() => { inside = false; frames++; }), rc = new ResizeObserver(() => {});
+            ra.observe(a); rb.observe(b);
+            const grow = setInterval(() => { w = 100 + (w - 99) % 100; a.style.width = b.style.width = w + 'px'; if (fresh) { rc.unobserve(fresh); fresh.remove(); } fresh = box(); rc.observe(fresh); }, 3);
+            const read = viaApi ? () => api('/api/help?lang=de') : () => fetch('/api/help?lang=de', {credentials: 'same-origin'}).then(r => r.json());          // a long answer: it arrives in parts
+            const one = async () => { try { await read(); } catch (e) {} n++; if (inside) hits++; };
+            const jobs = [], end = Date.now() + 4000;
+            while (Date.now() < end) { jobs.push(one(), one(), one()); await new Promise(r => setTimeout(r, 8)); }
+            await Promise.allSettled(jobs); clearInterval(grow); [ra, rb, rc].forEach(o => o.disconnect()); [a, b, fresh].forEach(x => x && x.remove());
+            return {hits, n, frames};
+        }"""
+        try:
+            with sync_playwright() as p:
+                try:
+                    b = p.webkit.launch()
+                except Exception:
+                    self.skipTest("WebKit nicht installiert")
+                pg = b.new_page(viewport={"width": 1440, "height": 900})
+                errors = []
+                pg.on("pageerror", lambda e: errors.append(str(e)))
+                pg.goto("http://127.0.0.1:%d/" % port)
+                if pg.query_selector("#login-pw2:not(.hidden)") and pg.is_visible("#login-pw2"):
+                    pg.fill("#login-pw", "sehr-geheimes-passwort"); pg.fill("#login-pw2", "sehr-geheimes-passwort")
+                else:
+                    pg.fill("#login-pw", "sehr-geheimes-passwort")
+                pg.click("#login-btn"); wait_shell(pg)
+                pg.evaluate("location.hash = '#settings'"); pg.wait_for_timeout(800)
+                straight = pg.evaluate(probe, False)          # (WebKit fixed one day: no hits here either -- that fails nothing)
+                got = pg.evaluate(probe, True)
+                self.assertGreater(got["frames"], 30, got)          # the browser delivered sizes all along
+                self.assertGreater(got["n"], 200, got)
+                self.assertEqual(got["hits"], 0, "%r -- a body read straight away: %r" % (got, straight))
+                self.assertEqual(errors, [])
+                b.close()
+        finally:
+            srv.shutdown(); srv.server_close()
+            shutil.rmtree(d, ignore_errors=True)
+
+
 class BrowserWizardTest(unittest.TestCase):
     """Leere Installation: Einrichtungsassistent, Bereiche speichern, Paket laden, Bericht erstellen."""
 
