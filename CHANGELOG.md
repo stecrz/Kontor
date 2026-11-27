@@ -1,5 +1,13 @@
 # Änderungen
 
+## 3.17.117 (2026-11-27 19:45)
+- KI-Assistent: Denkt das Modell nach und antwortet nicht, fragt Kontor einmal nach – ohne neues Nachdenken, mit seinen Gedanken
+- KI-Assistent: Eine Frage ohne Antwort hängt die Unterhaltung nicht mehr auf – die nächsten Fragen werden wieder beantwortet
+- KI-Assistent: Fehler von llama.cpp mitten in der Antwort werden genannt statt „nichts geantwortet“; füllte das Nachdenken den Kontext, steht das da
+- KI-Assistent: Dokumente voller Zahlen (BAB, Bilanz) passen sicher in den Kontext – Ziffern zählen als eigene Token
+- KI-Assistent: Dieselbe Datei noch einmal angehängt – einmal im Speicher, nicht neu gelesen, in derselben Unterhaltung dieselbe Datei
+- Entwicklung: Stand-in für llama.cpp kennt Nachdenken ohne Antwort, Denken bis zum Limit und Fehler mitten im Strom
+
 ## 3.17.116 (2026-11-27 19:19)
 - Entwicklung: fremde Zeilen ohne Rückfrage ersetzen, wenn ihre Absicht erhalten bleibt – fragen nur, wenn sonst etwas Beabsichtigtes verloren ginge
 

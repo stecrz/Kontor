@@ -15,6 +15,12 @@ model. What it answers is told by the question itself:
                             ("badargs <tool> again": told that they were broken, it calls the tool once more, with {})
   written <tool> {json}  -> writes the call into its text (<tool_call>...</tool_call>) instead of handing it over
   cut                    -> an answer that runs into its limit (finish_reason "length")
+  brood <words>          -> thinks those words, then says nothing; asked without thinking: "Antwort nach Nachdenken[ mit Gedanken]."
+                            ("mit Gedanken": its thoughts were given back with the request); "brood <words> then call <tool> {json}":
+                            asked without thinking, it calls that tool first, then "Nachgesehen: <result>"
+  overthink <words>      -> thinks until it runs into its limit (finish_reason "length"), says nothing; without thinking: "Kurz gesagt."
+                            ("overthink always": runs into its limit without thinking too)
+  breaks <words>         -> thinks, then the stream ends with llama.cpp's error as its last piece (data: {"error": ...}, no [DONE])
   anything else          -> "Antwort: <question>"
 
 The look at what to remember (a request that asks for JSON by a schema: Kontor's second, separate request after a question)
@@ -371,6 +377,25 @@ def main():
                 elif q.startswith("cut"):
                     self._send(delta({"content": "Ein Anfang, der"}))
                     fin_reason = "length"
+                elif first.startswith(("brood", "overthink", "breaks")):
+                    thinking = (body.get("chat_template_kwargs") or {}).get("enable_thinking") is not False and body.get("reasoning_effort") != "none"
+                    if thinking or first.startswith("overthink always"):
+                        for w in (first.split(None, 1)[1:] or ["Ich", "überlege"])[0].split():
+                            self._send(delta({"reasoning_content": w + " "}))
+                        if first.startswith("breaks"):            # llama.cpp's error in the middle of a stream: its last piece, no [DONE]
+                            self._send({"error": {"code": 500, "message": "got exception: broken in the middle (test)", "type": "server_error"}})
+                            self.wfile.write(b"0\r\n\r\n")
+                            return
+                        fin_reason = "length" if first.startswith("overthink") else "stop"
+                    elif " then call " in first and last.get("role") != "tool":     # ... looks something up first
+                        name, _, args = first.split(" then call ", 1)[1].partition(" ")
+                        self._send(delta({"tool_calls": [{"index": 0, "id": "call_0", "type": "function", "function": {"name": name, "arguments": args.strip() or "{}"}}]}))
+                    elif " then call " in first:
+                        self._send(delta({"content": "Nachgesehen: " + str(last.get("content"))[:60]}))
+                    else:                                         # asked to answer without thinking: it does
+                        text = "Kurz gesagt." if first.startswith("overthink") else "Antwort nach Nachdenken%s." % (
+                            " mit Gedanken" if "your own thoughts" in str(last.get("content") or "") else "")
+                        self._send(delta({"content": text}))
                 elif script is not None:
                     done = 0                                       # tool results since the question: that many steps are behind us
                     for m in reversed(msgs):

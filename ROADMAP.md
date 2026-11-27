@@ -517,6 +517,10 @@ anhängen – nie löschen.
   von 25); nicht, wo der Name der Kategorie passt oder eine Umbuchung ihre Gegenbuchung hat. Ändern ersetzt die Kategorie in
   MoneyMoney nach Rückfrage (wie überall), „Passt so“ nimmt den Umsatz heraus, solange er sie behält; nichts von selbst.
   (umgesetzt in 3.17.114)
+- **Dieselbe Datei im Assistenten nur einmal** (Nutzer, 2026-11-27): Wird eine Datei noch einmal angehängt (Byte für Byte gleich),
+  erkennt Kontor sie – als Optimierung. Umsetzung: einmal im Arbeitsspeicher, was schon gelesen ist (Text, Tabellen, Seitenbilder),
+  wird nicht neu gelesen; in derselben Unterhaltung ist sie dieselbe Datei wie vorher (gleiche Kennung für das Modell), in einer
+  anderen eine eigene (Dateien bleiben je Unterhaltung getrennt). Gespeichert wird weiterhin nichts. (umgesetzt in 3.17.117)
 
 ## Offen (Entscheidung steht aus – mit Empfehlung vorlegen, wenn der Punkt dran ist)
 - Umsatzsteuer-Voranmeldung direkt an ELSTER senden (ELSTERs Programmbibliothek ERiC, Anmeldung als Hersteller, Zertifikat und

@@ -210,6 +210,10 @@ class ModelError(Exception):
     """The model did not start or did not answer (its text is for the user)."""
 
 
+class StreamError(ModelError):
+    """llama.cpp's error in the middle of an answer it had begun (the last piece of its stream): the request itself was taken."""
+
+
 # How a family of models wants to be asked -- its maker's recommendation on the model card, not one setting for all of them
 # (a model asked with other values answers worse than it can). "think": the sampling while it thinks before it answers,
 # "plain": without thinking; "levels": how much it thinks where its chat template knows levels of its own (Kontor's effort ->
@@ -1478,6 +1482,10 @@ class LocalAI:
                 except ValueError:
                     continue
                 if isinstance(piece, dict):
+                    err = piece.get("error")
+                    if err and not piece.get("choices"):   # llama.cpp ends a stream it has begun with its error as the last piece:
+                        msg = err.get("message") if isinstance(err, dict) else err      # said, never taken for an answer without words
+                        raise StreamError(tr("s_ki_antwortet_nicht") % str(msg or "error")[:200])
                     t = piece.get("timings")
                     if isinstance(t, dict) and t.get("predicted_per_second"):
                         self.tps = round(float(t["predicted_per_second"]), 1)
