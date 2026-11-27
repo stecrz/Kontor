@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.17.116 (2026-11-27 19:19)
+- Entwicklung: fremde Zeilen ohne Rückfrage ersetzen, wenn ihre Absicht erhalten bleibt – fragen nur, wenn sonst etwas Beabsichtigtes verloren ginge
+
 ## 3.17.115 (2026-11-27 19:17)
 - Kategorisieren: Zahl der offenen Umsätze in der Seitenleiste – für die dort gewählten Bereiche und den Zeitraum
 - Kategorisieren: Zeitraum Von–Bis mit Knöpfen für laufendes Jahr, Vorjahr und Alle statt „Ignorieren vor“ und Jahr – gespeichert, anfangs das laufende Jahr; gilt auch für „Auffällig“

@@ -356,7 +356,16 @@ anhängen – nie löschen.
 - **Fremdes nie nach eigenem Abwägen ersetzen** (Nutzer, 2026-11-24, nach 3.17.65 – die Sperre war dort mit `KONTOR_PUSH_OK=1`
   übergangen worden, obwohl nichts verloren war): Es soll nicht zu Überschreibungen kommen, die Sperre nicht routinemäßig umgangen
   werden. Umgesetzt: Die Sperre prüft, was eine fremde Version in eine Zeile schrieb (ihre Wörter mit Kontext), nicht die ganze Zeile –
-  ein zusammengeführter Absatz geht ohne Ausnahme; `KONTOR_PUSH_OK=1` für fremde Zeilen nur nach dem Ja des Nutzers im Chat. (umgesetzt in 3.17.69)
+  ein zusammengeführter Absatz geht ohne Ausnahme; `KONTOR_PUSH_OK=1` für fremde Zeilen nur nach dem Ja des Nutzers im Chat. (umgesetzt in 3.17.69;
+  gelockert 2026-11-27, siehe „Fremde Zeilen ersetzen, wenn ihre Absicht bleibt“)
+- **Fremde Zeilen ersetzen, wenn ihre Absicht bleibt** (Nutzer, 2026-11-27, nach der Rückfrage zu vier Zeilen von 3.17.111, die
+  der Zeitraum unter Kategorisieren überholt hatte: „Warum fragst du immer? Es sollten eben die alten Änderungen konzeptionell nicht
+  verloren gehen“): „Wenn es logisch ist und die alten Änderungen konzeptionell erhalten bleiben, dann musst du nicht fragen. Fragen
+  nur, wenn sonst alte Änderungen verloren gingen (nicht nur die Codezeilen, sondern das, was damit beabsichtigt war).“ Umgesetzt:
+  Die Sperre bleibt mechanisch gleich (sie erkennt Absichten nicht); `KONTOR_PUSH_OK=1` setzt ein Chat ohne Rückfrage, wenn die
+  fremden Zeilen nur von seiner entschiedenen Änderung überholt sind und ihr Zweck erhalten bleibt – erst wörtlich erhalten, was geht,
+  im Ergebnis die Zeilen und den Grund nennen; ginge eine Absicht verloren, vorher mit Empfehlung fragen (`CLAUDE.md`,
+  `docs/rules/parallel.md`, Skill `release`, Meldungen von `guard.py` und `release.py`). (umgesetzt in 3.17.116)
 - **Nur nötige MCP-Dienste, nur `main` auf GitHub** (Nutzer, 2026-11-24 – Credits für hohe Denkstufen statt für Kontext): Claude in
   Chrome, Claude Docs und `github` gesperrt (Code über Klon, `git` und `gh`); `claude-code-remote` bleibt, weil es die Plattform selbst
   ist (Umgebung, Netz, Schlüssel). Der Zweig `claude/…` jeder Cloud-Sitzung bleibt lokal, der Guard sperrt den Push dorthin;

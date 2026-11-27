@@ -42,10 +42,15 @@ leer ist oder sein Inhalt nachweislich in `main` steckt.
   sie geschrieben hat – ihre hinzugefügten oder geänderten Wörter samt Wörtern drumherum (mindestens 12 Zeichen, `_added_parts`), eine
   neue Zeile ganz. Wer einen langen Absatz zusammenführt, den beide geändert haben, behält den fremden Teil und wird nicht gesperrt;
   ein zurückgedrehter Wert (`= 45` → `= 30`) oder ein weggelassener Satz sperrt weiter.
-- Abgelehnt: nie umgehen, sondern holen, daraufsetzen, neu nummerieren. `KONTOR_PUSH_OK=1` nur für zwei Ausnahmen: ein Tippfehler in
-  einem alten Changelog-Eintrag (`.githooks/pre-push`), oder der Nutzer hat im Chat zugestimmt, dass die eigene Änderung genau diese
-  fremden Zeilen ersetzt – vorher die gemeldeten Zeilen mit Empfehlung vorlegen, nie nach eigenem Abwägen (Nutzer, 2026-11-24: es soll
-  nicht zu Überschreibungen kommen; 3.17.65 ging so durch, obwohl nichts verloren war – die Sperre war zu grob).
+- Abgelehnt: nie umgehen, sondern holen, daraufsetzen, neu nummerieren. `KONTOR_PUSH_OK=1` nur für diese Ausnahmen: ein Tippfehler in
+  einem alten Changelog-Eintrag (`.githooks/pre-push`); fremde Zeilen, die nur die eigene, entschiedene Änderung überholt, während
+  erhalten bleibt, was die fremde Version damit wollte (eine Funktion umbenannt und ihr Aufruf mit ihr, ein Filter ersetzt und mit ihm
+  sein Parameter – ihr Neues daneben bleibt) – ohne Rückfrage, im Ergebnis an den Nutzer die Zeilen und warum ihre Absicht erhalten
+  bleibt; oder der Nutzer hat im Chat zugestimmt – nötig, sobald etwas verloren ginge, was die fremde Version wollte (nicht nur die
+  Zeilen: die Absicht): dann die gemeldeten Zeilen mit Empfehlung vorlegen. Zuerst immer versuchen, die fremden Zeilen wörtlich zu
+  erhalten. (Nutzer, 2026-11-24: es soll nicht zu Überschreibungen kommen – 3.17.65 ging so durch, obwohl nichts verloren war, die
+  Sperre war zu grob; Nutzer, 2026-11-27, nach einer solchen Rückfrage: „Wenn es logisch ist und die alten Änderungen konzeptionell
+  erhalten bleiben, dann musst du nicht fragen.“)
 
 ## Konflikte
 `release.py` nennt je Datei die neuere Version, die dieselbe Stelle geändert hat, und den eigenen Ausgangsstand. Zwischen

@@ -253,13 +253,15 @@ def push_check(command: str, cwd: str, seen: str = "") -> str:
                 + ("\n- … und %d weitere" % (len(lost) - 8) if len(lost) > 8 else "")
                 + "\nDie fremde Version ist der neuere, schon veröffentlichte Stand; deine Arbeit kannte sie nicht. Beide Absichten "
                 "zusammenführen (die Zeilen wieder aufnehmen, deine Änderung darauf anwenden), dann denselben Befehl erneut. Fremde Zeilen "
-                "ersetzen nur mit Zustimmung des Nutzers: die Zeilen mit Empfehlung im Chat vorlegen; erst nach seinem Ja KONTOR_PUSH_OK=1 davor.")
+                "ersetzen (KONTOR_PUSH_OK=1 davor) nur, wenn erhalten bleibt, was die fremde Version wollte – dann die Zeilen samt Grund dem "
+                "Nutzer nennen; ginge ihre Absicht verloren, nur mit Zustimmung des Nutzers: die Zeilen mit Empfehlung im Chat vorlegen.")
     if lost:
         return ("Dein Stand löscht Zeilen, die die neuesten Versionen auf main gebracht haben – er beruht auf einem älteren Baum "
                 "(wie 3.16.35):\n- " + "\n- ".join("%s %s: %s" % (c, f, l[:90]) for c, f, l in lost[:8])
                 + ("\n- … und %d weitere" % (len(lost) - 8) if len(lost) > 8 else "")
                 + "\nEigene Änderungen auf den frisch geholten main setzen (`git pull --rebase origin main`), nie `reset --soft` auf einen "
-                "fremden Stand. Fremde Zeilen ersetzen nur mit Zustimmung des Nutzers (dann KONTOR_PUSH_OK=1).")
+                "fremden Stand. Fremde Zeilen ersetzen nur, wenn ihre Absicht erhalten bleibt, sonst nur mit Zustimmung des Nutzers "
+                "(dann KONTOR_PUSH_OK=1).")
     if problems and all("Uhrzeit im CHANGELOG" in p for p in problems):
         return "Changelog-Zeit stimmt nicht:\n- " + "\n- ".join(problems)
     if problems:

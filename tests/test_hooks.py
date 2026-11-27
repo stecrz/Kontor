@@ -587,6 +587,7 @@ class ReleaseScript(unittest.TestCase):
         subprocess.run(["git", "rebase", "--continue"], cwd=self.a, env=dict(ENV, GIT_EDITOR="true"), check=True, capture_output=True)
         code, out = self.release(self.a, "suche", "Hilfe: suche")
         self.assertEqual(code, 4, out); self.assertIn("1.0.2 app.py: TEXT", out); self.assertIn("Zustimmung des Nutzers", out)
+        self.assertIn("erhalten bleibt, was die fremde Version wollte", out)          # without asking only where its intent stays
         # both parts in the line: goes, no exception
         self.write(self.a, {"app.py": "A = 1\nB = 1\n" + mine % " Esc schließt, was offen ist."})
         code, out = self.release(self.a, "suche", "Hilfe: suche")
