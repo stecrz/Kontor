@@ -485,6 +485,16 @@ anhängen – nie löschen.
   Basisjahr angekettet); nach dem letzten bekannten Monat und im Plan die Inflation der Planung des Bereichs (Standard 2 %) – mit
   ihr ist der Plan gerechnet, so schließt er ohne Sprung an. Planung hat ihren eigenen Schalter („inflationsbereinigt“, nur
   Planwerte). (umgesetzt in 3.17.113)
+- **Kategorisieren: falsche Kategorien erkennen** (Nutzer, 2026-11-27): ein eigener Bereich, der grobe Ausreißer unter den gesetzten
+  Kategorien markiert – wenn eine Kategorie nicht zu Kontors Vorschlägen passt. Ausdrücklich nicht, was Kontor eine gewisse Chance
+  gibt: schlägt es A zu 60 % vor und weiß, dass es zu 30 % B sein kann, ist B in Ordnung; erscheinen soll C, das für Kontor gar keinen
+  Sinn ergibt. Umgesetzt: Reiter „Auffällig“ unter Kategorisieren – Kontors Vorschlag für den Umsatz, als hätte er keine Kategorie
+  (wie unter „Offen“), ist eine andere mit mindestens 60 % (ohne eigene Geschichte der Gegenpartei, nur nach Wörtern anderer: 80 %),
+  und alles Vergleichbare (Gegenpartei: alles, genau dieser Betrag, ein Wort des Zwecks, dieselbe Seite der
+  Betragsgrenze; ein Wort anderer Gegenparteien) gibt der gesetzten unter 10 % ((k + 0,5) / (n + 1): keiner von 5, einer von 15, zwei
+  von 25); nicht, wo der Name der Kategorie passt oder eine Umbuchung ihre Gegenbuchung hat. Ändern ersetzt die Kategorie in
+  MoneyMoney nach Rückfrage (wie überall), „Passt so“ nimmt den Umsatz heraus, solange er sie behält; nichts von selbst.
+  (umgesetzt in 3.17.114)
 
 ## Offen (Entscheidung steht aus – mit Empfehlung vorlegen, wenn der Punkt dran ist)
 - Umsatzsteuer-Voranmeldung direkt an ELSTER senden (ELSTERs Programmbibliothek ERiC, Anmeldung als Hersteller, Zertifikat und

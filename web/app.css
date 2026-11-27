@@ -1011,6 +1011,7 @@ table.kb-table { width:auto; min-width:0; } table.kb-table tr:hover td { backgro
 }
 .kz-areas { display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
 .tag.kz-lv { font-weight:600; text-decoration:none; } .tag.kz-lv.high { background:var(--ok-bg); color:var(--ok-fg); } .tag.kz-lv.medium { background:var(--warn-bg); color:var(--warn-fg); } .tag.kz-lv.low { background:var(--err-bg); color:var(--err-fg); }          /* how sure a suggestion is: green, yellow, red -- and its word */
+.kd-now { gap:6px; align-items:center; margin:2px 0 4px; } .kd-now .tag { margin-left:0; }
 .kz-dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:5px; vertical-align:1px; background:var(--faint); }
 .kz-dot.high { background:var(--pos); } .kz-dot.medium { background:#e6a100; } .kz-dot.low { background:var(--neg); }
 .kz-prog { display:flex; flex-wrap:wrap; align-items:center; gap:4px 10px; margin-bottom:4px; }

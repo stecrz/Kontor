@@ -3497,6 +3497,28 @@ class FeatureTests(_AppBase):
         self.assertEqual(code, 200, r)
         self.assertNotIn(gone, r["config"]["balance"]["roles"]); self.assertNotIn(gone, r["config"]["balance"]["history_source"])
 
+    def test_categories_that_make_no_sense_and_fine_as_is(self):
+        """Auffällig: one "Miete" among bakery purchases shows up (counted in the tab of Offen); "Passt so" takes it out while it
+        keeps that category; nothing is written to MoneyMoney (made-up shop)."""
+        for i in range(8):
+            MockBridge.state["txs"].append(F.tx("priv.giro", date(2026, 3, 1) + timedelta(days=i), -4.0 - i, "Bäckerei Sonnenkorn", "Brot", "Lebensmittel"))
+        odd = F.tx("priv.giro", date(2026, 3, 20), -6.5, "Bäckerei Sonnenkorn", "Brot", "Wohnen\\Miete")
+        MockBridge.state["txs"].append(odd)
+        MockBridge.extra_cats = [("Lebensmittel", 0, False, {})]            # (only categories that exist in MoneyMoney count)
+        self.login(); self.run_and_wait()
+        code, r = self.call("/api/categories/doubts")
+        self.assertEqual(code, 200)
+        g = next(g for g in r["groups"] if g["name"] == "Bäckerei Sonnenkorn")
+        self.assertEqual((g["ids"], g["category"], g["proposal"], g["level"]), ([odd["id"]], "Wohnen / Miete", "Lebensmittel", "high"))
+        self.assertEqual(self.call("/api/categories/unassigned")[1]["doubts"], r["groups_total"])
+        self.assertEqual(self.call("/api/categories/doubts", {"ok": [odd["id"]]})[0], 200)
+        self.assertNotIn(odd["id"], [i for g in self.call("/api/categories/doubts")[1]["groups"] for i in g["ids"]])
+        self.assertEqual(categorize.load(self.store)["doubt_ok"], {str(odd["id"]): "Wohnen / Miete"})
+        from service import _categories_form
+        self.assertTrue(_categories_form(categorize.load(self.store)))                                 # (a backup with it is read back)
+        self.assertFalse(_categories_form(dict(categorize.load(self.store), doubt_ok={"1": 2})))
+        self.assertFalse([w for b in MockBridge.instances for w in b.written if w[0] == "set"])          # no category written
+
     def test_kontor_kategorien_und_konten_zuordnung(self):
         import mm_categories
         self.login(); self.run_and_wait()
@@ -5098,7 +5120,7 @@ class BrowserTest(unittest.TestCase):
                 pg.evaluate("location.hash = '#accounts/positions'"); pg.wait_for_timeout(400)
                 self.assertEqual(pg.evaluate("location.hash"), "#accounts/positions"); self.assertTrue(pg.query_selector(".kp-table"))
                 pg.click("#nav a[href='#categories']"); pg.wait_for_timeout(400)
-                self.assertEqual(len(pg.query_selector_all("#main .tabs button")), 3)          # Offen, Regeln für MoneyMoney, Eingetragen
+                self.assertEqual(len(pg.query_selector_all("#main .tabs button")), 4)          # Offen, Auffällig, Regeln für MoneyMoney, Eingetragen
                 # Bilanz: Positionen/Gruppen, inaktive, Konto-Klick -> Verlauf
                 pg.click("#nav a[href='#balance']"); pg.wait_for_selector("tr.pos")
                 self.assertIn("Bankguthaben", pg.query_selector("#main").inner_text())
@@ -5793,6 +5815,57 @@ class BrowserTest(unittest.TestCase):
             if not stopped:
                 srv.shutdown(); srv.server_close()
             shutil.rmtree(d, ignore_errors=True)
+
+
+class DoubtsBrowserTest(unittest.TestCase):
+    """Kategorisieren → Auffällig in the browser: "Passt so" takes a group out; "Ändern" replaces MoneyMoney's category only after
+    the question (made-up shops)."""
+
+    def test_fine_as_is_and_change_after_asking(self):
+        try:
+            from playwright.sync_api import sync_playwright
+        except ImportError:
+            self.skipTest("playwright fehlt")
+        d = tempfile.mkdtemp(prefix="kontor-ui-")
+        store = new_store(d); store.save("config.json", config_for_test(os.path.join(d, "Belege")))
+        reset_mock(); patch_today()
+        odd = []
+        for shop in ("Bäckerei Sonnenkorn", "Metzgerei Eiche"):
+            for i in range(8):
+                MockBridge.state["txs"].append(F.tx("priv.giro", date(2026, 3, 1) + timedelta(days=i), -4.0 - i, shop, "Einkauf", "Lebensmittel"))
+            odd.append(F.tx("priv.giro", date(2026, 3, 20), -6.5, shop, "Einkauf", "Wohnen\\Miete"))
+            MockBridge.state["txs"].append(odd[-1])
+        MockBridge.extra_cats = [("Lebensmittel", 0, False, {})]
+        app = App(store, d, bridge_factory=MockBridge)
+        app.do_run(False, True)
+        srv = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(app)); port = srv.server_address[1]
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        try:
+            with sync_playwright() as p:
+                b = p.chromium.launch(); pg = b.new_page(viewport={"width": 1440, "height": 900})
+                errors = []; pg.on("pageerror", lambda e: errors.append(str(e)))
+                pg.goto("http://127.0.0.1:%d/" % port)
+                pg.fill("#login-pw", "sehr-geheimes-passwort"); pg.fill("#login-pw2", "sehr-geheimes-passwort"); pg.click("#login-btn")
+                wait_shell(pg)
+                pg.goto("http://127.0.0.1:%d/#categories/doubts" % port); pg.wait_for_selector(".kd-group")
+                self.assertEqual(len(pg.query_selector_all(".kd-group")), 2)
+                self.assertIn("Auffällig (2)", pg.inner_text("#main .tabs"))
+                self.assertEqual(pg.input_value(".kd-group .kd-kat"), "Lebensmittel")
+                pg.click(".kd-group[data-key*='metzgerei'] .kd-ok")                 # fine as is: out of the list, nothing written
+                until(pg, "document.querySelectorAll('.kd-group').length === 1")
+                self.assertFalse([w for x in MockBridge.instances for w in x.written if w[0] == "set"])
+                pg.click(".kd-group .kd-change")                                  # MoneyMoney has a category: asked first
+                pg.wait_for_selector(".dlg button[data-v='overwrite']")
+                self.assertFalse([w for x in MockBridge.instances for w in x.written if w[0] == "set"])
+                pg.click(".dlg button[data-v='overwrite']")
+                until(pg, "!document.querySelector('.kd-group')")
+                self.assertTrue(any(w[0] == "set" and w[2] == F.uid("cat:Lebensmittel") for x in MockBridge.instances for w in x.written))
+                self.assertEqual(errors, [])
+                b.close()
+        finally:
+            app.assistant_stop()
+            srv.shutdown()
+            MockBridge.extra_cats = []
 
 
 class DemoBrowserTest(unittest.TestCase):

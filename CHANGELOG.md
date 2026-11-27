@@ -1,5 +1,9 @@
 # Änderungen
 
+## 3.17.114 (2026-11-27 18:46)
+- Kategorisieren: neuer Reiter „Auffällig“ – Kategorien, die nicht zu Kontors Vorschlägen passen (grobe Ausreißer), mit Grund
+- Kategorisieren: auffällige Kategorie mit einem Klick ändern (in MoneyMoney nach Rückfrage) oder „Passt so“
+
 ## 3.17.113 (2026-11-27 18:14)
 - Bilanz: Schalter „Kaufkraft“ – Tabelle und alle Grafiken in heutigem Geld: Vergangenheit nach dem Verbraucherpreisindex (ab 1991), Plan nach der Inflation der Planung
 - Bilanz: neue Monatswerte des Index holt Kontor bei eingeschaltetem Schalter selbst bei der Bundesbank – fester Weg, abgeschirmt, sendet nichts von dir

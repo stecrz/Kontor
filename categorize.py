@@ -426,84 +426,101 @@ class Hints:
     # -- the counterparty's own past ---------------------------------------------------------------------------------------
     def _past(self, kind: str, key: str, area: str, sign: int, cur: str) -> Optional[dict]:
         """What the counterparty's past says (kept): in this area where it has any there, else in all; amounts compared only in
-        the transaction's currency. Made whole before it is kept (requests run side by side)."""
+        the transaction's currency. Categories counted (Counter): all of it (prior), per amount, per word of the purpose, per
+        side of the split by amount. Made whole before it is kept (requests run side by side)."""
         ck = (kind, key, area, sign, cur)
         got = self._party.get(ck, False)
         if got is not False:
             return got
-        hist = (self.by_iban if kind == "iban" else self.by_name).get(key) or []
+        out = self._past_of((self.by_iban if kind == "iban" else self.by_name).get(key) or [], area, sign, cur)
+        self._party[ck] = out
+        return out
+
+    @staticmethod
+    def _past_of(hist: list, area: str, sign: int, cur: str) -> Optional[dict]:
+        """What a past says (see _past) -- for any part of it (Kategorisieren → Auffällig: without the transaction asked about)."""
         here = [s for s in hist if s[0] == area]
         hist = here or hist
         same = [s for s in hist if s[1] == sign]
         out: Optional[dict] = None
         if same:
             prior = Counter(s[3] for s in same)
-            out = {"same": same, "all": _top(s[3] for s in same), "prior": prior, "mixed": len(prior) > 1, "amounts": {}, "words": {}, "stump": None}
+            out = {"n": len(same), "ids": {s[4].id for s in same}, "prior": prior, "mixed": len(prior) > 1, "amounts": {}, "words": {}, "stump": None}
             if out["mixed"]:
                 mine = [s for s in same if s[5] == cur]
-                by_amount: Dict[int, List[str]] = defaultdict(list)
+                amounts: Dict[int, Counter] = defaultdict(Counter)
                 for s in mine:
-                    by_amount[s[2]].append(s[3])
-                out["amounts"] = dict(by_amount)
+                    amounts[s[2]][s[3]] += 1
+                out["amounts"] = dict(amounts)
                 out["stump"] = _stump(mine)
-                words: Dict[str, List[str]] = defaultdict(list)     # word of the purpose -> the categories of the transactions with it
+                words: Dict[str, Counter] = defaultdict(Counter)     # word of the purpose -> the categories of the transactions with it
                 for s in same:
                     for w in text_words(s[4].purpose) | text_words(s[4].booking_text):
-                        words[w].append(s[3])
-                out["words"] = {w: c for w, c in words.items() if 2 <= len(c) < len(same)}
+                        words[w][s[3]] += 1
+                out["words"] = {w: c for w, c in words.items() if 2 <= sum(c.values()) < len(same)}
         elif hist:
-            out = {"reverse": _top(s[3] for s in hist)}
-        self._party[ck] = out
+            out = {"reverse": _top(s[3] for s in hist), "reverse_prior": Counter(s[3] for s in hist)}
         return out
 
     @staticmethod
-    def _like(sub: List[str], p: dict) -> Tuple[str, int, int, float]:
-        """Of the counterparty's transactions like this one (sub: their categories) -- with its whole past as the prior, worth
-        one transaction: (category, k, n, how likely)."""
-        n_all = len(p["same"])
-        c = Counter(sub)
-        cat = max(c, key=lambda x: (c[x] + p["prior"][x] / n_all, x))
-        return cat, c[cat], len(sub), (c[cat] + p["prior"][cat] / n_all) / (len(sub) + 1)
+    def _like(sub: Counter, p: dict) -> Tuple[str, int, int, float]:
+        """Of the counterparty's transactions like this one (sub: their categories counted) -- with its whole past as the
+        prior, worth one transaction: (category, k, n, how likely)."""
+        n_all, n = sum(p["prior"].values()), sum(sub.values())
+        cat = max(sub, key=lambda x: (sub[x] + p["prior"][x] / n_all, x))
+        return cat, sub[cat], n, (sub[cat] + p["prior"][cat] / n_all) / (n + 1)
 
-    def _party_hint(self, t: Tx, area: str, sign: int) -> List[tuple]:
-        """The counterparty's past: where all of it has one category, its share; where its categories differ, those of its
-        transactions that are like this one -- exactly this amount, a word of this purpose, the same side of the amount that
-        parts its categories (its whole past as the prior: one of them does not outweigh twenty others) -- the likeliest of
-        these; one of them for another category (from 50 %) comes as a hint of its own (it takes from the first). Only where
-        none is like this one, all of it."""
-        best: Optional[List[tuple]] = None
+    def _keys(self, t: Tx) -> List[Tuple[str, str]]:
         iban = (t.counter_iban or "").replace(" ", "").upper()
-        keys = ([("iban", iban)] if len(iban) >= 8 else []) + ([("name", norm_name(t.name))] if norm_name(t.name) else [])
+        return ([("iban", iban)] if len(iban) >= 8 else []) + ([("name", norm_name(t.name))] if norm_name(t.name) else [])
+
+    def _subsets(self, t: Tx, p: dict) -> List[Tuple[int, str, Counter, list]]:
+        """The counterparty's transactions like this one, where its categories differ: (how telling, kind, their categories,
+        what the reason names) -- exactly this amount, a word of this purpose, the same side of the split by amount."""
+        c = abs(_cents(t.amount))
+        out = []
+        eq = p["amounts"].get(c)
+        if eq and sum(eq.values()) < p["n"]:
+            out.append((3, "party_amount", eq, [c / 100]))
+        for w in sorted(text_words(t.purpose) | text_words(t.booking_text)):
+            if w in p["words"]:
+                out.append((2, "party_word", p["words"][w], [_shown(t, w)]))
+        if p["stump"]:
+            mid, below, above, low_max, high_min, _ = p["stump"]
+            if c <= low_max or c >= high_min:                    # (between the two sides: neither)
+                out.append((1, "party_below" if c < mid else "party_above", below if c < mid else above, [mid / 100]))
+        return out
+
+    def _pasts(self, t: Tx, area: str, sign: int, without: Optional[int] = None) -> List[Optional[dict]]:
+        """The counterparty's past by its IBAN and by its name -- without: as if that transaction had no category (made anew)."""
         cur = self.currency(t)
-        for kind, key in keys:
-            p = self._past(kind, key, area, sign, cur)
+        if without is None:
+            return [self._past(kind, key, area, sign, cur) for kind, key in self._keys(t)]
+        return [self._past_of([s for s in (self.by_iban if kind == "iban" else self.by_name).get(key) or [] if s[4].id != without], area, sign, cur)
+                for kind, key in self._keys(t)]
+
+    def _party_hint(self, t: Tx, area: str, sign: int, without: Optional[int] = None) -> List[tuple]:
+        """The counterparty's past: where all of it has one category, its share; where its categories differ, those of its
+        transactions that are like this one (_subsets; its whole past as the prior: one of them does not outweigh twenty
+        others) -- the likeliest of these; one of them for another category (from 50 %) comes as a hint of its own (it takes
+        from the first). Only where none is like this one, all of it."""
+        best: Optional[List[tuple]] = None
+        for p in self._pasts(t, area, sign, without):
             if p is None:
                 continue
             if "reverse" in p:
                 cat, k, n = p["reverse"]
                 found = [(REVERSE * chance(k, n), 0, cat, {"k": "party_reverse", "a": [k, n]})]
             elif not p["mixed"]:
-                cat, k, n = p["all"]
-                found = [(chance(k, n), 0, cat, {"k": "party", "a": [k, n]})]
+                cat, k = next(iter(p["prior"].items()))
+                found = [(chance(k, k), 0, cat, {"k": "party", "a": [k, k]})]
             else:
-                c = abs(_cents(t.amount))
                 cands = []                                       # (how likely, among equals the more telling, category, why)
-                eq = p["amounts"].get(c)
-                if eq and len(eq) < len(p["same"]):
-                    cat, k, n, pr = self._like(eq, p)
-                    cands.append((pr, 3, cat, {"k": "party_amount", "a": [k, n, c / 100]}))
-                for w in sorted(text_words(t.purpose) | text_words(t.booking_text)):
-                    sub = p["words"].get(w)
-                    if sub:
-                        cat, k, n, pr = self._like(sub, p)
-                        cands.append((pr, 2, cat, {"k": "party_word", "a": [k, n, _shown(t, w)]}))
-                if p["stump"]:
-                    mid, below, above, low_max, high_min = p["stump"]
-                    if c <= low_max or c >= high_min:            # (between the two sides: neither)
-                        cat, k, n, pr = self._like(below if c < mid else above, p)
-                        cands.append((pr, 1, cat, {"k": "party_below" if c < mid else "party_above", "a": [k, n, mid / 100]}))
+                for rank, kk, sub, extra in self._subsets(t, p):
+                    cat, k, n, pr = self._like(sub, p)
+                    cands.append((pr, rank, cat, {"k": kk, "a": [k, n] + extra}))
                 if not cands:
-                    cat, k, n = p["all"]
+                    cat, k, n = _top(p["prior"].elements())
                     cands.append((chance(k, n), 0, cat, {"k": "party", "a": [k, n]}))
                 cands.sort(key=lambda x: (-x[0], -x[1], x[2]))
                 found = [cands[0]]
@@ -517,14 +534,13 @@ class Hints:
         return [("party", best[0][2], best[0][0], best[0][3])] + [("party_other", x[2], x[0], x[3]) for x in best[1:]]
 
     # -- what others show ---------------------------------------------------------------------------------------------------
-    def _words_hint(self, t: Tx, area: str, sign: int, own: frozenset) -> Optional[tuple]:
+    def _words_best(self, t: Tx, area: str, sign: int, own: frozenset) -> Optional[tuple]:
         """A word other counterparties had (counted by counterparty: the same shop a hundred times is one), in this area where
-        two or more had it there, else in all."""
+        two or more had it there, else in all: ("word", category, how likely, why, the word folded, its key) -- kept."""
         ws = _all_words(t)
         ck = (area, sign, ws, own)
         if ck in self._words_seen:
-            got = self._words_seen[ck]
-            return got and got[:3] + ({"k": "word", "a": got[3]["a"][:2] + [_shown(t, got[4])]},)
+            return self._words_seen[ck]
         best: Optional[tuple] = None
         for w in sorted(ws):
             for a in (area, "*"):
@@ -544,9 +560,13 @@ class Hints:
                         top = (k, cat)
                 p = WORDS * chance(top[0], n)
                 if best is None or (p, n, len(w)) > (best[2], best[3]["a"][1], len(best[4])):      # among equals: more had it, the longer word
-                    best = ("word", top[1], p, {"k": "word", "a": [top[0], n, w]}, w)
+                    best = ("word", top[1], p, {"k": "word", "a": [top[0], n, w]}, w, (a, sign, w))
                 break
         self._words_seen[ck] = best
+        return best
+
+    def _words_hint(self, t: Tx, area: str, sign: int, own: frozenset) -> Optional[tuple]:
+        best = self._words_best(t, area, sign, own)
         return best and best[:3] + ({"k": "word", "a": best[3]["a"][:2] + [_shown(t, best[4])]},)
 
     def _catname_hint(self, t: Tx, sign: int) -> Optional[tuple]:
@@ -670,11 +690,12 @@ class Hints:
         return ("meaning", cat, MEANING * chance(k, n), {"k": "meaning", "a": [k, n, self.names.get(like[2], "")]})
 
     # -- all together -------------------------------------------------------------------------------------------------------
-    def hints(self, t: Tx) -> List[tuple]:
-        """(kind, category, how likely right, why) of each kind of hint that has one -- without meaning (see suggest)."""
+    def hints(self, t: Tx, without: Optional[int] = None) -> List[tuple]:
+        """(kind, category, how likely right, why) of each kind of hint that has one -- without meaning (see suggest); without:
+        as if that transaction (this one) had no category."""
         area, sign = str(self.area_of.get(t.account_uuid, "")), (-1 if t.amount < 0 else 1)
         own = _own(t)
-        out = self._party_hint(t, area, sign)
+        out = self._party_hint(t, area, sign, without)
         out += [h for h in (self._counter_hint(t, area), self._words_hint(t, area, sign, own), self._catname_hint(t, sign),
                             self._common_hint(area, sign)) if h]
         return out
@@ -689,9 +710,9 @@ def _own(t: Tx) -> frozenset:
 
 def _stump(same: list) -> Optional[tuple]:
     """Where the counterparty's categories part by the size of the amount (service charges below, rent above): the split
-    between two amounts that leaves the most on the side of their side's category -- (split, the categories below, those
-    above, the largest amount below, the smallest above); None where no split leaves at least two on each side with different
-    categories. Its latest STUMP_TEXTS transactions."""
+    between two amounts that leaves the most on the side of their side's category -- (split, the categories below counted,
+    those above, the largest amount below, the smallest above, the transactions it was made of); None where no split leaves
+    at least two on each side with different categories. Its latest STUMP_TEXTS transactions."""
     xs = sorted(sorted(same, key=lambda s: (s[4].booking_date, s[4].id))[-STUMP_TEXTS:], key=lambda s: s[2])
     best = None
     left: Counter = Counter()
@@ -708,7 +729,8 @@ def _stump(same: list) -> Optional[tuple]:
     if not best:
         return None
     i = best[1]
-    return (xs[i - 1][2] + xs[i][2]) / 2, [s[3] for s in xs[:i]], [s[3] for s in xs[i:]], xs[i - 1][2], xs[i][2]
+    return ((xs[i - 1][2] + xs[i][2]) / 2, Counter(s[3] for s in xs[:i]), Counter(s[3] for s in xs[i:]), xs[i - 1][2], xs[i][2],
+            frozenset(s[4].id for s in xs))
 
 
 def combine(hs: List[tuple]) -> Optional[dict]:
@@ -896,6 +918,144 @@ def _by_meaning(hints: Hints, meaning: Meaning, groups: List[dict]) -> None:
             m = hints._meant.get(t.id)
             if m and (g["_sug"].get(t.id) or {}).get("level") != "high":
                 g["_sug"][t.id] = combine(hints.hints(t) + [m])
+
+
+# ---------------------------------------------------------------------------
+# Doubts: categories that make no sense to Kontor -- coarse outliers for you to look at (nothing is changed by itself)
+# ---------------------------------------------------------------------------
+#
+# Leaving the transaction itself out, Kontor looks at what is comparable -- the counterparty's past (all of it, exactly this
+# amount, a word of this purpose, the same side of the split by amount) and a word other counterparties had -- and asks how
+# likely the category it has is there: (k + 0.5) / (n + 1) for k of n with it. The base is all of the counterparty's past
+# (without any: the word of others); a smaller set counts only where it has the category (one other payment of the same amount
+# says nothing against it). Doubted only where the best of these gives it less than DOUBT_LOW (under 10 %: none of 5 or more,
+# one of 15, two of 25) and Kontor would suggest another one at least DOUBT_TOP likely -- where only a word of others is the base
+# (a counterparty without a past), at least HIGH. A category Kontor gives some chance (30 % for B while it suggests A at 60 %) is never doubted, and neither is
+# one the category's name or a counter-booking speaks for.
+
+DOUBT_TOP = 0.6                  # Kontor's own suggestion, without this transaction, at least this likely ...
+DOUBT_OK_MAX = 5000              # categories you said are fine ("Passt so"): the latest kept
+DOUBT_LOW = 0.1                  # ... and the category it has less than this by everything comparable
+
+
+def _support(k: int, n: int) -> float:
+    """How likely a category is that k of n comparable transactions had (half a case for it: none of 1 is not nothing)."""
+    return (k + 0.5) / (n + 1)
+
+
+def doubt_of(h: Hints, t: Tx, cat: str) -> Optional[dict]:
+    """Why t's category cat makes no sense to Kontor: {category: what Kontor would suggest for t without its category (as under
+    Offen, without meaning), chance, level, why, support: how likely cat is by the best comparable cases} -- None where it makes
+    sense or too little is known to say. Looked at closely only where the counterparty's past has cat rarely or hardly any past
+    (everything else is never doubted: all of its past is the base)."""
+    area, sign = str(h.area_of.get(t.account_uuid, "")), (-1 if t.amount < 0 else 1)
+    rare = not h._keys(t)
+    for p in h._pasts(t, area, sign):
+        if p is None or "reverse" in p or p["n"] <= 1 or (p["prior"][cat] - 0.5) / p["n"] < DOUBT_LOW:
+            rare = True
+    if not rare:
+        return None
+    hs = h.hints(t, without=t.id)
+    s = combine(hs)
+    if not s or s["category"] == cat or s["chance"] < DOUBT_TOP:
+        return None
+    if any(x[1] == cat and x[0] in ("catname", "counter") for x in hs):
+        return None                                      # the category's name, or a counter-booking: it makes sense
+    support, base = _doubt_support(h, t, cat, area, sign)
+    if support >= DOUBT_LOW or (not base and s["chance"] < HIGH):
+        return None                                      # (only a word others had: doubted only where Kontor is sure)
+    return dict(s, support=round(support, 3))
+
+
+def _doubt_support(h: Hints, t: Tx, cat: str, area: str, sign: int) -> Tuple[float, bool]:
+    """How likely cat is for t by what is comparable without t: the base is all of the counterparty's past (only in the other
+    direction: that) -- a smaller set of it (exactly this amount, a word of this purpose, a side of the split) counts only where
+    it has cat; without a past of its own, the word other counterparties had that Kontor's suggestion rests on, and any other
+    word others had where it has cat. (support, whether the counterparty's own past is the base)."""
+    support, base = 0.0, False
+    for p in h._pasts(t, area, sign, without=t.id):
+        if p is None:
+            continue
+        base = True
+        if "reverse" in p:
+            rp = p["reverse_prior"]
+            support = max(support, _support(rp[cat], sum(rp.values())))
+            continue
+        support = max(support, _support(p["prior"][cat], p["n"]))
+        if p["mixed"]:
+            for _, _, sub, _ in h._subsets(t, p):
+                if sub[cat]:
+                    support = max(support, _support(sub[cat], sum(sub.values())))
+    if base:
+        return support, True                             # (its own past outweighs words others had: they do not speak for it)
+    own = _own(t)
+    best = h._words_best(t, area, sign, own)
+    for w in _all_words(t):
+        for a in (area, "*"):
+            e = h.words.get((a, sign, w))
+            if not e:
+                continue
+            rows, had = e
+            n = len(had) - sum(1 for o in own if o in had)
+            k = sum(len(ps) - sum(1 for o in own if o in ps) for _, c_, ps in rows if c_ == cat)
+            if n >= 1 and (k or (best is not None and best[5] == (a, sign, w))):
+                support = max(support, _support(k, n))
+            break
+    return support, False
+
+
+def doubts(d: dict, ledger: Ledger, bereich_of: Dict[str, str], hints: Optional[Hints] = None, jahr: Optional[int] = None,
+           bereich: Optional[str] = None, banks: Optional[set] = None, hidden: Optional[set] = None, before: Optional[date] = None,
+           limit: int = 300) -> Dict[str, Any]:
+    """Transactions whose category makes no sense to Kontor (doubt_of), grouped by counterparty, category and Kontor's
+    suggestion, the surest doubts first -- under the same filters as what is open (bank accounts, areas you categorise, ignore before, year). One you
+    said is fine (d["doubt_ok"]: id -> its category then) stays out while it keeps that category. Changes nothing."""
+    if hints is None:
+        hints = Hints(d, ledger, bereich_of)
+    ok = d.get("doubt_ok") or {}
+    skip = transfers(ledger, bereich_of)
+    groups: Dict[Tuple[str, str], dict] = {}
+    for t in ledger.txs:
+        if not needs_category(t, banks):
+            continue
+        if (jahr and t.booking_date.year != jahr) or (before and t.booking_date < before):
+            continue
+        if (bereich and bereich_of.get(t.account_uuid) != bereich) or (hidden and str(bereich_of.get(t.account_uuid)) in hidden):
+            continue
+        cat, q = effective(d, t)
+        if not cat or ok.get(str(t.id)) == cat or (t.id in skip and hints.is_transfer(cat)):
+            continue                                     # (a transfer the cash flow paired: its category is right)
+        why = doubt_of(hints, t, cat)
+        if why is None:
+            continue
+        cur = hints.currency(t)
+        key = (party_key(t) + ("" if cur == "EUR" else " " + cur), cat, why["category"])      # one suggestion per group: changed alike
+        g = groups.get(key)
+        if g is None:
+            g = groups[key] = {"key": "|".join(key), "name": t.name[:80] or t.purpose[:80], "iban": (t.counter_iban or "")[:34], "category": cat,
+                               "count": 0, "sum": 0.0, "ids": [], "transactions": [], "accounts": [], "_best": None}
+            if cur != "EUR":
+                g["currency"] = cur
+        acc = ledger.accounts[t.account_uuid].name if t.account_uuid in ledger.accounts else ""
+        g["count"] += 1
+        g["sum"] = round(g["sum"] + t.amount, 2)
+        g["ids"].append(t.id)
+        if acc not in g["accounts"]:
+            g["accounts"].append(acc)
+        if len(g["transactions"]) < 300:
+            g["transactions"].append({"id": t.id, "date": t.booking_date.isoformat(), "amount": t.amount, "name": t.name[:80], "purpose": t.purpose[:400],
+                                      "kind": t.booking_text[:60], "account": acc, "source": q, "proposal": why["category"], "level": why["level"],
+                                      "chance": why["chance"], "why": why["why"], "support": why["support"]})
+        if g["_best"] is None or (why["chance"], -why["support"]) > (g["_best"]["chance"], -g["_best"]["support"]):
+            g["_best"] = why
+    out = []
+    for g in groups.values():
+        b = g.pop("_best")
+        g.update(proposal=b["category"], level=b["level"], chance=b["chance"], why=b["why"], support=b["support"])
+        g["transactions"].sort(key=lambda u: (u["date"], u["id"]), reverse=True)
+        out.append(g)
+    out.sort(key=lambda g: (-g["chance"], g["support"], -abs(g["sum"]), g["key"]))
+    return {"groups": out[:limit], "groups_total": len(out), "count": sum(g["count"] for g in out)}
 
 
 def stats(d: dict, ledger: Ledger, banks: Optional[set] = None, area_of: Optional[Dict[str, str]] = None,

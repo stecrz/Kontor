@@ -291,8 +291,10 @@ class Suggestions(unittest.TestCase):
         here = os.path.join(os.path.dirname(__file__), "..")
         txt = open(os.path.join(here, "web", "i18n.js"), encoding="utf-8").read()
         cat = json.loads(txt[txt.index("{"):txt.rindex("}") + 1])
-        kinds = set(re.findall(r'"k": "(\w+)"', open(os.path.join(here, "categorize.py"), encoding="utf-8").read()))
-        self.assertGreaterEqual(len(kinds), 12)
+        src = open(os.path.join(here, "categorize.py"), encoding="utf-8").read()
+        kinds = {"party", "party_amount", "party_below", "party_above", "party_word", "party_reverse", "word", "meaning", "counter",
+                 "counter_cat", "own_account", "catname", "common_out", "common_in", "also"}
+        self.assertLessEqual(set(re.findall(r'"k": "(\w+)"', src)) | set(re.findall(r'\(\d, "(party_\w+)"', src)), kinds)
         keys = ["kzw_" + k for k in kinds] + [p + lv for lv in C.LEVELS for p in ("kz_lv_", "kz_lv_tip_", "kz_f_", "kz_stufe_leer_")]
         for k in keys:
             self.assertEqual(len(cat.get(k) or []), 2, k)
@@ -305,6 +307,129 @@ class Suggestions(unittest.TestCase):
         self.assertEqual(got[9][:2], ("Lebensmittel", "high"))
         C.apply_to_ledger(d, L)
         self.assertEqual((L.txs[-1].category_path, d["assignment"]), ("", {}))
+
+
+class Doubts(unittest.TestCase):
+    """Categories that make no sense to Kontor: leaving the transaction out, Kontor would suggest another at least 60 % likely
+    and everything comparable gives the one it has under 10 % -- what Kontor gives some chance is never doubted (made up)."""
+
+    def doubted(self, rows, d=None, accounts=("giro",), **kw):
+        L = world(rows, accounts)
+        if "paired" in kw:
+            L._paired = kw.pop("paired")
+        d = d or C.empty()
+        area_of = {u: "1" for u in L.accounts}
+        h = C.Hints(d, L, area_of, None, None, kw.pop("transfer", None), kw.pop("is_transfer", None))
+        got = C.doubts(d, L, area_of, h)
+        return {u["id"]: (g["category"], u["proposal"], u["support"]) for g in got["groups"] for u in g["transactions"]}, got
+
+    def test_the_users_example(self):
+        """Kontor would say A (about 60 %) and knows it may be B (about 30 %): B is fine, C makes no sense."""
+        a = [(i, "giro", i, "Laden", "Einkauf", -11.0 * i, "Lebensmittel", "") for i in range(1, 7)]
+        b = [(10 + i, "giro", 10 + i, "Laden", "Einkauf", -5.0 - 12.0 * i, "Haushalt", "") for i in range(1, 4)]
+        got, _ = self.doubted(a + b[:2] + [(20, "giro", 30, "Laden", "Einkauf", -47.0, "Haushalt", "")])
+        self.assertNotIn(20, got)
+        got, _ = self.doubted(a + b + [(20, "giro", 30, "Laden", "Einkauf", -47.0, "Kleidung", "")])
+        self.assertEqual(got[20][:2], ("Kleidung", "Lebensmittel")); self.assertLess(got[20][2], C.DOUBT_LOW)
+        self.assertEqual(set(got), {20})                       # the others fit
+
+    def test_one_odd_one_among_twenty(self):
+        rows = [(i, "giro", i, "Markt Süd", "Einkauf", -20.0 - i, "Lebensmittel", "") for i in range(1, 21)]
+        got, res = self.doubted(rows + [(30, "giro", 30, "Markt Süd", "Einkauf", -33.0, "Restaurant", "")])
+        self.assertEqual(got, {30: ("Restaurant", "Lebensmittel", round(0.5 / 21, 3))})
+        g = res["groups"][0]
+        self.assertEqual((g["proposal"], g["level"], res["count"], res["groups_total"]), ("Lebensmittel", "high", 1, 1))
+        self.assertEqual(g["why"][0]["a"][:2], [20, 20])        # counted without it
+
+    def test_the_same_amount_once_says_nothing(self):
+        rows = [(i, "giro", i, "Markt Süd", "Einkauf", -20.0 - i, "Lebensmittel", "") for i in range(1, 21)]
+        got, _ = self.doubted(rows + [(30, "giro", 30, "Markt Süd", "Einkauf", -33.0, "Restaurant", "")])        # 33 € was Lebensmittel once
+        self.assertIn(30, got)
+
+    def test_too_little_to_say(self):
+        rows = [(i, "giro", i, "Kiosk", "Zeitung", -2.0 - i, "Freizeit", "") for i in range(1, 4)]
+        got, _ = self.doubted(rows + [(9, "giro", 9, "Kiosk", "Zeitung", -3.5, "Bildung", "")])
+        self.assertEqual(got, {})                               # none of 3: about 12 %, not under 10 %
+
+    def test_two_of_twentyfive_are_no_outliers(self):
+        rows = [(i, "giro", i, "Markt", "Einkauf", -20.0 - i, "Lebensmittel", "") for i in range(1, 21)]
+        rows += [(30 + i, "giro", 30 + i, "Markt", "Einkauf", -40.0 - i, "Restaurant", "") for i in range(3)]
+        got, _ = self.doubted(rows)
+        self.assertEqual(got, {})                               # two others of 22: about 11 %
+
+    def test_by_the_words_of_other_counterparties(self):
+        rows = [(i, "giro", i, "Versicherung %s" % n, "Beitrag", -10.0 * i, "Versicherungen", "")
+                for i, n in enumerate(("Nord", "Süd", "West", "Ost", "Mitte", "Rhein"), start=1)]
+        rows += [(20 + i, "giro", 20 + i, "Markt", "Einkauf", -5.0 - i, "Lebensmittel", "") for i in range(5)]
+        got, _ = self.doubted(rows + [(40, "giro", 40, "Ergo Versicherung", "Monat", -30.0, "Lebensmittel", "")])
+        self.assertEqual(got[40][:2], ("Lebensmittel", "Versicherungen"))
+
+    def test_the_name_of_the_category_or_a_counter_booking_speaks_for_it(self):
+        rows = [(i, "giro", i, "Tankhof", "Einkauf", -50.0 - i, "Lebensmittel", "") for i in range(1, 11)]
+        got, _ = self.doubted(rows + [(20, "giro", 20, "Tankhof", "Benzin", -61.0, "Mobilität / Benzin", "")])
+        self.assertEqual(got, {})                               # "Benzin" is in the category's name
+        rows2 = rows + [(20, "giro", 20, "Tankhof", "Übertrag", -61.0, "Umbuchung", ""), (21, "tages", 21, "", "Übertrag", 61.0, "", "")]
+        got, _ = self.doubted(rows2, accounts=("giro", "tages"), transfer="Umbuchung", is_transfer=lambda p: p == "Umbuchung")
+        self.assertNotIn(20, got)                               # a transfer with its counter-booking
+
+    def test_fine_as_is_until_the_category_changes(self):
+        rows = [(i, "giro", i, "Markt Süd", "Einkauf", -20.0 - i, "Lebensmittel", "") for i in range(1, 21)]
+        rows.append((30, "giro", 30, "Markt Süd", "Einkauf", -33.0, "Restaurant", ""))
+        d = C.empty(); d["doubt_ok"] = {"30": "Restaurant"}
+        self.assertEqual(self.doubted(rows, d)[0], {})
+        d["doubt_ok"] = {"30": "Freizeit"}                       # said for another category than it has now
+        self.assertIn(30, self.doubted(rows, d)[0])
+
+    def test_never_a_transfer_the_cash_flow_paired(self):
+        rows = [(i, "giro", i, "Bank", "Einkauf", -20.0 - i, "Lebensmittel", "") for i in range(1, 21)]
+        rows.append((30, "giro", 30, "Bank", "Einkauf", -33.0, "Umbuchung", ""))
+        got, _ = self.doubted(rows, paired={"1": {30}}, is_transfer=lambda p: p == "Umbuchung")
+        self.assertEqual(got, {})
+        got, _ = self.doubted(rows, is_transfer=lambda p: p == "Umbuchung")
+        self.assertIn(30, got)                                  # unpaired: as odd as any other
+
+    def test_as_if_it_had_no_category(self):
+        """What Kontor would suggest for it without its category decides (the reviewer's cases): the only one in its area or its
+        direction falls back to the rest, any word others had speaks for its category, a word of others alone needs a sure one."""
+        rows = [(i, "eins", i, "Stadtwerke", "Abschlag", -50.0 - i, "Nebenkosten", "") for i in range(1, 11)]
+        rows += [(20 + i, "eins", 20 + i, "Versorger %s" % n, "Abschlag Strom", -40.0 - i, "Strom", "") for i, n in enumerate("ABCDEF")]
+        rows.append((40, "zwei", 40, "Stadtwerke", "Abschlag Strom", -55.0, "Nebenkosten", ""))
+        L = world(rows, ("eins", "zwei"))
+        h = C.Hints(C.empty(), L, {"eins": "1", "zwei": "2"})
+        self.assertIsNone(C.doubt_of(h, L.txs[-1], "Nebenkosten"))            # its counterparty's past in the other area: Nebenkosten
+        shop = [(i, "giro", i, "Laden Nord", "Einkauf", -20.0 - i, "Lebensmittel", "") for i in range(1, 21)]
+        got, _ = self.doubted(shop + [(50, "giro", 50, "Laden Nord", "Gutschrift", 7.5, "Lebensmittel", "")])
+        self.assertNotIn(50, got)                                               # the first refund: its purchases in the other direction
+        market = [(i, "giro", i, "Markt %s" % n, "Einkauf", -5.0 - i, "Lebensmittel", "") for i, n in enumerate("ABCDEF", start=1)]
+        market += [(10, "giro", 10, "Apotheke Süd", "Rezept", -9.0, "Gesundheit", ""), (11, "giro", 11, "Apotheke West", "Rezept", -8.0, "Gesundheit", "")]
+        got, _ = self.doubted(market + [(20, "giro", 20, "Apotheke am Markt", "Rezept", -12.0, "Gesundheit", "")])
+        self.assertNotIn(20, got)                                               # "Apotheke" speaks for it, whatever "Markt" says
+        refunds = [(30 + i, "giro", 30 + i, nm, "Gutschrift", 100.0 + i, "Erstattungen", "") for i, nm in enumerate(("Kasse Eins", "Kasse Zwei", "Amt Drei", "Firma Vier"))]
+        got, _ = self.doubted(refunds + [(40, "giro", 40, "Arbeit Fünf", "Gutschrift", 2000.0, "Gehalt", "")])
+        self.assertNotIn(40, got)                                               # only a common word of others, Kontor not sure: no doubt
+
+    def test_words_of_others_do_not_excuse_a_counterpartys_outlier(self):
+        rows = []
+        for n, shop in enumerate(("Bäckerei Sonnenkorn", "Metzgerei Eiche")):
+            rows += [(100 * n + i, "giro", i, shop, "Einkauf", -4.0 - i, "Lebensmittel", "") for i in range(1, 9)]
+            rows.append((100 * n + 50, "giro", 50, shop, "Einkauf", -6.5, "Wohnen / Miete", ""))
+        got, _ = self.doubted(rows)
+        self.assertEqual(sorted(got), [50, 150])                # the other's stray "Einkauf" says nothing for this one
+
+    def test_one_suggestion_per_group(self):
+        rows = [(i, "giro", i, "Hausverwaltung", "Miete", -900.0 - i, "Wohnen / Miete", "") for i in range(1, 11)]
+        rows += [(20 + i, "giro", 20 + i, "Hausverwaltung", "Abrechnung", -40.0 - i, "Wohnen / Nebenkosten", "") for i in range(1, 11)]
+        rows += [(40, "giro", 40, "Hausverwaltung", "Miete", -905.5, "Lebensmittel", ""), (41, "giro", 41, "Hausverwaltung", "Abrechnung", -44.5, "Lebensmittel", "")]
+        _, res = self.doubted(rows)
+        self.assertEqual(sorted((g["ids"], g["proposal"]) for g in res["groups"]), [([40], "Wohnen / Miete"), ([41], "Wohnen / Nebenkosten")])
+
+    def test_changes_nothing(self):
+        rows = [(i, "giro", i, "Markt", "Einkauf", -20.0 - i, "Lebensmittel", "") for i in range(1, 21)] + [(30, "giro", 30, "Markt", "Einkauf", -33.0, "Restaurant", "")]
+        L = world(rows)
+        d = C.empty()
+        before = [(t.id, t.category_path) for t in L.txs]
+        C.doubts(d, L, {"giro": "1"})
+        self.assertEqual(([(t.id, t.category_path) for t in L.txs], d), (before, C.empty()))
 
 
 class SuggestionsByMeaning(unittest.TestCase):

@@ -1,9 +1,10 @@
 # categories — Kategorisieren
 Fills the gaps in the user's MoneyMoney categories: the categories are MoneyMoney's (Kontor has none of its own); what the user
-assigns here Kontor writes into MoneyMoney's category field, after his click only. Three tabs, each with a count: "Offen (N)" =
+assigns here Kontor writes into MoneyMoney's category field, after his click only. Four tabs, each with a count: "Offen (N)" =
 booked bank-account transactions still needing a category (as of the last report: no category in MoneyMoney – its default
 "Unkategorisiert" counts as none – and no assignment waiting; transfers between accounts of the same area and areas left out of
-categorising not counted); "Regeln für MoneyMoney (N)" = number of rule proposals; "Eingetragen (N)" = number of categories Kontor
+categorising not counted); "Auffällig (N)" = groups of transactions whose category makes no sense to Kontor (see categories.doubts);
+"Regeln für MoneyMoney (N)" = number of rule proposals; "Eingetragen (N)" = number of categories Kontor
 has written into MoneyMoney (its log). The link "Cashflow-Positionen" leads to where each category counts in the cash flow – nothing
 on this page changes a figure except through the category written into MoneyMoney.
 
@@ -82,6 +83,27 @@ Zweck (the transaction's own name in bold where it differs from the group's, the
 Betrag (€, signed: negative = outflow), and – only when the group has no common suggestion – "Vorschlag": this transaction's
 suggestion with a coloured dot for its level (green sicher, yellow wahrscheinlich, red unsicher; tooltip: percentage and reasons;
 "–": none).
+
+## categories.doubts — Auffällig
+Booked bank-account transactions that have a category (MoneyMoney's or waiting) which makes no sense to Kontor – coarse outliers,
+for the user to look at; nothing changes by itself. Same scope as "Offen" (areas ticked there, "Ignorieren vor"; all years; a
+transfer category on a booking the cash flow paired is never doubted). Tab count and note: N = groups (tab) / transactions (note).
+Doubted when, as if the transaction had no category, (1) Kontor's suggestion for it – the same as under "Offen", without meaning –
+is another category at least 60 % likely (at least 80 % where the counterparty has no past of its own and only a word other
+counterparties had speaks), and (2) what is comparable gives the category it has under 10 %: (k + 0.5) / (n + 1) for k of n with it –
+the base is all of the counterparty's past (none of 5 or more, one of 15, two of 25), else the word Kontor's suggestion rests on; a
+smaller set (exactly this amount, a word of the purpose, a side of the split by amount, any word others had) counts only where it
+has the category. Not doubted: a category Kontor gives some chance (30 % for B while it suggests A at 60 %), one whose name matches
+a word of the transaction, a transfer category with a counter-booking, too little to compare. Groups per counterparty, category
+and Kontor's suggestion, the surest doubt first, at most 300.
+
+### categories.doubts.group — Auffällige Gegenpartei
+Bold the counterparty, grey accounts and IBAN, "N×" its doubted transactions with this category, their sum (signed). "Jetzt:" the
+category they have (tooltip: about P % – what everything comparable gives it); "Kontor würde vorschlagen:" Kontor's suggestion
+with its level tag (tooltip: percentage and reasons, counted without these transactions). The field holds that suggestion;
+"Ändern" / "Alle N ändern" writes the category into MoneyMoney – replacing MoneyMoney's own only after the question every
+replacement asks. "Passt so" keeps them out of this list while they keep this category (stored in categories.json: doubt_ok).
+"Umsätze ▾": date, account, purpose, amount.
 
 ## categories.rules — Regeln für MoneyMoney
 Proposed rules for MoneyMoney (Kontor cannot create rules there), sorted by how many still-open transactions they would catch, at

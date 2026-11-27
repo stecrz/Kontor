@@ -308,6 +308,11 @@ What you assign from an added iPhone, Kontor on the Mac enters at once, as there
 
 Every open transaction gets Kontor's likeliest category, coloured by how often such a suggestion is right – green sure (from 80 %), yellow probable (from 60 %), red unsure – from the counterparty's earlier categories (amount and purpose words included), a counter-booking on another of your accounts, words other counterparties had, with the assistant also by meaning, and words of your categories' names; pointing at it shows why, and “Take all sure ones” takes only sure ones.
 
+<a id="categories-doubts"></a>
+### Odd: when a category does not fit
+
+Coarse outliers among your categories – where, leaving the transaction out, Kontor would suggest another category at least 60 % likely and everything comparable gives the one it has under 10 %; “Change” enters another one in MoneyMoney (replacing MoneyMoney's only after asking), “Fine as is” takes them off the list.
+
 <a id="categories-rules"></a>
 ### Rules for MoneyMoney
 

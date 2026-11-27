@@ -143,6 +143,25 @@ def open_category_items(app: "App", year: Optional[int], area: Optional[str], mi
                                   assign_cutoff(app.config), app.category_hints(kat, bereich_of, roles), app.tx_meaning(), level)
 
 
+def category_doubts(app: "App", limit: int = 300) -> dict:
+    """Categories that make no sense to Kontor (categorize.doubts): bank bookings of the areas you categorise from the day you
+    chose on, the surest doubts first -- kept while nothing they rest on changed (the hints, the ones you said are fine)."""
+    kat = categorize.load(app.store)
+    areas = bereiche_for(app.ledger, app.config)
+    bereich_of = {a.uuid: b["id"] for b in areas for a in b["leaves"]}
+    roles = account_roles(app.ledger, app.config)
+    hints = app.category_hints(kat, bereich_of, roles)
+    skipped, cut, banks = assign_skipped(app.config, areas), assign_cutoff(app.config), bank_accounts(roles)
+    paired = hash(frozenset(categorize.transfers(app.ledger, bereich_of)))
+    key = (json.dumps(kat.get("doubt_ok") or {}, sort_keys=True), tuple(sorted(skipped)), cut, limit, tuple(sorted(banks)), paired)
+    cached = getattr(app, "_doubts", None)
+    if cached and cached[0] is hints and cached[1] == key:   # (the hints themselves: a new object may get an old one's id)
+        return cached[2]
+    res = categorize.doubts(kat, app.ledger, bereich_of, hints, None, None, banks, skipped, cut, limit)
+    app._doubts = (hints, key, res)
+    return res
+
+
 def assign_categories(app: "App", ids: List[int], pfad: str, modus: str = "auto", local: bool = True, confirmed: Optional[dict] = None,
                       wait: bool = False, grund: str = "assignment") -> dict:
     """Your assignment of a category to transactions (from Kategorisieren or the assistant's card): into MoneyMoney (only categories
@@ -2281,13 +2300,13 @@ DEMO_GET = frozenset(("/api/status", "/api/dataset", "/api/config", "/api/plan",
                       "/api/transactions", "/api/receipts", "/api/receipts/file", "/api/export/property.xlsx", "/api/package/export",
                       "/api/assistant/status", "/api/assistant/chats", "/api/assistant/chat", "/api/assistant/changes", "/api/assistant/poll",
                       "/api/help", "/api/check/status", "/api/history", "/api/categories/positions", "/api/categories/written",
-                      "/api/categories/unassigned", "/api/categories/proposals", "/api/properties", "/api/properties/template",
+                      "/api/categories/unassigned", "/api/categories/proposals", "/api/categories/doubts", "/api/properties", "/api/properties/template",
                       "/api/price_index"))      # (the demo: the index this version holds, never fetched)
 DEMO_GET_PREFIX = ("/api/export/",)    # the Excel files of the pages
 DEMO_POST = frozenset(("/api/lock", "/api/config", "/api/rules/preview", "/api/check", "/api/sync", "/api/sync/gaps", "/api/bookings/reject",
                        "/api/bookings/plan", "/api/bookings/restore", "/api/bookings/refresh", "/api/run", "/api/report", "/api/report/rebuild",
                        "/api/plan", "/api/history", "/api/history/import", "/api/receipts/upload", "/api/receipts/remove", "/api/receipts/update",
-                       "/api/categories/assign", "/api/categories/proposals", "/api/categories/positions", "/api/categories/areas",
+                       "/api/categories/assign", "/api/categories/proposals", "/api/categories/doubts", "/api/categories/positions", "/api/categories/areas",
                        "/api/categories/undo", "/api/properties", "/api/properties/calculate",
                        "/api/assistant/ask", "/api/assistant/stop", "/api/assistant/reset", "/api/assistant/page", "/api/assistant/confirm",
                        "/api/assistant/listen", "/api/assistant/transcribe", "/api/assistant/attach", "/api/assistant/chats/delete", "/api/assistant/undo",
@@ -3748,8 +3767,13 @@ def make_handler(app: App):
                 res["waiting"] = sum(1 for z in kat["assignment"].values() if categorize.waiting(z))      # written at the next sync
                 res["written"] = len((app.store.load_shared("state.json", {}) or {}).get(mm_categories.LOG_KEY) or {})      # entered by Kontor (to take back)
                 res["rule_proposals"] = len(app.rule_proposals(kat))
+                res["doubts"] = category_doubts(app)["groups_total"]       # categories that make no sense to Kontor (the tab Auffällig)
                 res["local"] = self._may_change(s)
                 return self._json(200, res)
+            if path == "/api/categories/doubts":
+                if app.ledger is None:
+                    return self._json(200, {"groups": [], "groups_total": 0, "count": 0})
+                return self._json(200, dict(category_doubts(app), local=self._may_change(s)))
             if path == "/api/categories/proposals":
                 if app.ledger is None:
                     return self._json(200, {"proposals": []})
@@ -5010,6 +5034,23 @@ def make_handler(app: App):
                 return self._json(200, assign_categories(app, ids, categorize.norm_cat(str(body.get("category") or "")),
                                                          "overwrite" if body.get("mode") == "overwrite" else "auto", local,
                                                          body.get("confirmed") if isinstance(body.get("confirmed"), dict) else None, bool(body.get("wait"))))
+            if path == "/api/categories/doubts":
+                # categories you looked at and that are right as they are ("Passt so"): not doubted again while they keep them
+                got = body.get("ok") if isinstance(body.get("ok"), list) else []
+                ids = {int(x) for x in got[:2000] if isinstance(x, (int, str)) and str(x).lstrip("-").isdigit()}
+                if ids and app.ledger is not None:
+                    with categorize.LOCK:
+                        kat = categorize.load(app.store)
+                        mine = dict(kat.get("doubt_ok") or {})
+                        for t in app.ledger.txs:
+                            if t.id in ids:
+                                cat = categorize.effective(kat, t)[0]
+                                if cat:
+                                    mine.pop(str(t.id), None)          # (said again: the newest, the last to go)
+                                    mine[str(t.id)] = cat
+                        kat["doubt_ok"] = dict(list(mine.items())[-categorize.DOUBT_OK_MAX:])
+                        categorize.save(app.store, kat)
+                return self._json(200, {"ok": True})
             if path == "/api/categories/proposals":
                 # a rule proposal you took over into MoneyMoney (or do not want): not shown again
                 key = str(body.get("done_items") or "")
@@ -5386,6 +5427,9 @@ def _categories_form(d: Any) -> bool:
         if not isinstance(r, dict) or not all(_opt(r.get(k), str) for k in ("id", "category", "iban", "name_is", "purpose_contains", "source")) \
                 or not (r.get("hits") is None or _is_num(r["hits"])):
             return False
+    if not (d.get("doubt_ok") is None or (isinstance(d["doubt_ok"], dict) and len(d["doubt_ok"]) <= categorize.DOUBT_OK_MAX
+                                          and all(isinstance(k, str) and isinstance(v, str) for k, v in d["doubt_ok"].items()))):
+        return False
     return d.get("rule_done") is None or (isinstance(d["rule_done"], list) and all(isinstance(x, str) for x in d["rule_done"]))
 
 
