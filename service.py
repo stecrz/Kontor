@@ -4919,8 +4919,11 @@ def make_handler(app: App):
                     cfg = save_positions(app.config, body, app.ledger)
                 except KeyError as e:
                     return self._json(400, {"error": str(e).strip("'\"")})
+                # only taken over as they stand (the setup's "Übernehmen und weiter"): no figure changes, no new report
+                same = ({k: v for k, v in (cfg.get("cashflow") or {}).items() if k != "positions_confirmed"}
+                        == {k: v for k, v in (app.config.get("cashflow") or {}).items() if k != "positions_confirmed"})
                 app.save_config(cfg)
-                ok, err = app.rebuild_report(wait=bool(body.get("wait")), grund="cash flow positions") if app.ledger is not None else (False, None)
+                ok, err = app.rebuild_report(wait=bool(body.get("wait")), grund="cash flow positions") if app.ledger is not None and not same else (False, None)
                 log.info("Cash flow positions saved: %d chosen", len(app.config["cashflow"].get("positions") or {}))
                 return self._json(200, {"ok": True, "report": ok, "config": app.config})
             if path == "/api/categories/areas":

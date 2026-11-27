@@ -1,10 +1,25 @@
 # accounts — Konten & Regeln
-Everything that decides the user's figures: which accounts belong to which area and balance-sheet position (Konten, Bereiche),
+Everything that decides the user's figures: which areas there are and which accounts belong to which area and balance-sheet
+position (Bereiche, Konten – in this order in the tabs, the page opens on Konten),
 where month-end balances come from (Kontostände), in which cash-flow line each MoneyMoney category counts (Cashflow-Positionen),
 what Kontor books by itself (Buchungsregeln) and the basis of the tax overview (Steuer). Six tabs; the page has no area switch and
 no period – it shows settings for all areas at once. Changes count after "Speichern" (Buchungsregeln: "Speichern und prüfen");
 then Kontor recalculates every page. Nothing here changes MoneyMoney, except that saved booking rules let Kontor book into
 offline accounts (see accounts.rules).
+
+## accounts.areas — Bereiche
+One card per area (Bereich): a set of accounts with its own balance sheet, cash flow, planning and tax overview. Without saved
+areas each top-level group in MoneyMoney is proposed as one. Fields of each area:
+- **Name**.
+- **Art**: "privat" or "Gesellschaft (GbR, GmbH …)" – proposed from the name (GmbH, GbR, UG, Holding …). Only companies appear under
+  Buchungsregeln → Beteiligungen.
+- **Hauptbereich** (ja/nein): exactly one area; preselected on Übersicht, Bilanz, Cashflow and Planung, and the private person in
+  the tax overview.
+- **Anteil** (companies only, %): the user's share of the company. Kontor values the participation with it (share × the
+  company's net worth) and the tax overview takes this part of the result. Empty: tax 100 %, the participation is not valued.
+- **Konten / Gruppen**: the tree of MoneyMoney; a ticked group includes every account below it, also ones created later (shown
+  ticked and locked). An account in no area counts nowhere.
+▲ ▼ set the order of the areas in the area switch at the top of the pages. "Entfernen" deletes an area (not its accounts).
 
 ## accounts.accounts — Konten
 One row per account of MoneyMoney (no groups): its area, balance-sheet position, source of its history, online/offline,
@@ -36,20 +51,6 @@ Bereich"); within an area the accounts in MoneyMoney's order.
   red below 0, green otherwise.
 In the Bereich, Position and Verlauf menus "(Vorschlag)" marks Kontor's proposal (from name, type, group, portfolio); a dashed
 border means the proposal is chosen, a solid border the user's own choice.
-
-## accounts.areas — Bereiche
-One card per area (Bereich): a set of accounts with its own balance sheet, cash flow, planning and tax overview. Without saved
-areas each top-level group in MoneyMoney is proposed as one. Fields of each area:
-- **Name**.
-- **Art**: "privat" or "Gesellschaft (GbR, GmbH …)" – proposed from the name (GmbH, GbR, UG, Holding …). Only companies appear under
-  Buchungsregeln → Beteiligungen.
-- **Hauptbereich** (ja/nein): exactly one area; preselected on Übersicht, Bilanz, Cashflow and Planung, and the private person in
-  the tax overview.
-- **Anteil** (companies only, %): the user's share of the company. Kontor values the participation with it (share × the
-  company's net worth) and the tax overview takes this part of the result. Empty: tax 100 %, the participation is not valued.
-- **Konten / Gruppen**: the tree of MoneyMoney; a ticked group includes every account below it, also ones created later (shown
-  ticked and locked). An account in no area counts nowhere.
-▲ ▼ set the order of the areas in the area switch at the top of the pages. "Entfernen" deletes an area (not its accounts).
 
 ## accounts.history — Kontostände
 Where the history of balances comes from beyond what MoneyMoney's interface gives: once from MoneyMoney's database file, for
@@ -91,7 +92,9 @@ that month, not the back-calculation.
 ## accounts.positions — Cashflow-Positionen
 Where each category of MoneyMoney counts in the cash flow (the same outline for every area). Only categories with booked
 transactions in the user's areas are listed. Choices count after "Speichern"; the cash flow is then recalculated. MoneyMoney's
-categories are never changed; Kontor creates none.
+categories are never changed; Kontor creates none. While the setup is open, the bar has "Übernehmen und weiter: Buchungsregeln"
+(and "Speichern" turns secondary): it saves any choices and takes the positions over as they stand – Kontor's proposals included –,
+which is what the setup's needed step "Cashflow-Positionen" waits for; it recalculates only if a choice changed.
 
 ### accounts.positions.needs — Empfohlene Kategorien
 A folded card (also during setup), for information only – no count or score, since not every row applies to everyone (no

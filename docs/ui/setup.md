@@ -1,6 +1,7 @@
 # setup — Einrichtung
 A guided way through the pages that set Kontor up – not a store of its own: each step opens the page where it is done (Konten &
-Regeln, Einstellungen, Immobilien, Planung, Kategorisieren). It stays in the menu until the user closes it ("Einrichtung
+Regeln, Einstellungen, Immobilien, Planung). Only what is set up once: no daily work (Kategorisieren) and no setting that simply
+has its default (Abgleich). It stays in the menu until the user closes it ("Einrichtung
 abgeschlossen"); while it is open, the pages it leads to carry a slim line "‹ Zurück zur Einrichtung · Weiter zu … ›".
 
 ## setup.language — Sprache · Language
@@ -15,11 +16,12 @@ button "Einrichten" or "Anpassen" leading to its page. Steps and when they count
 - **Bereiche**: which accounts belong together (private, each company) → Konten & Regeln → Bereiche.
 - **Konten**: confirm area, position and history source of every account; done when no account is new.
 - **Historische Kontostände** (optional): the history of balances once from MoneyMoney's database.
+- **Cashflow-Positionen**: where each category counts. Needed, though Kontor fills every category with its proposal: done once
+  the user took them over ("Übernehmen und weiter: Buchungsregeln" on that page while the setup is open, or any "Speichern"
+  there) or chose a position of their own.
 - **Buchungsregeln** (optional): loans, participations, account mirrors; done when there is at least one rule.
-- **Cashflow-Positionen** (optional): where each category counts; done when one position is chosen.
-- **Immobilien**, **Planung**, **Steuer**, **Belege**, **iPhone-Zugriff**, **KI-Assistent** (switched on and a model ready),
-  **Kategorisieren** (no transaction without a category), all optional.
-- **Abgleich**: automatic sync and how far back Kontor reads (Einstellungen → MoneyMoney-Sync).
+- **Immobilien**, **Planung**, **Steuer**, **Belege**, **iPhone-Zugriff**, **KI-Assistent** (switched on and a model ready), all
+  optional.
 
 ## setup.finish — Einrichtung abgeschlossen / prüfen
 "Einrichtung abgeschlossen" hides the setup from the menu (possible once the needed steps – those without "optional" – are done);

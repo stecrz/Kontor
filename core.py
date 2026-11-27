@@ -102,6 +102,8 @@ def _shape(cfg: dict) -> dict:
                 if f in part and not isinstance(part[f], str):
                     part.pop(f)
     kf = cfg.get("cashflow")
+    if isinstance(kf, dict) and "positions_confirmed" in kf and not isinstance(kf["positions_confirmed"], bool):
+        kf.pop("positions_confirmed")           # (the setup's step "Cashflow-Positionen": open again, never an error)
     if isinstance(kf, dict) and "recipient_to_account" in kf:
         e = kf["recipient_to_account"]
         kf["recipient_to_account"] = {str(a): {str(k): v for k, v in m.items() if isinstance(v, str) and v}
@@ -1392,7 +1394,8 @@ def positions_overview(ledger: Ledger, config: dict, categories: List[dict], tod
 
 def save_positions(config: dict, body: dict, ledger: Optional[Ledger]) -> dict:
     """The settings with your positions (Kategorien -> Cashflow-Positionen): {pfad: position | "umbuchung" | "" (Kontor's
-    proposal)}, the account saving of a category goes into {pfad: account}. Only the categories sent change."""
+    proposal)}, the account saving of a category goes into {pfad: account}. Only the categories sent change. "confirmed": true
+    marks the positions as taken over as they stand -- Kontor's proposals included (the setup's step is done then)."""
     cfg = copy.deepcopy(config)
     kf = cfg.setdefault("cashflow", {})
     pos = {norm_cat(k): v for k, v in (kf.get("positions") or {}).items()}
@@ -1441,6 +1444,8 @@ def save_positions(config: dict, body: dict, ledger: Optional[Ledger]) -> dict:
                     ledger.resolve(v)           # KeyError: unknown account
                 mine[k] = v
     kf["recipient_to_account"] = {a: m for a, m in emp.items() if m}
+    if body.get("confirmed") is True:
+        kf["positions_confirmed"] = True
     return cfg
 
 

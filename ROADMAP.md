@@ -444,6 +444,14 @@ anhängen – nie löschen.
   hingenommen: keine Einstellung macht GitHubs Zeitplan pünktlich. Abgelöst: der Nachtstart (3.17.99) und der Wecker im
   Nachtlauf (3.17.103) – in der ersten Nacht des Weckers (27.11.) löste GitHub ihn kein einziges Mal aus. Eine fehlende Nacht
   (über 36 h kein Lauf) meldet das Lagebild; „Run workflow“ startet ihn von Hand sofort. (umgesetzt in 3.17.104)
+- **Einrichtung: nur Einzurichtendes, in der Reihenfolge der Reiter** (Nutzer, 2026-11-27): Unter Konten & Regeln erst
+  „Bereiche“, dann „Konten“ – Konten gehören zu Bereichen. In der Einrichtung Cashflow-Positionen vor Buchungsregeln, wie die
+  Reiter. „Optional“ nur, was wirklich optional ist: Cashflow-Positionen sind nötig – Kontor füllt sie nur mit Vorschlägen vor;
+  erledigt, sobald übernommen („Übernehmen und weiter“, jedes Speichern dort) oder eine eigene gewählt –, Buchungsregeln
+  optional (mancher hat keine). Raus: „Abgleich“ (eine Einstellung unter vielen, mit ihrem Standard immer schon „eingerichtet“)
+  und „Kategorisieren“ (laufende Arbeit, nichts zum Einrichten). Abgelöst: die Reihenfolge aus 3.15.2 („Buchungsregeln vor
+  Cashflow-Positionen, Kategorisieren am Ende“). `#accounts` öffnet weiter die Konten (dort warten neue Konten), obwohl
+  „Bereiche“ vorne steht. (umgesetzt in 3.17.109)
 
 ## Offen (Entscheidung steht aus – mit Empfehlung vorlegen, wenn der Punkt dran ist)
 - Umsatzsteuer-Voranmeldung direkt an ELSTER senden (ELSTERs Programmbibliothek ERiC, Anmeldung als Hersteller, Zertifikat und

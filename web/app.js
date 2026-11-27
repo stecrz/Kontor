@@ -285,7 +285,7 @@ const PAGE_HELP = {overview: 'overview', balance: 'balance-sheet', cashflow: 'ca
   'settings/backup': 'backup', 'settings/assistant': 'assistant-setup', assistant: 'assistant', log: 'log'};
 // pages with tabs: the title stays, so the line names the tab it is about ("Belege: …")
 const SUB_LABEL = {settings: {'': 'allgemein', moneymoney: 'einst_mm', access: 'zugang', receipts: 'belege', assistant: 'ki_assistent_lang', updates: 'updates', backup: 'sichern_zuruecksetzen'},
-  accounts: {'': 'mod_accounts', areas: 'mod_areas', history: 'kontostaende_tab', positions: 'cashflow_positionen', rules: 'nav_auto_regeln', tax: 'steuer'},
+  accounts: {areas: 'mod_areas', '': 'mod_accounts', history: 'kontostaende_tab', positions: 'cashflow_positionen', rules: 'nav_auto_regeln', tax: 'steuer'},
   categories: {'': 'kz_tab_offen', rules: 'regeln_fuer_moneymoney', written: 'kz_tab_eingetragen'}};
 const pageHq = (tab, sub) => { const k = (tab + '/' + sub) in PAGE_HELP ? tab + '/' + sub : tab, id = PAGE_HELP[k]; if (id == null) return '';
   const lab = (SUB_LABEL[tab] || {})[sub || ''], txt = t(`page_${k.replace('/', '_')}`);
@@ -1648,17 +1648,17 @@ const MODULES = [
   {id: 'areas', t: t('mod_areas'), d: t('welche_konten_gehoeren_zusammen_privat'), done: () => (S.CFG.areas || []).length > 0 || !!S.DATA, href: '#accounts/areas'},
   {id: 'accounts', t: t('mod_accounts'), d: t('jedes_konto_bestaetigen_bereich_und'), done: () => !!S.DATA && !((S.DATA.accounts_new || []).length), href: '#accounts'},
   {id: 'history', t: t('mod_history'), d: t('bisherigen_verlauf_aller_konten_einmal'), done: () => !!((S.STATUS || {}).moneymoney || {}).history, href: '#accounts/history', optional: true},
+  {id: 'categories', t: t('mod_categories'), d: t('kategorien_auswaehlen_d'), done: () => positionsConfirmed(), href: '#accounts/positions'},
   {id: 'rules', t: t('mod_rules'), d: t('darlehen_spiegeln_und_verzinsen_beteil'), done: () => hasRules(), href: '#accounts/rules', optional: true},
-  {id: 'categories', t: t('mod_categories'), d: t('kategorien_auswaehlen_d'), done: () => Object.keys((S.CFG.cashflow || {}).positions || {}).length > 0, href: '#accounts/positions', optional: true},
   {id: 'properties', t: t('mod_properties'), d: t('kalkulationen_anlegen_mit_konten_und'), done: () => (S.CFG.real_estate || []).length > 0, href: '#properties', optional: true},
   {id: 'planning', t: t('mod_planning'), d: t('horizont_inflation_steigerungen_darleh'), done: () => !!S.DATA, href: '#planning', optional: true},
   {id: 'tax', t: t('mod_tax'), d: t('vermietungskategorie_darlehen_objekt_a'), done: () => ['property_loans', 'depreciation', 'positions', 'entities'].some(k => Object.keys((S.CFG.tax || {})[k] || {}).length), href: '#accounts/tax', optional: true},
   {id: 'receipts', t: t('mod_receipts'), d: t('belegordner_und_ablagemuster_belege_zu'), done: () => !!(S.CFG.receipts || {}).folder_confirmed, href: '#settings/receipts', optional: true},
   {id: 'iphone', t: t('mod_iphone'), d: t('zugriff_vom_iphone_d'), done: () => (((S.CFG || {}).ui || {}).bind || '127.0.0.1') !== '127.0.0.1', href: '#settings/access', optional: true},
   {id: 'assistant', t: t('ki_assistent_lang'), d: t('mod_assistant_d'), done: () => asOn() && !!(AS.st || {}).ready, href: '#settings/assistant', optional: true},
-  {id: 'assign', t: t('mod_assign'), d: t('kontor_eigene_kategorien_baum_aus'), done: () => !!S.DATA && !(((S.DATA.categories || {}).total || {}).without), href: '#categories', optional: true},
-  {id: 'operation', t: t('mod_operation'), d: t('testmodus_automatischer_abgleich_mitte'), done: () => true, href: '#settings/moneymoney'},
 ];
+// the cash flow positions are filled in by Kontor's proposals; the step is done once you took them over (or chose one yourself)
+const positionsConfirmed = () => { const kf = (S.CFG || {}).cashflow || {}; return kf.positions_confirmed === true || Object.keys(kf.positions || {}).length > 0; };
 // the setup stays in the menu (and guides from step to step) until you close it yourself: "Einrichtung abgeschlossen"
 const nextModule = id => MODULES[MODULES.findIndex(m => m.id === id) + 1];          // the next step of the setup
 const setupMissing = () => MODULES.some(m => !m.optional && !m.done());
@@ -5904,15 +5904,18 @@ const OBJ_OUT = ['saving', 'repayment', 'loan_interest', 'partners', 'ignore']; 
 // "Passt so" confirms they belong there (they are not reported again)
 const kpMixed = r => !r.mixed ? '' : ` <a href="#" class="tag warn tipped kp-mix" data-ids="${r.mixed.ids.join(',')}" data-ex="accounts.positions.mixed" data-tip="${esc(tn('kp_gemischt_tip', r.mixed.ids.length, F0(r.mixed.sum)))}">${t('kp_gemischt')}</a>`
   + ` <button type="button" class="small secondary kp-ok" data-ids="${r.mixed.ids.join(',')}" title="${esc(t('kp_passt_tip'))}">${t('kp_passt')}</button>`;
+// while you set Kontor up: take the positions over as they stand (Kontor's proposals and your choices) and go on to the next step
+const kpNext = () => { const n = nextModule('categories'); return `<button id="kp-next" title="${esc(t('kp_weiter_tip'))}">${esc(n ? t('uebernehmen_und_weiter', n.t) : t('uebernehmen'))}</button>`; };
+const kpOn = () => go((nextModule('categories') || {href: '#setup'}).href);
 async function vPositionen() {
   const d = await api('/api/categories/positions'); KB_KINDS = d.kinds || ['private'];
-  if (!d.categories.length) return `<div class="card" data-ex="accounts.positions"><div class="d">${esc(d.hint || t('noch_keine_kategorien_geladen_abgleich'))}</div></div>`;
+  if (!d.categories.length) return `<div class="card" data-ex="accounts.positions"><div class="d">${esc(d.hint || t('noch_keine_kategorien_geladen_abgleich'))}</div>${setupOpen() ? `<div class="actions">${kpNext()}</div>` : ''}</div>`;
   const secs = []; for (const [k, sec] of d.positions) { if (k === 'ignore') continue; let g = secs.find(x => x[0] === sec); if (!g) secs.push(g = [sec, []]); g[1].push(k); }
   const opts = (sel, firma) => `<option value=""></option>` + secs.map(([sec, ks]) => `<optgroup label="${esc(t(POS_SEC[sec] || sec))}">${ks.map(k => `<option value="${k}" ${sel === k ? 'selected' : ''}>${esc(posLabel(k, firma))}</option>`).join('')}</optgroup>`).join('')
     + `<optgroup label="${esc(t('sonstiges'))}">${['transfer', 'ignore'].map(k => `<option value="${k}" ${sel === k ? 'selected' : ''}>${esc(posLabel(k))}</option>`).join('')}</optgroup>`;
   // a property's categories have its own rows (rent, costs); only saving, financing or leaving out takes them elsewhere
   const objOpts = sel => `<option value=""></option>` + OBJ_OUT.map(k => `<option value="${k}" ${sel === k ? 'selected' : ''}>${esc(posLabel(k))}</option>`).join('');
-  let h = `<div data-ex="accounts.positions"><div class="toolbar"><a class="small" href="#cashflow">${t('zum_cashflow')}</a><span class="sp"></span><button id="kp-save" disabled>${t('speichern')}</button></div>
+  let h = `<div data-ex="accounts.positions"><div class="toolbar"><a class="small" href="#cashflow">${t('zum_cashflow')}</a><span class="sp"></span><button id="kp-save" ${setupOpen() ? 'class="secondary" ' : ''}disabled>${t('speichern')}</button>${setupOpen() ? kpNext() : ''}</div>
     ${kbCard()}<div class="wrap kp-wrap" data-ex="accounts.positions.table"><table class="plain kp-table"><thead><tr><th>${t('kategorie_in_moneymoney')}</th><th class="num kp-n">${t('umsaetze_2')}</th><th class="num kp-n">${t('letzte_12_monate')}</th><th class="kp-arrow"></th><th>${t('cashflow_position')} ${hq('position_kat')}</th><th>${t('zielkonto')} ${hq('zielkonto')}</th></tr></thead><tbody>`;
   // categories Kontor does not know and you did not place, with payments between your areas: those count as contributions or
   // withdrawals, not under the "other" shown here -- named, so that a later choice changing the figures is no surprise
@@ -6048,7 +6051,11 @@ function bindPositionen(main) {
     // as counted there: booked, with MoneyMoney's category; the twelve months up to today
     const p = tr.dataset.p, y = a.dataset.tx === '12m'; txPanel(CP(p), {kats: [p], counted: true, date_from: y ? yearAgo() : '', date_to: y ? isoToday() : ''});
   }));
-  const rows = $$('.kp-table tr[data-p]', main); if (!rows.length) return;
+  const rows = $$('.kp-table tr[data-p]', main), next = $('#kp-next', main);
+  if (!rows.length) {                 // no categories yet: the setup's step can still be taken over
+    if (next) next.onclick = async () => { next.disabled = true; try { const r = await api('/api/categories/positions', {confirmed: true}); S.CFG = r.config; kpOn(); } catch (e) { next.disabled = false; toast(e.message, 6000); } };
+    return;
+  }
   const by = Object.fromEntries(rows.map(r => [r.dataset.p, r]));
   const own = r => ($('.kp-pos', r) || {}).value || '';
   // without your choice: that of the nearest category above it, else Kontor's proposal
@@ -6088,15 +6095,18 @@ function bindPositionen(main) {
     if (o) { sel.value = o.value; b.remove(); upd2(); }
   }));
   upd2();
-  save.onclick = async () => {
+  // saving counts as having dealt with the positions (the setup's step is done); "Übernehmen und weiter" saves too, then goes on
+  const store = async (btn, then) => {
     const positionen = {}, konten = {};
     rows.forEach(r => { if ($('.kp-pos', r) && own(r) !== r.dataset.init) positionen[r.dataset.p] = own(r); const k = $('.kp-konto', r); if (k && acc(k.value) !== acc(r.dataset.konto)) konten[r.dataset.p] = k.value; });
     const empfaenger = {};
     kaDirty().forEach(r => { (empfaenger[r.dataset.area] = empfaenger[r.dataset.area] || {})[r.dataset.key] = $('.ka-ziel', r).value; });
-    save.disabled = true;
-    try { const r = await api('/api/categories/positions', {positions: positionen, accounts: konten, recipient: empfaenger}); S.CFG = r.config; DIRTY.on = false; toast(t('gespeichert')); afterRebuild(r); route(); }
-    catch (e) { save.disabled = false; toast(e.message, 6000); }
+    btn.disabled = true;
+    try { const r = await api('/api/categories/positions', {positions: positionen, accounts: konten, recipient: empfaenger, confirmed: true}); S.CFG = r.config; DIRTY.on = false; toast(t('gespeichert')); afterRebuild(r); then(); }
+    catch (e) { btn.disabled = false; toast(e.message, 6000); }
   };
+  save.onclick = () => store(save, route);
+  if (next) next.onclick = () => store(next, kpOn);
 }
 
 // ---------------------------------------------------------------- Zuordnen: Kategorien kommen aus MoneyMoney, Kontor trägt dort ein
@@ -6323,8 +6333,9 @@ document.addEventListener('click', async e => {
   try { await p.prompt(); const c = await p.userChoice; if (c && c.outcome === 'accepted') await webappSeen(); } catch (x) {}
   webappDraw();
 });
-// Konten & Regeln: everything that sets your figures -- which accounts there are and where they belong (accounts, areas,
-// balances) and by which rules Kontor counts and books (cash flow positions, booking rules, tax). The accounts open first.
+// Konten & Regeln: everything that sets your figures -- where accounts belong and which there are (areas, then accounts, as one
+// builds on the other; balances) and by which rules Kontor counts and books (cash flow positions, booking rules, tax). The page
+// opens on the accounts (#accounts: where new ones wait), though the areas come first in the row.
 async function vKontenRegeln() {
   const tabs = Object.entries(SUB_LABEL.accounts).map(([k, l]) => [k, t(l)]);
   const v = {areas: vBereicheEditor, history: vMMHistorie, positions: vPositionen, rules: vRegeln, tax: vEinstellungenSteuer}[S.sub] || vKontenEditor;

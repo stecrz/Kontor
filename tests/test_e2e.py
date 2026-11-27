@@ -1434,6 +1434,32 @@ class AppTests(_AppBase):
         self.assertEqual(r["config"]["cashflow"]["recipient_to_account"], {}); self.assertEqual(an()["broker"]["how"], "category")
         self.assertFalse([w for b in MockBridge.instances for w in b.written if w[0] == "set" and w[2] is not None])
 
+    def test_positions_taken_over_for_setup(self):
+        """The setup's step "Cashflow-Positionen" is needed, though Kontor fills them with its proposals: "Übernehmen und weiter"
+        (confirmed) takes them over as they stand -- nothing else changes, no new report; anything but true is no confirmation;
+        a stored value that is no switch opens the step again instead of failing."""
+        self.login(); self.run_and_wait()
+        self.assertNotIn("positions_confirmed", self.store.load("config.json").get("cashflow") or {})
+        vorher = json.dumps(self.store.load("dataset.json")["areas"], sort_keys=True)
+        for no in (1, "true", None, False):
+            code, r = self.call("/api/categories/positions", {"confirmed": no})
+            self.assertEqual(code, 200); self.assertNotIn("positions_confirmed", r["config"]["cashflow"])
+        code, r = self.call("/api/categories/positions", {"confirmed": True})
+        self.assertEqual(code, 200); self.assertIs(r["config"]["cashflow"]["positions_confirmed"], True)
+        self.assertEqual(r["config"]["cashflow"]["positions"], {}); self.assertIs(r["report"], False)       # proposals as they are
+        self.assertIs(self.store.load("config.json")["cashflow"]["positions_confirmed"], True)
+        self.assertEqual(json.dumps(self.store.load("dataset.json")["areas"], sort_keys=True), vorher)
+        # a choice with it: saved and counted as before (the report anew), the confirmation stays
+        code, r = self.call("/api/categories/positions", {"positions": {"Lebensmittel": "transfer"}, "confirmed": True, "wait": True})
+        self.assertEqual(code, 200); self.assertTrue(r["report"])
+        self.assertEqual((r["config"]["cashflow"]["positions"], r["config"]["cashflow"]["positions_confirmed"]), ({"Lebensmittel": "transfer"}, True))
+        code, r = self.call("/api/categories/positions", {"positions": {"Lebensmittel": ""}, "wait": True})
+        self.assertIs(r["config"]["cashflow"]["positions_confirmed"], True)
+        for bad in ("ja", 1, [], {}):
+            self.assertNotIn("positions_confirmed", core.merged_config({"cashflow": {"positions_confirmed": bad}})["cashflow"])
+        self.assertIs(core.merged_config({"cashflow": {"positions_confirmed": True}})["cashflow"]["positions_confirmed"], True)
+        self.assertFalse([w for b in MockBridge.instances for w in b.written if w[0] == "set" and w[2] is not None])
+
     def test_zugriff_vom_iphone(self):
         """Zugriff von anderen Geraeten: Stand, Ein-/Ausschalten nur am Mac, von unterwegs nur ansehen (Standard),
         Offline-Kopie abschaltbar."""
@@ -5310,6 +5336,23 @@ class BrowserTest(unittest.TestCase):
                 # Einrichtung: Bausteine, Positionen-Editor speichern
                 pg.click("#nav a[href='#setup']"); pg.wait_for_selector(".setup-list")
                 self.assertIn("Bereiche", pg.query_selector("#main").inner_text())
+                # the steps: only what is set up once -- no "Kategorisieren" (daily work), no "Abgleich" (a setting with defaults);
+                # the cash flow positions needed and before the optional booking rules, as in the tabs of Konten & Regeln
+                steps = pg.eval_on_selector_all(".setup-list .srow .t", "es => es.map(e => e.firstChild.textContent.trim())")
+                self.assertNotIn("Kategorisieren", steps); self.assertNotIn("Abgleich", steps)
+                self.assertLess(steps.index("Bereiche"), steps.index("Konten")); self.assertEqual(steps.index("Buchungsregeln"), steps.index("Cashflow-Positionen") + 1)
+                pos_row = ".setup-list .srow:nth-child(%d)" % (steps.index("Cashflow-Positionen") + 1)
+                self.assertEqual(pg.inner_text(pos_row + " .pill"), "offen")                       # needed, though Kontor proposes them
+                self.assertTrue(pg.evaluate("setupMissing()"))
+                # "Übernehmen und weiter" takes them over as they stand and leads to the booking rules; the step is done then
+                pg.click(pos_row + " a button"); pg.wait_for_selector("#kp-next")
+                self.assertIn("Buchungsregeln", pg.inner_text("#kp-next")); self.assertTrue(pg.evaluate("document.querySelector('#kp-save').disabled"))
+                pg.click("#kp-next"); until(pg, "location.hash === '#accounts/rules'")
+                until(pg, "positionsConfirmed() && S.CFG.cashflow.positions_confirmed === true")
+                self.assertIs(store.load("config.json")["cashflow"]["positions_confirmed"], True)
+                self.assertEqual(pg.eval_on_selector_all("#main .tabs button", "bs => bs.map(b => b.textContent.trim())")[:2], ["Bereiche", "Konten"])
+                pg.click("#nav a[href='#setup']"); pg.wait_for_selector(".setup-list")
+                self.assertEqual(pg.inner_text(pos_row + " .pill"), "eingerichtet")
                 # it stays in the menu until you close it yourself; then it can be shown again
                 if not pg.evaluate("setupMissing()"):
                     pg.click("#setup-done"); pg.wait_for_function("location.hash === '#overview'")
