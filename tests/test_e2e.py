@@ -6942,6 +6942,70 @@ class PageSwapObserversTest(unittest.TestCase):
             srv.shutdown(); srv.server_close()
             shutil.rmtree(d, ignore_errors=True)
 
+class SettingsMarkTest(unittest.TestCase):
+    """What waits in the settings is marked on its tab too, not only beside "Einstellungen": an update waiting for approval
+    (!) on "Updates", a plain update (dot) there as well; a click on the mark beside "Einstellungen" leads straight to that tab.
+    On the iPhone the row of tabs shows the open tab (it was cut off to the right). Without an update: no mark anywhere."""
+
+    def test_marks(self):
+        try:
+            from playwright.sync_api import sync_playwright
+        except ImportError:
+            self.skipTest("playwright fehlt")
+        d = tempfile.mkdtemp(prefix="kontor-mark-")
+        store = new_store(d); store.save("config.json", config_for_test(os.path.join(d, "Belege")))
+        reset_mock(); patch_today()
+        app = App(store, d, bridge_factory=MockBridge)
+        app.do_run(False, True)
+        asks = {"current": "1.0.0", "newer": True, "available": "9.9.9", "error": None, "notes": "", "date": "", "source": "main",
+                "review": {"digest": "x", "findings": [{"kind": "call", "level": "review", "file": "x.py", "topic": "way_program:x.py", "what": "x", "new": False}]}}
+        app.update_info = asks
+        srv = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(app)); port = srv.server_address[1]
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        mark = "(k => { const b = document.querySelector(`#main .tabs button[data-next=\"#settings/${k}\"] .tbadge`); return b ? [b.className, b.textContent, !!b.title] : null; })"
+        try:
+            with sync_playwright() as p:
+                b = p.chromium.launch()
+                for dev in ("mac", "iphone"):
+                    pg = b.new_page(**({"viewport": {"width": 1440, "height": 900}} if dev == "mac" else {"viewport": {"width": 390, "height": 844}, "is_mobile": True, "has_touch": True}))
+                    errors = []; pg.on("pageerror", lambda e: errors.append(str(e)))
+                    pg.goto("http://127.0.0.1:%d/" % port)
+                    if pg.is_visible("#login-pw2"):
+                        pg.fill("#login-pw", "sehr-geheimes-passwort"); pg.fill("#login-pw2", "sehr-geheimes-passwort")
+                    else:
+                        pg.fill("#login-pw", "sehr-geheimes-passwort")
+                    pg.click("#login-btn"); wait_shell(pg)
+                    until(pg, "!!document.querySelector('#nav a[href=\"#settings\"] .nbadge[data-go]')")
+                    self.assertEqual(pg.evaluate("(() => { const d = document.querySelector('#nav a[href=\"#settings\"] .nbadge'); return [d.textContent, d.dataset.go]; })()"), ["!", "#settings/updates"])
+                    pg.evaluate("location.hash = '#settings'"); pg.wait_for_selector("#main .tabs")
+                    self.assertEqual(pg.evaluate(mark + "('updates')"), ["tbadge n", "!", True], dev)
+                    self.assertIsNone(pg.evaluate(mark + "('moneymoney')"))
+                    if dev == "iphone":
+                        pg.click("#menu-btn"); pg.wait_for_timeout(400)
+                    pg.click("#nav a[href=\"#settings\"] .nbadge")                     # the mark beside "Einstellungen": to its tab
+                    until(pg, "location.hash === '#settings/updates' && !!document.querySelector('#main .tabs button.on[data-next=\"#settings/updates\"]')")
+                    pg.wait_for_timeout(200)
+                    seen = pg.evaluate("""(() => { const box = document.querySelector('#main .tabs'), on = box.querySelector('button.on'), a = box.getBoundingClientRect(), r = on.getBoundingClientRect();
+                        return r.left >= a.left - 1 && r.right <= a.right + 1; })()""")
+                    self.assertTrue(seen, dev)                                             # the open tab in view (on the iPhone: scrolled to)
+                    self.assertFalse(pg.evaluate("document.querySelector('.side').classList.contains('open')"), dev)
+                    # a plain update: a dot; none: no mark
+                    app.update_info = dict(asks, review={"digest": "x", "findings": []})
+                    pg.evaluate("(async () => { S.STATUS = await api('/api/status'); statusMini(); })()"); pg.wait_for_timeout(300)
+                    self.assertEqual(pg.evaluate(mark + "('updates')"), ["tbadge", "", True], dev)
+                    app.update_info = None
+                    pg.evaluate("(async () => { S.STATUS = await api('/api/status'); statusMini(); })()"); pg.wait_for_timeout(300)
+                    self.assertIsNone(pg.evaluate(mark + "('updates')"), dev)
+                    self.assertIsNone(pg.query_selector("#nav a[href=\"#settings\"] .nbadge"))
+                    app.update_info = asks
+                    self.assertEqual(errors, [], dev)
+                    pg.close()
+                b.close()
+        finally:
+            srv.shutdown(); srv.server_close()
+            shutil.rmtree(d, ignore_errors=True)
+
+
 class BrowserWizardTest(unittest.TestCase):
     """Leere Installation: Einrichtungsassistent, Bereiche speichern, Paket laden, Bericht erstellen."""
 

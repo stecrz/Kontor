@@ -1,5 +1,9 @@
 # Änderungen
 
+## 3.17.106 (2026-11-27 14:46)
+- Einstellungen: „!“ bzw. Punkt auch am Reiter Updates (bzw. KI-Assistent) – Klick auf die Markierung in der Seitenleiste führt direkt dorthin
+- iPhone: Reiterleiste zeigt den geöffneten Reiter
+
 ## 3.17.105 (2026-11-27 14:23)
 - Entwicklung: Seitenwechsel ohne „ResizeObserver loop“ in WebKit (Diagramm-Beobachter der alten Seite getrennt)
 

@@ -107,6 +107,9 @@ anhängen – nie löschen.
   Jeder solche Fund mit einer Erklärung in klaren Worten (was er bewirken kann, worauf achten) und aufklappbar den betroffenen
   Zeilen (entfernt/neu). Alles andere (strengere Regeln, gewöhnliche Änderungen) braucht keine Freigabe und steht höchstens
   zusammengefasst darunter. (umgesetzt in 3.17.5)
+  Geändert (Nutzer, 2026-11-27): Das „!“ (bzw. der Punkt) bei Einstellungen steht auch am Reiter, auf den es sich bezieht – Updates,
+  bei Neuem für den Assistenten KI-Assistent –, sonst ist unklar, worauf es sich bezieht; ein Klick auf die Markierung in der
+  Seitenleiste führt direkt dorthin, ein Klick auf „Einstellungen“ selbst bleibt beim gewohnten Ziel. (umgesetzt in 3.17.106)
 - **Assistent aktuell halten:** Kontor fragt von selbst – täglich, einstellbar unter KI-Assistent (täglich, wöchentlich, nie),
   nur solange der Assistent eingeschaltet ist – GitHub nach einem neueren llama.cpp und Hugging Face nach neueren Dateien der
   geladenen Modelle (auch des Diktiermodells); gesendet wird dabei nichts vom Nutzer, geladen nichts. Gibt es etwas für das Modell

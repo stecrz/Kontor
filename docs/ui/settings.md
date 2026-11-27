@@ -1,6 +1,8 @@
 # settings — Einstellungen
 How Kontor works – nothing here changes a figure (what decides the figures is under Konten & Regeln). Tabs: Allgemein,
-MoneyMoney-Sync, Zugang, Belege, KI-Assistent, Updates, Sichern & Zurücksetzen. Most fields count after "Einstellungen
+MoneyMoney-Sync, Zugang, Belege, KI-Assistent, Updates, Sichern & Zurücksetzen. What waits here carries the same mark on its tab as
+beside "Einstellungen" in the sidebar: "!" on Updates (an update waits for approval), a dot on Updates (an update is there) or on
+KI-Assistent (something newer for the assistant); a click on the mark in the sidebar opens that tab. Most fields count after "Einstellungen
 speichern" (⌘S); Allgemein and the assistant's settings take effect at once. Many settings can be changed only directly at the
 Mac (elsewhere they are greyed out with "nur am Mac"). The assistant never reads or changes this page.
 

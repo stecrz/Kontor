@@ -1162,12 +1162,40 @@ const alleCtl = (n, bilanz) => swCtl('alle-zeilen', S.all, bilanz ? t('ausgeblen
 const planCtl = () => swCtl('planan', S.plan, t('plan'), t('plan_tip'));
 const planOn = () => S.plan || S.tab === 'balance' || S.tab === 'planning';     // in Bilanz und Planung immer mit Plan
 function hasRules() { const c = S.CFG || {}; return !!((c.loans || []).length || (c.companies || []).length || (c.account_mirrors || []).length); }
-function navBadge(href, text, title) {
+function navBadge(href, text, title, to) {
   const a = $(`#nav a[href="${href}"]`); if (!a) return;
   let d = a.querySelector('.nbadge');
   if (!text) { if (d) d.remove(); return; }
   if (!d) { d = document.createElement('span'); a.appendChild(d); }
   d.className = 'nbadge' + (text === '•' ? '' : ' n'); d.textContent = text === '•' ? '' : text; d.title = title || '';
+  if (to) d.dataset.go = to; else delete d.dataset.go;          // a click on it: straight to what it means (the page's tab)
+}
+// what waits in the settings, by its tab: an update (! when it waits for your approval) under Updates, something newer for the
+// assistant under KI-Assistent -- the dot beside "Einstellungen" and the same mark on that tab, so it is clear what it means
+function settingsDue(st) {
+  const u = st && st.update && st.update.newer ? st.update : null, due = {};
+  if (u) due.updates = upFinds(u).length ? ['!', t('upd_braucht_freigabe', u.available)] : ['•', t('update') + u.available + t('verfuegbar')];
+  if (asNewer()) due.assistant = ['•', t('ki_neues_da')];
+  return due;
+}
+const dueMark = b => b ? `<span class="tbadge${b[0] === '•' ? '' : ' n'}" title="${esc(b[1])}">${b[0] === '•' ? '' : esc(b[0])}</span>` : '';
+// a row of tabs wider than the window (iPhone): the open tab in view -- and the one with a mark (an update), where both fit
+function tabsInView(main) {
+  $$('.tabs', main).forEach(box => {
+    if (box.scrollWidth <= box.clientWidth + 1) return;
+    const r0 = box.getBoundingClientRect().left - box.scrollLeft, span = b => { const r = b.getBoundingClientRect(); return [r.right - r0 + 8 - box.clientWidth, r.left - r0 - 8]; };
+    const on = $('button.on', box), m = $('.tbadge', box), mark = m && m.closest('button');
+    let [a, z] = on ? span(on) : [0, box.scrollWidth];          // where the view may start: the open tab within it ...
+    if (mark && mark !== on) { const [ma, mz] = span(mark); if (Math.max(a, ma) <= Math.min(z, mz)) { a = Math.max(a, ma); z = Math.min(z, mz); } }          // ... and the marked one, where both fit
+    box.scrollLeft = Math.max(0, Math.min(Math.max(box.scrollLeft, a), z));
+  });
+}
+function dueTabs(due) {          // the settings' tabs drawn already: their marks as they are now
+  ['updates', 'assistant'].forEach(k => { const b = $(`#main .tabs button[data-next="#settings/${k}"]`); if (!b) return;
+    const old = b.querySelector('.tbadge'), now = dueMark(due[k]);
+    if (old && old.outerHTML === now) return;
+    if (old) old.remove();
+    if (now) b.insertAdjacentHTML('beforeend', now); });
 }
 // what a run does now: reading MoneyMoney, checking the rules, booking n of m
 function runStep(st) {
@@ -1208,7 +1236,9 @@ function statusMini() {
   // something to do: bookings waiting for approval (count) or a failed run (!), an update (dot) -- in the sidebar and on the app icon
   const waiting = l && l.dry_run && !l.error ? (l.proposals || []).length : 0, notes = l && !l.error && !waiting ? (l.warnings || []).length : 0;
   navBadge('#bookings', l && l.error ? '!' : waiting ? (waiting > 99 ? '99+' : String(waiting)) : notes ? '•' : '', l && l.error ? t('letzter_abgleich_mit_fehler') : waiting ? tn('0_buchungsvorschlaege', waiting) : tn('n_hinweise_auto', notes));
-  navBadge('#settings', st.update && st.update.newer ? (upFinds(st.update).length ? '!' : '•') : asNewer() ? '•' : '', st.update && st.update.newer ? (upFinds(st.update).length ? t('upd_braucht_freigabe', st.update.available) : t('update') + st.update.available + t('verfuegbar')) : asNewer() ? t('ki_neues_da') : '');
+  const due = settingsDue(st), first = due.updates || due.assistant;
+  navBadge('#settings', first ? first[0] : '', first ? first[1] : '', due.updates ? '#settings/updates' : due.assistant ? '#settings/assistant' : '');
+  dueTabs(due);
   const mb = $('#menu-btn'); if (mb) mb.classList.toggle('has-badge', !!(waiting || notes || (l && l.error) || (st.update && st.update.newer) || asNewer()));     // narrow window: the sidebar is closed
   try { if (navigator.setAppBadge) { if (waiting && dockGet() !== 'off') navigator.setAppBadge(waiting); else navigator.clearAppBadge(); } } catch (e) { /* not supported */ }
   if (!st.storage.encrypted) banner(t('daten_liegen_unverschluesselt_verschlu'), 'err');
@@ -6225,7 +6255,7 @@ function bindRegelVorschlaege(main) {
 async function vEinstellungen() {
   // How Kontor runs (nothing here changes a figure): Allgemein · MoneyMoney & Abgleich · Zugang · Belege · Updates · Sichern.
   // What sets your figures (areas, accounts, positions, rules, tax) is under "Konten & Regeln".
-  const tabs = subTabs('settings', Object.entries(SUB_LABEL.settings).map(([k, l]) => [k, t(l)]));
+  const due = settingsDue(S.STATUS), tabs = subTabs('settings', Object.entries(SUB_LABEL.settings).map(([k, l]) => [k, t(l) + dueMark(due[k])]));
   const v = {moneymoney: vEinstellungenMM, access: vEinstellungenZugang, receipts: vEinstellungenBelege, assistant: vEinstellungenAssistent, updates: () => vUpdates(vEinstellungenUpdates()), backup: vSicherung}[S.sub] || vEinstellungenAllgemein;
   return tabs + await v();
 }
@@ -7001,6 +7031,7 @@ async function route() {
     const y1 = sameTab ? y0 : (SCROLL.pos[key] || 0);   // eigener Reiter: bleibt; anderer Reiter: dessen letzte Position, sonst oben
     pageTo(y1);
     bind(main);
+    tabsInView(main);
     guardDirty(main);
     vbPoll(); mmhPoll();
     if (S.tab === 'properties') bindImmo(main);
@@ -9526,6 +9557,8 @@ $('#menu-btn').addEventListener('click', () => $('.side').classList.toggle('open
 // the menu over the page (a narrow window, the iPhone): an entry closes it -- also the page already open (no new address, no new
 // page drawn); Esc closes it like any menu
 $('#nav').addEventListener('click', e => { if (e.target.closest('a[href]')) $('.side').classList.remove('open'); });
+$('#nav').addEventListener('click', e => { const d = e.target.closest('.nbadge[data-go]'); if (!d) return;          // the dot beside "Einstellungen": to its tab
+  e.preventDefault(); e.stopPropagation(); $('.side').classList.remove('open'); go(d.dataset.go); }, true);
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && $('.side').classList.contains('open') && !$('#drawer').classList.contains('open') && !$('.dlg-back, #ctx')) { e.preventDefault(); $('.side').classList.remove('open'); $('#menu-btn').focus(); } });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && (REC.on || REC.starting)) { e.stopPropagation(); asMicStop(false); } }, true);          // a recording first: thrown away
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && $('#drawer').classList.contains('open') && !(drawerDirty() && !confirm(t('ungespeicherte_aenderungen_verwerfen')))) closeDrawer(); });
