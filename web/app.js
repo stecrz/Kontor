@@ -2377,7 +2377,7 @@ function bchDraw() {
   const pts = link ? link.cols : [];
   if (!link) for (let i = Math.max(0, i0 - (sh < 0 ? 1 : 0)); i <= Math.min(last, i1 + (sh > 0 ? 1 : 0)); i++) pts.push({i, x: P.l + (i - i0 - sh) * (W - P.l - P.r) / Math.max(1, n)});
   const N = pts.length - 1;
-  // Stapel: positive Anteile von der Nulllinie nach oben, negative nach unten (Reihenfolge wie die Tabelle von oben)
+  // stacked: positive parts up from zero, negative ones down (order: stackLayers)
   // the scale follows what is in view (aligned: the visible columns and one beyond each edge)
   let kA = 0, kB = N;
   if (link) { const vis = pts.map((p, k) => p.x >= P.l - 0.5 && p.x <= W - P.r + 0.5 ? k : -1).filter(k => k >= 0); if (vis.length) { kA = Math.max(0, vis[0] - 1); kB = Math.min(N, vis[vis.length - 1] + 1); } }
@@ -2421,8 +2421,7 @@ function bchDraw() {
     }
     return out;
   };
-  const ordered = d.series.slice().reverse();          // unterste Flaeche = letzte Position der Tabelle
-  plot += band(ordered, 1) + band(ordered, -1);
+  plot += band(stackLayers(d.series, 1), 1) + band(stackLayers(d.series, -1), -1);      // innermost layer first (stackLayers)
   // the months: completed ones (solid), the running month (dotted and lightly shaded: data still coming in) and the plan (dashed,
   // shaded); the dashed vertical line marks the end of the last completed month
   const ist = d.ist - 1, done = ist - 1, kt = pts.findIndex(p => p.i === ist), kp = pts.findIndex(p => p.i > ist);
@@ -2613,14 +2612,55 @@ function bchZoom(c, factor) {
   const span = BCH.f1 - BCH.f0, ns = Math.max(1, Math.min(BCH.d.months.length - 1, span * factor));
   bchView(c - (c - BCH.f0) * ns / span, ns, false);
 }
-// the stacked area under the pointer at month i (stacked as drawn: from the last series up/down from zero); null outside
+// The layers of a stacked chart, innermost (at zero) first, separately above zero (sign 1) and below it (sign -1): what is there
+// longest and moves least lies inside, what comes later, ends, changes sign or swings strongly lies outside -- so it shifts no
+// other area (a new loan is added below the old one, which keeps its edges; an account that changes sign sits at the edge of
+// its position). The cost of a layer lying inside the others: how far its changes move those of them that are there before and
+// after, each change less what is too small to see (0.5 % of the chart's height, about a pixel); step by step the cheapest
+// becomes the next layer outwards. Positions stay together (their accounts, a portfolio's securities: `role`, then `acc`);
+// costs within 1 % of the height count as equal and keep today's order (the table's last row inside). The whole period counts
+// (plan included), so zooming or panning never reorders.
+const STACK_ORD = new WeakMap();
+function stackLayers(series, sign) {
+  let c = STACK_ORD.get(series); if (!c) STACK_ORD.set(series, c = {});
+  if (c[sign]) return c[sign];
+  const T = series.reduce((m, s) => Math.max(m, s.vals.length), 0), sum = sg => series.reduce((m, s) => m.map((h, t) => h + Math.max(0, sg * (s.vals[t] || 0))), Array(T).fill(0));
+  const part = new Map(series.map(s => [s, Array.from({length: T}, (_, t) => Math.max(0, sign * (s.vals[t] || 0)))]));
+  const list = series.slice().reverse().filter(s => part.get(s).some(v => v >= 0.005));
+  const height = Math.max(0, ...sum(1)) + Math.max(0, ...sum(-1)), eps = height * 0.005, tol = height * 0.01;      // both stacks: the chart's height
+  const greedy = units => {
+    if (units.length < 2) return units;
+    const dv = units.map(u => u.p.map((v, t) => t ? Math.max(0, Math.abs(v - u.p[t - 1]) - eps) : 0)), on = units.map(u => u.p.map((v, t) => t > 0 && v >= 0.005 && u.p[t - 1] >= 0.005));
+    const C = units.map((_, a) => units.map((_, b) => { let x = 0; if (a !== b) for (let t = 1; t < T; t++) if (on[b][t]) x += dv[a][t]; return x; }));
+    const rest = units.map((_, k) => k), out = [];
+    while (rest.length) {
+      const cost = rest.map(a => rest.reduce((s0, b) => s0 + C[a][b], 0)), lo = Math.min(...cost), k = cost.findIndex(x => x <= lo + tol);
+      out.push(units[rest[k]]); rest.splice(k, 1);
+    }
+    return out;
+  };
+  const order = (ss, depth) => {
+    // units of this level: series sharing the key (role, then account) together, in today's order; one without a key alone
+    const key = s => [s.role, s.acc].filter(k => k != null)[depth], units = [], by = new Map();
+    for (const s of ss) {
+      const k = key(s);
+      if (k == null) { units.push({m: [s]}); continue; }
+      if (!by.has(k)) { by.set(k, {m: []}); units.push(by.get(k)); }
+      by.get(k).m.push(s);
+    }
+    units.forEach(u => { u.p = Array(T).fill(0); for (const s of u.m) part.get(s).forEach((v, t) => { u.p[t] += v; }); });
+    return greedy(units).flatMap(u => u.m.length > 1 && depth < 2 ? order(u.m, depth + 1) : u.m);
+  };
+  return (c[sign] = order(list, 0));
+}
+// the stacked area under the pointer at month i (stacked as drawn, see stackLayers); null outside
 function stackHit(series, i, v) {
   if (v == null || !isFinite(v)) return null;
-  let up = 0, dn = 0;
-  for (const sx of series.slice().reverse()) {
-    const x = sx.vals[i] || 0;
-    if (x > 0) { if (v >= up && v <= up + x) return sx; up += x; }
-    else if (x < 0) { if (v <= dn && v >= dn + x) return sx; dn += x; }
+  const sign = v < 0 ? -1 : 1; let at = 0;
+  for (const sx of stackLayers(series, sign)) {
+    const x = Math.max(0, sign * (sx.vals[i] || 0));
+    if (x > 0 && sign * v >= at && sign * v <= at + x) return sx;
+    at += x;
   }
   return null;
 }
@@ -3045,8 +3085,8 @@ function lcData(D, rollen) {
   }
   return {months, ist: D.months.length, vals};
 }
-// third chart: one position split into its accounts (stacked), in the account colours of the table and the main chart
-// (first account on top)
+// third chart: one position split into its accounts (stacked as stackLayers orders them), in the account colours of the table
+// and the main chart
 function lcStack(D, rolle, mode) {
   // series: the accounts of the position, or (mode "depot") portfolios broken down into their securities; the total line is
   // always the whole position, whatever is broken down or deselected
@@ -3057,8 +3097,8 @@ function lcStack(D, rolle, mode) {
   accs.forEach((a, i) => {
     const sh = accShade(color, i);
     if (mode === 'depot' && a.securities && a.securities.length)
-      a.securities.forEach((p, j) => series.push(Object.assign({key: p.id, label: p.name, full: wpTip(p, a.name), vals: vs(p.amounts)}, accShade(sh.color, j + 1))));
-    else series.push(Object.assign({key: a.id, label: a.name, full: a.path || a.name, vals: vs(Object.assign({}, a.amounts, proj[a.id] || {}))}, sh));
+      a.securities.forEach((p, j) => series.push(Object.assign({key: p.id, acc: a.id, label: p.name, full: wpTip(p, a.name), vals: vs(p.amounts)}, accShade(sh.color, j + 1))));
+    else series.push(Object.assign({key: a.id, acc: a.id, label: a.name, full: a.path || a.name, vals: vs(Object.assign({}, a.amounts, proj[a.id] || {}))}, sh));
   });
   const tot = accs.map(a => vs(Object.assign({}, a.amounts, proj[a.id] || {})));
   const vals = months.map((m, k) => { let v = null; for (const x of tot) if (x[k] != null) v = (v || 0) + x[k]; return v; });
@@ -3264,7 +3304,7 @@ function lcDraw(id) {
     const df = {s: ''};
     const bands = sign => {
       const base = Array(n + 1).fill(0); let out = '';
-      shown.slice().reverse().forEach(sx => {           // first account on top, as in the table
+      stackLayers(shown, sign).forEach(sx => {          // innermost layer first (stackLayers)
         const si = d.series.indexOf(sx), top = [], bot = [];
         for (let k = 0; k <= n; k++) { const v = sx.vals[i0 + k] || 0, part = sign > 0 ? Math.max(0, v) : Math.min(0, v); bot.push(base[k]); base[k] += part; top.push(base[k]); }
         if (top.every((tv, k) => Math.abs(tv - bot[k]) < 0.005)) return;

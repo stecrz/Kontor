@@ -1,5 +1,9 @@
 # Änderungen
 
+## 3.17.112 (2026-11-27 17:51)
+- Bilanz: Grafik stapelt Neues außen – ein neues Darlehen kommt unter das alte, das unverändert weiterläuft; Konten mit Vorzeichenwechsel, Wegfallendes und stark Schwankendes außen, Ruhiges an der Nulllinie
+- Entwicklung: Test der Stapelreihenfolge (Node)
+
 ## 3.17.111 (2026-11-27 16:57)
 - Kategorisieren: jeder Vorschlag mit Sicherheitsstufe – grün sicher, gelb wahrscheinlich, rot unsicher –, Gründe am Vorschlag, Filter nach Stufe
 - Kategorisieren: Vorschläge auch nach Betrag und Wörtern derselben Gegenpartei, Gegenbuchungen auf deinen Konten, Wörtern anderer Gegenparteien und – mit dem KI-Assistenten – nach Bedeutung

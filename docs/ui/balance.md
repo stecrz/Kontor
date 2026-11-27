@@ -38,7 +38,11 @@ series and of the line.
 
 ## balance.bil — Bilanz (Grafik)
 The balance sheet as a stacked area chart: each position (colours as in the table) at each month end; positive positions stacked
-upwards from zero, negative ones (Verbindlichkeiten, a position below zero) downwards; the first position of the table on top.
+upwards from zero, negative ones (Verbindlichkeiten, a position below zero) downwards. Order of the layers (above and below
+zero each): what is there longest and moves least lies next to zero, what comes later, ends, changes sign or changes visibly lies
+outside – so a new loan is added below the old one, which keeps its edges; a position's accounts (a portfolio's securities) stay
+together; where nothing of this differs, the last position of the table lies next to zero. The whole period counts, so zooming
+never reorders; the hover box keeps the table's order.
 The gold line is the net worth – the upper stack minus the lower one. As the large chart: a position opened in the table shows
 its accounts in shades of its colour (from the eleventh account hatched), an opened portfolio its securities; the area under the
 pointer and its row in the hover box are marked. As a small chart (when another one is large): positions only, a legend below.
@@ -74,7 +78,7 @@ box ticked. Value and change: balance.value.
 
 ## balance.pos — Zusammensetzung
 One position (chosen in the menu in the head; default Bankguthaben when it has several accounts) split into its accounts, stacked
-in the account colours of the table, the first account on top; the line is always the whole position. "Depot" (only where the
+in the account colours of the table, ordered as in balance.bil (later and changing ones outside); the line is always the whole position. "Depot" (only where the
 position holds a portfolio): portfolios split into their securities instead. Below, each account or security with a value in the
 range can be unticked – the line stays the whole position. Hover box: the month, each account's (security's) balance, "Auswahl" =
 the sum of the ticked ones (only when some are unticked), last the position's total. Value and change: balance.value.

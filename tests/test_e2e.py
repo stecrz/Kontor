@@ -2323,6 +2323,66 @@ class LoginTouchIdTest(unittest.TestCase):
             srv.shutdown(); srv.server_close(); shutil.rmtree(d, ignore_errors=True)
 
 
+class StackOrderTests(unittest.TestCase):
+    """The order of the layers in the stacked charts (stackLayers in web/app.js, run in node): what comes later, ends, changes
+    sign or swings visibly lies outside, so the others keep their edges; positions stay together; equal ones keep today's order
+    (the table's last row inside); the area under the pointer is the one drawn there."""
+
+    def run_js(self, cases):
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node not installed")
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        src = open(os.path.join(root, "web", "app.js"), encoding="utf-8").read()
+        a, b = src.index("const STACK_ORD = new WeakMap();"), src.index("// that area stands out in the chart")
+        js = (src[a:b] + "\nconst cases = JSON.parse(require('fs').readFileSync(0, 'utf8'));"
+              "\nconsole.log(JSON.stringify(cases.map(S => { const ord = g => stackLayers(S, g).map(x => x.label);"
+              "\n  const hit = g => { const T = S[0].vals.length - 1; let at = 0, ok = true; for (const x of stackLayers(S, g)) {"
+              "\n    const v = Math.max(0, g * (x.vals[T] || 0)); if (v > 0 && stackHit(S, T, g * (at + v / 2)) !== x) ok = false; at += v; }"
+              "\n    return ok && stackHit(S, T, g * (at + 1)) === null; };"
+              "\n  return {up: ord(1), down: ord(-1), hit: hit(1) && hit(-1), same: stackLayers(S, 1) === stackLayers(S, 1)}; })));")
+        import subprocess
+        got = subprocess.run([node, "-e", js], input=json.dumps(cases), capture_output=True, text=True, timeout=60)
+        self.assertEqual(got.returncode, 0, got.stderr[-600:])
+        return json.loads(got.stdout)
+
+    def test_new_ones_outside(self):
+        z = lambda f: [f(t) for t in range(13)]
+        world = [  # in the order of the table; two positions opened into their accounts
+            {"role": "cash", "label": "Giro", "vals": z(lambda t: 5000 + (t % 3) * 800)},          # wiggles too small to see
+            {"role": "securities", "label": "Depot", "vals": z(lambda t: 20000 if t >= 10 else 3000)},
+            {"role": "real_estate", "label": "Haus", "vals": z(lambda t: 60000 if t >= 11 else None)},
+            {"role": "receivables", "acc": "r1", "label": "Forderung alt", "vals": z(lambda t: 30000 if t >= 1 else 10000)},
+            {"role": "receivables", "acc": "r2", "label": "Forderung neu", "vals": z(lambda t: 80000 if t >= 6 else None)},
+            {"role": "liabilities", "acc": "l1", "label": "Darlehen 1", "vals": z(lambda t: -110000 if t >= 1 else -100000)},
+            {"role": "liabilities", "acc": "l2", "label": "Darlehen 2", "vals": z(lambda t: -90000 if t >= 6 else None)},
+            {"role": "liabilities", "acc": "l3", "label": "Darlehen 3", "vals": z(lambda t: -60000 if t >= 11 else None)}]
+        static = [{"role": r, "label": r, "vals": z(lambda t, v=v: v)} for r, v in (("a", 5), ("b", 7), ("c", 9))]
+        flips = [{"role": "cash", "acc": "x", "label": "wechselt", "vals": z(lambda t: 4000 if t < 6 else -3000)},
+                 {"role": "cash", "acc": "y", "label": "Guthaben", "vals": z(lambda t: 10000)},
+                 {"role": "cash", "acc": "w", "label": "Kredit", "vals": z(lambda t: -2000)}]
+        repaid = [{"role": "liabilities", "acc": "j", "label": "getilgt", "vals": z(lambda t: -40000 if t < 5 else 0)},
+                  {"role": "liabilities", "acc": "k", "label": "bleibt", "vals": z(lambda t: -50000)}]
+        portfolios = [{"acc": "d1", "label": "d1 a", "vals": z(lambda t: 100 + t)}, {"acc": "d2", "label": "d2 neu", "vals": z(lambda t: 900 if t > 8 else None)},
+                      {"acc": "d1", "label": "d1 b", "vals": z(lambda t: 50)}]
+        w, s, f, r, p = self.run_js([world, static, flips, repaid, portfolios])
+        # each new loan below the ones before; a new receivable above the old one; the property bought last on top
+        self.assertEqual(w["down"], ["Darlehen 1", "Darlehen 2", "Darlehen 3"])
+        self.assertEqual(w["up"][-1], "Haus"); self.assertLess(w["up"].index("Forderung alt"), w["up"].index("Forderung neu"))
+        self.assertEqual(w["up"].index("Forderung neu") - w["up"].index("Forderung alt"), 1)      # a position stays together
+        self.assertLess(w["up"].index("Depot"), w["up"].index("Haus")); self.assertEqual(w["up"][0], "Giro")
+        self.assertEqual(s["up"], ["c", "b", "a"]); self.assertEqual(s["down"], [])                # nothing moves: as today
+        self.assertEqual(f["up"], ["Guthaben", "wechselt"]); self.assertEqual(f["down"], ["Kredit", "wechselt"])    # at the edge
+        self.assertEqual(r["down"], ["bleibt", "getilgt"])                                         # the repaid one outside
+        self.assertEqual(p["up"], ["d1 b", "d1 a", "d2 neu"])                                       # securities of a portfolio together
+        for x in (w, s, f, r, p):
+            self.assertTrue(x["hit"]); self.assertTrue(x["same"])
+
+    def test_nothing_to_stack(self):
+        e, n = self.run_js([[{"label": "leer", "vals": [None, 0]}], [{"label": "klein", "vals": [0.001, -0.001]}]])
+        self.assertEqual((e["up"], e["down"], n["up"], n["down"]), ([], [], [], []))
+
+
 class BereichOrderTests(unittest.TestCase):
     def test_default_order_main_private_first(self):
         accs = [F.acc("root", "Alle Konten", 0, "Kontengruppe", True),

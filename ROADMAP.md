@@ -467,6 +467,15 @@ anhängen – nie löschen.
   entschieden (kein Wunsch des Nutzers, zurückzunehmen auf Wunsch): „Alle sicheren übernehmen“ nimmt nur sichere, im Filter
   „Wahrscheinlich“ auch diese, nie unsichere – sonst trüge ein Klick Geratenes in MoneyMoney ein. Der Cashflow schätzt Umsätze ohne
   Kategorie weiter nach den gelernten Mustern (Rechenlogik unabhängig vom Assistenten). (umgesetzt in 3.17.111)
+- **Bilanz-Grafik: Neues außen, Ruhiges innen** (Nutzer, 2026-11-27): Neu hinzukommende Positionen und Konten werden außen
+  angelagert (über null oben, darunter unten), statt an der Nulllinie einzuschieben – sonst verschiebt etwa ein zweites Darlehen
+  das erste, dessen Verlauf man dann nicht mehr sieht; ein Konto, das mal positiv, mal negativ ist, gehört an den Rand. Umgesetzt
+  allgemein: je Stapel liegt innen, was am längsten da ist und sich am wenigsten sichtbar bewegt; außen, was später dazukommt,
+  wegfällt (getilgtes Darlehen), das Vorzeichen wechselt oder stark schwankt – gemessen als die Verschiebung, die eine Fläche den
+  übrigen zumuten würde (Änderungen unter etwa einem Pixel zählen nicht), über den ganzen Zeitraum, damit Zoomen nicht umordnet.
+  Selbst entschieden (zurückzunehmen auf Wunsch): die Konten einer Position bleiben beisammen – ein Konto mit Vorzeichenwechsel
+  steht daher am Rand seiner Position, nicht des ganzen Stapels; ohne sichtbaren Unterschied gilt die bisherige Reihenfolge der
+  Tabelle; das Werte-Fenster behält die Reihenfolge der Tabelle. Abgelöst: „erste Position der Tabelle oben“. (umgesetzt in 3.17.112)
 
 ## Offen (Entscheidung steht aus – mit Empfehlung vorlegen, wenn der Punkt dran ist)
 - Umsatzsteuer-Voranmeldung direkt an ELSTER senden (ELSTERs Programmbibliothek ERiC, Anmeldung als Hersteller, Zertifikat und
