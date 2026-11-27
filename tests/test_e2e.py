@@ -3446,11 +3446,12 @@ class FeatureTests(_AppBase):
         code, k = self.call("/api/categories/positions")
         self.assertEqual(code, 200); self.assertNotIn("baum", k); self.assertNotIn("rules", k)
         self.assertGreater({r["path"]: r for r in k["categories"]}["Lebensmittel"]["count_all"], 0)
-        # Offene Umsaetze: Baumarkt (ohne Kategorie) als Gruppe, ohne Vorschlag; gelernte Muster ordnen nie selbst zu
+        # Offene Umsaetze: Baumarkt (ohne Kategorie) als Gruppe -- ein Vorschlag, aber nie "sicher" ohne eigene Vergangenheit; Vorschlaege
+        # ordnen nie selbst zu
         code, off = self.call("/api/categories/unassigned")
         self.assertTrue(off["open"] >= 20)
         g = [x for x in off["groups"] if x["name"] == "Baumarkt"][0]
-        self.assertIsNone(g["proposal"])
+        self.assertNotEqual(g["level"], "high"); self.assertEqual(sum(off["levels"].values()), off["groups_total"])
         code, ds = self.call("/api/dataset")
         self.assertEqual(set(ds["categories"]["total"]) - {"moneymoney", "without"}, set())
         # zwei zuordnen -> in MoneyMoney; danach Vorschlag fuer den Rest (nur Vorschlag) und eine Regel fuer MoneyMoney
@@ -3459,6 +3460,7 @@ class FeatureTests(_AppBase):
         code, off2 = self.call("/api/categories/unassigned")          # learned right after assigning: suggestion for the rest
         g2 = [x for x in off2["groups"] if x["name"] == "Baumarkt"][0]
         self.assertEqual((g2["count"], g2["proposal"]), (g["count"] - 2, "Haushalt / Werkzeug"))
+        self.assertIn("party", [w["k"] for w in g2["why"]]); self.assertIn(g2["level"], ("high", "medium"))         # 2 of 2: probable at least
         code, ds = self.call("/api/dataset")
         az = [s["rows"] for s in ds["areas"][ds["main_area"]]["cashflow"]["sections"] if s["name"] == "expenses"][0]
         lh = {d["category"]: d for d in [z for z in az if z["row"] == "Lebenshaltung"][0]["details"]}
@@ -5472,6 +5474,20 @@ class BrowserTest(unittest.TestCase):
                 app.categories_raw = mm_categories.with_paths(MockBridge().export_categories())
                 pg.click("#nav a[href='#categories']"); pg.wait_for_selector(".kz-group")
                 self.assertTrue(pg.inner_text("#page-title").startswith("Kategorisieren")); self.assertEqual(pg.get_attribute("#page-title .page-hq", "data-help"), "categories"); self.assertIsNone(pg.query_selector("#kz-mm-on"))
+                pg.wait_for_selector(".kz-save:not([disabled])")
+                # how sure each suggestion is: the button that takes them all at once takes sure ones only, the filter "Unsicher"
+                # never offers it; each group shows its level
+                sure = pg.evaluate("() => KZ.open.groups.reduce((n, g) => n + Object.values(g.levels || {}).filter(l => l === 'high').length, 0)")
+                self.assertEqual(pg.inner_text("#kz-alle") if sure else None, ("Alle sicheren übernehmen (%d)" % sure) if sure else None)
+                self.assertIsNone(pg.query_selector("#kz-alle") if not sure else None)
+                self.assertEqual(len(pg.query_selector_all(".kz-group .kz-lv")), len(pg.query_selector_all(".kz-group")))
+                low = pg.evaluate("() => KZ.open.levels.low")
+                pg.click(".kz-lvs button[data-lv='low']")
+                until(pg, "KZ.level === 'low' && KZ.open && KZ.open.groups.every(g => g.level === 'low') && document.querySelector('.kz-lvs button.on').dataset.lv === 'low'")
+                self.assertIsNone(pg.query_selector("#kz-alle"))
+                self.assertEqual(len(pg.query_selector_all(".kz-group")), min(low, 300))
+                pg.click(".kz-lvs button[data-lv='']")
+                until(pg, "KZ.level === '' && document.querySelector('.kz-lvs button.on').dataset.lv === ''")
                 pg.wait_for_selector(".kz-save:not([disabled])")
                 n_before = len(pg.query_selector_all(".kz-group"))
                 box = pg.query_selector(".kz-group"); box.query_selector(".kz-kat").fill("Haushalt / Werkzeug"); box.query_selector(".kz-save").click()

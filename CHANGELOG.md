@@ -1,5 +1,11 @@
 # Änderungen
 
+## 3.17.111 (2026-11-27 16:57)
+- Kategorisieren: jeder Vorschlag mit Sicherheitsstufe – grün sicher, gelb wahrscheinlich, rot unsicher –, Gründe am Vorschlag, Filter nach Stufe
+- Kategorisieren: Vorschläge auch nach Betrag und Wörtern derselben Gegenpartei, Gegenbuchungen auf deinen Konten, Wörtern anderer Gegenparteien und – mit dem KI-Assistenten – nach Bedeutung
+- Kategorisieren: „Alle sicheren übernehmen“ statt „Alle Vorschläge übernehmen“ – nie unsichere
+- KI-Assistent: sagt bei offenen Umsätzen, wie sicher Kontors Vorschlag ist
+
 ## 3.17.110 (2026-11-27 16:28)
 - Einrichtung: „Planung“ nicht mehr in der Einrichtung
 

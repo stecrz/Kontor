@@ -18,8 +18,18 @@ Filters above the list: area chips (only ticked areas are listed and counted; th
 counted here nor in the overview's "Offen" -- the cash flow keeps estimating them; empty: all), year
 (booking year; "alle Jahre"), "ab … €" (only transactions whose absolute amount is at least this). The note "N Umsätze ohne
 Kategorie in MoneyMoney" counts the transactions matching these filters (not the groups). A blue banner counts assignments made
-from another device that wait to be written at the next sync at the Mac (they already count in Kontor). "Alle Vorschläge übernehmen
-(N)": N = transactions that have a suggestion and are not deselected. The card "Nichts offen" means no transaction matches.
+from another device that wait to be written at the next sync at the Mac (they already count in Kontor). "Alle sicheren übernehmen
+(N)": N = transactions of the groups the level filter shows, not deselected, whose own suggestion is "sicher"; in the filter
+"Wahrscheinlich" the button reads "Alle wahrscheinlichen übernehmen (N)" and N also counts "wahrscheinlich" ones; never "unsicher"
+ones (no button in that filter). The card "Nichts offen" means no transaction matches.
+
+### categories.levels — Wie sicher die Vorschläge sind (Filter)
+A segmented filter: "Alle (N)" = all groups (counterparties, not transactions), "Sicher (N)", "Wahrscheinlich (N)", "Unsicher (N)" =
+groups whose level is that (a group's level is that of its least sure transaction; a group without any suggestion counts as
+"Unsicher"). Counted over all groups under the other filters, also beyond the 300 shown. Choosing one lists only those groups
+(the 300 with the largest sums; then the note "Die N größten von M Gegenparteien"); "Keine … Vorschläge." when there are none.
+"Sicher" lists only groups whose every suggestion is sure – sure suggestions in a mixed group count for "Alle sicheren übernehmen"
+under "Alle".
 
 ### categories.progress — Fortschritt (sicher zugeordnet / geschätzt)
 Above the note: a bar and "N von M Umsätzen sicher zugeordnet · P % des Betrags". M = the transactions under the same filters as the
@@ -37,18 +47,41 @@ number of its open transactions; "n / N×" when only n of them are selected for 
 negative): the sum of all its open transactions (all years matching the filters, inflows minus outflows) – not a monthly or yearly
 value. Dates: first and last booking date of these transactions. A group of one transaction shows its purpose and MoneyMoney's
 booking text as a tag.
-The text field holds Kontor's suggestion. Tag "Vorschlag": every transaction of the group has the same suggestion. Tag "Vorschläge je
-Umsatz": the transactions have different suggestions (shown per transaction in the expanded list). Suggestions are learned from the
-user's own categories (MoneyMoney's and waiting assignments): by counterparty IBAN, by name, or by name plus the first three words
-of the purpose – a pattern needs at least 2 transactions of which at least 90 % have the same category; the most specific match wins.
-Kontor never applies a suggestion by itself. The button with the user's transfer category (only when the other side is an account
+The text field holds Kontor's suggestion when every transaction of the group has the same one. The coloured tag beside it is how
+sure it is: "sicher" (green, at least 80 % likely right), "wahrscheinlich" (yellow, 60–80 %), "unsicher" (red, below – down to a
+guess); for the group the level and percentage of its least sure transaction. Its tooltip: "Sicher – stimmt zu etwa P %" and the
+reasons, strongest first. Tag "Vorschläge je Umsatz" (coloured like its least sure transaction): the transactions have different
+suggestions (shown per transaction in the expanded list).
+How sure: see categories.open.group.level. Kontor never applies a suggestion by itself. The button with the user's transfer category (only when the other side is an account
 of another of the user's areas) assigns that category – for a contribution or withdrawal.
+
+### categories.open.group.level — Wie sicher ein Vorschlag ist
+The tag beside a suggestion; its tooltip: percentage and reasons. How likely: Laplace's rule of succession (k + 1) / (n + 2) for k of n comparable earlier transactions with that category. Comparable,
+from the user's own categories (MoneyMoney's and waiting assignments), in the transaction's area where it has any there: the same
+counterparty (IBAN, else name) in the same direction – all of them, or those with exactly this amount, or those on the same side of
+the amount that best splits its categories ("unter/ab X €"; only amounts in the transaction's currency, its latest 2,000, not for an
+amount between the two sides), or those with a word of this purpose. Where all of its past has one category: (k + 1) / (n + 2) of
+all of it. Where its categories differ: of the transactions like this one, (k + p) / (n + 1) with p = the category's share of its
+whole past (that past counts as one more transaction); the likeliest of these, and one for another category from 50 % as a reason
+against it ("Spricht auch für …"); none like this one: (k + 1) / (n + 2) of all of it. Only earlier payments the other way: × 0.85.
+A counter-booking: the opposite amount on another bank or hand-kept account within 5 days, in the same currency, without a category
+(70 % if it is the only one within 2 days, else 60 %) or with a transfer category (85 %), or the counter IBAN is an account of the
+user's (60 %) – suggests the user's transfer category; never where either booking names someone else's IBAN, both name different
+counterparties, the amount is 0 or the cash flow paired the other booking already. A word of name or purpose that other counterparties had: k of n
+counterparties (counted once each, at least 2, not this one) × 0.9. By meaning (only with the assistant on, the right "Zahlen und
+Umsätze lesen" and its model for finding by meaning; the embeddings it already made, first 128 numbers): the 5 most alike other
+counterparties with likeness ≥ 0.5 vote, × 0.8. A word in the name of one of the user's categories: 45 % (40 % if another category
+matches as well). Nothing else: the most common category of income or spending (by cash flow position; never a transfer, saving or repayment) for this direction in the area – its share, at most 50 % (a guess). Two kinds of reasons for the
+same category: the best plus half of what is left times the second; a reason of another kind for another category at 50 % or more
+takes half of what it has above 40 % ("Spricht auch für …"). Levels: from 80 % "sicher", from 60 % "wahrscheinlich". Only categories
+that exist in MoneyMoney are suggested.
 
 ### categories.open.group.tx — Umsätze einer Gegenpartei
 The group's transactions (newest first, at most 300): checkbox (ticked = included when assigning), Datum (booking date), Konto,
 Zweck (the transaction's own name in bold where it differs from the group's, the purpose, MoneyMoney's booking text as a tag),
-Betrag (€, signed: negative = outflow), and – only when the group has no common suggestion – "Vorschlag": the learned suggestion for
-this transaction ("–": none).
+Betrag (€, signed: negative = outflow), and – only when the group has no common suggestion – "Vorschlag": this transaction's
+suggestion with a coloured dot for its level (green sicher, yellow wahrscheinlich, red unsicher; tooltip: percentage and reasons;
+"–": none).
 
 ## categories.rules — Regeln für MoneyMoney
 Proposed rules for MoneyMoney (Kontor cannot create rules there), sorted by how many still-open transactions they would catch, at

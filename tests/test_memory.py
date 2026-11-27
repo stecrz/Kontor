@@ -2010,6 +2010,33 @@ class HelpAndTransactions(_Assist):
         self.assertFalse([f for f in os.listdir(self.app.data_dir) if f.startswith("memory-")])
 
 
+    def test_suggestions_under_kategorisieren_only_read_them(self):
+        """Kategorisieren's suggestions by meaning read the embeddings of transactions made here: never make one, start no model,
+        only while the assistant may read transactions -- and the texts are those core.compact_transactions gives."""
+        import types
+        from datetime import date
+        import core
+        from model import Account, Ledger, Tx
+        self.done()
+        sig, vectors = self.a.tx_meaning()
+        made = len(self.a.tx_vecs._load())
+        self.assertEqual(sig[1], made)
+        seen = types.SimpleNamespace(id=7, name="Werkstatt Wolkenberg", purpose="Inspektion Fahrzeug")
+        other = types.SimpleNamespace(id=8, name="Nie gesehen", purpose="Kein Text davon")
+        with mock.patch.object(self.a, "_embed", side_effect=AssertionError("no embedding is made for it")):
+            self.assertEqual(list(vectors([seen, other])), [7])                 # only what exists
+        self.assertEqual(len(self.a.tx_vecs._load()), made)
+        long = Tx(id=9, account_uuid="g", booking_date=date(2026, 3, 1), value_date=None, amount=-1.0, currency="EUR", name="N" * 120, purpose="Zweck " * 60)
+        L = Ledger({"g": Account(uuid="g", name="Giro", type="Giro", group=False, indentation=0, balance=0.0, currency="EUR")}, [long])
+        row = core.compact_transactions(L, [{"id": "1", "leaves": [L.accounts["g"]]}])[0]
+        got = []
+        with mock.patch.object(self.a.tx_vecs, "vectors", lambda model, keys: got.extend(keys) or {}):
+            vectors([long])
+        self.assertEqual(got, [A.memory_mod.Library.key(A._tx_text(row))])     # the key of the text the assistant made it of
+        self.a.set({"rights": {"read": False}})
+        self.assertIsNone(self.a.tx_meaning())
+
+
 class Names(_Assist):
     def test_names_in_notes_typed_by_hand_are_named(self):
         self.record()

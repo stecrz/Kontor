@@ -203,7 +203,7 @@ const H = {
   voll_lesen: t('voll_lesen_tip'),
   sync_knoepfe: t('sync_knoepfe_tip'),
   kz_eingetragen: t('kz_eingetragen_tip'),
-  kz_sicher: t('kz_sicher_tip'),
+  kz_sicher: t('kz_sicher_tip'), kz_stufen: t('kz_stufen_tip'),
   belege_ordner: t('belege_werden_als_normale_dateien'),
   belege_sub: t('platzhalter_jahr_monat_entitaet_bereic'),
   months_back: t('wie_viele_monate_historie_gelesen'),
@@ -263,7 +263,7 @@ const H = {
 const HELP_AT = {als_app: 'app', berechtigung: 'setup', immo_abrechnung: 'properties', immo_abziehbar: 'properties', immo_afa: 'properties', immo_aussch: 'properties', immo_darlehen_art: 'properties', immo_darlehen_konten: 'properties', immo_faellig: 'properties', immo_geb: 'properties', immo_ges: 'properties', immo_index: 'properties', immo_kategorie: 'properties', immo_kosten: 'properties', immo_nk: 'properties', immo_objektkonto: 'properties', immo_ruecklage: 'properties', immo_sonder: 'properties', immo_uebergang: 'properties', immo_verkauf: 'properties', immo_wert: 'properties', immo_zinsbindung: 'properties',
   area: 'areas', main_area: 'areas', share: 'areas', gruppenwahl: 'areas', anzeige: 'accounts', position_kurz: 'accounts', position: 'accounts',
   inactive: 'accounts', verlauf_kurz: 'history', history_source: 'history', verlauf_import: 'history', depotverlauf: 'history', mmhist: 'balances',
-  zuordnen: 'categories', kz_sicher: 'categories', regeln_mm: 'categories-rules', kz_eingetragen: 'categories-write-back', position_kat: 'categories-positions', kb_empfohlen: 'categories-tree', zielkonto: 'positions-recipients', anl_empfaenger: 'positions-recipients', sicherung: 'backup',
+  zuordnen: 'categories', kz_sicher: 'categories', kz_stufen: 'categories-suggestions', regeln_mm: 'categories-rules', kz_eingetragen: 'categories-write-back', position_kat: 'categories-positions', kb_empfohlen: 'categories-tree', zielkonto: 'positions-recipients', anl_empfaenger: 'positions-recipients', sicherung: 'backup',
   cf_operativ: 'cash-flow', cf_invest: 'cash-flow', cf_finanz: 'cash-flow', cf_unklar: 'cash-flow', cf_wert: 'cash-flow',
   cf_bank: 'cash-flow', cf_umsch: 'cash-flow', cf_fcf: 'cash-flow', cf_nv: 'cash-flow', cf_abgleich_bank: 'cash-flow', cf_abgleich_nv: 'cash-flow', cf_bruecke: 'cash-flow-bridge', cf_verm_bruecke: 'cash-flow-wealth', cf_je_monat_t: 'cash-flow-months', cf_herkunft_verwendung: 'cash-flow-total',
   cf_ausgaben_kuchen: 'cash-flow-ring', cf_heatmap: 'cash-flow-heatmap',
@@ -6109,7 +6109,7 @@ function bindPositionen(main) {
 }
 
 // ---------------------------------------------------------------- Zuordnen: Kategorien kommen aus MoneyMoney, Kontor trägt dort ein
-const KZ = {year: '', area: '', min: '', expanded: {}, aus: {}, open: null, rules: null, written: null, w: null, wsel: new Set()};
+const KZ = {year: '', area: '', min: '', level: '', expanded: {}, aus: {}, open: null, rules: null, written: null, w: null, wsel: new Set()};
 async function assignCats(ids, kat, extra = {}) {
   // Kontor trägt die Kategorie in MoneyMoney ein (vorher geprüft), in Teilen zu höchstens 2000 Umsätzen. Steht dort schon eine
   // andere (nicht von Kontor gesetzte): nachfragen, ob sie ersetzt werden soll – sonst bleibt sie (MoneyMoney ist maßgeblich).
@@ -6150,8 +6150,27 @@ function assignMsg(r) {
 }
 // Kategorien zum Zuordnen: die aus MoneyMoney (keine Ordner, nicht „Unkategorisiert“)
 const katList = id => `<datalist id="${id}">${(S.KATS || []).filter(k => !k.group && !k.default).map(k => `<option value="${esc(CP(k.path))}">`).join('')}</datalist>`;
-// alle gewählten Umsätze mit Vorschlag: [id, Kategorie] (der Vorschlag gilt je Umsatz, nicht je Gegenpartei)
-const vorschlagIds = off => off.groups.flatMap(g => g.ids.filter(i => !(KZ.aus[g.key] || new Set()).has(i) && g.proposals[i]).map(i => [i, g.proposals[i]]));
+// Kontor's suggestions have a level (how likely right: sicher, wahrscheinlich, unsicher) -- the groups the level filter shows,
+// and their chosen transactions whose suggestion is at least as sure as taking them all at once allows: sure ones, and in the
+// filter "wahrscheinlich" those too; never a guess (unsicher). [id, category] -- each transaction its own suggestion
+const KZ_LV = ['high', 'medium', 'low'];
+const kzShown = off => off.groups.filter(g => !KZ.level || g.level === KZ.level);
+const kzBulkLevel = () => KZ.level === 'medium' ? 1 : 0;
+const vorschlagIds = off => KZ.level === 'low' ? [] : kzShown(off).flatMap(g => g.ids.filter(i => !(KZ.aus[g.key] || new Set()).has(i) && g.proposals[i]
+  && KZ_LV.includes((g.levels || {})[i]) && KZ_LV.indexOf(g.levels[i]) <= kzBulkLevel()).map(i => [i, g.proposals[i]]));
+const kzBulkLabel = n => t(kzBulkLevel() ? 'alle_wahrscheinlichen_n' : 'alle_sicheren_n', n);
+// why Kontor suggests it: the level with how likely, and each hint in a line
+// (a reason counted "k of n" reads by n: one or many -- tn with n first; an amount in the group's currency)
+const KZ_COUNTED = new Set(['party', 'party_amount', 'party_below', 'party_above', 'party_word', 'party_reverse', 'word', 'meaning']);
+function kzWhy(lv, chance, why, cur) {
+  const money = v => cur && cur !== 'EUR' ? F(v) + ' ' + cur : F(v) + ' €';
+  const fmt = {counter: a => [a[0], FD(a[1])], counter_cat: a => [a[0], FD(a[1])], also: a => [CP(a[0])]};
+  const lines = (why || []).map(w => { const a = w.a || [];
+    if (KZ_COUNTED.has(w.k)) return tn(`kzw_${w.k}`, a[1], a[0], ['party_amount', 'party_below', 'party_above'].includes(w.k) ? money(a[2]) : a[2]);
+    return t(`kzw_${w.k}`, ...(fmt[w.k] ? fmt[w.k](a) : a)); });
+  return [t(`kz_lv_tip_${lv}`, Math.round(100 * (chance || 0)))].concat(lines).join('\n');
+}
+const kzLvTag = (lv, chance, why, cur) => `<span class="tag kz-lv ${lv} tipped" tabindex="0" data-ex="categories.open.group.level" data-tip="${esc(kzWhy(lv, chance, why, cur))}">${t(`kz_lv_${lv}`)}</span>`;
 // how much of what the filters show is placed surely (a category from MoneyMoney or assigned here) and how much the cash flow
 // estimates: by number and by amount (euros; never 100 % while anything is open)
 function kzProgress(off) {
@@ -6164,11 +6183,11 @@ function kzProgress(off) {
 }
 async function vZuordnen() {
   if (!S.DATA) return noData;
-  const off = await api(`/api/categories/unassigned?year=${KZ.year}&min=${KZ.min}`);
+  const off = await api(`/api/categories/unassigned?year=${KZ.year}&min=${KZ.min}&level=${KZ.level || ''}`);
   KZ.open = off; KZ.rules = null; KZ.written = off.written;
   for (const g of off.groups) if (KZ.aus[g.key]) { const ids = new Set(g.ids); for (const i of [...KZ.aus[g.key]]) if (!ids.has(i)) KZ.aus[g.key].delete(i); }
   const years = Object.keys((S.DATA.categories || {}).years || {}).sort().reverse(), can = true;          // assigning is the release (from the iPhone: entered at the next sync at the Mac)
-  const mitVorschlag = vorschlagIds(off);
+  const mitVorschlag = vorschlagIds(off), lvs = off.levels || {}, shown = kzShown(off);
   // the areas you categorise: the others (a company with countless bookings, say) stay out of the list and of the count
   const ohne = new Set(off.skipped || S.CFG.assign_without || []), areas = Object.keys(S.DATA.areas || {});
   const chips = areas.length > 1 ? `<div class="kz-areas" role="group" aria-label="${esc(t('kz_bereiche'))}" title="${esc(t('kz_bereiche_tip'))}">${areas.map(k => `<label class="lc-chip"><input type="checkbox" data-area="${esc(k)}" ${ohne.has(String(k)) ? '' : 'checked'}>${esc(BN(k))}</label>`).join('')}</div>` : '';
@@ -6177,20 +6196,23 @@ async function vZuordnen() {
     <label class="chk small" title="${esc(t('kz_ignorieren_vor_tip'))}">${t('kz_ignorieren_vor')} <input type="date" id="kz-vor" value="${esc(vor)}" aria-label="${esc(t('kz_ignorieren_vor'))}"></label>
     <select id="kz-jahr"><option value="">${t('alle_jahre')}</option>${years.map(y => `<option ${KZ.year === y ? 'selected' : ''}>${y}</option>`).join('')}</select>
     <label class="chk small">${t('ab')} <input type="number" id="kz-min" value="${esc(KZ.min)}" placeholder="0" style="width:80px"> €</label>
-    <span class="sp"></span>${can && mitVorschlag.length ? `<button id="kz-alle" class="secondary small">${t('alle_vorschlaege_n', mitVorschlag.length)}</button>` : ''}</div>
+    <div class="seg small kz-lvs" role="group" aria-label="${esc(t('kz_stufen'))}" data-ex="categories.levels">${[''].concat(KZ_LV).map(k => `<button data-lv="${k}" class="${(KZ.level || '') === k ? 'on' : ''}" aria-pressed="${(KZ.level || '') === k}">${k ? `<i class="kz-dot ${k}"></i>` + t(`kz_f_${k}`, lvs[k] || 0) : t('kz_f_alle', off.groups_total || 0)}</button>`).join('')}</div>${hq('kz_stufen')}
+    <span class="sp"></span>${can && mitVorschlag.length ? `<button id="kz-alle" class="secondary small">${kzBulkLabel(mitVorschlag.length)}</button>` : ''}</div>
     ${kzProgress(off)}<div class="note" data-ex="categories.open">${tn('n_ohne_kategorie_gruppen', off.open, hq('zuordnen'))}</div>` + katList('kz-kats');
   if (off.waiting) h += `<div class="banner info">${tn('n_warten_auf_mac', off.waiting, off.waiting)}</div>`;
-  if (!off.groups.length) return h + `<div class="card" data-ex="categories.open"><div class="v s">${t('nichts_offen_2')}</div><div class="d">${t('alle_umsaetze_haben_eine_kategorie')}</div></div>`;
+  if (!off.groups_total) return h + `<div class="card" data-ex="categories.open"><div class="v s">${t('nichts_offen_2')}</div><div class="d">${t('alle_umsaetze_haben_eine_kategorie')}</div></div>`;
+  if (!shown.length) return h + `<div class="card" data-ex="categories.open"><div class="v s">${t(`kz_stufe_leer_${KZ.level}`)}</div></div>`;
+  if ((off.groups_shown || 0) > off.groups.length) h += `<div class="note">${t('kz_erste_n', F0(off.groups.length), F0(off.groups_shown))}</div>`;
   h += '<div class="list" data-ex="categories.open">';
-  for (const g of off.groups) {
+  for (const g of shown) {
     const open = KZ.expanded[g.key], aus = KZ.aus[g.key] || new Set(), n = g.ids.filter(i => !aus.has(i)).length, mixed = !g.proposal && Object.keys(g.proposals).length > 0;
     h += `<div class="item kz-group" data-key="${esc(g.key)}" data-ex="categories.open.group"><div class="grow">
       <div class="row tight"><b style="min-width:220px">${esc(g.name)}</b><span class="small muted">${esc(g.accounts.join(', '))}${g.iban ? ' · ' + esc(g.iban) : ''}</span><span class="tag kz-count">${n < g.count ? n + ' / ' : ''}${g.count}×</span><span class="num ${g.sum < 0 ? 'neg' : 'pos'}" style="font-weight:600">${F(g.sum)} ${g.currency ? esc(g.currency) : '€'}</span><span class="small muted">${FD(g.date_from)}${g.date_from !== g.date_to ? ' – ' + FD(g.date_to) : ''}</span><button class="ghost small kz-toggle" aria-expanded="${open ? 'true' : 'false'}">${open ? t('umsaetze_zu') : t('umsaetze_auf')}</button></div>
 
       ${g.count === 1 && g.transactions[0] ? `<div class="small muted kz-one">${esc(g.transactions[0].purpose || '')}${g.transactions[0].kind ? ` <span class="tag">${esc(g.transactions[0].kind)}</span>` : ''}</div>` : ''}
-      <div class="row tight"><input type="text" class="kz-kat" list="kz-kats" value="${esc(CP(g.proposal))}" placeholder="${t('kategorie_aus_moneymoney')}" style="min-width:300px" ${can ? '' : 'disabled'}>${g.proposal ? `<span class="tag tipped" tabindex="0" data-tip="${esc(t('vorschlag_tip'))}">${t('vorschlag_tag')}</span>` : Object.keys(g.proposals).length ? `<span class="tag tipped" tabindex="0" data-tip="${esc(t('vorschlaege_je_umsatz_tip'))}">${t('vorschlaege_je_umsatz')}</span>` : ''}
+      <div class="row tight"><input type="text" class="kz-kat" list="kz-kats" value="${esc(CP(g.proposal))}" placeholder="${t('kategorie_aus_moneymoney')}" style="min-width:300px" ${can ? '' : 'disabled'}>${g.proposal ? kzLvTag(g.level, g.chance, g.why, g.currency) : Object.keys(g.proposals).length ? `<span class="tag kz-lv ${g.level} tipped" tabindex="0" data-tip="${esc(t('vorschlaege_je_umsatz_tip'))}">${t('vorschlaege_je_umsatz')}</span>` : ''}
         <button class="small kz-save" ${can && n ? '' : 'disabled'}>${n < g.count ? tn('n_zuordnen', n, n) : t('zuordnen')}</button>${g.own_account && off.transfer ? `<button class="small secondary kz-umb" title="${esc(t('kz_umbuchung_tip'))}" ${can ? '' : 'disabled'}>${esc(off.transfer)}</button>` : ''}</div>
-      ${open ? `<div class="kz-tx-wrap" data-ex="categories.open.group.tx"><table class="plain small kz-tx"><thead><tr><th><input type="checkbox" class="kz-all" ${aus.size ? '' : 'checked'} aria-label="${t('alle_2')}"></th><th>${t('datum')}</th><th>${t('konto_2')}</th><th>${t('zweck')}</th><th class="num">${t('betrag')}</th>${mixed ? `<th>${t('vorschlag_tag')}</th>` : ''}</tr></thead><tbody>${g.transactions.map(u => `<tr><td><input type="checkbox" class="kz-sel" data-id="${u.id}" ${aus.has(u.id) ? '' : 'checked'}></td><td style="white-space:nowrap">${FD(u.date)}</td><td style="white-space:nowrap">${esc(u.account)}</td><td class="kz-zweck">${u.name && u.name !== g.name ? `<b>${esc(u.name)}</b> ` : ''}${esc(u.purpose || '–')}${u.kind ? ` <span class="tag">${esc(u.kind)}</span>` : ''}</td><td class="num ${u.amount < 0 ? 'neg' : 'pos'}">${FCur(u.amount, g.currency)}</td>${mixed ? `<td class="muted">${esc(CP(u.proposal) || '–')}</td>` : ''}</tr>`).join('')}</tbody></table></div>` : ''}</div></div>`;
+      ${open ? `<div class="kz-tx-wrap" data-ex="categories.open.group.tx"><table class="plain small kz-tx"><thead><tr><th><input type="checkbox" class="kz-all" ${aus.size ? '' : 'checked'} aria-label="${t('alle_2')}"></th><th>${t('datum')}</th><th>${t('konto_2')}</th><th>${t('zweck')}</th><th class="num">${t('betrag')}</th>${mixed ? `<th>${t('vorschlag_tag')}</th>` : ''}</tr></thead><tbody>${g.transactions.map(u => `<tr><td><input type="checkbox" class="kz-sel" data-id="${u.id}" ${aus.has(u.id) ? '' : 'checked'}></td><td style="white-space:nowrap">${FD(u.date)}</td><td style="white-space:nowrap">${esc(u.account)}</td><td class="kz-zweck">${u.name && u.name !== g.name ? `<b>${esc(u.name)}</b> ` : ''}${esc(u.purpose || '–')}${u.kind ? ` <span class="tag">${esc(u.kind)}</span>` : ''}</td><td class="num ${u.amount < 0 ? 'neg' : 'pos'}">${FCur(u.amount, g.currency)}</td>${mixed ? `<td>${u.proposal ? `<span class="tipped" tabindex="0" data-tip="${esc(kzWhy(u.level, u.chance, u.why, g.currency))}"><i class="kz-dot ${u.level || ''}" role="img" aria-label="${esc(t(`kz_lv_${u.level}`))}"></i>${esc(CP(u.proposal))}</span>` : '–'}</td>` : ''}</tr>`).join('')}</tbody></table></div>` : ''}</div></div>`;
   }
   return h + '</div>';
 }
@@ -6208,6 +6230,8 @@ function bindZuordnen(main) {
     try { const r = await api('/api/categories/areas', {ignore_before: kv.value, wait: true}); S.CFG = r.config; KZ.aus = {}; await loadAll(); route(); } catch (e) { toast(e.message, 5000); }
   });
   $$('.kz-toggle', main).forEach(b => b.addEventListener('click', e => { const k = e.target.closest('.kz-group').dataset.key; KZ.expanded[k] = !KZ.expanded[k]; route(); }));
+  // the level filter: which suggestions to look at (the least sure ones first, say) -- kept while the page is open
+  $$('.kz-lvs button', main).forEach(b => b.addEventListener('click', () => { KZ.level = b.dataset.lv; route(); }));
   // einzelne Umsätze einer Gegenpartei abwählen (z. B. ein Händler, bei dem du Verschiedenes kaufst) -- ohne neu zu laden
   const updGroup = box => {
     const g = KZ.open.groups.find(x => x.key === box.dataset.key), aus = KZ.aus[g.key] || new Set(), n = g.ids.length - aus.size;
@@ -6215,7 +6239,7 @@ function bindZuordnen(main) {
     $$('.kz-sel', box).forEach(cb => { cb.checked = !aus.has(+cb.dataset.id); });
     $('.kz-count', box).textContent = (n < g.count ? n + ' / ' : '') + g.count + '×';
     const b = $('.kz-save', box); b.textContent = n < g.count ? tn('n_zuordnen', n) : t('zuordnen'); b.disabled = !n;
-    const a = $('#kz-alle', main); if (a) a.textContent = t('alle_vorschlaege_n', vorschlagIds(KZ.open).length);
+    const a = $('#kz-alle', main); if (a) { const m = vorschlagIds(KZ.open).length; a.textContent = kzBulkLabel(m); a.disabled = !m; }
   };
   $$('.kz-group', main).forEach(updGroup);
   $$('.kz-all', main).forEach(cb => cb.addEventListener('change', e => {

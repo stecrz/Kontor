@@ -121,13 +121,24 @@ def approval(raw) -> Tuple[Optional[Dict[str, dict]], Optional[str]]:
     return out, None
 
 
-def open_category_items(app: "App", year: Optional[int], area: Optional[str], minimum: float = 0.0, limit: int = 300) -> dict:
-    """The bank bookings without a category, grouped by counterparty, each with Kontor's suggestion (the page Kategorisieren)."""
+def transfer_category(app: "App") -> Tuple[Optional[str], Callable[[str], bool]]:
+    """Your category for transfers in MoneyMoney (the first the cash flow takes as one; None: there is none) and the check
+    whether a category is one."""
+    from report import transfer_check
+    is_transfer = transfer_check(app.config)
+    return next((p for p in (categorize.norm_cat(str(c.get("path") or c.get("name") or "")) for c in app.categories_raw
+                             if not c.get("group") and not c.get("default")) if p and is_transfer(p)), None), is_transfer
+
+
+def open_category_items(app: "App", year: Optional[int], area: Optional[str], minimum: float = 0.0, limit: int = 300, level: Optional[str] = None) -> dict:
+    """The bank bookings without a category, grouped by counterparty, each with Kontor's suggestion and how sure it is (the
+    page Kategorisieren; by meaning too where the assistant's embeddings of transactions may be used)."""
     kat = categorize.load(app.store)
     areas = bereiche_for(app.ledger, app.config)
     bereich_of = {a.uuid: b["id"] for b in areas for a in b["leaves"]}
-    return categorize.open_items(kat, app.ledger, bereich_of, year, area, minimum, limit, bank_accounts(account_roles(app.ledger, app.config)), assign_skipped(app.config, areas),
-                                  assign_cutoff(app.config))
+    roles = account_roles(app.ledger, app.config)
+    return categorize.open_items(kat, app.ledger, bereich_of, year, area, minimum, limit, bank_accounts(roles), assign_skipped(app.config, areas),
+                                  assign_cutoff(app.config), app.category_hints(kat, bereich_of, roles), app.tx_meaning(), level)
 
 
 def assign_categories(app: "App", ids: List[int], pfad: str, modus: str = "auto", local: bool = True, confirmed: Optional[dict] = None,
@@ -1918,6 +1929,49 @@ class App:
         log.info("Categories taken back in MoneyMoney: %d (changed there meanwhile: %d, not possible: %d)", out["undone"], out["changed"], out["error"])
         return out
 
+    def category_hints(self, kat: dict, area_of: Dict[str, str], roles: Dict[str, str]) -> "categorize.Hints":
+        """What the suggestions under Kategorisieren are made of (categorize.Hints) -- kept, made anew when the transactions, your
+        assignments, MoneyMoney's categories, the cash flow positions, the areas or the accounts' positions changed. Only
+        categories that exist in MoneyMoney are suggested (all while none are known); a counter-booking can be on a bank
+        account or an account kept by hand."""
+        transfer, is_transfer = transfer_category(self)
+        idx = mm_categories.index(self.categories_raw)
+        ok = {p for p in idx if mm_categories.assignable(idx, p) is None} if idx else None
+        accs = self.ledger.accounts
+        counter = {u for u, r in roles.items() if r == "cash" or (r != "ignore" and u in accs and accs[u].offline)}
+        key = (id(self.ledger), hash(tuple((t.id, t.mm_category_path, t.amount, t.booked) for t in self.ledger.txs)), json.dumps(
+            [kat.get("assignment"), None if ok is None else sorted(ok), transfer, area_of, sorted(counter), sorted(categorize.STANDARD),
+             self.config.get("categories") or {}, self.config.get("cashflow") or {}], sort_keys=True, default=str))
+        cached = getattr(self, "_hints", None)
+        if cached and cached[0] == key:
+            return cached[1]
+        from report import POS, position_of
+        sections: Dict[str, bool] = {}
+
+        def everyday(path: str) -> bool:                 # income or spending in the cash flow (not saving, repayment, transfer ...)
+            if path not in sections:
+                sections[path] = (POS.get(position_of(path, self.config, {})[0]) or ("",))[0] in ("income", "expenses")
+            return sections[path]
+        hints = categorize.Hints(kat, self.ledger, area_of, counter, ok, transfer, is_transfer, everyday)
+        self._hints = (key, hints)
+        return hints
+
+    def tx_meaning(self) -> Optional["categorize.Meaning"]:
+        """For suggestions by meaning: the embeddings of transactions' texts the assistant made (only read, never made here) --
+        None while the assistant is off or may not read transactions (then they do not exist either)."""
+        try:
+            if not assistant_mod.settings(self.config)["enabled"]:
+                return None
+            got = self.assistant.tx_meaning()
+        except Exception as e:
+            log.warning("Categories: no suggestions by meaning (%s)", type(e).__name__)
+            return None
+        if not got:
+            return None
+        if getattr(self, "_mean_cache", None) is None:
+            self._mean_cache: dict = {}                  # the counterparties' embeddings, kept across your assignments (categorize.Hints._means)
+        return categorize.Meaning(got[0], got[1], self._mean_cache)
+
     def rule_proposals(self, kat: dict) -> List[dict]:
         """Rules worth adding in MoneyMoney (categorize.rule_proposals), only for categories that exist there."""
         if self.ledger is None:
@@ -3628,17 +3682,13 @@ def make_handler(app: App):
                 kat = categorize.load(app.store)
                 areas = bereiche_for(app.ledger, app.config)
                 res = open_category_items(app, int(q["year"]) if q.get("year") else None, q.get("area") or None, float(q.get("min") or 0),
-                                          max(1, min(5000, int(q.get("limit") or 300))))
+                                          max(1, min(5000, int(q.get("limit") or 300))), q.get("level") or None)
                 res["skipped"] = sorted(assign_skipped(app.config, areas))
                 cut = assign_cutoff(app.config)
                 res["ignore_before"] = cut.isoformat() if cut else ""
                 if getattr(app.ledger, "_paired", None) is None:
                     app.request_rebuild("assigning")              # which bookings are transfers comes with the report (page reloads then)
-                # your category for transfers in MoneyMoney (for a contribution or withdrawal between two areas)
-                from report import transfer_check
-                is_transfer = transfer_check(app.config)
-                res["transfer"] = next((p for p in (categorize.norm_cat(str(c.get("path") or c.get("name") or "")) for c in app.categories_raw
-                                                     if not c.get("group") and not c.get("default")) if p and is_transfer(p)), None)
+                res["transfer"] = transfer_category(app)[0]       # your category for transfers in MoneyMoney (a contribution or withdrawal between two areas)
                 res["waiting"] = sum(1 for z in kat["assignment"].values() if categorize.waiting(z))      # written at the next sync
                 res["written"] = len((app.store.load_shared("state.json", {}) or {}).get(mm_categories.LOG_KEY) or {})      # entered by Kontor (to take back)
                 res["rule_proposals"] = len(app.rule_proposals(kat))

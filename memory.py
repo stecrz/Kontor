@@ -2332,6 +2332,22 @@ class Library:
                     self.store.delete(LIB_FILE % (self.kind, b))
             self._dirty.clear()
 
+    def vectors(self, model: str, keys: Iterable[str]) -> Dict[str, array]:
+        """The embeddings of these texts (key -> numbers as kept) made by this model -- only those there are."""
+        with self.lock:
+            have = self._load()
+            out = {}
+            for k in keys:
+                v = have.get(k)
+                if v is not None and v[0] == model:
+                    out[k] = v[1]
+            return out
+
+    def size(self) -> int:
+        """How many embeddings there are (of any model)."""
+        with self.lock:
+            return len(self._load())
+
     def likeness(self, model: str, q: array, keys: Iterable[str]) -> Dict[str, float]:
         with self.lock:
             have = self._load()

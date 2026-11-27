@@ -113,6 +113,254 @@ class Progress(unittest.TestCase):
         self.assertEqual((off["assigned"], off["open"], off["assigned_sum"], off["open_sum"]), (1, 1, 0, 100.0))
 
 
+def world(rows, accounts=("giro",)):
+    """rows: (id, account, day, name, purpose, amount, category, counter iban) -- accounts made up, all in euros."""
+    acc = {u: Account(uuid=u, name=u.capitalize(), type="Giro", group=False, indentation=0, balance=0.0, currency="EUR", iban="DE%02d" % i)
+           for i, u in enumerate(accounts)}
+    d0 = date(2026, 1, 1)
+    return Ledger(acc, [Tx(id=i, account_uuid=a, booking_date=d0 + timedelta(days=day), value_date=None, amount=am, currency="EUR", name=n, purpose=p,
+                           category_path=c.replace(" / ", "\\"), counter_iban=ib) for i, a, day, n, p, am, c, ib in rows])
+
+
+def suggestions(L, area_of=None, **kw):
+    """id -> (category, level, kinds of reasons) of every open transaction."""
+    area_of = area_of if area_of is not None else {u: "1" for u in L.accounts}
+    h = C.Hints(C.empty(), L, area_of, kw.pop("counter", None), kw.pop("assignable", None), kw.pop("transfer", None), kw.pop("is_transfer", None))
+    off = C.open_items(C.empty(), L, area_of, hints=h, meaning=kw.pop("meaning", None))
+    return {u["id"]: (u["proposal"], u["level"], [w["k"] for w in u["why"]]) for g in off["groups"] for u in g["transactions"]}, off
+
+
+class Suggestions(unittest.TestCase):
+    """Every open transaction gets Kontor's likeliest category and how sure it is: (k + 1) / (n + 2) for k of n comparable
+    earlier cases -- from 80 % sure, from 60 % probable, below unsure (made-up names and amounts)."""
+
+    def test_chance_and_levels(self):
+        self.assertEqual((C.chance(1, 1), C.chance(3, 3), C.chance(9, 10), C.chance(0, 0)), (2 / 3, 0.8, 10 / 12, 0.5))
+        self.assertEqual([C.level_of(p) for p in (0.8, 0.7999, 0.6, 0.5999)], ["high", "medium", "medium", "low"])
+
+    def test_the_counterpartys_past_decides_how_sure(self):
+        rows = [(1, "giro", 1, "Bäckerei Korn", "Brot", -4.5, "Lebensmittel", ""), (2, "giro", 2, "Bäckerei Korn", "Brot", -3.2, "Lebensmittel", ""),
+                (3, "giro", 3, "Bäckerei Korn", "Brot", -5.1, "Lebensmittel", ""), (4, "giro", 9, "Bäckerei Korn", "Kuchen", -12.0, "", ""),
+                (5, "giro", 1, "Kiosk Eck", "Zeitung", -2.0, "Freizeit", ""), (6, "giro", 9, "Kiosk Eck", "Zeitung", -2.5, "", ""),
+                (7, "giro", 1, "Laden Mitte", "Einkauf", -9.0, "Haushalt", ""), (8, "giro", 2, "Laden Mitte", "Einkauf", -8.0, "Freizeit", ""),
+                (9, "giro", 9, "Laden Mitte", "Einkauf", -7.0, "", "")]
+        got, off = suggestions(world(rows))
+        self.assertEqual(got[4], ("Lebensmittel", "high", ["party"]))           # 3 of 3: 80 %
+        self.assertEqual(got[6], ("Freizeit", "medium", ["party"]))             # 1 of 1: 67 %
+        self.assertEqual(got[9][1], "low")                                      # 1 of 2: 50 %
+        self.assertEqual(sum(off["levels"].values()), off["groups_total"])
+
+    def test_by_amount_or_by_a_word_where_its_categories_part(self):
+        iban = "DE02100100100006820101"
+        rows = [(1, "giro", 1, "Verwaltung", "Miete Wohnung", -900.0, "Wohnen / Miete", iban), (2, "giro", 2, "Verwaltung", "Miete Wohnung", -900.0, "Wohnen / Miete", iban),
+                (3, "giro", 3, "Verwaltung", "Nebenkosten Abrechnung", -100.0, "Wohnen / Nebenkosten", iban),
+                (4, "giro", 4, "Verwaltung", "Nebenkosten Abrechnung", -120.0, "Wohnen / Nebenkosten", iban),
+                (5, "giro", 9, "Verwaltung", "Zahlung", -900.0, "", iban), (6, "giro", 9, "Verwaltung", "Zahlung", -95.0, "", iban),
+                (7, "giro", 9, "Verwaltung", "Nebenkosten 2025", -700.0, "", iban), (8, "giro", 9, "Verwaltung", "Zahlung", -500.0, "", iban)]
+        got, off = suggestions(world(rows))
+        chance = {u["id"]: u["chance"] for u in off["groups"][0]["transactions"]}
+        self.assertEqual(got[5], ("Wohnen / Miete", "high", ["party_amount"]))            # exactly this amount: 2 of 2, its past half rent
+        self.assertEqual(chance[5], round((2 + 0.5) / 3, 3))
+        self.assertEqual(got[6], ("Wohnen / Nebenkosten", "high", ["party_below"]))       # below the split
+        self.assertEqual(got[7][:2], ("Wohnen / Nebenkosten", "high")); self.assertIn("party_word", got[7][2])     # a word; 700 € lies between the sides
+        self.assertEqual(got[8], ("Wohnen / Miete", "low", ["party"]))                    # like none of them: all of its past, 2 of 4
+        g = off["groups"][0]
+        self.assertIsNone(g["proposal"]); self.assertEqual(g["level"], "low")                   # they differ: per transaction
+
+    def test_what_is_like_this_one_beats_the_counterpartys_share(self):
+        """Twenty rents do not make a service charge statement rent: what is like this transaction counts first, the
+        counterparty's whole past only as the prior (the reviewer's cases)."""
+        iban = "DE02100100100006820101"
+        rent = [(i, "giro", i, "Verwaltung", "Miete", -900.0, "Wohnen / Miete", iban) for i in range(1, 21)]
+        rows = rent + [(30, "giro", 30, "Verwaltung", "Nebenkostenabrechnung", -150.0, "Wohnen / Nebenkosten", iban),
+                       (31, "giro", 31, "Verwaltung", "Nebenkostenabrechnung", -300.0, "Wohnen / Nebenkosten", iban),
+                       (40, "giro", 40, "Verwaltung", "Nebenkostenabrechnung", -220.0, "", iban)]
+        got, _ = suggestions(world(rows))
+        self.assertEqual(got[40][:2], ("Wohnen / Nebenkosten", "medium"))
+        rows = rent[:9] + [(30, "giro", 30, "Verwaltung", "Nebenkosten", -100.0, "Wohnen / Nebenkosten", iban), (40, "giro", 40, "Verwaltung", "Zahlung", -100.0, "", iban)]
+        got, _ = suggestions(world(rows))
+        self.assertEqual(got[40], ("Wohnen / Nebenkosten", "low", ["party_amount"]))        # one like it: no more than a guess
+        many = [(i, "giro", i % 900, "Verwaltung", "Miete", -900.0, "Wohnen / Miete", iban) for i in range(1, 451)]
+        many += [(1000 + i, "giro", 500 + i, "Verwaltung", "NK", -100.0 - i, "Wohnen / Nebenkosten", iban) for i in range(50)]
+        got, _ = suggestions(world(many + [(2000, "giro", 950, "Verwaltung", "Zahlung", -95.0, "", iban)]))
+        self.assertEqual(got[2000][:2], ("Wohnen / Nebenkosten", "high"))                   # however many rents there are
+
+    def test_amounts_compared_only_in_one_currency(self):
+        iban = "DE02100100100006820101"
+        rows = [(1, "usd", 1, "Shop", "Kauf", -50.0, "Reisen", iban), (2, "usd", 2, "Shop", "Kauf", -60.0, "Reisen", iban),
+                (3, "giro", 3, "Shop", "Kauf", -500.0, "Technik", iban), (4, "giro", 4, "Shop", "Kauf", -600.0, "Technik", iban),
+                (5, "giro", 9, "Shop", "Kauf", -55.0, "", iban)]
+        L = world(rows, ("giro", "usd"))
+        L.accounts["usd"].currency = "USD"
+        got, _ = suggestions(L)
+        self.assertNotIn("party_below", got[5][2])              # dollars below, euros above: no split in euros
+
+    def test_words_other_counterparties_had_count_once_each(self):
+        rows = [(1, "giro", 1, "Huk Versicherung", "Beitrag", -50.0, "Versicherungen", "DE02100100100006820101"),
+                (2, "giro", 2, "Allianz Versicherung", "Beitrag", -10.0, "Versicherungen", "DE02100100100006820102"),
+                (3, "giro", 3, "Ergo Versicherung AG", "Beitrag", -22.0, "", "DE02100500000054540402")]
+        rows += [(10 + i, "giro", 1 + i, "Markt Süd", "Danke für Ihren Einkauf", -20.0, "Lebensmittel", "") for i in range(30)]
+        rows += [(50, "giro", 40, "Verein", "Danke für Ihre Spende", -20.0, "", "")]
+        got, _ = suggestions(world(rows))
+        self.assertEqual(got[3], ("Versicherungen", "medium", ["word", "catname"]))      # 2 of 2 counterparties × 0.9, and the name
+        self.assertNotIn("word", got[50][2])                     # one shop thirty times is one counterparty: not enough
+        self.assertEqual(got[50][1], "low")
+
+    def test_a_counter_booking_suggests_the_transfer_category(self):
+        rows = [(1, "giro", 5, "", "Übertrag", -500.0, "", ""), (2, "tages", 6, "", "Übertrag", 500.0, "", ""),
+                (3, "giro", 5, "", "Sparen", -300.0, "", ""), (4, "tages", 6, "", "Sparen", 300.0, "Umbuchung", ""),
+                (5, "giro", 5, "Shop", "Kauf", -77.0, "", ""), (6, "tages", 20, "", "Gutschrift", 77.0, "", ""),       # 15 days apart: no
+                (7, "giro", 5, "Shop", "Kauf", -66.0, "", ""), (8, "tages", 6, "Shop", "Erstattung", 66.0, "Haushalt", "")]      # its category says otherwise
+        is_t = lambda p: p == "Umbuchung"
+        got, _ = suggestions(world(rows, ("giro", "tages")), transfer="Umbuchung", is_transfer=is_t, counter={"giro", "tages"})
+        self.assertEqual(got[1], ("Umbuchung", "medium", ["counter"]))                 # the only one, a day apart: 70 %
+        self.assertEqual(got[3], ("Umbuchung", "high", ["counter_cat"]))               # the other side is a transfer: 85 %
+        self.assertNotEqual(got[5][0], "Umbuchung"); self.assertNotEqual(got[7][0], "Umbuchung")
+        got, _ = suggestions(world(rows, ("giro", "tages")), transfer=None, is_transfer=is_t)
+        self.assertNotIn("counter", got[1][2])                                          # without a transfer category: none
+
+    def test_no_counter_booking_where_the_money_went_to_someone_else(self):
+        """Only the opposite amount is not enough (the reviewer's cases): paid to someone else's IBAN, two names that differ, no
+        amount, another currency, or a booking the cash flow paired already -- no transfer."""
+        is_t = lambda p: p == "Umbuchung"
+        rows = [(1, "giro", 5, "Möbelhaus", "Sofa", -300.0, "", "DE02100100100006820101"), (2, "tages", 7, "", "Übertrag", 300.0, "Umbuchung", ""),
+                (3, "giro", 5, "Max", "Rückzahlung", -50.0, "", ""), (4, "tages", 6, "Erika", "Geld", 50.0, "", ""),
+                (5, "giro", 5, "", "Null", 0.0, "", ""), (6, "tages", 5, "", "Null", 0.0, "", ""),
+                (7, "giro", 5, "", "Übertrag", -120.0, "", ""), (8, "usd", 5, "", "Übertrag", 120.0, "", ""),
+                (9, "giro", 5, "", "Übertrag", -77.0, "", ""), (10, "tages", 5, "", "Übertrag", 77.0, "", "")]
+        L = world(rows, ("giro", "tages", "usd"))
+        L.accounts["usd"].currency = "USD"
+        L._paired = {"1": {10}}
+        got, _ = suggestions(L, transfer="Umbuchung", is_transfer=is_t, counter={"giro", "tages", "usd"})
+        for i in (1, 3, 5, 7, 9):
+            self.assertNotIn("counter", got[i][2], i)
+            self.assertNotIn("counter_cat", got[i][2], i)
+
+    def test_the_other_side_an_account_of_yours(self):
+        acc = world([], ("giro", "firma"))
+        acc.accounts["firma"].iban = "DE02500105170137075030"
+        L = Ledger(acc.accounts, [Tx(id=1, account_uuid="giro", booking_date=date(2026, 3, 1), value_date=None, amount=-1000.0, currency="EUR",
+                                     name="Firma", purpose="Einlage", category_path="", counter_iban="DE02500105170137075030")])
+        got, _ = suggestions(L, {"giro": "1", "firma": "2"}, transfer="Umbuchung", is_transfer=lambda p: p == "Umbuchung")
+        self.assertEqual(got[1], ("Umbuchung", "medium", ["own_account"]))
+
+    def test_a_word_of_a_categorys_name_and_else_the_most_common(self):
+        rows = [(1, "giro", 1, "Markt", "Einkauf", -20.0, "Lebensmittel", ""), (2, "giro", 2, "Markt", "Einkauf", -25.0, "Lebensmittel", ""),
+                (3, "giro", 3, "Arbeitgeber", "Lohn", 2000.0, "Einkommen / Gehalt", ""),
+                (4, "giro", 9, "Stadtwerke Nord", "Abschlag Strom", -80.0, "", ""), (5, "giro", 9, "Max Muster", "Danke", -30.0, "", ""),
+                (6, "giro", 9, "Erika Muster", "Danke", 30.0, "", "")]
+        cats = {"Lebensmittel", "Einkommen / Gehalt", "Wohnen / Strom und Gas"}
+        got, _ = suggestions(world(rows), assignable=cats)
+        self.assertEqual(got[4], ("Wohnen / Strom und Gas", "low", ["catname"]))
+        self.assertEqual(got[5], ("Lebensmittel", "low", ["common_out"]))              # a guess, and says so
+        self.assertEqual(got[6], ("Einkommen / Gehalt", "low", ["common_in"]))          # by direction
+        got, off = suggestions(world([(1, "giro", 1, "Max Muster", "Danke", -30.0, "", "")]))
+        self.assertEqual(got[1], (None, None, [])); self.assertEqual(off["groups"][0]["level"], "low")      # nothing known at all
+
+    def test_only_categories_that_exist_in_moneymoney(self):
+        rows = [(1, "giro", 1, "Laden", "Kauf", -5.0, "Alt / Weg", ""), (2, "giro", 2, "Laden", "Kauf", -6.0, "Alt / Weg", ""),
+                (3, "giro", 3, "Laden", "Kauf", -7.0, "", "")]
+        got, _ = suggestions(world(rows), assignable={"Haushalt"})
+        self.assertNotEqual(got[3][0], "Alt / Weg")
+
+    def test_a_reason_for_another_category_makes_it_less_sure(self):
+        rows = [(i, "giro", i, "Laden", "Kauf", -40.0 - i, "Haushalt", "") for i in range(1, 4)]
+        rows += [(9, "giro", 20, "Laden", "Kauf", -55.0, "", ""), (10, "tages", 21, "", "Eingang", 55.0, "", "")]
+        got, _ = suggestions(world(rows, ("giro", "tages")), transfer="Umbuchung", is_transfer=lambda p: p == "Umbuchung", counter={"giro", "tages"})
+        self.assertEqual(got[9], ("Haushalt", "medium", ["party", "also"]))             # 80 % less half of 70 − 40
+
+    def test_two_kinds_of_reasons_add_up(self):
+        h = [("party", "A", 0.75, {"k": "party"}), ("word", "A", 0.675, {"k": "word"}), ("common", "A", 0.3, {"k": "common_out"})]
+        got = C.combine(h)                                       # 2 of 2 and a word 2 of 2 counterparties: sure together
+        self.assertAlmostEqual(got["chance"], round(0.75 + 0.5 * 0.25 * 0.675, 3))
+        self.assertEqual((got["level"], [w["k"] for w in got["why"]]), ("high", ["party", "word"]))       # the most common one is no evidence
+        self.assertEqual(C.combine([("common", "B", 0.9, {"k": "common_out"})])["chance"], C.GUESS)      # alone: a guess, whatever its share
+        self.assertIsNone(C.combine([]))
+
+    def test_this_area_first(self):
+        rows = [(1, "privat", 1, "Tankstelle", "Benzin", -60.0, "Mobilität", ""), (2, "privat", 2, "Tankstelle", "Benzin", -50.0, "Mobilität", ""),
+                (3, "firma", 3, "Tankstelle", "Benzin", -70.0, "Firma / Fahrzeuge", ""), (4, "firma", 9, "Tankstelle", "Benzin", -65.0, "", ""),
+                (5, "privat", 9, "Tankstelle", "Benzin", -55.0, "", "")]
+        got, _ = suggestions(world(rows, ("privat", "firma")), {"privat": "1", "firma": "2"})
+        self.assertEqual((got[4][0], got[5][0]), ("Firma / Fahrzeuge", "Mobilität"))
+
+    def test_every_reason_and_level_has_its_text(self):
+        """The page shows each reason as kzw_<kind> and each level as kz_lv_<level> (with their tooltip and filter): German and English."""
+        import json
+        import re
+        here = os.path.join(os.path.dirname(__file__), "..")
+        txt = open(os.path.join(here, "web", "i18n.js"), encoding="utf-8").read()
+        cat = json.loads(txt[txt.index("{"):txt.rindex("}") + 1])
+        kinds = set(re.findall(r'"k": "(\w+)"', open(os.path.join(here, "categorize.py"), encoding="utf-8").read()))
+        self.assertGreaterEqual(len(kinds), 12)
+        keys = ["kzw_" + k for k in kinds] + [p + lv for lv in C.LEVELS for p in ("kz_lv_", "kz_lv_tip_", "kz_f_", "kz_stufe_leer_")]
+        for k in keys:
+            self.assertEqual(len(cat.get(k) or []), 2, k)
+
+    def test_never_assigned_by_itself(self):
+        rows = [(i, "giro", i, "Bäcker", "Brot", -3.0, "Lebensmittel", "") for i in range(1, 6)] + [(9, "giro", 9, "Bäcker", "Brot", -3.0, "", "")]
+        L = world(rows)
+        d = C.empty()
+        got, _ = suggestions(L)
+        self.assertEqual(got[9][:2], ("Lebensmittel", "high"))
+        C.apply_to_ledger(d, L)
+        self.assertEqual((L.txs[-1].category_path, d["assignment"]), ("", {}))
+
+
+class SuggestionsByMeaning(unittest.TestCase):
+    """With the assistant's embeddings (made up here): the most alike other counterparties vote -- at most probable alone,
+    never this counterparty itself, and nothing breaks without them."""
+
+    def rows(self):
+        return [(1, "giro", 1, "Streamo", "Abo", -9.99, "Freizeit / Abos", "DE02100100100006820101"),
+                (2, "giro", 2, "Flimmer", "Abo", -12.99, "Freizeit / Abos", "DE02100100100006820102"),
+                (3, "giro", 3, "Kinokette", "Monat", -7.99, "Freizeit / Abos", "DE02100500000054540402"),
+                (4, "giro", 4, "Markt", "Einkauf", -40.0, "Lebensmittel", "DE02120300000000202051"),
+                (5, "giro", 9, "Neuflix", "Monatlich", -8.99, "", "DE02300209000106531065")]
+
+    def meaning(self, broken=False):
+        vec = {1: [100, 0, 5], 2: [90, 10, 0], 3: [95, 5, 5], 4: [0, 100, 0], 5: [99, 3, 2]}
+
+        def vectors(txs):
+            if broken:
+                raise OSError("unreadable")
+            return {t.id: vec[t.id] for t in txs if t.id in vec}
+        return C.Meaning(("model", len(vec)), vectors)
+
+    def test_alike_counterparties_vote(self):
+        got, _ = suggestions(world(self.rows()), meaning=self.meaning())
+        self.assertEqual(got[5][0], "Freizeit / Abos")
+        self.assertIn("meaning", got[5][2]); self.assertEqual(got[5][1], "medium")       # 3 of 3 alike × 0.8: 64 %
+        got, _ = suggestions(world(self.rows()))
+        self.assertNotIn("meaning", got[5][2])                                              # without them: the other hints only
+
+    def test_counterparties_made_once_across_assignments(self):
+        """A new state of your assignments makes the hints anew -- the counterparties' embeddings come from the cache."""
+        vec = {1: [100, 0, 5], 2: [90, 10, 0], 3: [95, 5, 5], 4: [0, 100, 0], 5: [99, 3, 2]}
+        calls, cache = [], {}
+        m = C.Meaning(("model", 5), lambda txs: calls.append(sorted(t.id for t in txs)) or {t.id: vec[t.id] for t in txs if t.id in vec}, cache)
+        L = world(self.rows())
+        C.Hints(C.empty(), L, {"giro": "1"})._means(m)
+        self.assertEqual(calls, [[1, 2, 3, 4]])
+        d = C.empty(); C.set_waiting(d, [5], "Freizeit / Abos")                       # assigned: the hints anew
+        C.Hints(d, L, {"giro": "1"})._means(m)
+        self.assertEqual(calls[1:], [[5]])                                              # only the new one
+
+    def test_unreadable_embeddings_leave_the_other_hints(self):
+        got, _ = suggestions(world(self.rows()), meaning=self.meaning(broken=True))
+        self.assertNotIn("meaning", got[5][2]); self.assertIsNotNone(got[5][0])
+
+    def test_never_itself(self):
+        rows = self.rows() + [(6, "giro", 5, "Neuflix", "Monatlich", -8.99, "Bildung", "DE02300209000106531065")]
+        vec = {1: [100, 0, 5], 2: [90, 10, 0], 3: [95, 5, 5], 4: [0, 100, 0], 5: [99, 3, 2], 6: [99, 3, 2]}
+        m = C.Meaning(("model", 6), lambda txs: {t.id: vec[t.id] for t in txs if t.id in vec})
+        L = world(rows)
+        h = C.Hints(C.empty(), L, {"giro": "1"})
+        means = h._means(m)
+        hint = h._meaning_hint(L.txs[4], vec[5], "1", -1, C._own(L.txs[4]), means)
+        self.assertEqual((hint[1], hint[3]["a"][:2]), ("Freizeit / Abos", [3, 3]))         # its own past ("Bildung") is not alike-voted
+
+
 class Proposals(unittest.TestCase):
     def setUp(self):
         C._TXT.clear()

@@ -183,6 +183,7 @@ HELP_FOUND = 4                                     # sections and places search_
 HELP_PLACES = 2                                    # ... of them at most this many places (what a page shows, docs/ui)
 HELP_TASK = "Given a question about a private finance app, retrieve the help sections that answer it"      # what the model for finding by meaning looks for
 TX_TASK = "Given a search term, retrieve bank transactions (counterparty and purpose) that match it"
+SUGGESTION_LEVELS = {"high": "sure", "medium": "probable", "low": "unsure"}      # Kontor's suggestion under Kategorisieren, as the model reads it
 TX_TEXT = 200                                      # characters of a transaction's counterparty and purpose made into an embedding
 NAMES_AT_ONCE = 10                                 # notes typed in the settings whose names the model names in one go
 NAMES_TRIES = 3                                    # ... asked again that often when its answer was cut off or no answer at all (then left until Kontor starts anew)
@@ -1177,6 +1178,25 @@ class Assistant:
             if text:
                 out.setdefault(memory_mod.Library.key(text), text)
         return out
+
+    def tx_meaning(self) -> Optional[Tuple[Any, Callable[[List[Any]], Dict[int, Any]]]]:
+        """For the suggestions under Kategorisieren (categorize.Meaning): the embeddings of transactions' texts made here -- only
+        read, never made for it, and only while they may exist (the assistant on, the right to read transactions, a model for
+        finding by meaning); None otherwise. (state, vectors(txs) -> {id: numbers})."""
+        key = self._meaning_key(memory=False)
+        if not key or not self._tx_readable():
+            return None
+        size = self.tx_vecs.size()                       # (locked: raises -- no suggestions by meaning)
+
+        def vectors(txs: List[Any]) -> Dict[int, Any]:
+            keys = {}
+            for t in txs:
+                text = _tx_text({"name": (t.name or "")[:80], "purpose": (t.purpose or "")[:140]})       # as core.compact_transactions gives them
+                if text:
+                    keys[t.id] = memory_mod.Library.key(text)
+            got = self.tx_vecs.vectors(key, set(keys.values()))
+            return {i: got[k] for i, k in keys.items() if k in got}
+        return (key, size), vectors
 
     def _tx_readable(self) -> bool:
         """Whether the texts of transactions may be made into embeddings: only while the assistant may read them (the right
@@ -3024,18 +3044,22 @@ class Assistant:
         groups = []
         for g in (got.get("groups") or [])[:40]:
             tx = g.get("transactions") or []
-            prop = next((t.get("proposal") for t in tx if t.get("proposal")), None)
+            prop = g.get("proposal") or next((t.get("proposal") for t in tx if t.get("proposal")), None)
             groups.append({"group": _group_id(g), "counterparty": g.get("name"), "transactions": g.get("count"), "sum": _num(g.get("sum")),
                            **({"currency": g["currency"]} if g.get("currency") else {}),
                            "kontors_suggestion": (prop.get("category") if isinstance(prop, dict) else prop) or None,
+                           **({"suggestion_level": SUGGESTION_LEVELS.get(g.get("level"), "unsure")} if prop else {}),
+                           **({"suggestions_differ_per_transaction": True} if prop and not g.get("proposal") else {}),
                            "examples": [{"date": t.get("date"), "amount": _num(t.get("amount")), "purpose": str(t.get("purpose") or "")[:80], "account": t.get("account")} for t in tx[:2]]})
         return {"without_category": got.get("open", 0), "year": year or "all years", "by_counterparty": groups,
                 **({"more_groups": got["groups_total"] - len(groups)} if (got.get("groups_total") or 0) > len(groups) else {}),
                 "assigned_in_kontor_waiting_for_the_next_sync": got.get("waiting", 0),
                 "note": ("to categorize, propose with assign_categories (group, and a category from get_categories or category_names) -- Kontor writes it into "
-                         "MoneyMoney only after the user's click on the card; a suggestion is Kontor's guess from earlier assignments"
+                         "MoneyMoney only after the user's click on the card; a suggestion is Kontor's guess (from earlier assignments, words, counter-bookings), "
+                         "suggestion_level how sure it is -- unsure is only a guess"
                          if self.settings()["rights"]["categorize"] else
-                         "categories are assigned by the user on the page %s -- you cannot assign them; a suggestion is Kontor's guess from earlier assignments" % tr("nav_zuordnen")),
+                         "categories are assigned by the user on the page %s -- you cannot assign them; a suggestion is Kontor's guess (suggestion_level: how "
+                         "sure -- unsure is only a guess)" % tr("nav_zuordnen")),
                 **({"category_names": self.hooks["category_paths"]()[:300]} if self.settings()["rights"]["categorize"] and self.settings()["rights"]["figures"] else {})}
 
     def t_assign_categories(self, a: dict, ctx: dict) -> Any:

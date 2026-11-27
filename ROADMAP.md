@@ -455,6 +455,18 @@ anhängen – nie löschen.
 - **Planung nicht in der Einrichtung** (Nutzer, 2026-11-27, auf Empfehlung): Grund wie beim Abgleich – ihre Annahmen (Horizont,
   Inflation, Steigerungen) haben Standardwerte, der Schritt galt mit der ersten Auswertung von selbst als „eingerichtet“, ohne
   dass man etwas tat; die Seite ist noch ALPHA, ihre Annahmen prüft man auf ihr selbst. (umgesetzt in 3.17.110)
+- **Kategorisieren: immer ein Vorschlag, mit Sicherheitsstufe** (Nutzer, 2026-11-27): Er will beim Kategorisieren durchgehen und
+  überall einen Vorschlag haben, aber sofort sehen, wie sicher Kontor ist und wo er zuerst hinsehen sollte – farbig. Grundlage nicht
+  nur frühere Umsätze derselben Gegenpartei: immer oder meist dieselbe Kategorie, je nach Betrag eine von zwei, dazu Texterkennung
+  (Buchungstext, Gegenpartei), mit dem KI-Assistenten auch Bedeutung, und Gegenbuchungen auf anderen Konten (Umbuchung).
+  Umgesetzt: je Hinweis die Trefferchance nach Laplace (k + 1) / (n + 2) aus vergleichbaren früheren Fällen – dieselbe Gegenpartei
+  (genau dieser Betrag, Betragsgrenze, Wort im Verwendungszweck), Gegenbuchung bis 5 Tage oder eigenes Gegenkonto, Wörter anderer
+  Gegenparteien (je Gegenpartei gezählt), Bedeutung über die Einbettungen, die der Assistent ohnehin macht (nur lesend, nur mit
+  seinem Recht „Zahlen und Umsätze lesen“), Wörter im Namen einer Kategorie, sonst die häufigste Kategorie (als geraten); Stufen
+  sicher ab 80 %, wahrscheinlich ab 60 %, sonst unsicher (grün, gelb, rot), Gründe am Vorschlag, Filter nach Stufe. Selbst
+  entschieden (kein Wunsch des Nutzers, zurückzunehmen auf Wunsch): „Alle sicheren übernehmen“ nimmt nur sichere, im Filter
+  „Wahrscheinlich“ auch diese, nie unsichere – sonst trüge ein Klick Geratenes in MoneyMoney ein. Der Cashflow schätzt Umsätze ohne
+  Kategorie weiter nach den gelernten Mustern (Rechenlogik unabhängig vom Assistenten). (umgesetzt in 3.17.111)
 
 ## Offen (Entscheidung steht aus – mit Empfehlung vorlegen, wenn der Punkt dran ist)
 - Umsatzsteuer-Voranmeldung direkt an ELSTER senden (ELSTERs Programmbibliothek ERiC, Anmeldung als Hersteller, Zertifikat und
