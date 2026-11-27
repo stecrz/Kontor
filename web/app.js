@@ -1217,7 +1217,7 @@ function fmtZeit(ts) {
 }
 function viewCtl() {
   // columns of the tables: months (with yearly sums) or years only
-  return `<div class="seg" id="modus-seg">${[['months', t('monate'), t('monate_tip')], ['years', t('jahre'), t('jahre_tip')]].map(([k, l, tip]) => `<button data-m="${k}" class="${S.mode === k ? 'on' : ''}" title="${tip}">${l}</button>`).join('')}</div>`;   // no "?" beside it (user, 2026-11-28: it added nothing); the help's "tables" through balance sheet and cash flow
+  return `<div class="seg" id="modus-seg">${[['months', t('monate'), t('monate_tip')], ['years', t('jahre'), t('jahre_tip')]].map(([k, l, tip]) => `<button data-m="${k}" class="${S.mode === k ? 'on' : ''}" title="${tip}">${l}</button>`).join('')}</div>`;   // no "?" beside it (user, 2026-11-28: it added nothing; how tables work: the help's overview)
 }
 const swCtl = (id, on, label, tip) => `<label class="switch"${tip ? ` title="${esc(tip)}"` : ''}><input type="checkbox" id="${id}" ${on ? 'checked' : ''}><i></i>${label}</label>`;
 // balance sheet: show hidden and empty accounts (with their number); cash flow / planning: show empty rows

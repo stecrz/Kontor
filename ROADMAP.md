@@ -528,8 +528,11 @@ anhängen – nie löschen.
   wird nicht neu gelesen; in derselben Unterhaltung ist sie dieselbe Datei wie vorher (gleiche Kennung für das Modell), in einer
   anderen eine eigene (Dateien bleiben je Unterhaltung getrennt). Gespeichert wird weiterhin nichts. (umgesetzt in 3.17.117)
 - **Kein „?“ neben „Monate / Jahre“** (Nutzer, 2026-11-28): Das Fragezeichen hinter dem Umschalter (Bilanz, Cashflow, Planung)
-  bringt keinen Mehrwert – die Knöpfe haben ihre Tooltips. Entfernt; den Hilfeabschnitt „Tabellen, Schalter und Excel“ erreicht man
-  über die Hilfe von Bilanz und Cashflow (`VIA_HELP` in `test_findable`). Nicht wieder anbringen. (umgesetzt in 3.17.119)
+  bringt keinen Mehrwert – die Knöpfe haben ihre Tooltips. Nicht wieder anbringen. (umgesetzt in 3.17.119) Danach (Nutzer, 2026-11-28):
+  Ein Abschnitt der Hilfe nur für die Schalter lohnt keinen eigenen Einstieg, und die „?“ an den Seitentiteln führen zum Abschnitt
+  ihrer Seite, nicht dorthin. Daher „Tabellen, Schalter und Excel“ aufgelöst: Allgemeines (Monate/Jahre, blass und schraffiert,
+  ‹ ab 2025 ›, Leere Zeilen, Excel, Rechtsklick) steht unter Übersicht neben „Hilfe auf jeder Seite“ und „Drucken“, der Schalter
+  „Plan“ und der Blick beim Öffnen beim Cashflow; ▸, Auge und „inflationsbereinigt“ standen schon bei Bilanz und Planung. (umgesetzt in 3.17.120)
 
 ## Offen (Entscheidung steht aus – mit Empfehlung vorlegen, wenn der Punkt dran ist)
 - Umsatzsteuer-Voranmeldung direkt an ELSTER senden (ELSTERs Programmbibliothek ERiC, Anmeldung als Hersteller, Zertifikat und

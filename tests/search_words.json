@@ -1,6 +1,6 @@
 {
  "_about": "Typical words the user would search for, per section of the help (anchor in docs/help.de.md): the help page's search and the assistant's search_help must find that section (tests/test_findable.py). German, as he would type or say them -- short, everyday words, not the help's own terms only. A new section of the help: add it here with two or three searches.",
- "overview": ["Übersicht", "Nettovermögen Startseite", "Vermögen auf einen Blick"],
+ "overview": ["Übersicht", "Nettovermögen Startseite", "Vermögen auf einen Blick", "Excel", "Tabelle exportieren", "Spalten einklappen"],
  "kontor-and-moneymoney": ["Unterschied MoneyMoney Kontor", "was macht MoneyMoney", "was schreibt Kontor in MoneyMoney"],
  "setup": ["Einrichtung", "erste Schritte", "Kontor einrichten"],
  "app": ["als App", "zum Dock hinzufügen", "Home-Bildschirm"],
@@ -11,7 +11,6 @@
  "setup-loans": ["Darlehen einrichten", "Privatdarlehen Gegenbuchung", "Zinsen kategorisieren"],
  "setup-property": ["Immobilie einrichten", "Wohnung kaufen buchen", "Kaufnebenkosten Grunderwerbsteuer"],
  "sync": ["Synchronisierung", "Abgleich", "MoneyMoney aktualisieren", "automatischer Abgleich"],
- "tables": ["Excel", "Tabelle exportieren", "Spalten einklappen"],
  "balance-sheet": ["Bilanz", "Aktiva Passiva", "Eigenkapital"],
  "balance-sheet-table": ["Bilanz Tabelle", "Geld unterwegs", "Eigenkapitalquote"],
  "balance-sheet-chart": ["große Grafik Bilanz", "Vermögensentwicklung Grafik"],

@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.17.121 (2026-11-28 00:56)
+- Hilfe: Abschnitt „Tabellen, Schalter und Excel“ aufgelöst – Allgemeines (Monate/Jahre, Excel, Rechtsklick) unter Übersicht, Schalter „Plan“ beim Cashflow
+
 ## 3.17.120 (2026-11-28 00:51)
 - Kategorisieren: „Auffällig“ zeigt deine Kategorie neben Kontors Vorschlag; jeder Knopf nennt, was danach gilt – „… übernehmen“, „… behalten“, „Andere …“
 

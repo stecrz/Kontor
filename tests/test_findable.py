@@ -88,19 +88,7 @@ def jumps() -> dict:
         out.setdefault(v, "PAGE_HELP." + k)
     for v in re.findall(r"#help/([\w-]+)", js) + re.findall(r"more\('([\w-]+)'\)", js):
         out.setdefault(v, "link")
-    help_de, secs = read("docs", "help.de.md"), sections()
-    for v, via in VIA_HELP.items():                      # only through a part that is itself reached, and that links to it
-        for w in via:
-            part = help_de[help_de.index('<a id="%s"></a>' % w):]
-            part = part[:part.find("\n<a id=") % (len(part) + 1)]           # up to the next part's anchor
-            if w in out and "](#%s)" % v in part and secs.get(w) == w:
-                out.setdefault(v, "help #" + w)
     return out
-
-
-# parts of the help without a "?" of their own, reached from the help of the pages they belong to: the tables' switches and
-# Excel (user, 2026-11-28: the "?" beside "Monate / Jahre" added nothing)
-VIA_HELP = {"tables": ("balance-sheet", "cash-flow")}
 
 
 class Reachable(unittest.TestCase):
