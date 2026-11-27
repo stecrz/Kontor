@@ -110,6 +110,11 @@ anhängen – nie löschen.
   Geändert (Nutzer, 2026-11-27): Das „!“ (bzw. der Punkt) bei Einstellungen steht auch am Reiter, auf den es sich bezieht – Updates,
   bei Neuem für den Assistenten KI-Assistent –, sonst ist unklar, worauf es sich bezieht; ein Klick auf die Markierung in der
   Seitenleiste führt direkt dorthin, ein Klick auf „Einstellungen“ selbst bleibt beim gewohnten Ziel. (umgesetzt in 3.17.106)
+  Geändert (Nutzer, 2026-11-27): Freigabe nur bei Stellen, über die Schadsoftware hineinkommen oder etwas nach außen gehen kann –
+  nicht für unkritische Änderungen. Befund über die letzten 50 Versionen: 7 fragten, 3 davon nur, weil sich eine Rechnung (Cashflow,
+  Planung, Kategorisieren) änderte, die neben dem Texterkenner der Belege in derselben Tabelle von Funktionen des Assistenten steht.
+  Umgesetzt: was in einen Aufruf nach außen fließt, wird genau verfolgt (siehe `docs/rules/security.md`, Updates); alle echten Funde
+  (Wege nach außen, Helfer, Abschirmung, die Prüfung selbst, Tailscale) bleiben. (umgesetzt in 3.17.108)
 - **Assistent aktuell halten:** Kontor fragt von selbst – täglich, einstellbar unter KI-Assistent (täglich, wöchentlich, nie),
   nur solange der Assistent eingeschaltet ist – GitHub nach einem neueren llama.cpp und Hugging Face nach neueren Dateien der
   geladenen Modelle (auch des Diktiermodells); gesendet wird dabei nichts vom Nutzer, geladen nichts. Gibt es etwas für das Modell

@@ -928,6 +928,60 @@ class Judged(unittest.TestCase):
         new = self.found(work_py=b"\nimport urllib.request\n\n\ndef send(d):\n    return urllib.request.urlopen('https://api.example.org/v?d=' + d)\n")
         self.assertIn("critical", {x["level"] for x in G.asking(new) if x["kind"] == "call"})
 
+    def test_only_what_reaches_the_call_is_asked_about(self):
+        """A table of functions for others to call (the assistant's tools, service.App.assistant) with one entry that starts a
+        program: what its other entries call, the conditions inside them, and names of the object set for something else
+        (self._tools = ...) do not reach that call -- changed, they are not asked about (3.17.80 and 3.17.101 asked because the
+        cash flow's dataset() and the planning's plan_all() stood in such a table). What does reach it still is: the object's
+        part it uses (self.store), a name the entry takes from the function, a condition of the entry itself."""
+        svc = (b"import tools\n\n\ndef plan():\n    return {'a': 1}\n\n\ndef check():\n    return True\n\n\n"
+               b"def allowed(d):\n    return len(d) < 9\n\n\ndef pick(store):\n    return store.helper\n\n\n"
+               b"class App:\n    def __init__(self, store):\n        self.store = store\n        self._tools = None\n\n"
+               b"    @property\n    def table(self):\n        if self._tools is None:\n            helper = pick(self.store)\n"
+               b"            self._tools = dict(self=self, t={\n"
+               b"                'ocr': lambda data: tools.run(helper, data) if allowed(data) else None,\n"
+               b"                'plan': lambda: plan() if check() else {},\n"
+               b"                'size': lambda: len(self.store.items),\n"
+               b"            })\n        return self._tools\n")
+        base = changed(svc_py=svc)
+        def asked(change):
+            return [(f["level"], f.get("topic"), f.get("where")) for f in G.asking(G.compare(base, changed(base, svc_py=change)))]
+        for name, change in (("another entry's function", lambda b: b.replace(b"return {'a': 1}", b"return {'a': 2}")),
+                             ("a condition in another entry", lambda b: b.replace(b"def check():\n    return True", b"def check():\n    return False"))):
+            with self.subTest(name):
+                self.assertEqual(asked(change), [], name)
+        for name, change in (("the condition of the entry itself", lambda b: b.replace(b"len(d) < 9", b"len(d) < 99")),
+                             ("what the entry takes from the function", lambda b: b.replace(b"return store.helper", b"return '/tmp/x'")),
+                             ("the object's part it uses", lambda b: b.replace(b"helper = pick(self.store)\n", b"helper = pick(self.store)\n            self.store = None\n"))):
+            with self.subTest(name):
+                got = asked(change)
+                self.assertTrue(got and {x[0] for x in got} <= {"review", "critical"}, (name, got))
+        # the object's part it uses, set from a function of the file: that function changed alone is asked about
+        fed = changed(base, svc_py=lambda b: b.replace(b"            helper = pick(self.store)\n", b"            self.store = opened(self.store)\n            helper = pick(self.store)\n")
+                      + b"\n\ndef opened(s):\n    return s\n")
+        got = [(f["level"], f.get("where")) for f in G.asking(G.compare(fed, changed(fed, svc_py=lambda b: b.replace(b"def opened(s):\n    return s", b"def opened(s):\n    return s or '/tmp/x'"))))]
+        self.assertIn(("review", "opened()"), got)
+        # ... but the object as a whole handed on (pick(self)): then whatever is set on it may reach the call
+        whole = changed(base, svc_py=lambda b: b.replace(b"pick(self.store)", b"pick(self)").replace(b"def pick(store):\n    return store.helper", b"def pick(app):\n    return app.store.helper"))
+        got = [(f["level"], f.get("where")) for f in G.asking(G.compare(whole, changed(whole, svc_py=lambda b: b.replace(b"return {'a': 1}", b"return {'a': 2}"))))]
+        self.assertIn("plan()", [x[1] for x in got], got)
+        # set on the object in another statement while the object goes along with the table (dict(self=self, ...)): what the
+        # table is handed to may read it -- asked about, as before
+        got = asked(lambda b: b.replace(b"helper = pick(self.store)\n", b"helper = pick(self.store)\n            self._seen = plan()\n"))
+        self.assertIn("plan()", [x[2] for x in got], got)
+        # the reviewer's cases (3.17.107): a table used on the spot, a dispatcher of the file it is handed to with a helper's
+        # result, an object's parts reached through a method, a check in a nested function -- all still asked about
+        for name, old, new in (
+                ("a table called on the spot", "def prog():\n    return 'a'\n\n\ndef go():\n    return {'r': lambda p: subprocess.run([p])}['r'](prog())\n", None),
+                ("a dispatcher of the file", "def prog():\n    return 'a'\n\n\ndef call(t, x):\n    return t['r'](x)\n\n\ndef go():\n    return call({'r': lambda p: subprocess.run([p])}, prog())\n", None),
+                ("through a method", "def prog():\n    return 'a'\n\n\nclass J:\n    def argv(self):\n        return [self.p]\n\n    def go(self):\n        self.p = prog()\n        return subprocess.run(self.argv())\n", None),
+                ("a check in a nested function", "def prog():\n    return 'a'\n\n\ndef go(p):\n    def check():\n        if p != prog():\n            raise ValueError(p)\n    check()\n    return subprocess.run([p])\n", None)):
+            with self.subTest(name):
+                src = b"import subprocess\n\n\n" + old.encode()
+                one = changed(svc_py=src)
+                got = G.asking(G.compare(one, changed(one, svc_py=lambda b: b.replace(b"return 'a'", b"return '/bin/sh'"))))
+                self.assertIn("prog()", [f.get("where") for f in got], (name, got))
+
     def test_sandbox_rules(self):
         """A profile of macOS' sandbox: a rule more that denies or one less that allows is stricter (plain); a rule more that
         allows, one less that denies, rules moved, a rule that is not one plain whole rule, or anything else of the function

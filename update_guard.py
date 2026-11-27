@@ -1328,15 +1328,62 @@ class _Py:
         return added
 
     # -- what reaches a place ------------------------------------------------------------------------------------------------
+    def _kept(self, node: ast.AST) -> bool:
+        """A lambda kept as an entry of a table for others to call ({"key": lambda d: ...}) -- not a table used on the spot
+        ({...}[k](x), {...}.get(k)(x) call it here, with what stands beside it)."""
+        up = self.parents.get(id(node))
+        return isinstance(node, ast.Lambda) and isinstance(up, ast.Dict) and any(v is node for v in up.values) \
+            and not isinstance(self.parents.get(id(up)), (ast.Subscript, ast.Attribute))
+
     def _feeding(self, unit: ast.AST, nodes: List[ast.AST], exact: bool = False) -> Tuple[List[ast.AST], Set[str]]:
         """The expressions of a function that reach these places of it, and the names in them: the statements the places stand
-        in (exact: just these expressions), and what is put into the names they use (again and again)."""
+        in (exact: just these expressions), and what is put into the names they use (again and again). A place in an entry of
+        a table of functions (the assistant's tools): that entry and what the table is handed to with it, not the other entries."""
         feeding: List[ast.AST] = []
+        above: Set[int] = set()                               # what holds such an entry
+        kept: List[ast.AST] = []
+        handed: Set[int] = set()                              # what the table is handed to with it
         for node in nodes:
             top = node
             while not exact and id(top) in self.parents and not isinstance(top, ast.stmt):
+                if self._kept(top):
+                    kept.append(top)
+                    table = self.parents[id(top)]
+                    call = self.parents.get(id(table))
+                    call = self.parents.get(id(call)) if isinstance(call, ast.keyword) else call
+                    if isinstance(call, ast.Call):            # handed on with the table: the function and what goes with it
+                        more = [call.func] + [a for a in call.args if a is not table] + [k.value for k in call.keywords if k.value is not table]
+                        feeding += more
+                        handed |= {id(m) for m in more}
+                    x = top
+                    while id(x) in self.parents:
+                        x = self.parents[id(x)]
+                        above.add(id(x))
+                    break
                 top = self.parents[id(top)]
             feeding.append(top)
+
+        def beside(st: ast.AST) -> bool:
+            """The statement that stores the table on an object (self._tools = make(self, {...})): what it sets is no input of
+            those entries -- as long as what reaches them uses that object only by another attribute of it (self.store ...: not
+            as a whole, not calling a method, not a name of a function or property of the file, not __...__). (What the table
+            is handed to may use the object as it likes: what it does with the entries is decided there.)"""
+            if id(st) not in above or not isinstance(st, (ast.Assign, ast.AnnAssign)):
+                return False
+            for t in (st.targets if isinstance(st, ast.Assign) else [st.target]):
+                if not (isinstance(t, ast.Attribute) and isinstance(t.value, ast.Name)) or t.attr.startswith("__"):
+                    return False
+                for ex in feeding:
+                    if id(ex) in handed:
+                        continue
+                    for n in ast.walk(ex):
+                        if isinstance(n, ast.Name) and n.id == t.value.id:
+                            up = self.parents.get(id(n))
+                            if not (isinstance(up, ast.Attribute) and up.value is n) or up.attr == t.attr or up.attr.startswith("__") \
+                                    or up.attr in self.defs or (isinstance(self.parents.get(id(up)), ast.Call) and self.parents[id(up)].func is up):
+                                return False
+            return True
+
         names = {n.id for st in feeding for n in ast.walk(st) if isinstance(n, ast.Name)}
         seen: Set[int] = set()
         grown = True
@@ -1346,14 +1393,12 @@ class _Py:
             for st in places:
                 targets = st.targets if isinstance(st, ast.Assign) else [st.target] if isinstance(st, (ast.AnnAssign, ast.AugAssign, ast.For, ast.NamedExpr)) else \
                     [i.optional_vars for i in st.items if i.optional_vars is not None] if isinstance(st, ast.With) else []
-                if id(st) not in seen and any(isinstance(x, ast.Name) and x.id in names for t in targets for x in ast.walk(t)):
+                if id(st) not in seen and any(isinstance(x, ast.Name) and x.id in names for t in targets for x in ast.walk(t)) and not beside(st):
                     seen.add(id(st))
                     feeding.append(st.value if isinstance(st, (ast.Assign, ast.AnnAssign, ast.AugAssign, ast.NamedExpr)) and st.value is not None else
                                    st.iter if isinstance(st, ast.For) else st)
-                    more = {n.id for n in ast.walk(feeding[-1]) if isinstance(n, ast.Name)} - names
-                    if more:
-                        names |= more
-                        grown = True
+                    names |= {n.id for n in ast.walk(feeding[-1]) if isinstance(n, ast.Name)}
+                    grown = True                             # (also a statement passed over as beside the table: looked at again)
         return feeding, names
 
     def pass_on(self) -> bool:
@@ -1454,8 +1499,16 @@ class _Py:
                 # what reaches those places from outside the function: names set at the top of the file and small functions of
                 # the file whose result goes into them (directly, or through a name of the function) ...
                 feeding, names = self._feeding(unit, [n for n, _k, _w in found])
-                # ... and what decides whether they are reached at all (if bind_allowed(x): ..., if ext in DOCUMENTS: ...)
-                tests = [n.test for n in ast.walk(unit) if isinstance(n, (ast.If, ast.While, ast.IfExp, ast.Assert))]
+                # ... and what decides whether they are reached at all (if bind_allowed(x): ..., if ext in DOCUMENTS: ...) -- not
+                # inside another entry of a table of functions (it decides only when someone else calls that entry)
+                at = {id(n) for n, _k, _w in found}
+                apart: Set[int] = set()
+                for sc in ast.walk(unit):
+                    if self._kept(sc) and id(sc) not in apart:
+                        inside = {id(x) for x in ast.walk(sc)}
+                        if not inside & at:
+                            apart |= inside
+                tests = [n.test for n in ast.walk(unit) if isinstance(n, (ast.If, ast.While, ast.IfExp, ast.Assert)) and id(n) not in apart]
                 names |= {n.id for t in tests for n in ast.walk(t) if isinstance(n, ast.Name)}
                 for name in sorted(names):
                     if name in tops and name not in ("log", "logger"):

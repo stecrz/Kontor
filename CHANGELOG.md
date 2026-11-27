@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.17.108 (2026-11-27 15:13)
+- Updates: Freigabe nur noch, wo etwas nach außen gehen oder Schadsoftware hineinkommen kann – Änderungen an Cashflow, Planung oder Kategorisieren fragen nicht mehr
+
 ## 3.17.107 (2026-11-27 14:59)
 - Oberfläche: in Safari läuft, was nach einer Antwort des Dienstes kommt, nie mehr mitten in der Größenmeldung des Browsers – kein „ResizeObserver loop“-Fehler mehr, auch abseits des Seitenwechsels
 - Entwicklung: jede gelesene Antwort über bodyOf (geprüft); WebKit-Test misst es an api() neben einer direkt gelesenen Antwort
