@@ -5863,8 +5863,8 @@ class BrowserTest(unittest.TestCase):
 
 
 class DoubtsBrowserTest(unittest.TestCase):
-    """Kategorisieren → Auffällig in the browser: "Passt so" takes a group out; "Ändern" replaces MoneyMoney's category only after
-    the question (made-up shops)."""
+    """Kategorisieren → Auffällig in the browser: each choice names the category that holds afterwards -- keeping yours takes a group
+    out, taking Kontor's replaces MoneyMoney's category only after the question, "Andere …" opens a field (made-up shops)."""
 
     def test_fine_as_is_and_change_after_asking(self):
         try:
@@ -5895,11 +5895,14 @@ class DoubtsBrowserTest(unittest.TestCase):
                 pg.goto("http://127.0.0.1:%d/#categories/doubts" % port); pg.wait_for_selector(".kd-group")
                 self.assertEqual(len(pg.query_selector_all(".kd-group")), 2)
                 self.assertIn("Auffällig (2)", pg.inner_text("#main .tabs"))
-                self.assertEqual(pg.input_value(".kd-group .kd-kat"), "Lebensmittel")
-                pg.click(".kd-group[data-key*='metzgerei'] .kd-ok")                 # fine as is: out of the list, nothing written
+                self.assertEqual(pg.inner_text(".kd-group .kd-take"), "„Lebensmittel“ übernehmen")
+                self.assertEqual(pg.inner_text(".kd-group .kd-keep"), "„Wohnen › Miete“ behalten")
+                self.assertFalse(pg.is_visible(".kd-group .kd-kat"))                # another one: only on a click
+                pg.click(".kd-group .kd-other"); self.assertTrue(pg.is_visible(".kd-group .kd-kat"))
+                pg.click(".kd-group[data-key*='metzgerei'] .kd-keep")               # yours is right: out of the list, nothing written
                 until(pg, "document.querySelectorAll('.kd-group').length === 1")
                 self.assertFalse([w for x in MockBridge.instances for w in x.written if w[0] == "set"])
-                pg.click(".kd-group .kd-change")                                  # MoneyMoney has a category: asked first
+                pg.click(".kd-group .kd-take")                                    # Kontor's: MoneyMoney has a category, asked first
                 pg.wait_for_selector(".dlg button[data-v='overwrite']")
                 self.assertFalse([w for x in MockBridge.instances for w in x.written if w[0] == "set"])
                 pg.click(".dlg button[data-v='overwrite']")

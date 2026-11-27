@@ -311,7 +311,7 @@ Every open transaction gets Kontor's likeliest category, coloured by how often s
 <a id="categories-doubts"></a>
 ### Odd: when a category does not fit
 
-Coarse outliers among your categories – where, leaving the transaction out, Kontor would suggest another category at least 60 % likely and everything comparable gives the one it has under 10 %; “Change” enters another one in MoneyMoney (replacing MoneyMoney's only after asking), “Fine as is” takes them off the list.
+Coarse outliers among your categories – where, leaving the transaction out, Kontor would suggest another category at least 60 % likely and everything comparable gives the one it has under 10 %; each row shows yours beside Kontor's suggestion, and each button names the category that holds afterwards: take Kontor's (replacing yours in MoneyMoney only after asking), keep yours (off the list), or choose another.
 
 <a id="categories-rules"></a>
 ### Rules for MoneyMoney

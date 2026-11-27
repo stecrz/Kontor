@@ -5956,8 +5956,9 @@ async function vKategorien() {
   return `<div class="tabs-row">${tabs}<a class="small tabs-aside" href="#accounts/positions" title="${esc(t('kz_zu_positionen_tip'))}">${t('cashflow_positionen')}</a></div>` + body;
 }
 // Auffällig: categories that make no sense to Kontor -- leaving the transaction out, Kontor would suggest another at least 60 %
-// likely and gives the one it has under 10 %. Per counterparty and category: change it (MoneyMoney's category is replaced only
-// after asking, as everywhere) or "Passt so" (not doubted again while it keeps it). Nothing changes by itself.
+// likely and gives the one it has under 10 %. Per counterparty and category: yours beside Kontor's suggestion, and three choices
+// that each name the category that holds afterwards -- take Kontor's (MoneyMoney's category is replaced only after asking, as
+// everywhere), keep yours (not doubted again while it keeps it), or another one. Nothing changes by itself.
 async function vAuffaellig() {
   const r = KZ.d = await api('/api/categories/doubts'); KZ.doubts = r.groups_total;
   let h = `<div class="note" data-ex="categories.doubts">${tn('kz_auffaellig_note', r.count || 0, hq('kz_auffaellig'))}</div>` + katList('kd-kats');
@@ -5967,10 +5968,10 @@ async function vAuffaellig() {
     const open = KZ.expanded['d|' + g.key];
     h += `<div class="item kd-group" data-key="${esc(g.key)}" data-ex="categories.doubts.group"><div class="grow">
       <div class="row tight"><b style="min-width:220px">${esc(g.name)}</b><span class="small muted">${esc(g.accounts.join(', '))}${g.iban ? ' · ' + esc(g.iban) : ''}</span><span class="tag">${g.count}×</span><span class="num ${g.sum < 0 ? 'neg' : 'pos'}" style="font-weight:600">${F(g.sum)} ${g.currency ? esc(g.currency) : '€'}</span><button class="ghost small kd-toggle" aria-expanded="${open ? 'true' : 'false'}">${open ? t('umsaetze_zu') : t('umsaetze_auf')}</button></div>
-      <div class="row tight kd-now"><span class="small">${t('kz_jetzt')}</span> <span class="tag warn kd-cat tipped" tabindex="0" data-tip="${esc(t('kz_kaum_tip', Math.round(100 * g.support)))}">${esc(CP(g.category))}</span>
-        <span class="small">${t('kz_kontor_wuerde')}</span> ${kzLvTag(g.level, g.chance, g.why, g.currency)}</div>
-      <div class="row tight"><input type="text" class="kd-kat" list="kd-kats" value="${esc(CP(g.proposal))}" aria-label="${esc(t('kz_neue_kategorie'))}" style="min-width:300px">
-        <button class="small kd-change" title="${esc(t('kz_aendern_tip'))}">${g.count > 1 ? tn('kz_aendern_n', g.count, g.count) : t('kz_aendern')}</button><button class="small secondary kd-ok" title="${esc(t('kz_passt_tip'))}">${t('kz_passt')}</button></div>
+      <div class="row tight kd-cmp"><span class="kd-side"><span class="small muted">${t('kz_deine')}</span> <span class="tag warn kd-cat tipped" tabindex="0" data-tip="${esc(t('kz_kaum_tip', Math.round(100 * g.support)))}">${esc(CP(g.category))}</span></span>
+        <span class="kd-arrow" aria-hidden="true">→</span><span class="kd-side"><span class="small muted">${t('kz_vorschlag')}</span> <b class="kd-prop">${esc(CP(g.proposal))}</b> ${kzLvTag(g.level, g.chance, g.why, g.currency)}</span></div>
+      <div class="row tight kd-act"><button class="small kd-take" title="${esc(tn('kz_uebernehmen_tip', g.count, CP(g.proposal)))}">${esc(t('kz_uebernehmen', CP(g.proposal)))}</button><button class="small secondary kd-keep" title="${esc(tn('kz_behalten_tip', g.count))}">${esc(t('kz_behalten', CP(g.category)))}</button><button class="small ghost kd-other" aria-expanded="false" title="${esc(t('kz_andere_tip'))}">${t('kz_andere')}</button></div>
+      <div class="row tight kd-other-row" hidden><input type="text" class="kd-kat" list="kd-kats" placeholder="${esc(t('kategorie_aus_moneymoney'))}" aria-label="${esc(t('kz_neue_kategorie'))}" style="min-width:300px"><button class="small kd-change" title="${esc(tn('kz_andere_ok_tip', g.count))}">${t('kz_andere_ok')}</button></div>
       ${open ? `<div class="kz-tx-wrap"><table class="plain small kz-tx"><thead><tr><th>${t('datum')}</th><th>${t('konto_2')}</th><th>${t('zweck')}</th><th class="num">${t('betrag')}</th></tr></thead><tbody>${g.transactions.map(u => `<tr><td style="white-space:nowrap">${FD(u.date)}</td><td style="white-space:nowrap">${esc(u.account)}</td><td class="kz-zweck">${u.name && u.name !== g.name ? `<b>${esc(u.name)}</b> ` : ''}${esc(u.purpose || '–')}${u.kind ? ` <span class="tag">${esc(u.kind)}</span>` : ''}</td><td class="num ${u.amount < 0 ? 'neg' : 'pos'}">${FCur(u.amount, g.currency)}</td></tr>`).join('')}</tbody></table></div>` : ''}</div></div>`;
   }
   return h + '</div>';
@@ -5978,15 +5979,21 @@ async function vAuffaellig() {
 function bindAuffaellig(main) {
   const grp = e => { const box = e.target.closest('.kd-group'); return [box, KZ.d.groups.find(x => x.key === box.dataset.key)]; };
   $$('.kd-toggle', main).forEach(b => b.addEventListener('click', e => { const [, g] = grp(e); KZ.expanded['d|' + g.key] = !KZ.expanded['d|' + g.key]; route(); }));
-  // another category: MoneyMoney's is replaced only after asking (assignCats asks, as everywhere it has one)
-  const change = async e => {
-    const [box, g] = grp(e), kat = $('.kd-kat', box).value.trim();
+  // Kontor's suggestion or another category: MoneyMoney's is replaced only after asking (assignCats asks, as everywhere it has one)
+  const enter = async (g, kat) => {
     if (!kat) return toast(t('kategorie_fehlt'));
     try { const r = await assignCats(g.ids, kat); toast(assignMsg(r), 7000); KZ.doubts = null; await loadAll(); route(); } catch (er) { toast(er.message, 6000); }
   };
-  $$('.kd-change', main).forEach(b => b.addEventListener('click', change));
-  $$('.kd-kat', main).forEach(i => i.addEventListener('keydown', e => { if (e.key === 'Enter') change(e); }));
-  $$('.kd-ok', main).forEach(b => b.addEventListener('click', async e => {
+  $$('.kd-take', main).forEach(b => b.addEventListener('click', e => { const [, g] = grp(e); enter(g, g.proposal); }));
+  $$('.kd-other', main).forEach(b => b.addEventListener('click', e => {
+    const [box] = grp(e), row = $('.kd-other-row', box), on = row.hidden;
+    row.hidden = !on; b.setAttribute('aria-expanded', on ? 'true' : 'false'); if (on) $('.kd-kat', row).focus();
+  }));
+  const other = e => { const [box, g] = grp(e); enter(g, $('.kd-kat', box).value.trim()); };
+  $$('.kd-change', main).forEach(b => b.addEventListener('click', other));
+  $$('.kd-kat', main).forEach(i => i.addEventListener('keydown', e => { if (e.key === 'Enter') other(e); }));
+  // yours is right: not doubted again while it keeps it
+  $$('.kd-keep', main).forEach(b => b.addEventListener('click', async e => {
     const [, g] = grp(e);
     try { await api('/api/categories/doubts', {ok: g.ids}); KZ.doubts = null; route(); } catch (er) { toast(er.message, 5000); }
   }));

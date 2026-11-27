@@ -347,7 +347,7 @@ Weisen zwei Wege auf dieselbe Kategorie, wird der Vorschlag sicherer; weist ein 
 
 Hier findest du falsche Kategorien: grobe Ausreißer, bei denen die Kategorie nicht passt – etwa einmal „Restaurant“ zwischen zwanzig Umsätzen „Lebensmittel“ beim selben Laden. Dafür schaut Kontor jeden Umsatz so an, als hätte er noch keine Kategorie: Würde es ihm dann eine andere Kategorie mit mindestens 60 % vorschlagen ([wie sicher](#categories-suggestions); hat die Gegenpartei noch keine Geschichte, mit mindestens 80 %), und spricht unter allem Vergleichbaren weniger als 10 % für die gesetzte, steht er hier. Was Kontor eine gewisse Chance gibt, steht nicht hier: Schlägt es A zu 60 % vor und weiß, dass es zu 30 % B sein kann, ist B in Ordnung – eine Kategorie C, für die nichts spricht, nicht. Ebenso wenig, wenn der Name der Kategorie zum Umsatz passt oder eine Umbuchung ihre Gegenbuchung hat.
 
-Je Gegenpartei siehst du die Kategorie jetzt und was Kontor vorschlagen würde, mit Gründen. **Ändern** trägt die Kategorie im Feld in MoneyMoney ein – eine vorhandene ersetzt Kontor wie überall nur nach Rückfrage. **Passt so** nimmt die Umsätze aus der Liste, solange sie diese Kategorie behalten. Von selbst ändert Kontor nichts.
+Je Gegenpartei steht **deine Kategorie** neben **Kontors Vorschlag** (zeig darauf: die Gründe). Jeder Knopf nennt die Kategorie, die danach gilt: **„Vorschlag“ übernehmen** trägt Kontors Vorschlag in MoneyMoney ein – deine Kategorie ersetzt Kontor wie überall erst nach Rückfrage; **„Deine“ behalten** ändert nichts in MoneyMoney und nimmt die Umsätze aus der Liste, solange sie diese Kategorie haben; **Andere …** öffnet ein Feld für eine dritte Kategorie. Von selbst ändert Kontor nichts.
 
 <a id="categories-rules"></a>
 ### Regeln für MoneyMoney

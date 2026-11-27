@@ -517,6 +517,12 @@ anhängen – nie löschen.
   von 25); nicht, wo der Name der Kategorie passt oder eine Umbuchung ihre Gegenbuchung hat. Ändern ersetzt die Kategorie in
   MoneyMoney nach Rückfrage (wie überall), „Passt so“ nimmt den Umsatz heraus, solange er sie behält; nichts von selbst.
   (umgesetzt in 3.17.114)
+- **Auffällig: klar, wofür man sich entscheidet** (Nutzer, 2026-11-28): Bei „Passt so“ und „Ändern“ war nicht erkennbar, ob Kontors
+  Vorschlag übernommen wird, ob man ihn ändert, ob die eigene Kategorie passt oder ob man sie ändert. Gewünscht: klar erkennbar, was
+  jetzt gilt, was Kontor vorschlägt und wofür man sich entscheidet, auch mit eigener Anpassung – möglichst simpel, nicht aufgebläht.
+  Umgesetzt: „Deine Kategorie → Kontors Vorschlag“ nebeneinander, und jeder Knopf nennt die Kategorie, die danach gilt:
+  „„Vorschlag“ übernehmen“ (deine ersetzt Kontor in MoneyMoney nach Rückfrage), „„Deine“ behalten“ (nichts in MoneyMoney, aus der
+  Liste), „Andere …“ (Feld erst auf Klick). Abgelöst: Feld mit Kontors Vorschlag, „Ändern“ und „Passt so“. (umgesetzt in 3.17.120)
 - **Dieselbe Datei im Assistenten nur einmal** (Nutzer, 2026-11-27): Wird eine Datei noch einmal angehängt (Byte für Byte gleich),
   erkennt Kontor sie – als Optimierung. Umsetzung: einmal im Arbeitsspeicher, was schon gelesen ist (Text, Tabellen, Seitenbilder),
   wird nicht neu gelesen; in derselben Unterhaltung ist sie dieselbe Datei wie vorher (gleiche Kennung für das Modell), in einer

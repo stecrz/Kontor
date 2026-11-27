@@ -108,12 +108,13 @@ a word of the transaction, a transfer category with a counter-booking, too littl
 and Kontor's suggestion, the surest doubt first, at most 300.
 
 ### categories.doubts.group — Auffällige Gegenpartei
-Bold the counterparty, grey accounts and IBAN, "N×" its doubted transactions with this category, their sum (signed). "Jetzt:" the
-category they have (tooltip: about P % – what everything comparable gives it); "Kontor würde vorschlagen:" Kontor's suggestion
-with its level tag (tooltip: percentage and reasons, counted without these transactions). The field holds that suggestion;
-"Ändern" / "Alle N ändern" writes the category into MoneyMoney – replacing MoneyMoney's own only after the question every
-replacement asks. "Passt so" keeps them out of this list while they keep this category (stored in categories.json: doubt_ok).
-"Umsätze ▾": date, account, purpose, amount.
+Bold the counterparty, grey accounts and IBAN, "N×" its doubted transactions with this category, their sum (signed). "Deine
+Kategorie" the category they have (amber tag; tooltip: about P % – what everything comparable gives it) → "Kontors Vorschlag" in
+bold with its level tag (tooltip: percentage and reasons, counted without these transactions). Three buttons, each naming the
+category that holds afterwards, for all N: "„Vorschlag“ übernehmen" writes Kontor's suggestion into MoneyMoney – replacing the
+user's category only after the question every replacement asks; "„Deine“ behalten" changes nothing in MoneyMoney and keeps them
+out of this list while they keep this category (stored in categories.json: doubt_ok); "Andere …" opens a field for a category from
+MoneyMoney with "Eintragen" (same question). "Umsätze ▾": date, account, purpose, amount.
 
 ## categories.rules — Regeln für MoneyMoney
 Proposed rules for MoneyMoney (Kontor cannot create rules there), sorted by how many still-open transactions they would catch, at

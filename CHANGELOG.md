@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.17.120 (2026-11-28 00:51)
+- Kategorisieren: „Auffällig“ zeigt deine Kategorie neben Kontors Vorschlag; jeder Knopf nennt, was danach gilt – „… übernehmen“, „… behalten“, „Andere …“
+
 ## 3.17.119 (2026-11-28 00:42)
 - Bilanz: kein „?“ mehr neben „Monate / Jahre“ (auch Cashflow, Planung); Hilfe zu Tabellen über die Hilfe von Bilanz und Cashflow
 
