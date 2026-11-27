@@ -382,7 +382,20 @@ anhängen – nie löschen.
   Vorjahresvergleich im ersten kategorisierten Jahr sind ungenauer, die Planung braucht nur die letzten 13 Monate. Störend war, dass
   alte Umsätze ohne Kategorie dauerhaft unter „Offen“ und in der Übersicht standen. Entschieden: eine optionale Einstellung unter
   Kategorisieren, als „Ignorieren vor dem …“ gedacht (nicht „Kategorisieren ab“) – ältere Umsätze erscheinen dort nicht und zählen
-  nicht als offen, der Cashflow schätzt sie weiter; leer heißt alle. (umgesetzt in 3.17.80)
+  nicht als offen, der Cashflow schätzt sie weiter; leer heißt alle. (umgesetzt in 3.17.80; abgelöst durch den Zeitraum, siehe
+  „Zeitraum statt ‚Ignorieren vor‘ und Jahr“)
+- **Zeitraum statt „Ignorieren vor“ und Jahr; Zahl in der Seitenleiste** (Nutzer, 2026-11-27): An „Kategorisieren“ soll in der
+  Seitenleiste – wie bei Auto-Buchungen – eine Zahl zeigen, wie viele Umsätze noch zu kategorisieren sind, genau für die dort
+  gewählten Bereiche und den gewählten Zeitraum; die Wahl bleibt gespeichert bis zur nächsten Änderung, anfangs nur die privaten
+  Bereiche und das laufende Jahr. „Ignorieren vor“ und die Jahr-Auswahl daneben waren doppelt (die Jahr-Auswahl nur flüchtig, nicht
+  gespeichert, ohne Wirkung auf die Zähler) – stattdessen ein gespeicherter Zeitraum Von–Bis mit Knöpfen für das laufende Jahr und
+  das Vorjahr, die ihn ausfüllen. Umgesetzt: Der Zeitraum gilt für Liste, Reiter „Offen“, Seitenleiste, die offenen Punkte der
+  Übersicht (dieselbe Zahl wie die Seitenleiste) und den Hinweis auf gemischte Kategorien; nicht gewählt: das laufende Jahr vom
+  1. Januar bis 31. Dezember (geht am 1. Januar ins neue); dazu „Alle“; „ab … €“ bleibt ein Filter nur der Ansicht; ein gesetztes
+  „Ignorieren vor“ wird der Beginn des Zeitraums; fragt der Assistent nach einem Jahr, gilt dieses. Abgelehnt (Nutzer, auf
+  Nachfrage): Der Knopf des laufenden Jahres sollte Bis leer lassen, damit nach dem Jahreswechsel nichts Neues aus dem Zähler fällt –
+  er will Von und Bis immer ausgefüllt (einheitlich, durchschaubar); ein gewähltes Jahr bleibt also auch im neuen, er schaltet dann
+  selbst um. (umgesetzt in 3.17.115)
 - **Umschichtungen, deren Gegenseite keine Buchung ist** (Nutzer, 2026-11-25, nach der Prüfung der Cashflow-Positionen): Ein
   Wertpapierkauf vom Verrechnungskonto erhöht das Depot, das nur Stände hat – eigentlich eine Umbuchung, aber ohne Gegenbuchung;
   genauso Festanlagen, ein P2P-Konto, das sich auszahlt, und „mit Sicherheit noch andere Fälle“. Er will dafür klare Regeln und dass

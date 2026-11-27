@@ -143,7 +143,8 @@ month, negative. Change: positive (green) = less debt. Below: "getilgt 7.200 €
 What is open in Kontor, each line leading to the page where it is done; the number at the top right counts the lines. Missing
 when nothing is open. Lines (yellow dot: to look at; grey: for information; blue: news):
 - "n Buchungen warten auf Freigabe" – bookings the booking rules prepared, waiting for approval under Auto-Buchungen.
-- "n Umsätze 2026 ohne Kategorie – zuordnen" – transactions of the running year in this area without a category in MoneyMoney.
+- "n Umsätze ohne Kategorie – zuordnen" – transactions without a category in MoneyMoney in the areas and the period chosen under
+  Kategorisieren (not this page's area); the same number as beside "Kategorisieren" in the sidebar.
 - "n Konten ohne bestätigte Zuordnung (Bereich, Position)" – new accounts (of all areas).
 - "Kategorie „X“ gemischt? n große Einzelzahlungen" / "n Kategorien gemischt? …" – categories with payments far larger than
   the rest (of all areas; see Konten & Regeln → Cashflow-Positionen, "gemischt?").

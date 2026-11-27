@@ -1,5 +1,11 @@
 # Änderungen
 
+## 3.17.115 (2026-11-27 19:17)
+- Kategorisieren: Zahl der offenen Umsätze in der Seitenleiste – für die dort gewählten Bereiche und den Zeitraum
+- Kategorisieren: Zeitraum Von–Bis mit Knöpfen für laufendes Jahr, Vorjahr und Alle statt „Ignorieren vor“ und Jahr – gespeichert, anfangs das laufende Jahr; gilt auch für „Auffällig“
+- Übersicht: offene Umsätze ohne Kategorie zählen wie in der Seitenleiste
+- Entwicklung: Tests des Push-Schutzes sperren auch, wenn die Veröffentlichung selbst eine Ausnahme hat
+
 ## 3.17.114 (2026-11-27 18:46)
 - Kategorisieren: neuer Reiter „Auffällig“ – Kategorien, die nicht zu Kontors Vorschlägen passen (grobe Ausreißer), mit Grund
 - Kategorisieren: auffällige Kategorie mit einem Klick ändern (in MoneyMoney nach Rückfrage) oder „Passt so“

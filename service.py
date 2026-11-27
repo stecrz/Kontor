@@ -66,7 +66,7 @@ import webauthn
 from receipts import Belege, file_status, pattern_problem
 import receipt_text
 from mm_bridge import Bridge, MoneyMoneyError, MoneyMoneyLocked, MoneyMoneyNotRunning, is_running
-from core import (REPORT_LOCK, with_property_categories, assign_cutoff, assign_skipped, check_file_version, positions_overview, save_positions, category_tree, follow_categories, prune_account_settings, account_sig, account_tree, bank_accounts, bereiche_for, build_report, abruf_arten, check_config, diagnose, earliest_needed, export_package, fetch, freeze_assignments, immo_for_plan, merge_snapshots, record_snapshot,
+from core import (REPORT_LOCK, with_property_categories, assign_period, assign_skipped, check_file_version, positions_overview, save_positions, category_tree, follow_categories, prune_account_settings, account_sig, account_tree, bank_accounts, bereiche_for, build_report, abruf_arten, check_config, diagnose, earliest_needed, export_package, fetch, freeze_assignments, immo_for_plan, merge_snapshots, record_snapshot,
                      immo_results, import_package, ledger_fp, merge_holdings, merged_config, not_booked_entry, plan_pending, refresh_accounts, rule_accounts, run_once, unavailable_text, version, version_on_disk, MM_HISTORY_FILE)
 from model import Ledger, Tx, accounts_from_export, ledger_from_bytes, ledger_to_bytes
 from report import ROLES, account_balance_series, account_months, account_roles, apply_plan, role_label
@@ -135,23 +135,28 @@ def transfer_category(app: "App") -> Tuple[Optional[str], Callable[[str], bool]]
 def open_category_items(app: "App", year: Optional[int], area: Optional[str], minimum: float = 0.0, limit: int = 300, level: Optional[str] = None) -> dict:
     """The bank bookings without a category, grouped by counterparty, each with Kontor's suggestion and how sure it is (the
     page Kategorisieren; by meaning too where the assistant's embeddings of transactions may be used)."""
+    # in the areas and the period you chose there -- a year asked for (the assistant) instead of that period; `period` in the
+    # answer: the one that applied (ISO days, "": open)
     kat = categorize.load(app.store)
     areas = bereiche_for(app.ledger, app.config)
     bereich_of = {a.uuid: b["id"] for b in areas for a in b["leaves"]}
     roles = account_roles(app.ledger, app.config)
-    return categorize.open_items(kat, app.ledger, bereich_of, year, area, minimum, limit, bank_accounts(roles), assign_skipped(app.config, areas),
-                                  assign_cutoff(app.config), app.category_hints(kat, bereich_of, roles), app.tx_meaning(), level)
+    period = (date(year, 1, 1), date(year, 12, 31)) if year and 1 <= year <= 9999 else assign_period(app.config)
+    res = categorize.open_items(kat, app.ledger, bereich_of, None, area, minimum, limit, bank_accounts(roles), assign_skipped(app.config, areas),
+                                period, app.category_hints(kat, bereich_of, roles), app.tx_meaning(), level)
+    res["period"] = {"from": period[0].isoformat() if period[0] else "", "to": period[1].isoformat() if period[1] else ""}
+    return res
 
 
 def category_doubts(app: "App", limit: int = 300) -> dict:
-    """Categories that make no sense to Kontor (categorize.doubts): bank bookings of the areas you categorise from the day you
-    chose on, the surest doubts first -- kept while nothing they rest on changed (the hints, the ones you said are fine)."""
+    """Categories that make no sense to Kontor (categorize.doubts): bank bookings of the areas you categorise in the period you
+    chose, the surest doubts first -- kept while nothing they rest on changed (the hints, the ones you said are fine)."""
     kat = categorize.load(app.store)
     areas = bereiche_for(app.ledger, app.config)
     bereich_of = {a.uuid: b["id"] for b in areas for a in b["leaves"]}
     roles = account_roles(app.ledger, app.config)
     hints = app.category_hints(kat, bereich_of, roles)
-    skipped, cut, banks = assign_skipped(app.config, areas), assign_cutoff(app.config), bank_accounts(roles)
+    skipped, cut, banks = assign_skipped(app.config, areas), assign_period(app.config), bank_accounts(roles)
     paired = hash(frozenset(categorize.transfers(app.ledger, bereich_of)))
     key = (json.dumps(kat.get("doubt_ok") or {}, sort_keys=True), tuple(sorted(skipped)), cut, limit, tuple(sorted(banks)), paired)
     cached = getattr(app, "_doubts", None)
@@ -3759,8 +3764,7 @@ def make_handler(app: App):
                 res = open_category_items(app, int(q["year"]) if q.get("year") else None, q.get("area") or None, float(q.get("min") or 0),
                                           max(1, min(5000, int(q.get("limit") or 300))), q.get("level") or None)
                 res["skipped"] = sorted(assign_skipped(app.config, areas))
-                cut = assign_cutoff(app.config)
-                res["ignore_before"] = cut.isoformat() if cut else ""
+                res["period_chosen"] = app.config.get("assign_from") is not None         # else the running year (not chosen yet)
                 if getattr(app.ledger, "_paired", None) is None:
                     app.request_rebuild("assigning")              # which bookings are transfers comes with the report (page reloads then)
                 res["transfer"] = transfer_category(app)[0]       # your category for transfers in MoneyMoney (a contribution or withdrawal between two areas)
@@ -5074,26 +5078,27 @@ def make_handler(app: App):
                 log.info("Cash flow positions saved: %d chosen", len(app.config["cashflow"].get("positions") or {}))
                 return self._json(200, {"ok": True, "report": ok, "config": app.config})
             if path == "/api/categories/areas":
-                # the areas you categorise and the day before which nothing is (the rest is left out under Kategorisieren; the
-                # cash flow estimates it as before) -- each optional, at least one of them
-                ohne, vor = body.get("without"), body.get("ignore_before")
-                if ohne is None and vor is None:
+                # the areas you categorise and the period (from, to: days, "" open; the rest is left out under Kategorisieren and
+                # its counts -- the cash flow estimates it as before) -- areas or period, or both; the period always as a pair
+                ohne, per = body.get("without"), body.get("period")
+                if ohne is None and per is None:
                     raise ValueError("without")
                 if ohne is not None and (not isinstance(ohne, list) or not all(isinstance(x, str) for x in ohne)):
                     raise ValueError("without")
-                if vor is not None:
-                    if not isinstance(vor, str):
-                        raise ValueError("ignore_before")
-                    if vor:
-                        try:
-                            vor = date.fromisoformat(vor).isoformat()
-                        except ValueError:
-                            raise ValueError(tr("s_datum_ungueltig"))
+                if per is not None:
+                    if not isinstance(per, dict) or not all(isinstance(per.get(k), str) for k in ("from", "to")):
+                        raise ValueError("period")
+                    try:
+                        per = {k: date.fromisoformat(per[k]).isoformat() if per[k] else "" for k in ("from", "to")}
+                    except ValueError:
+                        raise ValueError(tr("s_datum_ungueltig"))
+                    if per["from"] and per["to"] and per["from"] > per["to"]:
+                        raise ValueError(tr("s_zeitraum_verkehrt"))
                 cfg = copy.deepcopy(app.config)
                 if ohne is not None:
                     cfg["assign_without"] = sorted(set(ohne))
-                if vor is not None:
-                    cfg["assign_ignore_before"] = vor
+                if per is not None:
+                    cfg["assign_from"], cfg["assign_to"] = per["from"], per["to"]
                 app.save_config(cfg)
                 ok, _err = app.rebuild_report(wait=bool(body.get("wait")), grund="assigning") if app.ledger is not None else (False, None)
                 return self._json(200, {"ok": True, "report": ok, "config": app.config})

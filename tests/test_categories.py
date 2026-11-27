@@ -99,8 +99,16 @@ class Progress(unittest.TestCase):
         L = ledger([(1, "Shop", "", -100.0, "Haushalt", ""), (2, "Shop", "", -5.0, "", ""), (3, "Shop", "", -40.0, "", "")])
         off = C.open_items(C.empty(), L, {}, min_betrag=10)
         self.assertEqual((off["assigned"], off["open"], off["assigned_sum"], off["open_sum"]), (1, 1, 100.0, 40.0))
-        off = C.open_items(C.empty(), L, {}, before=date(2026, 1, 3))   # booked on the 2nd, 3rd, 4th: the first left out
+        off = C.open_items(C.empty(), L, {}, period=(date(2026, 1, 3), None))   # booked on the 2nd, 3rd, 4th: the first left out
         self.assertEqual((off["assigned"], off["open"]), (0, 2))
+        off = C.open_items(C.empty(), L, {}, period=(None, date(2026, 1, 3)))   # up to the 3rd, the day included: the last left out
+        self.assertEqual((off["assigned"], off["open"], off["assigned_sum"], off["open_sum"]), (1, 1, 100.0, 5.0))
+        off = C.open_items(C.empty(), L, {}, period=(date(2026, 1, 3), date(2026, 1, 3)))      # one day: from and to included
+        self.assertEqual((off["assigned"], off["open"], [g["ids"] for g in off["groups"]]), (0, 1, [[2]]))
+        self.assertEqual(C.open_items(C.empty(), L, {}, period=(None, None))["open"], 2)       # open on both sides: all
+        st = C.stats(C.empty(), L, period=(date(2026, 1, 3), None))["total"]
+        self.assertEqual((st.get("moneymoney", 0), st.get("without", 0)), (0, 2))               # the count follows the same period
+        self.assertEqual(C.stats(C.empty(), L, period=(None, date(2026, 1, 2)))["total"], {"moneymoney": 1})
         off = C.open_items(C.empty(), L, {}, jahr=2025)
         self.assertEqual((off["assigned"], off["open"], off["assigned_sum"], off["open_sum"]), (0, 0, 0, 0))
 

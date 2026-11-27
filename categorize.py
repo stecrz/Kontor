@@ -802,16 +802,22 @@ def transfers(ledger: Ledger, area_of: Optional[Dict[str, str]] = None) -> set:
     return ids
 
 
+def in_period(day: date, period: Optional[Tuple[Optional[date], Optional[date]]]) -> bool:
+    """A booking day in your period under Kategorisieren (from, to; both included, None: open)."""
+    start, end = period or (None, None)
+    return (start is None or day >= start) and (end is None or day <= end)
+
+
 def open_items(d: dict, ledger: Ledger, bereich_of: Dict[str, str], jahr: Optional[int] = None, bereich: Optional[str] = None,
                min_betrag: float = 0.0, limit: int = 400, banks: Optional[set] = None, hidden: Optional[set] = None,
-               before: Optional[date] = None, hints: Optional[Hints] = None, meaning: Optional[Meaning] = None,
-               level: Optional[str] = None) -> Dict[str, Any]:
+               period: Optional[Tuple[Optional[date], Optional[date]]] = None, hints: Optional[Hints] = None,
+               meaning: Optional[Meaning] = None, level: Optional[str] = None) -> Dict[str, Any]:
     """Transactions without a category (in MoneyMoney, nothing waiting), grouped by counterparty, each with Kontor's suggestion
     and how sure it is (Hints; with meaning: also by the embeddings the assistant made). banks: the accounts a category matters
     for (bank accounts); None: all. Transfers between your accounts are left out, and so are the areas you do not categorise
-    (hidden: their ids) and what was booked before the day you chose (before) -- the cash flow estimates their positions.
-    assigned / assigned_sum / open_sum: the progress under the same filters -- how many have a category (MoneyMoney's or
-    waiting) and the absolute sums in euros of those with and without one. levels: groups per level of their suggestion (all
+    (hidden: their ids) and what was booked outside the period you chose (period: from, to) -- the cash flow estimates their
+    positions. assigned / assigned_sum / open_sum: the progress under the same filters -- how many have a category (MoneyMoney's
+    or waiting) and the absolute sums in euros of those with and without one. levels: groups per level of their suggestion (all
     of them); level: only the groups of that level are listed (up to limit)."""
     groups: Dict[str, dict] = {}
     total = 0
@@ -827,7 +833,7 @@ def open_items(d: dict, ledger: Ledger, bereich_of: Dict[str, str], jahr: Option
             continue
         if jahr and t.booking_date.year != jahr:
             continue
-        if before and t.booking_date < before:
+        if not in_period(t.booking_date, period):
             continue
         if bereich and bereich_of.get(t.account_uuid) != bereich:
             continue
@@ -1005,10 +1011,10 @@ def _doubt_support(h: Hints, t: Tx, cat: str, area: str, sign: int) -> Tuple[flo
 
 
 def doubts(d: dict, ledger: Ledger, bereich_of: Dict[str, str], hints: Optional[Hints] = None, jahr: Optional[int] = None,
-           bereich: Optional[str] = None, banks: Optional[set] = None, hidden: Optional[set] = None, before: Optional[date] = None,
-           limit: int = 300) -> Dict[str, Any]:
+           bereich: Optional[str] = None, banks: Optional[set] = None, hidden: Optional[set] = None,
+           period: Optional[Tuple[Optional[date], Optional[date]]] = None, limit: int = 300) -> Dict[str, Any]:
     """Transactions whose category makes no sense to Kontor (doubt_of), grouped by counterparty, category and Kontor's
-    suggestion, the surest doubts first -- under the same filters as what is open (bank accounts, areas you categorise, ignore before, year). One you
+    suggestion, the surest doubts first -- under the same filters as what is open (bank accounts, areas you categorise, the period, year). One you
     said is fine (d["doubt_ok"]: id -> its category then) stays out while it keeps that category. Changes nothing."""
     if hints is None:
         hints = Hints(d, ledger, bereich_of)
@@ -1018,7 +1024,7 @@ def doubts(d: dict, ledger: Ledger, bereich_of: Dict[str, str], hints: Optional[
     for t in ledger.txs:
         if not needs_category(t, banks):
             continue
-        if (jahr and t.booking_date.year != jahr) or (before and t.booking_date < before):
+        if (jahr and t.booking_date.year != jahr) or not in_period(t.booking_date, period):
             continue
         if (bereich and bereich_of.get(t.account_uuid) != bereich) or (hidden and str(bereich_of.get(t.account_uuid)) in hidden):
             continue
@@ -1059,9 +1065,9 @@ def doubts(d: dict, ledger: Ledger, bereich_of: Dict[str, str], hints: Optional[
 
 
 def stats(d: dict, ledger: Ledger, banks: Optional[set] = None, area_of: Optional[Dict[str, str]] = None,
-          hidden: Optional[set] = None, before: Optional[date] = None) -> Dict[str, Any]:
+          hidden: Optional[set] = None, period: Optional[Tuple[Optional[date], Optional[date]]] = None) -> Dict[str, Any]:
     """How many transactions have which kind of category (MoneyMoney, waiting, none) -- the areas you do not categorise
-    (hidden) and what was booked before the day you chose (before) left out."""
+    (hidden) and what was booked outside the period you chose (period: from, to) left out."""
     c: Counter = Counter()
     years: Dict[int, Counter] = defaultdict(Counter)
     skip = transfers(ledger, area_of)
@@ -1070,7 +1076,7 @@ def stats(d: dict, ledger: Ledger, banks: Optional[set] = None, area_of: Optiona
             continue
         if hidden and area_of is not None and str(area_of.get(t.account_uuid)) in hidden:
             continue
-        if before and t.booking_date < before:
+        if not in_period(t.booking_date, period):
             continue
         path, q = effective(d, t)
         if not path and t.id in skip:                  # a transfer between your accounts: no category needed

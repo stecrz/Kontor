@@ -1260,6 +1260,11 @@ function dueTabs(due) {          // the settings' tabs drawn already: their mark
     if (old) old.remove();
     if (now) b.insertAdjacentHTML('beforeend', now); });
 }
+// Kategorisieren: how many transactions are still open in the areas and the period chosen there (as of the last report)
+function catBadge() {
+  const n = S.DATA ? (((S.DATA.categories || {}).total || {}).without || 0) : 0;
+  navBadge('#categories', n ? (n > 99 ? '99+' : String(n)) : '', n ? tn('kz_badge_tip', n) : '');
+}
 // what a run does now: reading MoneyMoney, checking the rules, booking n of m
 function runStep(st) {
   const s = ((st || {}).service || {}).step || {};
@@ -1299,6 +1304,7 @@ function statusMini() {
   // something to do: bookings waiting for approval (count) or a failed run (!), an update (dot) -- in the sidebar and on the app icon
   const waiting = l && l.dry_run && !l.error ? (l.proposals || []).length : 0, notes = l && !l.error && !waiting ? (l.warnings || []).length : 0;
   navBadge('#bookings', l && l.error ? '!' : waiting ? (waiting > 99 ? '99+' : String(waiting)) : notes ? '•' : '', l && l.error ? t('letzter_abgleich_mit_fehler') : waiting ? tn('0_buchungsvorschlaege', waiting) : tn('n_hinweise_auto', notes));
+  catBadge();
   const due = settingsDue(st), first = due.updates || due.assistant;
   navBadge('#settings', first ? first[0] : '', first ? first[1] : '', due.updates ? '#settings/updates' : due.assistant ? '#settings/assistant' : '');
   dueTabs(due);
@@ -1407,11 +1413,11 @@ function niceTicks(min, max, n, least = 0) {
 // about it): [kind, text, page, what the assistant may be asked to do (or '')]. Kontor's own figures; no model needed.
 async function openItems(D) {
   const m = D.months, cur = m[m.length - 1], yr = cur.slice(0, 4);
-  const [ok, ob] = await Promise.all([api(`/api/transactions?year=${yr}&uncategorized=1&limit=1&entity=${encodeURIComponent(S.area)}`).catch(() => ({})),
-    api(`/api/transactions?year=${yr}&without_receipt=1&direction=out&limit=1&entity=${encodeURIComponent(S.area)}`).catch(() => ({}))]);
+  const ob = await api(`/api/transactions?year=${yr}&without_receipt=1&direction=out&limit=1&entity=${encodeURIComponent(S.area)}`).catch(() => ({}));
+  const open = ((S.DATA.categories || {}).total || {}).without || 0;           // as in the sidebar: the areas and the period chosen under Kategorisieren
   const lastRun = S.STATUS.last_run, items = [];
   if (lastRun && lastRun.dry_run && lastRun.proposals && lastRun.proposals.length) items.push(['warn', tn('0_buchungsvorschlaege', lastRun.proposals.length), '#bookings', 'bookings']);
-  if (ok.hits) items.push(['warn', tn('n_umsaetze', ok.hits) + ' ' + yr + t('ohne_kategorie_zuordnen'), '#categories', 'categorize']);
+  if (open) items.push(['warn', tn('n_umsaetze', open) + t('ohne_kategorie_zuordnen'), '#categories', 'categorize']);
   if ((S.DATA.accounts_new || []).length) items.push(['warn', nKonten(S.DATA.accounts_new.length) + t('ohne_bestaetigte_zuordnung_bereich_pos'), '#accounts', '']);
   const mix = (S.DATA.categories || {}).mixed || [];         // categories with payments far larger than the rest (a purchase beside the rent?)
   if (mix.length) items.push(['warn', mix.length === 1 ? tn('ov_gemischt_1', mix[0].ids.length, CP(mix[0].path)) : t('ov_gemischt_n', mix.length), '#accounts/positions', '']);
@@ -6234,7 +6240,7 @@ function bindPositionen(main) {
 }
 
 // ---------------------------------------------------------------- Zuordnen: Kategorien kommen aus MoneyMoney, Kontor trägt dort ein
-const KZ = {year: '', area: '', min: '', level: '', expanded: {}, aus: {}, open: null, rules: null, written: null, w: null, wsel: new Set()};
+const KZ = {area: '', min: '', level: '', expanded: {}, aus: {}, open: null, rules: null, written: null, w: null, wsel: new Set()};
 async function assignCats(ids, kat, extra = {}) {
   // Kontor trägt die Kategorie in MoneyMoney ein (vorher geprüft), in Teilen zu höchstens 2000 Umsätzen. Steht dort schon eine
   // andere (nicht von Kontor gesetzte): nachfragen, ob sie ersetzt werden soll – sonst bleibt sie (MoneyMoney ist maßgeblich).
@@ -6306,21 +6312,28 @@ function kzProgress(off) {
   const txt = off.open ? t('kz_sicher', F0(off.assigned || 0), F0(n), pct) : tn('kz_sicher_alle', n, F0(n));
   return `<div class="note kz-prog" data-ex="categories.progress"><span class="kz-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}" aria-label="${esc(t('kz_sicher_aria', pct))}"><i style="width:${w.toFixed(1)}%"></i></span><span>${txt}</span>${hq('kz_sicher')}</div>`;
 }
+// the period under Kategorisieren: the running year, the year before (1 January to 31 December each -- from and to always filled,
+// the user's choice), or all; [from, to] as ISO days, '' open
+const kzYear = y => y ? [y + '-01-01', y + '-12-31'] : ['', ''];
+function kzPeriod(p) {
+  const now = new Date().getFullYear(), from = p.from || '', to = p.to || '';
+  const on = y => { const [f, e] = kzYear(y); return from === f && to === e; };
+  const seg = [String(now), String(now - 1), ''].map(y => `<button data-y="${y}" class="${on(y) ? 'on' : ''}" title="${esc(y ? t('kz_jahr_tip', y) : t('kz_alle_tip'))}">${y || t('alle')}</button>`).join('');
+  return `<div class="kz-period" role="group" aria-label="${esc(t('kz_zeitraum'))}" data-ex="categories.period"><div class="seg" id="kz-seg">${seg}</div>
+    <span class="kz-range"><input type="date" id="kz-von" value="${esc(from)}" aria-label="${esc(t('kz_von'))}" title="${esc(t('kz_von_tip'))}"><span class="muted">–</span><input type="date" id="kz-bis" value="${esc(to)}" aria-label="${esc(t('kz_bis'))}" title="${esc(t('kz_bis_tip'))}"></span></div>`;
+}
 async function vZuordnen() {
   if (!S.DATA) return noData;
-  const off = await api(`/api/categories/unassigned?year=${KZ.year}&min=${KZ.min}&level=${KZ.level || ''}`);
+  const off = await api(`/api/categories/unassigned?min=${KZ.min}&level=${KZ.level || ''}`);
   KZ.open = off; KZ.rules = null; KZ.doubts = null; KZ.written = off.written;
   for (const g of off.groups) if (KZ.aus[g.key]) { const ids = new Set(g.ids); for (const i of [...KZ.aus[g.key]]) if (!ids.has(i)) KZ.aus[g.key].delete(i); }
-  const years = Object.keys((S.DATA.categories || {}).years || {}).sort().reverse(), can = true;          // assigning is the release (from the iPhone: entered at the next sync at the Mac)
+  const can = true;          // assigning is the release (from the iPhone: entered at the next sync at the Mac)
   const mitVorschlag = vorschlagIds(off), lvs = off.levels || {}, shown = kzShown(off);
   // the areas you categorise: the others (a company with countless bookings, say) stay out of the list and of the count
   const ohne = new Set(off.skipped || S.CFG.assign_without || []), areas = Object.keys(S.DATA.areas || {});
   const chips = areas.length > 1 ? `<div class="kz-areas" role="group" aria-label="${esc(t('kz_bereiche'))}" title="${esc(t('kz_bereiche_tip'))}">${areas.map(k => `<label class="lc-chip"><input type="checkbox" data-area="${esc(k)}" ${ohne.has(String(k)) ? '' : 'checked'}>${esc(BN(k))}</label>`).join('')}</div>` : '';
-  const vor = off.ignore_before || '';
-  let h = `<div class="toolbar">${chips}
-    <label class="chk small" title="${esc(t('kz_ignorieren_vor_tip'))}">${t('kz_ignorieren_vor')} <input type="date" id="kz-vor" value="${esc(vor)}" aria-label="${esc(t('kz_ignorieren_vor'))}"></label>
-    <select id="kz-jahr"><option value="">${t('alle_jahre')}</option>${years.map(y => `<option ${KZ.year === y ? 'selected' : ''}>${y}</option>`).join('')}</select>
-    <label class="chk small">${t('ab')} <input type="number" id="kz-min" value="${esc(KZ.min)}" placeholder="0" style="width:80px"> €</label>
+  let h = `<div class="toolbar">${chips}${kzPeriod(off.period || {})}
+    <label class="chk small" title="${esc(t('kz_ab_tip'))}">${t('ab')} <input type="number" id="kz-min" value="${esc(KZ.min)}" placeholder="0" style="width:80px"> €</label>
     <div class="seg small kz-lvs" role="group" aria-label="${esc(t('kz_stufen'))}" data-ex="categories.levels">${[''].concat(KZ_LV).map(k => `<button data-lv="${k}" class="${(KZ.level || '') === k ? 'on' : ''}" aria-pressed="${(KZ.level || '') === k}">${k ? `<i class="kz-dot ${k}"></i>` + t(`kz_f_${k}`, lvs[k] || 0) : t('kz_f_alle', off.groups_total || 0)}</button>`).join('')}</div>${hq('kz_stufen')}
     <span class="sp"></span>${can && mitVorschlag.length ? `<button id="kz-alle" class="secondary small">${kzBulkLabel(mitVorschlag.length)}</button>` : ''}</div>
     ${kzProgress(off)}<div class="note" data-ex="categories.open">${tn('n_ohne_kategorie_gruppen', off.open, hq('zuordnen'))}</div>` + katList('kz-kats');
@@ -6342,18 +6355,22 @@ async function vZuordnen() {
   return h + '</div>';
 }
 function bindZuordnen(main) {
-  const bindF = (id, key) => { const el = $(id, main); if (el) el.addEventListener('change', e => { KZ[key] = e.target.value; KZ.aus = {}; route(); }); };
-  bindF('#kz-jahr', 'year'); bindF('#kz-min', 'min');
+  const km = $('#kz-min', main); if (km) km.addEventListener('change', e => { KZ.min = e.target.value; KZ.aus = {}; route(); });
   const ka = $('.kz-areas', main); if (ka) ka.addEventListener('change', async () => {
     const ohne = $$('input[data-area]', ka).filter(i => !i.checked).map(i => i.dataset.area);
     if (ohne.length === $$('input[data-area]', ka).length) { toast(t('kz_ein_bereich')); route(); return; }       // at least one stays
     try { const r = await api('/api/categories/areas', {without: ohne, wait: true}); S.CFG = r.config; KZ.aus = {}; await loadAll(); route(); } catch (e) { toast(e.message, 5000); }
   });
-  // older transactions you do not categorise: left out here and in the count (saved on change; empty: all)
-  const kv = $('#kz-vor', main); if (kv) kv.addEventListener('change', async () => {
-    if (kv.value && !/^\d{4}-\d{2}-\d{2}$/.test(kv.value)) return;
-    try { const r = await api('/api/categories/areas', {ignore_before: kv.value, wait: true}); S.CFG = r.config; KZ.aus = {}; await loadAll(); route(); } catch (e) { toast(e.message, 5000); }
-  });
+  // the period: what is booked outside it is left out here and in the counts (saved on each change, kept until the next)
+  const setPeriod = async (from, to) => {
+    try { const r = await api('/api/categories/areas', {period: {from, to}, wait: true}); S.CFG = r.config; KZ.aus = {}; await loadAll(); route(); } catch (e) { toast(e.message, 5000); route(); }
+  };
+  $$('#kz-seg button', main).forEach(b => b.addEventListener('click', () => { const [from, to] = kzYear(b.dataset.y); setPeriod(from, to); }));
+  const kf = $('#kz-von', main), kt = $('#kz-bis', main);
+  [kf, kt].forEach(i => i && i.addEventListener('change', () => {
+    if ([kf.value, kt.value].some(v => v && !/^\d{4}-\d{2}-\d{2}$/.test(v))) return;
+    setPeriod(kf.value, kt.value);
+  }));
   $$('.kz-toggle', main).forEach(b => b.addEventListener('click', e => { const k = e.target.closest('.kz-group').dataset.key; KZ.expanded[k] = !KZ.expanded[k]; route(); }));
   // the level filter: which suggestions to look at (the least sure ones first, say) -- kept while the page is open
   $$('.kz-lvs button', main).forEach(b => b.addEventListener('click', () => { KZ.level = b.dataset.lv; route(); }));

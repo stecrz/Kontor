@@ -1188,44 +1188,87 @@ class AppTests(_AppBase):
         part_n = CZ.stats(CZ.load(self.store), led, None, area, {hide})["total"].get("without", 0)
         self.assertLess(part_n, all_n)
 
-    def test_old_transactions_left_out_of_categorising(self):
-        """"Ignorieren vor": transactions booked before the day are neither listed nor counted under Kategorisieren (nor in the
-        overview's count) -- kept in the settings, empty again lists all; a day that is none is refused and changes nothing; the
-        areas you chose stay as they are."""
+    def test_period_of_categorising(self):
+        """The period under Kategorisieren (from, to; both included, '' open): only what is booked in it is listed and counted
+        -- the list, the count in the sidebar and the overview (dataset) alike. Not chosen yet: the running year, moving on
+        with it; chosen: kept in the settings until the next change. A pair that is none (a day that is no day, the first after
+        the last, a wrong shape) is refused and changes nothing; the areas you chose stay as they are. The old "Ignorieren vor"
+        becomes the start of the period. The assistant asking for a year gets that year, whatever the page shows."""
         self.login(); self.run_and_wait()
         led = self.app.ledger
         by_id = {t.id: t for t in led.txs}
+        count = lambda: self.store.load("dataset.json")["categories"]["total"].get("without", 0)
+        listed = lambda: sorted(by_id[i].booking_date for g in self.call("/api/categories/unassigned")[1]["groups"] for i in g["ids"])
         self.call("/api/categories/areas", {"without": [], "wait": True})
+        # not chosen yet: the running year, 1 January to 31 December
+        self.assertIsNone(self.app.config["assign_from"])
         code, off = self.call("/api/categories/unassigned")
-        self.assertEqual(off["ignore_before"], "")
-        days = sorted(by_id[i].booking_date for g in off["groups"] for i in g["ids"])
-        self.assertGreater(len(set(days)), 2)
-        cut = days[len(days) // 2]
-        if cut == days[0]:
-            cut = next(d for d in days if d > days[0])
-        n_all = self.store.load("dataset.json")["categories"]["total"].get("without", 0)
-        code, r = self.call("/api/categories/areas", {"ignore_before": cut.isoformat(), "wait": True})
-        self.assertEqual((code, r["config"]["assign_ignore_before"], r["config"]["assign_without"]), (200, cut.isoformat(), []))
-        code, off2 = self.call("/api/categories/unassigned")
-        left = [by_id[i].booking_date for g in off2["groups"] for i in g["ids"]]
-        self.assertEqual(off2["ignore_before"], cut.isoformat())
-        self.assertEqual(sorted(left), [d for d in days if d >= cut])                                    # exactly those from the day on
-        self.assertEqual(off2["open"], len(left))
-        n_cut = self.store.load("dataset.json")["categories"]["total"].get("without", 0)
-        self.assertLess(n_cut, n_all)                                                                    # the overview's count follows
+        self.assertEqual((off["period"], off["period_chosen"]), ({"from": "%d-01-01" % TODAY.year, "to": "%d-12-31" % TODAY.year}, False))
+        days = listed()
+        self.assertTrue(days); self.assertTrue(all(d.year == TODAY.year for d in days))
+        self.assertEqual((off["open"], count()), (len(days), len(days)))                                 # list, sidebar and overview alike
+        # all: older years too
+        code, r = self.call("/api/categories/areas", {"period": {"from": "", "to": ""}, "wait": True})
+        self.assertEqual((code, r["config"]["assign_from"], r["config"]["assign_to"], r["config"]["assign_without"]), (200, "", "", []))
+        every = listed()
+        self.assertGreater(len(every), len(days)); self.assertLess(every[0].year, TODAY.year)
+        self.assertEqual(count(), len(every))
+        self.assertTrue(self.call("/api/categories/unassigned")[1]["period_chosen"])
+        # from and to on days with transactions: both included, exactly those between
+        uniq = sorted(set(every))
+        lo, hi = uniq[len(uniq) // 4], uniq[3 * len(uniq) // 4]
+        code, r = self.call("/api/categories/areas", {"period": {"from": lo.isoformat(), "to": hi.isoformat()}, "wait": True})
+        self.assertEqual((code, r["config"]["assign_from"], r["config"]["assign_to"]), (200, lo.isoformat(), hi.isoformat()))
+        self.assertEqual(listed(), [d for d in every if lo <= d <= hi]); self.assertIn(lo, listed()); self.assertIn(hi, listed())
+        self.assertEqual(count(), len(listed()))
         years = self.store.load("dataset.json")["categories"]["years"]
-        self.assertTrue(all(int(y) >= cut.year for y in years))
-        for bad in ("2024-02-30", "gestern", 5):
-            self.assertEqual(self.call("/api/categories/areas", {"ignore_before": bad})[0], 400)
-        self.assertEqual(self.app.config["assign_ignore_before"], cut.isoformat())
+        self.assertTrue(all(lo.year <= int(y) <= hi.year for y in years))
+        # the year before, as its button fills it
+        prev = TODAY.year - 1
+        self.call("/api/categories/areas", {"period": {"from": "%d-01-01" % prev, "to": "%d-12-31" % prev}, "wait": True})
+        self.assertEqual(listed(), [d for d in every if d.year == prev]); self.assertEqual(count(), len(listed()))
+        # the assistant asks for a year: that year, whatever the page shows
+        import service as MA
+        got = MA.open_category_items(self.app, TODAY.year, None)
+        self.assertEqual((got["open"], got["period"]), (len(days), {"from": "%d-01-01" % TODAY.year, "to": "%d-12-31" % TODAY.year}))
+        self.assertEqual(MA.open_category_items(self.app, None, None)["period"], {"from": "%d-01-01" % prev, "to": "%d-12-31" % prev})
+        for y in (0, 10000):                                                                             # no year: the period chosen
+            self.assertEqual(MA.open_category_items(self.app, y, None)["period"], {"from": "%d-01-01" % prev, "to": "%d-12-31" % prev})
+        self.assertEqual(self.call("/api/categories/unassigned?year=0")[0], 200)
+        # refused, nothing changed
+        for bad in ({"from": "2024-02-30", "to": ""}, {"from": "gestern", "to": ""}, {"from": "2026-03-01", "to": "2026-02-28"},
+                    {"from": "2026-01-01"}, {"from": 5, "to": ""}, "2026-01-01", ["2026-01-01", ""], {"from": None, "to": None}):
+            self.assertEqual(self.call("/api/categories/areas", {"period": bad})[0], 400, bad)
+        self.assertEqual((self.app.config["assign_from"], self.app.config["assign_to"], self.app.config["assign_without"]),
+                         ("%d-01-01" % prev, "%d-12-31" % prev, []))
+        self.assertIn(self.call("/api/categories/areas", {"period": {"from": "2026-03-01", "to": "2026-02-28"}})[1]["error"],
+                      [core.tr("s_zeitraum_verkehrt")])
         self.assertEqual(self.call("/api/categories/areas", {})[0], 400)                                 # neither given
-        self.call("/api/categories/areas", {"ignore_before": "", "wait": True})                          # empty: all again
-        self.assertEqual(self.app.config["assign_ignore_before"], "")
-        self.assertEqual(len([i for g in self.call("/api/categories/unassigned")[1]["groups"] for i in g["ids"]]), len(days))
-        self.assertEqual(self.store.load("dataset.json")["categories"]["total"].get("without", 0), n_all)
-        # a value edited by hand that is no day: nothing left out
-        self.assertIsNone(core.assign_cutoff({"assign_ignore_before": "kein Tag"}))
-        self.assertIsNone(core.assign_cutoff({}))
+        self.call("/api/categories/areas", {"period": {"from": "2026-05-01", "to": "2026-05-01"}, "wait": True})     # one day
+        self.assertTrue(all(d == date(2026, 5, 1) for d in listed()))
+        # the areas changed: the period stays
+        self.call("/api/categories/areas", {"without": [], "wait": True})
+        self.assertEqual((self.app.config["assign_from"], self.app.config["assign_to"]), ("2026-05-01", "2026-05-01"))
+        # kept in the settings: the stored file holds the choice
+        self.assertEqual({k: self.store.load("config.json").get(k) for k in ("assign_from", "assign_to")}, {"assign_from": "2026-05-01", "assign_to": "2026-05-01"})
+
+    def test_period_settings(self):
+        """How the period is read from the settings: not chosen -- the running year (moves on with it); a value that is no day
+        -- open; the old "Ignorieren vor" (before 3.17.115) becomes the start, never over a period already chosen."""
+        P = core.assign_period
+        self.assertEqual(P({}, date(2026, 11, 4)), (date(2026, 1, 1), date(2026, 12, 31)))
+        self.assertEqual(P({"assign_from": None, "assign_to": "2026-06-30"}, date(2027, 1, 2)), (date(2027, 1, 1), date(2027, 12, 31)))   # the new year, whole
+        self.assertEqual(P({"assign_from": "", "assign_to": ""}), (None, None))
+        self.assertEqual(P({"assign_from": "2025-01-01", "assign_to": "2025-12-31"}), (date(2025, 1, 1), date(2025, 12, 31)))
+        self.assertEqual(P({"assign_from": "kein Tag", "assign_to": "2025-02-30"}), (None, None))
+        m = core.merged_config
+        self.assertEqual((m({})["assign_from"], m({})["assign_to"]), (None, ""))
+        old = m({"assign_ignore_before": "2025-03-01"})
+        self.assertEqual((old["assign_from"], old["assign_to"], "assign_ignore_before" in old), ("2025-03-01", "", False))
+        self.assertIsNone(m({"assign_ignore_before": ""})["assign_from"])                              # was empty: the running year
+        self.assertEqual(m({"assign_ignore_before": "2025-03-01", "assign_from": ""})["assign_from"], "")      # chosen already: kept
+        self.assertEqual((m({"assign_from": 5, "assign_to": 7})["assign_from"], m({"assign_from": 5, "assign_to": 7})["assign_to"]), (None, ""))
+        self.assertEqual(m({"assign_from": "2025-02-30"})["assign_from"], "")                            # edited by hand, no day: open
 
     def test_kategorien_zurueckschreiben(self):
         """MoneyMoney ist massgeblich: Zuordnen traegt dort ein (geprueft), eigene Kategorie ohne Rueckfrage aenderbar, ein in
@@ -3529,7 +3572,8 @@ class FeatureTests(_AppBase):
         self.assertEqual(code, 200); self.assertNotIn("baum", k); self.assertNotIn("rules", k)
         self.assertGreater({r["path"]: r for r in k["categories"]}["Lebensmittel"]["count_all"], 0)
         # Offene Umsaetze: Baumarkt (ohne Kategorie) als Gruppe -- ein Vorschlag, aber nie "sicher" ohne eigene Vergangenheit; Vorschlaege
-        # ordnen nie selbst zu
+        # ordnen nie selbst zu (alle Jahre)
+        self.call("/api/categories/areas", {"period": {"from": "", "to": ""}, "wait": True})
         code, off = self.call("/api/categories/unassigned")
         self.assertTrue(off["open"] >= 20)
         g = [x for x in off["groups"] if x["name"] == "Baumarkt"][0]
@@ -7016,6 +7060,77 @@ class PlanningBrowserTest(unittest.TestCase):
                 # the key figures, each with how it is computed
                 self.assertEqual(pg.eval_on_selector_all(".plan-kpis .k", "e => e.length"), 3)
                 self.assertIn("Überschuss ÷ Einnahmen", pg.get_attribute(".plan-kpis .k", "data-tip"))
+                self.assertEqual(errors, [])
+                b.close()
+        finally:
+            srv.shutdown(); srv.server_close()
+            app.stop.set()
+            shutil.rmtree(d, ignore_errors=True)
+
+
+class CategorizePeriodBrowserTest(unittest.TestCase):
+    """Kategorisieren in the browser: the number beside it in the sidebar counts the open transactions of the areas and the period
+    chosen there -- the same as the tab and the overview; the year buttons fill from and to, a day typed in is taken as well, each
+    saved at once and kept; the first day after the last is refused and changes nothing."""
+
+    def test_period_and_sidebar_count(self):
+        try:
+            from playwright.sync_api import sync_playwright
+        except ImportError:
+            self.skipTest("playwright fehlt")
+        d = tempfile.mkdtemp(prefix="kontor-kz-")
+        store = new_store(d); store.save("config.json", config_for_test(os.path.join(d, "Belege"))); store.save("state.json", dict(ALL_NEW))
+        reset_mock(); patch_today()
+        app = App(store, d, bridge_factory=MockBridge)
+        app.do_run(False, True)
+        srv = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(app)); port = srv.server_address[1]
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        cfg = lambda: (store.load("config.json").get("assign_from"), store.load("config.json").get("assign_to"))
+        try:
+            with sync_playwright() as p:
+                b = p.chromium.launch()
+                errors = []
+                pg = b.new_page(viewport={"width": 1440, "height": 900}); pg.on("pageerror", lambda e: errors.append(str(e)))
+                pg.goto("http://127.0.0.1:%d/" % port)
+                pg.fill("#login-pw", "sehr-geheimes-passwort"); pg.fill("#login-pw2", "sehr-geheimes-passwort"); pg.click("#login-btn")
+                wait_shell(pg)
+                pg.evaluate("location.hash = '#categories'"); pg.wait_for_selector("#kz-seg")
+                y = pg.evaluate("new Date().getFullYear()")
+                badge = lambda: pg.evaluate("(document.querySelector('#nav a[href=\"#categories\"] .nbadge') || {}).textContent || ''")
+                shown = lambda: pg.evaluate("((S.DATA.categories || {}).total || {}).without || 0")
+                tab = lambda: pg.inner_text("#main .tabs button[data-next='#categories']")
+                # not chosen yet: the running year (of the service), the same number in the sidebar, the tab and the overview's list
+                self.assertEqual(cfg(), (None, ""))
+                self.assertEqual((pg.input_value("#kz-von"), pg.input_value("#kz-bis")), ("%d-01-01" % TODAY.year, "%d-12-31" % TODAY.year))
+                if y == TODAY.year:
+                    self.assertEqual(pg.eval_on_selector_all("#kz-seg button.on", "bs => bs.map(b => b.dataset.y)"), [str(y)])
+                n0 = shown()
+                self.assertTrue(n0); self.assertEqual(badge(), str(n0) if n0 < 100 else "99+"); self.assertIn("(%d)" % n0, tab())
+                self.assertIn("ohne Kategorie", pg.get_attribute("#nav a[href='#categories'] .nbadge", "title"))
+                self.assertTrue(pg.evaluate("openItems(B()).then(it => it.some(i => i[2] === '#categories' && i[1].startsWith('%d ')))" % n0))
+                # all: more, everywhere at once; kept in the settings
+                pg.click("#kz-seg button[data-y='']")
+                until(pg, "document.querySelector('#kz-seg button[data-y=\"\"]').classList.contains('on')")
+                self.assertEqual(cfg(), ("", ""))
+                n1 = shown()
+                self.assertGreater(n1, n0); self.assertEqual(badge(), str(n1) if n1 < 100 else "99+"); self.assertIn("(%d)" % n1, tab())
+                # the running year and the year before: their buttons fill from and to, both
+                pg.click("#kz-seg button[data-y='%d']" % y)
+                until(pg, "document.querySelector('#kz-seg button[data-y=\"%d\"]').classList.contains('on')" % y)
+                self.assertEqual(cfg(), ("%d-01-01" % y, "%d-12-31" % y))
+                pg.click("#kz-seg button[data-y='%d']" % (y - 1))
+                until(pg, "document.querySelector('#kz-seg button[data-y=\"%d\"]').classList.contains('on')" % (y - 1))
+                self.assertEqual(cfg(), ("%d-01-01" % (y - 1), "%d-12-31" % (y - 1)))
+                self.assertEqual((pg.input_value("#kz-von"), pg.input_value("#kz-bis")), ("%d-01-01" % (y - 1), "%d-12-31" % (y - 1)))
+                self.assertEqual(badge(), (str(shown()) if shown() < 100 else "99+") if shown() else "")
+                # a day typed in: taken, the end stays; no button highlighted
+                pg.fill("#kz-von", "%d-03-01" % (y - 1))
+                until(pg, "document.querySelector('#kz-von') && document.querySelector('#kz-von').value === '%d-03-01' && !document.querySelector('#kz-seg button.on')" % (y - 1))
+                self.assertEqual(cfg(), ("%d-03-01" % (y - 1), "%d-12-31" % (y - 1)))
+                # the first day after the last: refused, nothing changed
+                pg.fill("#kz-von", "%d-01-01" % y)
+                until(pg, "!!document.querySelector('#toast') && document.querySelector('#toast').textContent.includes('nach dem letzten')")
+                self.assertEqual(cfg(), ("%d-03-01" % (y - 1), "%d-12-31" % (y - 1)))
                 self.assertEqual(errors, [])
                 b.close()
         finally:

@@ -801,7 +801,9 @@ class MixedCategories(unittest.TestCase):
         config = core.merged_config({"balance": {"roles": {k: v[2] for k, v in ACCOUNTS.items()}}})
         bereiche = core.bereiche_for(L, config)
         self.assertEqual(report.mixed_categories(L, config, bereiche, None, {1}), [])
-        self.assertEqual(report.mixed_categories(L, config, bereiche, None, set(), None, date(2025, 2, 1)), [])   # before the day you chose
+        self.assertEqual(report.mixed_categories(L, config, bereiche, None, set(), None, (date(2025, 2, 1), None)), [])   # outside the period chosen
+        self.assertEqual(report.mixed_categories(L, config, bereiche, None, set(), None, (None, date(2025, 3, 1))), [])   # the last two after it: too few left
+        self.assertEqual([m["path"] for m in report.mixed_categories(L, config, bereiche, None, set(), None, (date(2025, 1, 2), date(2025, 4, 2)))], ["Auto"])   # both days included
 
     def test_save_confirms_and_keeps_what_was_there(self):
         cfg = core.save_positions({"cashflow": {"mixed_ok": [7]}}, {"mixed_ok": [7, 8, 9]}, None)

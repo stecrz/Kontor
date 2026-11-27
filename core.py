@@ -40,7 +40,9 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "loans": [], "companies": [], "account_mirrors": [],
     "assign_without": None,        # areas whose transactions you do not categorise (their ids): left out under Kategorisieren;
                                    # None: not chosen yet -- all but the private areas (assign_skipped)
-    "assign_ignore_before": "",    # transactions before this day (ISO) left out under Kategorisieren and in its count; "": none
+    "assign_from": None,           # Kategorisieren lists and counts transactions booked from this day (ISO); "": no start;
+                                   # None: not chosen yet -- the running year, to as well (assign_period); was assign_ignore_before
+    "assign_to": "",               # ... up to this day (ISO); "": no end
     "areas": [],
     "real_estate": [],
     "balance": {"months_back": 0, "roles": {}, "history_source": {}, "illiquid_roles": ["participations", "real_estate", "tangibles"],
@@ -151,8 +153,13 @@ def _shape(cfg: dict) -> dict:
                 g[f] = text(g[f])
         if "threshold" in g:
             g["threshold"] = number(g["threshold"], 0.01)
-    if "assign_ignore_before" in cfg:
-        cfg["assign_ignore_before"] = day(cfg["assign_ignore_before"])
+    old = cfg.pop("assign_ignore_before", None)           # before 3.17.115: one day, "ignore before" -- now the start of the period
+    if "assign_from" not in cfg and isinstance(old, str) and day(old):
+        cfg["assign_from"] = day(old)
+    if "assign_from" in cfg:
+        cfg["assign_from"] = day(cfg["assign_from"]) if isinstance(cfg["assign_from"], str) else None
+    if "assign_to" in cfg:
+        cfg["assign_to"] = day(cfg["assign_to"])
     if cfg.get("assign_without") is not None:
         cfg["assign_without"] = [str(x) for x in cfg["assign_without"] if isinstance(x, (str, int)) and not isinstance(x, bool)] if isinstance(cfg["assign_without"], list) else []
     if "account_mirrors" in cfg:
@@ -227,14 +234,19 @@ def assign_skipped(config: dict, bereiche: List[dict]) -> Set[str]:
     return {str(b["id"]) for b in bereiche if str(b["id"]) not in keep}
 
 
-def assign_cutoff(config: dict) -> Optional[date]:
-    """Your choice under Kategorisieren: transactions booked before this day are left out there (the list, its count, the
-    overview) -- the cash flow estimates them as before. None: nothing left out."""
-    v = config.get("assign_ignore_before")
-    try:
-        return date.fromisoformat(v) if isinstance(v, str) and v else None
-    except ValueError:
-        return None
+def assign_period(config: dict, today: Optional[date] = None) -> Tuple[Optional[date], Optional[date]]:
+    """Your period under Kategorisieren (from, to; both days included, None: open): only transactions booked in it are listed
+    and counted there (the list, its count in the sidebar, the overview) -- the cash flow estimates the others as before.
+    Not chosen yet: the running year, 1 January to 31 December (moves on with the year). A value that is no day: open."""
+    def day(v) -> Optional[date]:
+        try:
+            return date.fromisoformat(v) if isinstance(v, str) and v else None
+        except ValueError:
+            return None
+    if config.get("assign_from") is None:
+        y = (today or date.today()).year
+        return date(y, 1, 1), date(y, 12, 31)
+    return day(config.get("assign_from")), day(config.get("assign_to"))
 
 
 def version_on_disk() -> str:
@@ -1369,7 +1381,7 @@ def positions_overview(ledger: Ledger, config: dict, categories: List[dict], tod
     mine = my_positions(config)
     area_of = {a.uuid: str(b["id"]) for b in bereiche for a in b["leaves"]}
     mixed = {m["path"]: m for m in mixed_categories(ledger, config, bereiche, bank_accounts(account_roles(ledger, config)),
-                                                    categorize.transfers(ledger, area_of), assign_skipped(config, bereiche), assign_cutoff(config))}
+                                                    categorize.transfers(ledger, area_of), assign_skipped(config, bereiche), assign_period(config))}
     out = []
     for p in paths:
         sub = [q for q in count if q == p or q.startswith(p + " / ")]
@@ -1641,13 +1653,13 @@ def build_report(store: Store, ledger: Ledger, config: dict, state: dict, today:
         ledger._paired = {k: v for k, v in ledger._paired.items() if k in {str(b["id"]) for b in bereiche}}     # areas that still exist
     transfer_sig = hash(frozenset(categorize.transfers(ledger, area_of)))
     # categories that mix payments of another kind with their usual ones (a property's purchase beside its rent): a hint
-    mixed_sig = (ledger._kat_sig, tuple(sorted(bank_accounts(roles))), transfer_sig, tuple(sorted(assign_skipped(config, bereiche))), assign_cutoff(config),
+    mixed_sig = (ledger._kat_sig, tuple(sorted(bank_accounts(roles))), transfer_sig, tuple(sorted(assign_skipped(config, bereiche))), assign_period(config),
                  _bereiche_sig(bereiche), json.dumps([config.get("cashflow"), [im.get("category") for im in config.get("real_estate") or [] if isinstance(im, dict)]],
                                                      sort_keys=True, default=str))
     try:
         mixed = _cached(ledger, "_mixed_cache", mixed_sig, lambda: mixed_categories(ledger, config, bereiche, bank_accounts(roles),
                                                                                      categorize.transfers(ledger, area_of), assign_skipped(config, bereiche),
-                                                                                     assign_cutoff(config)))
+                                                                                     assign_period(config)))
     except Exception:  # pragma: no cover
         log.exception("Mixed categories failed")
         mixed = []
@@ -1668,8 +1680,8 @@ def build_report(store: Store, ledger: Ledger, config: dict, state: dict, today:
         "real_estate": immobilien,
         "budgets": budgets,
         "warnings": warnings,
-        "categories": dict((step(0.86, "Kategorienstatistik"), _cached(ledger, "_katstats_cache", (ledger._kat_sig, tuple(sorted(bank_accounts(roles))), transfer_sig, tuple(sorted(assign_skipped(config, bereiche))), assign_cutoff(config)),
-                                                                                  lambda: categorize.stats(kat, ledger, bank_accounts(roles), area_of, assign_skipped(config, bereiche), assign_cutoff(config))))[1],
+        "categories": dict((step(0.86, "Kategorienstatistik"), _cached(ledger, "_katstats_cache", (ledger._kat_sig, tuple(sorted(bank_accounts(roles))), transfer_sig, tuple(sorted(assign_skipped(config, bereiche))), assign_period(config)),
+                                                                                  lambda: categorize.stats(kat, ledger, bank_accounts(roles), area_of, assign_skipped(config, bereiche), assign_period(config))))[1],
                            positions=len(my_positions(config)), mixed=mixed),
         "accounts_new": neu,
     }

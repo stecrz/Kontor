@@ -1363,11 +1363,12 @@ def standing_out(amounts: Dict[int, float]) -> List[int]:
 
 
 def mixed_categories(ledger: Ledger, config: dict, bereiche: List[dict], banks: Optional[Set[str]] = None,
-                     skip: Optional[Set[int]] = None, hidden: Optional[Set[str]] = None, before: Optional[date] = None) -> List[dict]:
+                     skip: Optional[Set[int]] = None, hidden: Optional[Set[str]] = None,
+                     period: Optional[Tuple[Optional[date], Optional[date]]] = None) -> List[dict]:
     """The categories with payments that stand out (standing_out) among those that count as income or an expense -- or in a
     property's rows -- in the areas you categorise; in the others (hidden: their ids; a company with countless bookings, say)
     only a property's categories, where the cash flow goes most wrong. On your bank accounts (banks; None: all),
-    booked on or after the day you chose (before). Left out: transfers between your accounts (skip: their ids), transfer
+    booked in the period you chose under Kategorisieren (period: from, to). Left out: transfers between your accounts (skip: their ids), transfer
     categories, a purchase's category (price or costs: an investment by its name), categories you count elsewhere (saving,
     financing, left out), accounts in another currency, and the payments you confirmed as belonging there
     (cashflow.mixed_ok). [{path, ids (largest first), sum (of those, signed, euros), count (bookings of the category)}],
@@ -1386,7 +1387,7 @@ def mixed_categories(ledger: Ledger, config: dict, bereiche: List[dict], banks: 
         company = b.get("kind") == "company"
         per: Dict[str, Dict[int, float]] = defaultdict(dict)
         for t in ledger.txs:
-            if t.account_uuid not in accs or not t.booked or not t.category_path or t.id in skip or (before and t.booking_date < before):
+            if t.account_uuid not in accs or not t.booked or not t.category_path or t.id in skip or not categorize.in_period(t.booking_date, period):
                 continue
             if MARK in t.purpose:                 # Kontor's own bookings
                 continue

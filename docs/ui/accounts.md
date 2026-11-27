@@ -145,7 +145,7 @@ cost and the payout as rent. A payment stands out when it is at least 5,000 € 
 category (largest first, as long as at least two others are left to compare with). Checked: categories with at least three booked
 transactions on bank accounts (euros only) that count as income or an expense or in a property's rows – not transfer categories, a
 purchase's category (price or costs), nor categories counted as saving, financing or left out; transfers between the user's own
-accounts, Kontor's own bookings and what lies before "Ignorieren vor" (Kategorisieren) are left out. In the areas the user does not
+accounts, Kontor's own bookings and what lies outside the period chosen under Kategorisieren are left out. In the areas the user does not
 categorise (Kategorisieren) only a property's categories are checked. Hover: how many payments and their sum in € (signed); a click
 lists them. "Passt so" confirms they belong there – they are not reported again (new large payments are). The overview's "Offen"
 names such categories too. A hint only: no figure changes by it.

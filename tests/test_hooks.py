@@ -17,6 +17,7 @@ HOOK = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".claude",
 PRE_PUSH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".githooks", "pre-push")
 ENV = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t", GIT_COMMITTER_NAME="t",
            GIT_COMMITTER_EMAIL="t", GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_SYSTEM=os.devnull)
+ENV.pop("KONTOR_PUSH_OK", None)         # a release run with the exception (the user's yes) checks these tests too: the locks still lock
 
 
 @unittest.skipUnless(shutil.which("git"), "git fehlt")

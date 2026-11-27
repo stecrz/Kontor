@@ -229,7 +229,7 @@ def get_requests(w, ds):
     out = ["/api/status", "/api/status?fresh=1", "/api/dataset", "/api/config", "/api/plan", "/api/accounts", "/api/categories",
            "/api/sync", "/api/runs", "/api/log", "/api/receipts?files=1", "/api/assistant/status", "/api/assistant/chats",
            "/api/assistant/changes", "/api/help", "/api/categories/proposals", "/api/categories/written", "/api/categories/positions",
-           "/api/categories/unassigned?year=%s&min=0" % year, "/api/offline/verifier", "/api/timemachine", "/api/python",
+           "/api/categories/unassigned?min=0", "/api/categories/unassigned?year=%s&min=0" % year, "/api/offline/verifier", "/api/timemachine", "/api/python",
            "/api/transactions", "/api/transactions?limit=5000", "/api/transactions?q=" + urllib.parse.quote(D.LONG_WORD[:20]),
            "/api/transactions?q=" + urllib.parse.quote("99.999.999,99"), "/api/package/export"]
     for key in ds.get("areas") or {}:
@@ -280,7 +280,8 @@ def check_requests(t, run, ds):
         if str(c.get("path") or "").replace("\\", " / ") in fx_paths:
             t.assertFalse(c.get("sum_12m"), "a category of another currency summed in euros: %s" % c)
     # what the pages ask with a body (reading only)
-    for path, body in (("/api/report", {}), ("/api/rules/preview", {"config": {}}), ("/api/categories/areas", {"without": [], "wait": True})):
+    for path, body in (("/api/report", {}), ("/api/rules/preview", {"config": {}}), ("/api/categories/areas", {"without": [], "wait": True}),
+                       ("/api/categories/areas", {"period": {"from": "", "to": ""}, "wait": True})):
         code, r = run.call(path, body)
         t.assertIn(code, (200, 202), "%s: %s" % (path, r))
 

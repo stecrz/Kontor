@@ -3051,7 +3051,9 @@ class Assistant:
                            **({"suggestion_level": SUGGESTION_LEVELS.get(g.get("level"), "unsure")} if prop else {}),
                            **({"suggestions_differ_per_transaction": True} if prop and not g.get("proposal") else {}),
                            "examples": [{"date": t.get("date"), "amount": _num(t.get("amount")), "purpose": str(t.get("purpose") or "")[:80], "account": t.get("account")} for t in tx[:2]]})
-        return {"without_category": got.get("open", 0), "year": year or "all years", "by_counterparty": groups,
+        per = got.get("period") or {}
+        when = year or "%s to %s (the period the user chose under %s)" % (per.get("from") or "the first", per.get("to") or "today", tr("nav_zuordnen"))
+        return {"without_category": got.get("open", 0), "period": when, "by_counterparty": groups,
                 **({"more_groups": got["groups_total"] - len(groups)} if (got.get("groups_total") or 0) > len(groups) else {}),
                 "assigned_in_kontor_waiting_for_the_next_sync": got.get("waiting", 0),
                 "note": ("to categorize, propose with assign_categories (group, and a category from get_categories or category_names) -- Kontor writes it into "
@@ -6572,7 +6574,7 @@ TOOLS: List[dict] = [
            "year": {"type": "string", "description": "YYYY: only this year of the calculation"}}),
     _tool("get_categories", "figures", "read", "MoneyMoney's categories: position in the cash flow, budget, transactions and sum of the last twelve months.", {"text": {"type": "string", "description": "Only categories with this in their name"}}),
     _tool("get_uncategorized", "transactions", "read", "Bank transactions without a category, grouped by counterparty (group id), with Kontor's suggestion.",
-          {"year": {"type": "string", "description": "YYYY; left out: all years"}, "area": {"type": "string"}}),
+          {"year": {"type": "string", "description": "YYYY (the whole year); left out: the period the user chose on the page"}, "area": {"type": "string"}}),
     _tool("get_auto_bookings", "figures", "read", "Bookings of Kontor's rules in MoneyMoney's offline accounts: waiting for approval, made (newest first), the last syncs.", {"text": {"type": "string", "description": "Only bookings with this in account or text"}}),
     _tool("get_status", "figures", "read", "Kontor's state: when MoneyMoney was last read and synced, whether it runs, what is open (bookings waiting for approval, transactions without category or receipt, unconfirmed accounts, an update)."),
     _tool("get_securities", "figures", "read", "Securities accounts with their positions (value, cost basis)."),

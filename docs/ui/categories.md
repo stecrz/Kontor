@@ -14,11 +14,10 @@ the size of the group's sum (largest absolute sum first), at most 300 groups. On
 pending), on accounts with the position Bankguthaben, not Kontor's own bookings (#kontor marks), not a transfer between two accounts
 of the same area (counter IBAN of an own account in the same area, or paired with a counter-booking by the cash flow). Payments
 between two of the user's areas do appear (a contribution, withdrawal, salary or rent needs a category).
-Filters above the list: area chips (only ticked areas are listed and counted; the others' positions the cash flow estimates),
-"Ignorieren vor" (optional day, saved in the settings as assign_ignore_before: transactions booked before it are neither listed nor
-counted here nor in the overview's "Offen" -- the cash flow keeps estimating them; empty: all), year
-(booking year; "alle Jahre"), "ab … €" (only transactions whose absolute amount is at least this). The note "N Umsätze ohne
-Kategorie in MoneyMoney" counts the transactions matching these filters (not the groups). A blue banner counts assignments made
+Filters above the list: area chips (only ticked areas are listed and counted; the others' positions the cash flow estimates;
+saved), the period (categories.period; saved), "ab … €" (only transactions whose absolute amount is at least this; this view only,
+not saved, not in the sidebar's count), the level filter (categories.levels). The note "N Umsätze ohne Kategorie in MoneyMoney"
+counts the transactions matching these filters (not the groups). A blue banner counts assignments made
 from another device that wait to be written at the next sync at the Mac (they already count in Kontor). "Alle sicheren übernehmen
 (N)": N = transactions of the groups the level filter shows, not deselected, whose own suggestion is "sicher"; in the filter
 "Wahrscheinlich" the button reads "Alle wahrscheinlichen übernehmen (N)" and N also counts "wahrscheinlich" ones; never "unsicher"
@@ -32,9 +31,20 @@ groups whose level is that (a group's level is that of its least sure transactio
 "Sicher" lists only groups whose every suggestion is sure – sure suggestions in a mixed group count for "Alle sicheren übernehmen"
 under "Alle".
 
+### categories.period — Zeitraum
+Which booking days Kategorisieren covers: from – to, both days included; an empty field is open (from: since the first
+transaction; to: up to today and later). Saved in the settings (assign_from, assign_to) at each change and kept until the next.
+Not chosen yet: the running year, 1 January – 31 December – it moves on to the new year by itself on 1 January. Buttons: the
+running year and the year before (each fills 1 January – 31 December; a year chosen this way stays, also after the year turns),
+"Alle" (both empty); a button is highlighted when the fields hold what it fills. Transactions outside the period are
+neither listed nor counted: not here (the tab "Offen (N)", the note, the progress bar), not in the number beside "Kategorisieren"
+in the sidebar, not in the overview's open points (the sidebar number and the overview's "N Umsätze ohne Kategorie" are the
+same count: ticked areas and this period, as of the last report). The cash flow keeps estimating their positions; nothing in
+MoneyMoney changes. Replaces the former "Ignorieren vor" day (now the start of the period) and the year selection.
+
 ### categories.progress — Fortschritt (sicher zugeordnet / geschätzt)
 Above the note: a bar and "N von M Umsätzen sicher zugeordnet · P % des Betrags". M = the transactions under the same filters as the
-list (ticked areas, "Ignorieren vor", year, "ab … €"; only those that need a category: booked, on bank accounts, not Kontor's own
+list (ticked areas, the period, "ab … €"; only those that need a category: booked, on bank accounts, not Kontor's own
 bookings, not a transfer between accounts of the same area). N = of them, those with a category – MoneyMoney's or assigned in Kontor and
 waiting to be written; the cash flow counts these where their category says (surely placed). M − N = the open ones the list shows; the
 cash flow estimates their position (by the user's earlier categories or by name and purpose). P = the share of the absolute amounts
@@ -86,7 +96,7 @@ suggestion with a coloured dot for its level (green sicher, yellow wahrscheinlic
 
 ## categories.doubts — Auffällig
 Booked bank-account transactions that have a category (MoneyMoney's or waiting) which makes no sense to Kontor – coarse outliers,
-for the user to look at; nothing changes by itself. Same scope as "Offen" (areas ticked there, "Ignorieren vor"; all years; a
+for the user to look at; nothing changes by itself. Same scope as "Offen" (areas ticked there, the period chosen there; a
 transfer category on a booking the cash flow paired is never doubted). Tab count and note: N = groups (tab) / transactions (note).
 Doubted when, as if the transaction had no category, (1) Kontor's suggestion for it – the same as under "Offen", without meaning –
 is another category at least 60 % likely (at least 80 % where the counterparty has no past of its own and only a word other
