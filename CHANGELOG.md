@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.17.110 (2026-11-27 16:28)
+- Einrichtung: „Planung“ nicht mehr in der Einrichtung
+
 ## 3.17.109 (2026-11-27 16:02)
 - Konten & Regeln: Reiter „Bereiche“ vor „Konten“
 - Einrichtung: Cashflow-Positionen nötig und vor den Buchungsregeln – „Übernehmen und weiter“ übernimmt Kontors Vorschläge; „Abgleich“ und „Kategorisieren“ nicht mehr in der Einrichtung

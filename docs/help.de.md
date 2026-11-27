@@ -46,7 +46,7 @@ Kontor einrichten: Die Einrichtung führt dich in ersten Schritten durch alles, 
 
 **Wo was liegt** – eine Faustregel: Was deine Zahlen bestimmt, steht unter **Konten & Regeln** (Bereiche, Konten, Kontostände, Cashflow-Positionen, Buchungsregeln, Steuer). Wie Kontor arbeitet, steht unter **Einstellungen** (Allgemein, MoneyMoney-Sync, Zugang, Belege, KI-Assistent, Updates, Sichern & Zurücksetzen).
 
-Die **Einrichtung** ist ein geführter Weg durch genau diese Seiten: alle Bausteine in einer sinnvollen Reihenfolge, jeder zeigt, ob er schon eingerichtet ist, und öffnet seine Seite. Beim ersten Start öffnet Kontor sie von selbst. Nötig sind MoneyMoney, Bereiche, Konten und Cashflow-Positionen – sie bauen aufeinander auf –, der Rest ist optional und jederzeit nachholbar. Die Einrichtung enthält nur, was du einmal einrichtest: Kategorisieren ist laufende Arbeit (im Menü), den Abgleich stellst du bei Bedarf unter Einstellungen → MoneyMoney-Sync ein. Sind die nötigen Schritte erledigt, blendet **Einrichtung abgeschlossen** sie aus dem Menü aus; „Einrichtung prüfen“ oben rechts unter Konten & Regeln öffnet sie wieder. Dort liest „Einrichtung prüfen“ MoneyMoney und meldet, ob alle Konten und Kategorien, auf die sich deine Einstellungen beziehen, noch existieren – etwa nachdem du in MoneyMoney etwas umbenannt hast.
+Die **Einrichtung** ist ein geführter Weg durch genau diese Seiten: alle Bausteine in einer sinnvollen Reihenfolge, jeder zeigt, ob er schon eingerichtet ist, und öffnet seine Seite. Beim ersten Start öffnet Kontor sie von selbst. Nötig sind MoneyMoney, Bereiche, Konten und Cashflow-Positionen – sie bauen aufeinander auf –, der Rest ist optional und jederzeit nachholbar. Die Einrichtung enthält nur, was du einmal einrichtest: Kategorisieren ist laufende Arbeit (im Menü), den Abgleich stellst du bei Bedarf unter Einstellungen → MoneyMoney-Sync ein, die Annahmen der Planung auf der Seite Planung. Sind die nötigen Schritte erledigt, blendet **Einrichtung abgeschlossen** sie aus dem Menü aus; „Einrichtung prüfen“ oben rechts unter Konten & Regeln öffnet sie wieder. Dort liest „Einrichtung prüfen“ MoneyMoney und meldet, ob alle Konten und Kategorien, auf die sich deine Einstellungen beziehen, noch existieren – etwa nachdem du in MoneyMoney etwas umbenannt hast.
 
 ![Einrichtung](img/de/setup.png)
 
@@ -57,7 +57,7 @@ Die **Einrichtung** ist ein geführter Weg durch genau diese Seiten: alle Bauste
 5. **Historische Kontostände** – den bisherigen Verlauf einmalig aus MoneyMoney übernehmen.
 6. **Cashflow-Positionen** – wo jede Kategorie zählt; mit einer Empfehlung für deine Kategorien in MoneyMoney. Kontor füllt jede Kategorie mit einem Vorschlag; prüfe sie und übernimm sie mit **Übernehmen und weiter**.
 7. **Buchungsregeln** (optional) – Darlehen, Beteiligungen, Kontenspiegel.
-8. **Immobilien**, **Planung**, **Steuer**, **Belege**, **iPhone-Zugriff**, **KI-Assistent** (alle optional).
+8. **Immobilien**, **Steuer**, **Belege**, **iPhone-Zugriff**, **KI-Assistent** (alle optional).
 
 Danach erstellt „Auswertung erstellen“ die erste Auswertung. Die Sprache (Deutsch oder Englisch) wählst du auf der Anmeldeseite, in der Einrichtung oder unter Einstellungen → Allgemein. Dort stellst du auch das Erscheinungsbild ein: dunkel (Standard), hell oder wie das System – je Gerät. Beides gilt sofort, ohne Speichern.
 

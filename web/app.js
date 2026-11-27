@@ -1651,7 +1651,6 @@ const MODULES = [
   {id: 'categories', t: t('mod_categories'), d: t('kategorien_auswaehlen_d'), done: () => positionsConfirmed(), href: '#accounts/positions'},
   {id: 'rules', t: t('mod_rules'), d: t('darlehen_spiegeln_und_verzinsen_beteil'), done: () => hasRules(), href: '#accounts/rules', optional: true},
   {id: 'properties', t: t('mod_properties'), d: t('kalkulationen_anlegen_mit_konten_und'), done: () => (S.CFG.real_estate || []).length > 0, href: '#properties', optional: true},
-  {id: 'planning', t: t('mod_planning'), d: t('horizont_inflation_steigerungen_darleh'), done: () => !!S.DATA, href: '#planning', optional: true},
   {id: 'tax', t: t('mod_tax'), d: t('vermietungskategorie_darlehen_objekt_a'), done: () => ['property_loans', 'depreciation', 'positions', 'entities'].some(k => Object.keys((S.CFG.tax || {})[k] || {}).length), href: '#accounts/tax', optional: true},
   {id: 'receipts', t: t('mod_receipts'), d: t('belegordner_und_ablagemuster_belege_zu'), done: () => !!(S.CFG.receipts || {}).folder_confirmed, href: '#settings/receipts', optional: true},
   {id: 'iphone', t: t('mod_iphone'), d: t('zugriff_vom_iphone_d'), done: () => (((S.CFG || {}).ui || {}).bind || '127.0.0.1') !== '127.0.0.1', href: '#settings/access', optional: true},

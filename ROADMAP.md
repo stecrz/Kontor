@@ -452,6 +452,9 @@ anhängen – nie löschen.
   und „Kategorisieren“ (laufende Arbeit, nichts zum Einrichten). Abgelöst: die Reihenfolge aus 3.15.2 („Buchungsregeln vor
   Cashflow-Positionen, Kategorisieren am Ende“). `#accounts` öffnet weiter die Konten (dort warten neue Konten), obwohl
   „Bereiche“ vorne steht. (umgesetzt in 3.17.109)
+- **Planung nicht in der Einrichtung** (Nutzer, 2026-11-27, auf Empfehlung): Grund wie beim Abgleich – ihre Annahmen (Horizont,
+  Inflation, Steigerungen) haben Standardwerte, der Schritt galt mit der ersten Auswertung von selbst als „eingerichtet“, ohne
+  dass man etwas tat; die Seite ist noch ALPHA, ihre Annahmen prüft man auf ihr selbst. (umgesetzt in 3.17.110)
 
 ## Offen (Entscheidung steht aus – mit Empfehlung vorlegen, wenn der Punkt dran ist)
 - Umsatzsteuer-Voranmeldung direkt an ELSTER senden (ELSTERs Programmbibliothek ERiC, Anmeldung als Hersteller, Zertifikat und

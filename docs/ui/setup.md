@@ -1,7 +1,7 @@
 # setup — Einrichtung
 A guided way through the pages that set Kontor up – not a store of its own: each step opens the page where it is done (Konten &
-Regeln, Einstellungen, Immobilien, Planung). Only what is set up once: no daily work (Kategorisieren) and no setting that simply
-has its default (Abgleich). It stays in the menu until the user closes it ("Einrichtung
+Regeln, Einstellungen, Immobilien). Only what is set up once: no daily work (Kategorisieren) and no setting that simply has
+its default and counted as done by itself (Abgleich, Planung – their assumptions are checked on the pages themselves). It stays in the menu until the user closes it ("Einrichtung
 abgeschlossen"); while it is open, the pages it leads to carry a slim line "‹ Zurück zur Einrichtung · Weiter zu … ›".
 
 ## setup.language — Sprache · Language
@@ -20,8 +20,7 @@ button "Einrichten" or "Anpassen" leading to its page. Steps and when they count
   the user took them over ("Übernehmen und weiter: Buchungsregeln" on that page while the setup is open, or any "Speichern"
   there) or chose a position of their own.
 - **Buchungsregeln** (optional): loans, participations, account mirrors; done when there is at least one rule.
-- **Immobilien**, **Planung**, **Steuer**, **Belege**, **iPhone-Zugriff**, **KI-Assistent** (switched on and a model ready), all
-  optional.
+- **Immobilien**, **Steuer**, **Belege**, **iPhone-Zugriff**, **KI-Assistent** (switched on and a model ready), all optional.
 
 ## setup.finish — Einrichtung abgeschlossen / prüfen
 "Einrichtung abgeschlossen" hides the setup from the menu (possible once the needed steps – those without "optional" – are done);

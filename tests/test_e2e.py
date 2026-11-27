@@ -5336,10 +5336,10 @@ class BrowserTest(unittest.TestCase):
                 # Einrichtung: Bausteine, Positionen-Editor speichern
                 pg.click("#nav a[href='#setup']"); pg.wait_for_selector(".setup-list")
                 self.assertIn("Bereiche", pg.query_selector("#main").inner_text())
-                # the steps: only what is set up once -- no "Kategorisieren" (daily work), no "Abgleich" (a setting with defaults);
+                # the steps: only what is set up once -- no "Kategorisieren" (daily work), no "Abgleich" or "Planung" (defaults);
                 # the cash flow positions needed and before the optional booking rules, as in the tabs of Konten & Regeln
                 steps = pg.eval_on_selector_all(".setup-list .srow .t", "es => es.map(e => e.firstChild.textContent.trim())")
-                self.assertNotIn("Kategorisieren", steps); self.assertNotIn("Abgleich", steps)
+                self.assertNotIn("Kategorisieren", steps); self.assertNotIn("Abgleich", steps); self.assertNotIn("Planung", steps)
                 self.assertLess(steps.index("Bereiche"), steps.index("Konten")); self.assertEqual(steps.index("Buchungsregeln"), steps.index("Cashflow-Positionen") + 1)
                 pos_row = ".setup-list .srow:nth-child(%d)" % (steps.index("Cashflow-Positionen") + 1)
                 self.assertEqual(pg.inner_text(pos_row + " .pill"), "offen")                       # needed, though Kontor proposes them
