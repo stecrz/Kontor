@@ -6,6 +6,7 @@ small charts (balance.lines); table and large chart can be moved, any small char
 running month at the right (faded and hatched in the table, dashed and shaded in the charts) – values Kontor projects from
 Planung, not actual balances. The area switch at the top: a company area shows the company's own accounts (100 %); the private
 area holds a company as its participation account (share × the company's net worth).
+With "Kaufkraft" on (balance.toolbar.real) every amount of the table and the charts is in today's money (see there).
 
 ## balance.toolbar — Monate / Jahre
 "Monate": one table column per month – the running year and the one before; "‹ ab 2025 ›" names the first year shown (earlier
@@ -15,6 +16,20 @@ The running year's column ("2026", faded, tooltip "Ist + Plan") holds its actual
 with a value – with a plan to December the planned December balance, not today's; plan years (hatched) their planned December.
 The charts plot month ends in both views; only their range buttons differ (months: 6 M, 1 J, 2 J, 3 J; years: 1 J, 3 J, 5 J,
 10 J). "Excel": the table as a spreadsheet.
+
+### balance.toolbar.real — Kaufkraft
+The switch "Kaufkraft": every amount of the table and of all charts (with value, change, average per month, highest and lowest)
+in the money of the running month – balance × price level of the running month ÷ price level of that month. Past months: the
+consumer price index of the Statistisches Bundesamt (Verbraucherpreisindex, VPI, 2020 = 100; monthly averages, used for the
+month end); months after its last one – the running month, the plan – with the area's inflation of Planung (default 2 % a
+year), the rate the plan itself grows with, so the plan joins on without a jump. Before January 1991 unknown: "–". The tag
+beside it, "in Kaufkraft von Nov 2026", names the month whose money the figures are in; its hover text: until when the index is
+known, the rate assumed after it, and whether the index was fetched (date) or shipped with Kontor. "Kaufkraft nicht verfügbar"
+(yellow): the factors could not be loaded – the figures are the real ones. Not converted: the equity ratio (a share, the same
+either way), accounts in another currency, drawers (transactions, a month's calculation), other pages. Each cell is rounded to
+the cent on its own, so a sum can differ from its rows by a cent. "Excel" exports what the switch shows (a line at the end
+says which money). Kontor ships the index and, while the switch is on, fetches newer months itself from the Deutsche Bundesbank
+(at most once a day; nothing of yours is sent).
 
 ### balance.toolbar.view — Ansicht speichern
 "Ansicht speichern" keeps the current view on this device, one for months and one for years: the charts' ranges (as their length,

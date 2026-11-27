@@ -1,5 +1,11 @@
 # Änderungen
 
+## 3.17.113 (2026-11-27 18:14)
+- Bilanz: Schalter „Kaufkraft“ – Tabelle und alle Grafiken in heutigem Geld: Vergangenheit nach dem Verbraucherpreisindex (ab 1991), Plan nach der Inflation der Planung
+- Bilanz: neue Monatswerte des Index holt Kontor bei eingeschaltetem Schalter selbst bei der Bundesbank – fester Weg, abgeschirmt, sendet nichts von dir
+- Bilanz: Excel und Druck übernehmen die Kaufkraft
+- Entwicklung: Lücke der Prüfung vor dem Update notiert (neue Aufrufer des abgeschirmten Lesers)
+
 ## 3.17.112 (2026-11-27 17:51)
 - Bilanz: Grafik stapelt Neues außen – ein neues Darlehen kommt unter das alte, das unverändert weiterläuft; Konten mit Vorzeichenwechsel, Wegfallendes und stark Schwankendes außen, Ruhiges an der Nulllinie
 - Entwicklung: Test der Stapelreihenfolge (Node)

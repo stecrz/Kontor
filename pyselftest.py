@@ -19,7 +19,7 @@ def parts() -> None:
     only when it needs them are tried in works(); tests/test_python.py keeps both true as the program grows)."""
     class Loaded:
         import access, assistant, auth, categorize, changelog, components, core, demo, excel, history_import, i18n, kontor, llm_local, mac_app
-        import memory, mm_bridge, mm_categories, mm_history, model, pdf_tables, pyboot, pyruntime, realestate, receipt_text
+        import memory, mm_bridge, mm_categories, mm_history, model, pdf_tables, price_index, pyboot, pyruntime, realestate, receipt_text
         import receipts, report, rules, security_names, service, storage, table_text, tax, tls_cert, update_guard, updates
         import web_reader, web_search, webauthn, devices, qr
 

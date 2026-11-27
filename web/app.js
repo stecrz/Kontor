@@ -538,6 +538,7 @@ const fmtStamp = ts => ts ? FD(ts) + (ts.length >= 16 ? ' ' + ts.slice(11, 16) :
 function printHead() {
   const st = S.STATUS || {}, m = st.moneymoney || {}, ttl = $('#page-title'), area = $('#bereich-seg:not(.hidden) button.on');
   let what = `<b>${esc(ttl && ttl.firstChild ? ttl.firstChild.textContent.trim() : '')}</b>` + (area ? ' · ' + esc(area.textContent) : '');
+  if (realOn()) what += ' · ' + esc(t('kaufkraft_von', MY(S.PIX.data.base)));
   const D = B(); if (S.tab === 'cashflow' && D) { const [cur] = cfMonths(D, S.cfZeit); if (cur && cur.length) what += ' · ' + esc(cfSpanLabel(cur)) + ' (' + esc(spanText(cur.length)) + ')'; }
   const now = new Date(), stamp = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0') + ' ' + String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
   return `<span>${what}</span><span>Kontor ${esc(PAGE_VERSION)} · ${esc(t('druck_am', fmtStamp(stamp)))} · ${esc(t('druck_mm_stand', fmtStamp(m.as_of)))}</span>`;
@@ -547,7 +548,7 @@ function printRecolor() {
   ACC_CACHE.clear();
   try {
     if (S.tab === 'balance') {
-      const D = B();
+      const D = BB();
       if (BCH.d) { BCH.d = bchData(D); bchDraw(); }
       const pr = lcPosRole(D); if (pr && LC.pos && $('.lc[data-lc="pos"]')) { lcInit('pos', D, null, ROLE[pr][0], ROLE[pr][1], pr); lcDraw('pos'); }
       $$('#main i.pos-dot[data-sh]').forEach(i => { const [c, n, j] = i.dataset.sh.split('|'); let sh = accShade(c, +n); if (j) sh = accShade(sh.color, +j); i.style.cssText = swatch(sh.color, sh.hatch); });
@@ -1147,6 +1148,54 @@ async function loadAll() {
   statusMini(); bereichSeg();
 }
 const B = () => (S.DATA && S.DATA.areas && S.DATA.areas[S.area] && !S.DATA.areas[S.area].error) ? S.DATA.areas[S.area] : null;
+// ---------------------------------------------------------------- Bilanz in heutiger Kaufkraft (switch "Kaufkraft")
+// Kontor computes each month's factor (price_index.py: the consumer price index, after its last month the area's inflation of
+// Planung); the page only multiplies: a copy of the area's balance sheet with every amount by month times its factor -- the
+// same walk as price_index.deflate (not the equity ratio, not accounts in another currency). Table and every chart of the
+// balance sheet read this copy (BB), drawers and other pages the real amounts (B).
+const PIX_AGE = 10 * 60 * 1000;          // factors asked again after this (newer months of the index may have come meanwhile)
+const MKEY = /^\d{4}-(0[1-9]|1[0-2])$/;
+const RB = {d: null, pix: null, out: null};
+function pixKey(D) {
+  const pm = D.plan_months || [], last = pm.length ? pm[pm.length - 1] : D.months[D.months.length - 1];
+  return [S.area, D.months[0], last, D.actual_until, (D.plan || {}).inflation_percent_pa ?? ''].join('|');
+}
+async function pixLoad() {
+  // the factors for the area on screen, when the switch is on (the service fetches newer months of the index by itself then)
+  const D = B(); if (!S.realB || !D || !(D.months || []).length) return;
+  const key = pixKey(D); if (S.PIX && S.PIX.key === key && Date.now() - S.PIX.at < PIX_AGE) return;
+  const [area, from, to, base] = key.split('|');
+  try { S.PIX = {key, at: Date.now(), data: await api(`/api/price_index?area=${encodeURIComponent(area)}&from=${from}&to=${to}&base=${base}`)}; }
+  catch (e) { S.PIX = {key, at: Date.now(), error: e.message || String(e)}; }
+}
+const realOn = () => { const D = B(); return !!(S.realB && S.tab === 'balance' && D && S.PIX && S.PIX.data && S.PIX.key === pixKey(D)); };
+function realBalance(o, f) {
+  if (Array.isArray(o)) return o.map(x => realBalance(x, f));
+  if (!o || typeof o !== 'object') return o;
+  const ks = Object.keys(o);
+  if (ks.length && ks.every(k => MKEY.test(k)) && ks.every(k => o[k] == null || typeof o[k] === 'number')) {
+    const r = {}; for (const k of ks) r[k] = o[k] == null || f[k] == null ? null : o[k] * f[k]; return r;          // (a month without a factor: unknown)
+  }
+  if (o.role === 'foreign_currency') return o;
+  const r = {}; for (const k of ks) r[k] = k === 'equity_ratio' ? o[k] : realBalance(o[k], f); return r;
+}
+function BB() {
+  const D = B(); if (!realOn()) return D;
+  if (RB.d !== D || RB.pix !== S.PIX.data) { RB.d = D; RB.pix = S.PIX.data; RB.out = Object.assign({}, D, {balance: realBalance(D.balance, S.PIX.data.factors)}); }
+  return RB.out;
+}
+const MY = m => MONATE[+m.slice(5) - 1] + ' ' + m.slice(0, 4);          // "Nov 2026"
+function realCtl() {
+  // the switch, and while it is on: which month's money the figures are in (the details in its tooltip)
+  let pill = '';
+  if (S.realB && S.PIX && S.PIX.error) pill = `<em class="pill warn" title="${esc(S.PIX.error)}">${t('kaufkraft_fehlt')}</em>`;
+  else if (realOn()) {
+    const x = S.PIX.data, rate = (+x.rate).toLocaleString(LANG === 'en' ? 'en' : 'de', {minimumFractionDigits: 1, maximumFractionDigits: 1});
+    const tip = t('kaufkraft_stand', MY(x.base), MY(x.known_until), rate, MY(x.first)) + ' ' + (x.fetched ? t('kaufkraft_geladen', FD(x.fetched)) : t('kaufkraft_mitgeliefert', FD(x.bundled)));
+    pill = `<em class="pill info" title="${esc(tip)}">${t('kaufkraft_von', MY(x.base))}</em>`;
+  }
+  return `<span data-ex="balance.toolbar.real" class="tb-real">${swCtl('kaufkraft-an', S.realB, t('kaufkraft'), t('kaufkraft_tip'))}${pill}</span>`;
+}
 const BN = u => (S.DATA && S.DATA.area_names && S.DATA.area_names[u || S.area]) || '';
 function mmState(st) {
   const m = st.moneymoney || {};
@@ -2182,7 +2231,7 @@ const drawerDirty = () => histTyped($('#drawer')) || !!($('#drawer #h-csv') && $
 // ---------------------------------------------------------------- Bilanz
 function vBilanz() {
   // Eine Tabelle: Positionen (farbig, aufklappbar) mit ihren Konten; Plan-Spalten rechts angehängt
-  const D = B(); if (!D) return noData;
+  const D = BB(); if (!D) return noData;
   const C = cols(null, true);
   const pr = D.balance.projection || null;
   const proj = pr ? Object.fromEntries(pr.rows.map(r => [r.id, r.amounts])) : {};
@@ -2194,7 +2243,7 @@ function vBilanz() {
   S.depOpen = S.depOpen || {};                          // portfolios opened into their securities (each on its own)
   const ord = bilBlocks(), at = ord.indexOf('table');
   // top: the view (months/years) for chart and table; the table options sit in its header cell (no gap to the chart)
-  const top = `<div class="toolbar" data-ex="balance.toolbar">${viewCtl()}${yearCtl()}<span class="sp"></span>${viewBtns()}${xlsxBtn('balance')}</div>`, chart = vBilanzChart(D);
+  const top = `<div class="toolbar" data-ex="balance.toolbar">${viewCtl()}${yearCtl()}<span class="tb-sep"></span>${realCtl()}<span class="sp"></span>${viewBtns()}${xlsxBtn('balance')}</div>`, chart = vBilanzChart(D);
   let h = '';                                           // the table (placed above, between or below the charts, see the end)
   const tag = r => (r.offline && !r.group ? `<span class="tag">${t('manuell')}</span>` : '') + (hidden(r) ? `<span class="tag">${t('ausgeblendet')}</span>` : '')
     + (r.projected_before ? `<span class="tag warn" title="${t('vor_0_ist_kein_stand', ML(r.projected_before))}">${t('vor_0_unbekannt', ML(r.projected_before))}</span>` : '');
@@ -2965,7 +3014,7 @@ function bindBilanzChart(main) {
   const bac = $('#big-accs', main); if (bac) bac.addEventListener('change', e => {
     const cb = e.target.closest('input[data-k]'); if (!cb || !BCH.d || !BCH.d.off) return;
     if (cb.checked) BCH.d.off.delete(cb.dataset.k); else BCH.d.off.add(cb.dataset.k);
-    BCH.d = bchData(B()); bchDraw();
+    BCH.d = bchData(BB()); bchDraw();
   });
   const lb = $('#bch-link', main); if (lb) lb.addEventListener('click', () => { S.bchLink = !bchLinked(); route(); });
   const tb = $('.wrap tbody', main);
@@ -3434,7 +3483,7 @@ function lcInit(id, D, rollen, title, color, stack) {
   LC[id] = {id, d, i0, i1, f0: i0, f1: i1, btn, title, color, stack: stack || false, mode, drag: null, gesture: null, geo: null};
 }
 function bindBilanzLines(main) {
-  const grid = $('#lc-grid', main), D = B(); if (!grid || !D) return;
+  const grid = $('#lc-grid', main), D = BB(); if (!grid || !D) return;
   if (S.lcModus !== S.mode) { S.lcModus = S.mode; viewLcRange((viewSaved(S.mode) || {}).lc); }      // view switched: its own default range
   const has = id => !!$(`.lc[data-lc="${id}"]`, grid);
   const draw = () => {
@@ -7096,7 +7145,7 @@ async function route() {
   try {
     let h = '';
     if (S.tab === 'overview') h = await vUebersicht();
-    else if (S.tab === 'balance') h = vBilanz();
+    else if (S.tab === 'balance') { await pixLoad(); h = vBilanz(); }
     else if (S.tab === 'cashflow') h = vKapitalfluss(false);
     else if (S.tab === 'planning') h = vKapitalfluss(true);
     else if (S.tab === 'bookings') h = vBuchungen(await api('/api/runs'));
@@ -7339,7 +7388,7 @@ function bind(main) {
   $$('[data-goto]', main).forEach(c => c.addEventListener('click', e => { if (!e.target.closest('a, button, input, select')) go(c.dataset.goto); }));
   $$('[data-xlsx]', main).forEach(b => b.addEventListener('click', () => download(b.dataset.xlsx === 'property' ? `/api/export/property.xlsx?id=${encodeURIComponent(b.dataset.immo || '')}&calculation=${encodeURIComponent(b.dataset.kalk || '')}` : `/api/export/${b.dataset.xlsx}.xlsx?area=${encodeURIComponent(b.dataset.bereich || S.area || '')}&mode=${S.mode === 'years' ? 'years' : 'months'}`
     + (b.dataset.xlsx === 'transactions' ? '&' + umsQuery().toString() : '')
-    + (b.dataset.xlsx === 'balance' ? `&open=${encodeURIComponent(Object.keys(S.posOpen || {}).filter(k => S.posOpen[k]).join(','))}&dep=${encodeURIComponent(Object.keys(S.depOpen || {}).filter(k => S.depOpen[k]).join(','))}&all=${S.alleB ? 1 : 0}` : ''))));
+    + (b.dataset.xlsx === 'balance' ? `&open=${encodeURIComponent(Object.keys(S.posOpen || {}).filter(k => S.posOpen[k]).join(','))}&dep=${encodeURIComponent(Object.keys(S.depOpen || {}).filter(k => S.depOpen[k]).join(','))}&all=${S.alleB ? 1 : 0}${realOn() ? '&real=1' : ''}` : ''))));
 
   // Einrichtung
   const wc = $('#w-check', main); if (wc) wc.addEventListener('click', async () => {
@@ -9640,7 +9689,7 @@ document.addEventListener('click', e => {
     const box = st.closest('#von-jahr'), y = Math.min(+box.dataset.max, Math.max(+box.dataset.min, +box.dataset.y + +st.dataset.d));
     S.vonJahr = y === +box.dataset.max - (MONTH_YEARS - 1) ? null : y; S.toEarlier = +st.dataset.d < 0; route(); }      // an earlier year: start with it
 });
-document.addEventListener('change', e => { const id = e.target.id; if (id === 'planan') { S.plan = e.target.checked; route(); } else if (id === 'realan') { S.real = e.target.checked; route(); } else if (id === 'alle-zeilen') { if (S.tab === 'balance') S.alleB = e.target.checked; else S.all = e.target.checked; route(); } });
+document.addEventListener('change', e => { const id = e.target.id; if (id === 'planan') { S.plan = e.target.checked; route(); } else if (id === 'realan') { S.real = e.target.checked; route(); } else if (id === 'kaufkraft-an') { S.realB = e.target.checked; route(); } else if (id === 'alle-zeilen') { if (S.tab === 'balance') S.alleB = e.target.checked; else S.all = e.target.checked; route(); } });
 $('#menu-btn').addEventListener('click', () => $('.side').classList.toggle('open'));
 // the menu over the page (a narrow window, the iPhone): an entry closes it -- also the page already open (no new address, no new
 // page drawn); Esc closes it like any menu
@@ -9660,11 +9709,11 @@ document.addEventListener('pointerdown', e => {
   const key = DRW.key; closeDrawer(); DRW.closed = key ? {key, t: Date.now()} : null;
 });
 document.addEventListener('keydown', () => { if (!$('#drawer').classList.contains('open')) DRW.closed = null; }, true);   // (Enter on the row: as a new press)
-try { const s = JSON.parse(LS.get('kontor.ui') || '{}'); Object.assign(S, {plan: s.plan !== false, real: !!s.real, area: s.area || null}); } catch (e) {}
+try { const s = JSON.parse(LS.get('kontor.ui') || '{}'); Object.assign(S, {plan: s.plan !== false, real: !!s.real, realB: !!s.realB, area: s.area || null}); } catch (e) {}
 viewApply(viewLoad());
 let SNAP_T = null;
 window.addEventListener('resize', () => { clearTimeout(SNAP_T); SNAP_T = setTimeout(() => { if (!PRINT.on && ['balance', 'cashflow', 'planning'].includes(S.tab)) $$('#main .wrap.snap').forEach(w => { const l = w.scrollLeft; snapTable(w); w.scrollLeft = snapLeft(w, l); }); }, 150); });
-window.addEventListener('beforeunload', () => { try { LS.set('kontor.ui', JSON.stringify({plan: S.plan, real: S.real, area: S.area})); } catch (e) {} });
+window.addEventListener('beforeunload', () => { try { LS.set('kontor.ui', JSON.stringify({plan: S.plan, real: S.real, realB: S.realB, area: S.area})); } catch (e) {} });
 setInterval(async () => { if (S.csrf && !document.hidden && !OFFLINE.mode) { try { await pollStatus(); } catch (e) {} } }, 30000);
 // a newer version of the assistant found meanwhile (the service looks once a day): marked without a reload -- only the status, asked on this Mac
 setInterval(async () => { if (S.csrf && !document.hidden && asOn() && AS.st.local && !asLoading() && !(S.tab === 'settings' && S.sub === 'assistant')) { try { const st = await api('/api/assistant/status'); if (asOn()) { AS.st = st; statusMini(); } } catch (e) { /* the next time */ } } }, 600000);

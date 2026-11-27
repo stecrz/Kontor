@@ -1180,6 +1180,9 @@ class NothingGoesOut(unittest.TestCase):
              "llm_local.py": {"api.github.com", "huggingface.co"},
              "pyruntime.py": {"github.com"},                # Kontor's own Python: the one file named there, on your click (over llm_local's checked way)
              "security_names.py": {"api.openfigi.com"},
+             # the consumer price index for the balance sheet in today's money: newer months from the Bundesbank, through the
+             # internet search's sealed reader, only while the switch is on (price_index.py opens no connection itself)
+             "price_index.py": {"api.statistiken.bundesbank.de"},
              # the internet search's sources (each fetch after your click; the reader checks the host again) -- and, named only:
              # the program's page (in its User-Agent), the ECB's and GLEIF's pages that results link to
              "web_search.py": {"www.wikidata.org", "www.gesetze-im-internet.de", "api.gleif.org", "data-api.ecb.europa.eu", "api.statistiken.bundesbank.de",
@@ -1241,6 +1244,12 @@ class NothingGoesOut(unittest.TestCase):
         self.assertEqual(set(updates.ALLOWED_HOSTS), {"api.github.com", "codeload.github.com", "github.com", "raw.githubusercontent.com", "objects.githubusercontent.com"})
         self.assertEqual(security_names.HOST, "api.openfigi.com")
         import web_search                                                # the internet search: these hosts and no others (a result of tier 2 or 3: only its own)
+        import price_index                                               # the price index: one fixed address, GET, nothing of yours
+        req = price_index.request()
+        self.assertEqual((price_index.HOST, req["hosts"], req["method"], req["as"], urlparse(req["url"]).hostname, urlparse(req["url"]).scheme),
+                         ("api.statistiken.bundesbank.de", ["api.statistiken.bundesbank.de"], "GET", "csv", "api.statistiken.bundesbank.de", "https"))
+        self.assertEqual(req["url"], price_index.URL % price_index.add(price_index.BUNDLED_LAST, -price_index.BACK))
+        self.assertEqual((req["headers"], req["user_agent"]), ({}, web_search.NEUTRAL_AGENT))
         self.assertEqual({s: set(v["hosts"]) for s, v in web_search.SOURCES.items()},
                          {"wikipedia": {"de.wikipedia.org", "en.wikipedia.org"}, "wikidata": {"www.wikidata.org"}, "laws": {"www.gesetze-im-internet.de"},
                           "gleif": {"api.gleif.org"}, "ecb": {"data-api.ecb.europa.eu"}, "bundesbank": {"api.statistiken.bundesbank.de"}, "eurostat": {"ec.europa.eu"},

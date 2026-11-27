@@ -32,6 +32,8 @@ Ausgangspunkt: der Commit des letzten Sprungs, `L=$(git log --format=%H --grep='
    - Englische Hilfe: jeder seit `$L` geänderte Abschnitt (`git diff $L origin/main -- docs/help.de.md` nennt sie) vollständig
      übertragen, auch die Kurzfassungen neuer Abschnitte; Hilfe de/en als Ganzes gegenlesen (gleiche Anker).
    - `README.md` als Ganzes gegen den Stand.
+   - Verbraucherpreisindex, den Kontor mitliefert (`price_index.py`), auffrischen: `python3 .claude/tools/vpi.py` – Kontor holt neuere
+     Monate selbst, die mitgelieferte Reihe ist die Grundlage (und nach einem neuen Basisjahr die neue Basis).
    - Bilder für Hilfe und README neu: `tests/screenshots.py` (de/en, erfundene Daten).
    - `HIGHLIGHTS.md`: Überblick der neuen Hauptversion aus dem Changelog seit `$L` (höchstens sechs Punkte, je eine Zeile bis 150
      Zeichen, keine „Entwicklung“; `HighlightsTests`).

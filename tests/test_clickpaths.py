@@ -65,7 +65,7 @@ SHOWING = ("overview", "balance", "cashflow", "planning", "properties", "tax", "
 # switches of a view, safe to click anywhere (the choice of an area, months or years, levels, periods, ranges ...)
 TOGGLES = ("#bereich-seg button, #modus-seg button, #cf-ebene button, #cf-zeit button, #cf-heat-mode button, #cf-pie-art button, "
            "#bch-rb button, #log-min button, #von-jahr button, .cf-shift, #pos-all, #bch-plan, #bch-link, .lc .lc-big, "
-           "#main .tabs button, #main label:has(#alle-zeilen), #main label:has(#planan), #main label:has(#realan), "
+           "#main .tabs button, #main label:has(#alle-zeilen), #main label:has(#planan), #main label:has(#realan), #main label:has(#kaufkraft-an), "
            "#main tr.pos td:first-child, #main table.cf-names tr[data-tog] td:first-child, #main details > summary")
 
 # what the page holds as its view (compared when the same view of the same data is opened again)
@@ -813,6 +813,7 @@ class _Kontor:
         if c.all_new:
             store.save("state.json", dict(T.ALL_NEW))
         app = App(store, d, bridge_factory=T.MockBridge)
+        app.price_reader = lambda req: {"ok": False, "error": "network"}         # "Kaufkraft": the price index is never fetched in a test
         app.do_run(False, True)
         if c.assistant:
             import test_assistant as TA

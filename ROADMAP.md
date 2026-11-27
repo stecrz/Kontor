@@ -476,6 +476,15 @@ anhängen – nie löschen.
   Selbst entschieden (zurückzunehmen auf Wunsch): die Konten einer Position bleiben beisammen – ein Konto mit Vorzeichenwechsel
   steht daher am Rand seiner Position, nicht des ganzen Stapels; ohne sichtbaren Unterschied gilt die bisherige Reihenfolge der
   Tabelle; das Werte-Fenster behält die Reihenfolge der Tabelle. Abgelöst: „erste Position der Tabelle oben“. (umgesetzt in 3.17.112)
+- **Bilanz in heutiger Kaufkraft** (Nutzer, 2026-11-27): Wo Kontor historische oder künftige Bestände zeigt, wahlweise in
+  heutiger Kaufkraft – in der Bilanz mit allen ihren Grafiken ein Schalter. Vergangene Werte nach der tatsächlichen Teuerung
+  (amtliche Werte, gern aus dem Internet, Sicherheit beachten), künftige nach einer realistischen Inflation. Nicht im Cashflow:
+  dahinter stehen konkrete Umsätze. Die historischen Werte müssen sich auch künftig von selbst fortschreiben, nicht nur einmal
+  rückwirkend gelten. Umsetzung: Verbraucherpreisindex des Statistischen Bundesamts (ab 1991) mitgeliefert, neuere Monate holt
+  Kontor bei eingeschaltetem Schalter selbst bei der Bundesbank (fester Weg im abgeschirmten Leser, sendet nichts, geprüft, neues
+  Basisjahr angekettet); nach dem letzten bekannten Monat und im Plan die Inflation der Planung des Bereichs (Standard 2 %) – mit
+  ihr ist der Plan gerechnet, so schließt er ohne Sprung an. Planung hat ihren eigenen Schalter („inflationsbereinigt“, nur
+  Planwerte). (umgesetzt in 3.17.113)
 
 ## Offen (Entscheidung steht aus – mit Empfehlung vorlegen, wenn der Punkt dran ist)
 - Umsatzsteuer-Voranmeldung direkt an ELSTER senden (ELSTERs Programmbibliothek ERiC, Anmeldung als Hersteller, Zertifikat und
@@ -664,6 +673,11 @@ Fertig, wenn
   Modelle und des Lesers, echte Modelle (was das Gedächtnis merkt, Wartezeit), echte Auswertungen (BWA, SuSa) als PDF.
 - Prüfung vor dem Update: engt untergeschobene Änderungen ein, schließt sie nicht aus; nächster Schritt wäre der Dienst selbst in
   macOS' Sandbox ohne ausgehendes Netz.
+- Prüfung vor dem Update (gefunden in 3.17.113): ein neuer Aufrufer des abgeschirmten Lesers der Internetsuche (`web_search.Reader`)
+  ist kein Fund – Adresse und erlaubte Hosts reisen in der Anfrage über stdin, die Prüfung hält sie für bloß Mitgegebenes; auch
+  mit Adresse aus Einstellungen. Nur ein Host, der neu im Programm steht, fällt auf. Vorschlag: `Reader.run`/`web_fetch` wie einen
+  Aufruf nach außen behandeln, dessen Anfrage entscheidet (Aufrufer verfolgt, ein neuer Aufrufer ist ein neuer Weg). Den Weg des
+  Preisindex (3.17.113) hat der Nutzer im Chat verlangt; er steht von Hand in `docs/rules/security.md`.
 - Filter der Internetsuche: Ziffern statt Buchstaben, rückwärts Geschriebenes und Umlaut-Schreibweisen erkennt er erst ab sechs
   Buchstaben (kürzere Namen gingen so durch); „Q3 2025“ lehnt er als lange Ziffernfolge ab – jede Suche steht vorher auf einer Karte im Chat.
 - Beschädigte Dateien: Planung, Kategorien und Belegindex nennen die Seiten mit Dateinamen (nicht beiseitegelegt); sind Einstellungen,

@@ -19,5 +19,14 @@ Foundation License 2; built by python-build-standalone,
 https://github.com/astral-sh/python-build-standalone) to run in. It is not
 part of Kontor and comes under its own licences, which lie in its folder.
 
+The balance sheet in today's purchasing power uses the consumer price index
+for Germany (Verbraucherpreisindex, 2020 = 100): source Statistisches
+Bundesamt (Destatis), GENESIS-Online table 61111-0002, Datenlizenz
+Deutschland - Namensnennung - Version 2.0 (dl-de/by-2-0,
+https://www.govdata.de/dl-de/by-2-0); shipped in price_index.py and, newer
+months, fetched from the time series of the Deutsche Bundesbank (series
+BBDP1.M.DE.N.VPI.C.A00000.I20.A; source: Deutsche Bundesbank). The figures
+in today's money are Kontor's own calculation from it.
+
 Kontor names everything of this kind it uses on a Mac, with version, licence
 and origin, under Settings -> Updates.

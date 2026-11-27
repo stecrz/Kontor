@@ -56,6 +56,8 @@ import changelog
 import pyboot
 import pyruntime
 import components
+import price_index
+import web_search
 import assistant as assistant_mod
 import demo
 import devices as devices_mod
@@ -576,6 +578,10 @@ class App:
     DEMO = False                                     # the demo (DemoApp): made-up data, its own sign-in, only some requests
     _demo_box: Optional["DemoBox"] = None
     _tid: Optional[dict] = None                      # the sign-in page's Touch ID request running (touchid_begin; under TID_LOCK)
+    # prices for the balance sheet in today's money (price_index.py): newer months of the index, one try at a time
+    price_reader: Optional[Callable[[dict], dict]] = None      # (tests: a stand-in for the sealed reader)
+    _price_lock = threading.Lock()
+    _price_busy = False
 
     @property
     def demo_box(self) -> Optional["DemoBox"]:
@@ -1162,6 +1168,42 @@ class App:
         self.store.update("state.json", upd, {})
         log.info("Security names: %d ISINs looked up, %d names found", len(offen), len(names))
         return {"sent": len(offen), "new": len(names)}
+
+    # -- prices: the balance sheet in today's purchasing power (price_index.py) ----------------------------------------------
+    def price_state(self) -> dict:
+        st = (self.store.load_shared("state.json", {}) or {}).get(price_index.STATE)
+        return st if isinstance(st, dict) else {}
+
+    def price_factors(self, area: str, months: List[str], base: str) -> dict:
+        """Per month the factor into the money of month base -- the index as Kontor knows it, after its last month the area's
+        inflation of Planung -- and what the page says about it (until when the index is known, when it was fetched)."""
+        st = self.price_state()
+        res = price_index.factors(price_index.known(st), months, base, price_index.rate_of(self.plan_for(area)))
+        res.update(fetched=str(st.get("fetched") or "") if price_index.counts(st) else "", bundled=price_index.BUNDLED_AS_OF)
+        return res
+
+    def price_refresh_soon(self) -> None:
+        """Newer months of the index when it is time (price_index.due): one try in the background. Only asked while the page
+        shows the balance sheet in today's money; never in the demo."""
+        if self.DEMO or not self.store.is_open or not price_index.due(self.price_state(), date.today(), time.time()):
+            return
+        with self._price_lock:
+            if self._price_busy:
+                return
+            self._price_busy = True
+        threading.Thread(target=self._price_refresh, name="kontor-prices", daemon=True).start()
+
+    def _price_refresh(self) -> None:
+        try:
+            # through the sealed reader of the internet search, always in the Mac's sandbox
+            reader = self.price_reader or web_search.Reader(self.data_dir, lambda: "strict")
+            st = price_index.refresh(reader, self.price_state(), date.today(), time.time())
+            self.store.update("state.json", lambda cur: cur.__setitem__(price_index.STATE, st), {})
+        except Exception:                                # (signed out meanwhile, the disk): the next look tries again
+            log.exception("Prices: refresh failed")
+        finally:
+            with self._price_lock:
+                self._price_busy = False
 
     def bericht_status(self) -> dict:
         with self.rebuild_cv:
@@ -2239,7 +2281,8 @@ DEMO_GET = frozenset(("/api/status", "/api/dataset", "/api/config", "/api/plan",
                       "/api/transactions", "/api/receipts", "/api/receipts/file", "/api/export/property.xlsx", "/api/package/export",
                       "/api/assistant/status", "/api/assistant/chats", "/api/assistant/chat", "/api/assistant/changes", "/api/assistant/poll",
                       "/api/help", "/api/check/status", "/api/history", "/api/categories/positions", "/api/categories/written",
-                      "/api/categories/unassigned", "/api/categories/proposals", "/api/properties", "/api/properties/template"))
+                      "/api/categories/unassigned", "/api/categories/proposals", "/api/properties", "/api/properties/template",
+                      "/api/price_index"))      # (the demo: the index this version holds, never fetched)
 DEMO_GET_PREFIX = ("/api/export/",)    # the Excel files of the pages
 DEMO_POST = frozenset(("/api/lock", "/api/config", "/api/rules/preview", "/api/check", "/api/sync", "/api/sync/gaps", "/api/bookings/reject",
                        "/api/bookings/plan", "/api/bookings/restore", "/api/bookings/refresh", "/api/run", "/api/report", "/api/report/rebuild",
@@ -3008,6 +3051,11 @@ def export_sheets(app: App, was: str, bereich: Optional[str], modus: str, view: 
         v = view or {}
         cols = columns(True)
         bil = b.get("balance", {})
+        real = None
+        if v.get("real"):                                   # in today's money, as the page shows it (price_index.py)
+            real = app.price_factors(key, list(b.get("months") or []) + list(b.get("plan_months") or []),
+                                     price_index.base_month(str(b.get("actual_until") or ""), date.today()))
+            bil = price_index.deflate(bil, real["factors"])
         proj = {r["id"]: r.get("amounts") or {} for r in ((bil.get("projection") or {}).get("rows") or [])}
         allw = lambda r: dict(r.get("amounts") or {}, **proj.get(r.get("id"), {}))
         inakt = int(((app.config.get("balance") or {}).get("inactive_months") or 12))
@@ -3044,6 +3092,9 @@ def export_sheets(app: App, was: str, bereich: Optional[str], modus: str, view: 
             add((tr("fremdwaehrung_nicht_umgerechnet") if fx else role_label(role) + " (" + tr("x_nicht_im_nw") + ")"), tot, 0, False, True)
             for r in accs:
                 add("    " + r["name"] + (" (%s)" % r.get("currency") if fx else ""), r["amounts"], 1, role not in v.get("open", ()))
+        if real:                                            # what the figures are: the money of which month, the index until when
+            rows += [[""], [tr("x_kaufkraft") % (real["base"], real["known_until"], ("%.1f" % real["rate"]) if i18n.lang() == "en" else ("%.1f" % real["rate"]).replace(".", ","))]]
+            levels += [0, 0]
         head = [tr("x_konto")] + [c[0] + (tr("x_plan_suffix") if c[2] else "") for c in cols]
         return [Sheet(tr("x_bilanz") + " " + name, head, rows, bold_rows=bold, levels=levels, hidden_rows=hidden)]
 
@@ -3507,6 +3558,10 @@ def make_handler(app: App):
                 return self._json(200, app.config)
             if path == "/api/plan":
                 return self._json(200, app.plan_for(q.get("area") or ""))
+            if path == "/api/price_index":                # the balance sheet in today's money: the factor of each month (price_index.py)
+                months = price_index.span(q.get("from") or "", q.get("to") or "")
+                app.price_refresh_soon()
+                return self._json(200, app.price_factors(q.get("area") or "", months, price_index.base_month(q.get("base") or "", date.today())))
             if path == "/api/accounts":
                 ds = app.store.load_shared("dataset.json", {}) or {}
                 if app.ledger is not None:
@@ -3587,7 +3642,8 @@ def make_handler(app: App):
                                  {"Content-Disposition": 'attachment; filename="Kontor-%s-%s-%s.xlsx"' % (tr("xf_property"), str(im.get("name") or tr("x_objekt")).replace('"', "").replace("/", "-"), date.today().isoformat())})
             if path.startswith("/api/export/"):
                 was = path[len("/api/export/"):].replace(".xlsx", "")
-                view = {"open": set((q.get("open") or "").split(",")) - {""}, "dep": set((q.get("dep") or "").split(",")) - {""}, "all": q.get("all") == "1"}
+                view = {"open": set((q.get("open") or "").split(",")) - {""}, "dep": set((q.get("dep") or "").split(",")) - {""}, "all": q.get("all") == "1",
+                        "real": q.get("real") == "1"}
                 data = workbook(export_sheets(app, was, q.get("area"), "years" if q.get("mode") == "years" else "months", view, q if was == "transactions" else None))
                 return self._raw(200, data, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                                  {"Content-Disposition": 'attachment; filename="Kontor-%s-%s.xlsx"' % (tr(EXPORT_FILE_KEYS[was]) if was in EXPORT_FILE_KEYS else was, date.today().isoformat())})
