@@ -6974,7 +6974,7 @@ async function route() {
   asLayout();
   const main = $('#main');
   const myRoute = ++ROUTE_SEQ;
-  const slow = setTimeout(() => { if (ROUTE_SEQ === myRoute) main.innerHTML = `<div class="loading"><span class="spin"></span>${t('0_wird_geladen', esc(TITLES[S.tab] || ''))}<div class="note">${t('der_dienst_antwortet_noch_nicht')}</div></div>`; }, 400);
+  const slow = setTimeout(() => { if (ROUTE_SEQ === myRoute) mainSet(`<div class="loading"><span class="spin"></span>${t('0_wird_geladen', esc(TITLES[S.tab] || ''))}<div class="note">${t('der_dienst_antwortet_noch_nicht')}</div></div>`); }, 400);
   try {
     let h = '';
     if (S.tab === 'overview') h = await vUebersicht();
@@ -6996,7 +6996,7 @@ async function route() {
     if (ROUTE_SEQ !== myRoute) return;          // inzwischen woanders hin geklickt
     const keepX = sameTab ? $$('.wrap', main).map(scrollMark) : null;   // same page again: tables stay put
     main.style.paddingBottom = '';               // room left by routeKeeping
-    main.innerHTML = sameTab ? `<div>${h}</div>` : `<div class="fade">${h}</div>`;          // the same page again (a row opened): in place, no fade-in (it moves it)
+    mainSet(sameTab ? `<div>${h}</div>` : `<div class="fade">${h}</div>`);          // the same page again (a row opened): in place, no fade-in (it moves it)
     SCROLL.key = key; SCROLL.keepX = keepX;
     const y1 = sameTab ? y0 : (SCROLL.pos[key] || 0);   // eigener Reiter: bleibt; anderer Reiter: dessen letzte Position, sonst oben
     pageTo(y1);
@@ -7022,9 +7022,14 @@ async function route() {
     const own = led || main.contains(document.activeElement);
     if ((sameTab || !own) && pageY() !== y1) pageTo(y1);
     if (!sameTab && !own) holdPlace(y1);
-  } catch (e) { clearTimeout(slow); if (ROUTE_SEQ === myRoute && e.message !== t('nicht_angemeldet')) main.innerHTML = `<div class="banner err">${esc(e.message)} <button class="small secondary" id="route-retry">${t('erneut_versuchen')}</button></div>`; const rb = $('#route-retry', main); if (rb) rb.addEventListener('click', () => route()); }
+  } catch (e) { clearTimeout(slow); if (ROUTE_SEQ === myRoute && e.message !== t('nicht_angemeldet')) mainSet(`<div class="banner err">${esc(e.message)} <button class="small secondary" id="route-retry">${t('erneut_versuchen')}</button></div>`); const rb = $('#route-retry', main); if (rb) rb.addEventListener('click', () => route()); }
 }
 let ROUTE_SEQ = 0;
+// the page drawn anew: its charts' observers off in the same step that takes their parts away -- left on, they watch parts no
+// longer in the page, and when the page is swapped while the browser delivers sizes (WebKit runs what a finished request
+// resolved then, inside the first observer's callback), those parts sit above it and the browser reports "ResizeObserver loop
+// completed with undelivered notifications" (three click paths of one night, 3.17.105; drawn anew, bind() starts them again)
+function mainSet(html) { [BCH, LC, CF].forEach(o => { if (o.ro) { o.ro.disconnect(); o.ro = null; } }); $('#main').innerHTML = html; }
 const softRoute = () => DIRTY.on ? statusMini() : route();      // redraw unless something on the page is not saved yet
 const SCROLL = {key: '', pos: {}};
 // A page opened again stands where it was left -- also when parts of it arrive after it is drawn (the previews of the booking

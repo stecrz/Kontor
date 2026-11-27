@@ -53,6 +53,9 @@ FOUND_CLICKS += [874536567]     # 3.17.96 (by hand, iPhone, WebKit): a point hal
                                 # the band beside it (WebKit taps on whole pixels)
 FOUND_CLICKS += [552234862]     # 3.17.96 (by hand, iPhone, WebKit, under load -- not again alone): "ResizeObserver loop completed with
                                 # undelivered notifications" on a page change -- the title bar's height was set inside its observer
+FOUND_CLICKS += [594715502, 740557602, 843199979]     # 3.17.105 (a night, WebKit; under load only): the same on a page change from the
+                                # balance or the cash flow -- the new page drawn inside an observer's callback (WebKit runs a finished
+                                # request's answer there) took away what the old page's charts observed (PageSwapObserversTest)
 KINDS = ["test", "random", "demo", "empty"]
 LOCKED_401 = "the server responded with a status of 401"      # a request of a session that was just locked (demo_in)
 WORLD_NAMES = {"test": "Testwelt", "random": "Zufallswelt", "demo": "Demo", "empty": "leeres Kontor"}

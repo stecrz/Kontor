@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.17.105 (2026-11-27 14:23)
+- Entwicklung: Seitenwechsel ohne „ResizeObserver loop“ in WebKit (Diagramm-Beobachter der alten Seite getrennt)
+
 ## 3.17.104 (2026-11-27 05:00)
 - Entwicklung: Nachtlauf über GitHubs Zeitplan um 3:05 deutscher Zeit, ohne eigenen Wecker (GitHubs Verspätung hingenommen)
 

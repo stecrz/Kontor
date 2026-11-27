@@ -6883,6 +6883,65 @@ class SafariTablesTest(unittest.TestCase):
             shutil.rmtree(d, ignore_errors=True)
 
 
+
+class PageSwapObserversTest(unittest.TestCase):
+    """A page swapped while the browser delivers sizes: no "ResizeObserver loop completed with undelivered notifications". WebKit
+    runs what a finished request resolved inside the first observer's callback of a frame -- the page drawn then took away the
+    parts the old page's charts observed, and they were reported as a loop (three click paths of one night, 3.17.105: balance or
+    cash flow, then another page). Here the same, made to happen every time: the help's text arrives inside an observer's
+    callback; in Chromium and in WebKit."""
+
+    SWAP = """async () => {
+      const errs = []; addEventListener('error', e => errs.push(e.message));
+      const html = await vHilfe(), orig = vHilfe; let open; const gate = new Promise(r => { open = r; });
+      window.vHilfe = () => gate.then(() => html);
+      history.replaceState(null, '', '#help'); route();
+      await new Promise(r => requestAnimationFrame(r));
+      const ro = new ResizeObserver(() => { ro.disconnect(); open(); }); ro.observe(document.querySelector('.topbar'));
+      await new Promise(r => setTimeout(r, 400)); window.vHilfe = orig;
+      return [errs, S.tab, !!BCH.ro || !!LC.ro || !!CF.ro];
+    }"""
+
+    def test_swap_inside_an_observer(self):
+        try:
+            from playwright.sync_api import sync_playwright
+        except ImportError:
+            self.skipTest("playwright fehlt")
+        d = tempfile.mkdtemp(prefix="kontor-ro-")
+        store = new_store(d); store.save("config.json", config_for_test(os.path.join(d, "Belege")))
+        reset_mock(); patch_today()
+        app = App(store, d, bridge_factory=MockBridge)
+        app.do_run(False, True)
+        srv = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(app)); port = srv.server_address[1]
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        try:
+            with sync_playwright() as p:
+                engines = 0
+                for eng in ("chromium", "webkit"):
+                    try:
+                        b = getattr(p, eng).launch()
+                    except Exception:
+                        continue                   # Safari's engine not installed here
+                    engines += 1
+                    pg = b.new_page(viewport={"width": 1440, "height": 900})
+                    errors = []; pg.on("pageerror", lambda e: errors.append(str(e)))
+                    pg.goto("http://127.0.0.1:%d/" % port)
+                    if pg.is_visible("#login-pw2"):
+                        pg.fill("#login-pw", "sehr-geheimes-passwort"); pg.fill("#login-pw2", "sehr-geheimes-passwort")
+                    else:
+                        pg.fill("#login-pw", "sehr-geheimes-passwort")
+                    pg.click("#login-btn"); wait_shell(pg)
+                    for page, sel in (("#balance", "#bch-plot"), ("#cashflow", ".cf-charts")):
+                        pg.evaluate("location.hash = '%s'" % page); pg.wait_for_selector(sel, state="attached"); pg.wait_for_timeout(300)
+                        self.assertTrue(pg.evaluate("!!BCH.ro || !!CF.ro"), page)          # the page's charts are observed
+                        self.assertEqual(pg.evaluate(self.SWAP), [[], "help", False], "%s, %s" % (eng, page))
+                    self.assertEqual(errors, [], eng)
+                    b.close()
+                self.assertGreater(engines, 0)
+        finally:
+            srv.shutdown(); srv.server_close()
+            shutil.rmtree(d, ignore_errors=True)
+
 class BrowserWizardTest(unittest.TestCase):
     """Leere Installation: Einrichtungsassistent, Bereiche speichern, Paket laden, Bericht erstellen."""
 
