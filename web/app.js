@@ -256,7 +256,7 @@ const H = {
   package: t('einstellungspaket_regeln_bereiche_posi'),
   bch: t('bch_hinweis'),
   geld_unterwegs: t('geld_unterwegs_tip'),
-  tabellen: t('h_tabellen'), lc_grafiken: t('h_lc_grafiken'), cf_zeitraum: t('h_cf_zeitraum'), steuer_auswahl: t('h_steuer_auswahl'), afa_manuell: t('h_afa_manuell'),
+  lc_grafiken: t('h_lc_grafiken'), cf_zeitraum: t('h_cf_zeitraum'), steuer_auswahl: t('h_steuer_auswahl'), afa_manuell: t('h_afa_manuell'),
   umsatzfilter: t('h_umsatzfilter'), wp_namen: t('h_wp_namen'), steuer_verm: t('h_steuer_verm'), steuer_darlehen: t('h_steuer_darlehen'), steuer_pos: t('h_steuer_pos'),
   mm_kontor: t('h_mm_kontor'), ki_sicher: t('h_ki_sicher'), aenderungen: t('h_aenderungen'), daten_ordner: t('h_daten_ordner'), deinstallieren: t('h_deinstallieren'),
 };
@@ -324,7 +324,7 @@ document.addEventListener('click', e => {
   e.preventDefault(); if (a.getAttribute('href') !== location.hash) go(a.getAttribute('href'));
 });
 HELP_AT.ki_gedaechtnis = 'assistant-memory';
-Object.assign(HELP_AT, {tabellen: 'tables', lc_grafiken: 'balance-sheet-charts', cf_zeitraum: 'cash-flow-charts', steuer_auswahl: 'tax', afa_manuell: 'tax',
+Object.assign(HELP_AT, {lc_grafiken: 'balance-sheet-charts', cf_zeitraum: 'cash-flow-charts', steuer_auswahl: 'tax', afa_manuell: 'tax',
   umsatzfilter: 'receipts', wp_namen: 'balances', steuer_verm: 'tax', steuer_darlehen: 'tax', steuer_pos: 'tax', mm_kontor: 'kontor-and-moneymoney',
   ki_sicher: 'assistant-safety', aenderungen: 'updates', daten_ordner: 'advanced', deinstallieren: 'install'});
 HELP_AT.geraete = HELP_AT.pk_nur = 'iphone-devices';
@@ -1217,7 +1217,7 @@ function fmtZeit(ts) {
 }
 function viewCtl() {
   // columns of the tables: months (with yearly sums) or years only
-  return `<div class="seg" id="modus-seg">${[['months', t('monate'), t('monate_tip')], ['years', t('jahre'), t('jahre_tip')]].map(([k, l, tip]) => `<button data-m="${k}" class="${S.mode === k ? 'on' : ''}" title="${tip}">${l}</button>`).join('')}</div>${hq('tabellen')}`;
+  return `<div class="seg" id="modus-seg">${[['months', t('monate'), t('monate_tip')], ['years', t('jahre'), t('jahre_tip')]].map(([k, l, tip]) => `<button data-m="${k}" class="${S.mode === k ? 'on' : ''}" title="${tip}">${l}</button>`).join('')}</div>`;   // no "?" beside it (user, 2026-11-28: it added nothing); the help's "tables" through balance sheet and cash flow
 }
 const swCtl = (id, on, label, tip) => `<label class="switch"${tip ? ` title="${esc(tip)}"` : ''}><input type="checkbox" id="${id}" ${on ? 'checked' : ''}><i></i>${label}</label>`;
 // balance sheet: show hidden and empty accounts (with their number); cash flow / planning: show empty rows

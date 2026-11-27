@@ -521,6 +521,9 @@ anhängen – nie löschen.
   erkennt Kontor sie – als Optimierung. Umsetzung: einmal im Arbeitsspeicher, was schon gelesen ist (Text, Tabellen, Seitenbilder),
   wird nicht neu gelesen; in derselben Unterhaltung ist sie dieselbe Datei wie vorher (gleiche Kennung für das Modell), in einer
   anderen eine eigene (Dateien bleiben je Unterhaltung getrennt). Gespeichert wird weiterhin nichts. (umgesetzt in 3.17.117)
+- **Kein „?“ neben „Monate / Jahre“** (Nutzer, 2026-11-28): Das Fragezeichen hinter dem Umschalter (Bilanz, Cashflow, Planung)
+  bringt keinen Mehrwert – die Knöpfe haben ihre Tooltips. Entfernt; den Hilfeabschnitt „Tabellen, Schalter und Excel“ erreicht man
+  über die Hilfe von Bilanz und Cashflow (`VIA_HELP` in `test_findable`). Nicht wieder anbringen. (umgesetzt in 3.17.119)
 
 ## Offen (Entscheidung steht aus – mit Empfehlung vorlegen, wenn der Punkt dran ist)
 - Umsatzsteuer-Voranmeldung direkt an ELSTER senden (ELSTERs Programmbibliothek ERiC, Anmeldung als Hersteller, Zertifikat und

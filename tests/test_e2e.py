@@ -5227,6 +5227,7 @@ class BrowserTest(unittest.TestCase):
                 pg.click("#modus-seg button[data-m='years']"); pg.wait_for_timeout(300)
                 pg.reload(); pg.wait_for_selector("#bch"); self.assertIsNone(pg.query_selector("#bch.big-sel")); self.assertEqual(order(), ["nw", "sel", "pos"])
                 self.assertTrue(pg.query_selector("#modus-seg button[data-m='months'].on"))
+                self.assertIsNone(pg.query_selector("#modus-seg + .hq"))        # no "?" beside "Monate / Jahre": it added nothing (user, 2026-11-28)
                 pg.click(".lc[data-lc='pos'] .lc-big"); pg.wait_for_selector("#bch.big-pos"); pg.click("#modus-seg button[data-m='years']"); pg.wait_for_timeout(300)
                 pg.click("#bch-rb button[data-m='120']"); pg.wait_for_selector("#bch-rb button[data-m='120'].on"); pg.click("#view-save"); until(pg, "!!localStorage.getItem('kontor.balanceView')")
                 pg.reload(); pg.wait_for_selector("#bch.big-pos"); self.assertEqual(order(), ["nw", "sel", "bil"])

@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.17.119 (2026-11-28 00:42)
+- Bilanz: kein „?“ mehr neben „Monate / Jahre“ (auch Cashflow, Planung); Hilfe zu Tabellen über die Hilfe von Bilanz und Cashflow
+
 ## 3.17.118 (2026-11-27 20:49)
 - KI-Assistent: Klick auf den Namen einer Datei im Chat öffnet sie wieder (PDF, Bild, CSV im eigenen Fenster, Excel als Download) – aus dem Arbeitsspeicher, nur in ihrer Unterhaltung
 - KI-Assistent: CSV-Dateien in Windows-1252 mit einem ungewöhnlichen Zeichen: € und Umlaute bleiben richtig
