@@ -4,7 +4,7 @@ Teil von `CLAUDE.md` (Aufbau). Neue Testdatei oder neuer Prüfbereich: hier eint
 
 ## Wo was läuft
 Zwei Arten auf GitHub, je ein Workflow (Nutzer, 2026-11-27: schlank, nichts verloren): `tests.yml` je Version in wenigen Minuten,
-`nightly.yml` jede Nacht stundenlang mit vielen Zufallsfällen. `test_workflows` hält beide fest (`PushJobs`, `NightJobs`, `Night`).
+`nightly.yml` jede Nacht (GitHubs Zeitplan, 3:05 deutscher Zeit) stundenlang mit vielen Zufallsfällen. `test_workflows` hält beide fest (`PushJobs`, `NightJobs`, `Night`).
 - **GitHub, jeder Push** (`.github/workflows/tests.yml`, rund 9 min, für kleine und große Versionen gleich): Linux mit Kontors
   eigenem Python, Chrome und Safari-Engine, in sechs Teilen nebeneinander – Seiten (`test_e2e`); Rundgang (`test_tour`);
   Datenwelten und Rechnen mit je Push 12 festen Zufallsfällen; Assistent und Gedächtnis; Updates, eigenes Python, PDF-Tabellen;
@@ -15,14 +15,11 @@ Zwei Arten auf GitHub, je ein Workflow (Nutzer, 2026-11-27: schlank, nichts verl
   MoneyMoney-Brücke, Installation, Kontors eigenes Python (`tests/mac_python.py`: echt laden, falsche Prüfsumme, Quarantäne und
   Signatur, Selbsttest, Helfer in der Sandbox, Dienst als Kind des Starters, Neustart durch launchd, beschädigt → Apples Python,
   Deinstallieren, Update von der Version davor); Linux prüft denselben Ablauf mit dem echten Build für Linux.
-- **GitHub, nachts** (`.github/workflows/nightly.yml` „Nachtlauf“, gestartet zwischen 3 und 4 Uhr deutscher Zeit, Sommer wie
-  Winter; Nutzer, 2026-11-26/27): GitHubs Zeitplan startete hier 7–9 h zu spät (3:47 geplant, 12:29 gestartet) und ließ Läufe
-  aus (26.11.: drei von vier); `timezone` legt nur die gewünschte Stunde fest. Deshalb zwei Arten Lauf im selben Workflow: der
-  **Wecker** (Zeitplan alle 2 h, Job `wake`, `.github/nightly.py`) – der erste, der bis 5 h 30 vor 3:05 ankommt, wartet und
-  startet um 3:05 den **Nachtlauf** (dasselbe Workflow per `workflow_dispatch`, nicht verzögert; Job `fuzz`); später ankommende
-  sehen ihn warten und enden nach Sekunden, ebenso zu frühe. So reicht einer von drei oder mehr Weckern je Nacht. Nach 4 Uhr
-  startet keiner mehr – fehlt eine Nacht, meldet es das Lagebild („Nachtlauf fehlt“; es zählt nur Läufe per `workflow_dispatch`).
-  `test_workflows.Night` spielt jede Verspätung von 0–20 h durch, schwankend, mit ausfallenden Weckern und über die Zeitumstellung.
+- **GitHub, nachts** (`.github/workflows/nightly.yml` „Nachtlauf“, GitHubs eigener Zeitplan: 3:05 Europe/Berlin, Sommer wie
+  Winter; Nutzer, 2026-11-27: Uhrzeit dort einstellen, kein eigener Wecker). GitHub stellt den Lauf um 3:05 in die Warteschlange,
+  startet ihn unter Last aber später oder lässt ihn aus (hier bis zu 9 h, Nov. 2026) – daran ändert keine Einstellung etwas; das
+  ist hingenommen. Fehlt eine Nacht (über 36 h kein Lauf), meldet es das Lagebild („Nachtlauf fehlt“). `test_workflows.Night`
+  hält Zeitplan, Zeitzone und den Start von Hand fest.
   Der Nachtlauf: auf dem neuesten `main` die 1000 festen und so viele neue Zufallsfälle, wie in ~3 h passen, auf mehreren Rechnern
   nebeneinander; dazu Klickpfade durch die Oberfläche (`tests/test_clickpaths.py`, 40 feste und neue, in Chromium und der
   Safari-Engine – nur nachts, je Push kosteten drei 4 min).
@@ -33,7 +30,7 @@ Zwei Arten auf GitHub, je ein Workflow (Nutzer, 2026-11-27: schlank, nichts verl
   Dazu die Datenwelten (`test_data_worlds`): Zahlen, Anfragen, Assistent und – mit Chrome – jede Seite, die festen Welten in jeder
   Ansicht, dann neue Zufallswelten.
   Von Hand (fiel eine Nacht aus, oder nach einer Korrektur): GitHub → Actions → Nachtlauf → „Run workflow“ startet ihn sofort
-  (oder `gh workflow run nightly.yml -R stecrz/Kontor`); ein Lauf von Hand, der um 3:05 noch läuft, gilt als die Nacht.
+  (oder `gh workflow run nightly.yml -R stecrz/Kontor`).
 - **Lokal** (`.claude/tools/release.py`, Skill `release`): Code-Checks, betroffene Tests (`tests/affected.py`) ohne Browser, bei
   Rechenlogik 400 Zufallsfälle, Starter mit Python 3.9, dazu die mit `--tests` genannten (mit Browser). Alles lokal
   (`python3 -m pytest -q tests`, ~30 min) nur, wenn es wirklich nötig ist – GitHub macht es ohnehin.

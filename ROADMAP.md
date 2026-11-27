@@ -428,7 +428,14 @@ anhängen – nie löschen.
   Nacht braucht einen von drei oder mehr Weckern; 3 oder bei der Zeitumstellung 4 Uhr ist ihm recht). Der Lauf je Version in
   sechs kürzeren Teilen nebeneinander statt vier langen (16 → rund 9 min); die Klickpfade (drei je Push: 4 min) nur nachts.
   Der alte Workflow „Mac-App (Testzweig)“ (`ci-mac-app.yml`, Zweig `ci/mac-app`, gelöscht) ist ohne Belang: was er prüfte, steht im
-  macOS-Teil von `tests.yml`; er steht nur noch wegen seiner alten Läufe in GitHubs Liste. (umgesetzt in 3.17.103)
+  macOS-Teil von `tests.yml`; er steht nur noch wegen seiner alten Läufe in GitHubs Liste. (umgesetzt in 3.17.103; den Wecker darin ersetzt der
+  nächste Punkt)
+- **Nachtlauf nur über GitHubs Zeitplan, kein Wecker** (Nutzer, 2026-11-27): Die Uhrzeit wird im Zeitplan des Nachtlaufs
+  eingestellt (3:05 Europe/Berlin, täglich); einen zusätzlichen Lauf, der als Wecker wartet und den Nachtlauf anstößt, will er
+  nicht – „Quatsch“, zu umständlich. Startet GitHub ihn später oder lässt ihn aus (hier bis zu 9 h, Nov. 2026), ist das
+  hingenommen: keine Einstellung macht GitHubs Zeitplan pünktlich. Abgelöst: der Nachtstart (3.17.99) und der Wecker im
+  Nachtlauf (3.17.103) – in der ersten Nacht des Weckers (27.11.) löste GitHub ihn kein einziges Mal aus. Eine fehlende Nacht
+  (über 36 h kein Lauf) meldet das Lagebild; „Run workflow“ startet ihn von Hand sofort. (umgesetzt in 3.17.104)
 
 ## Offen (Entscheidung steht aus – mit Empfehlung vorlegen, wenn der Punkt dran ist)
 - Umsatzsteuer-Voranmeldung direkt an ELSTER senden (ELSTERs Programmbibliothek ERiC, Anmeldung als Hersteller, Zertifikat und

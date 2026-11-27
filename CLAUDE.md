@@ -48,8 +48,8 @@ Jeder Schritt eines Chats liest den ganzen bisherigen Verlauf neu – Kosten wac
 ## Prüfen – zwei Stufen (Nutzer, 2026-11-24)
 Auf GitHub zwei Arten, je ein Workflow (Nutzer, 2026-11-27): jede Version gleich, ob klein oder groß, in wenigen Minuten
 (`.github/workflows/tests.yml`: alle Tests in Teilen nebeneinander, Kontors Python und 3.9 für den Starter, Chrome und
-Safari-Engine, macOS mit Mac-App und Abschirmung); jede Nacht zwischen 3 und 4 Uhr deutscher Zeit stundenlang 1000 feste und neue
-Zufallsfälle und Klickpfade durch die Oberfläche (`.github/workflows/nightly.yml`: Wecker alle 2 h, der Nachtlauf startet um 3:05);
+Safari-Engine, macOS mit Mac-App und Abschirmung); jede Nacht stundenlang 1000 feste und neue Zufallsfälle und Klickpfade
+durch die Oberfläche (`.github/workflows/nightly.yml`: GitHubs Zeitplan 3:05 deutscher Zeit, oft verspätet – hingenommen);
 Einzelheiten: `docs/rules/tests.md`. Was Claude selbst prüft und mitpflegt, hängt von der Stufe ab:
 
 | | Kleine Version (dritte Stelle) | Großer Versionssprung (zweite Stelle) – Skill `major` |

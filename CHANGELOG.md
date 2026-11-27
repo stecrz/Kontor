@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.17.104 (2026-11-27 05:00)
+- Entwicklung: Nachtlauf über GitHubs Zeitplan um 3:05 deutscher Zeit, ohne eigenen Wecker (GitHubs Verspätung hingenommen)
+
 ## 3.17.103 (2026-11-27 00:40)
 - Entwicklung: Nachtlauf in einem Workflow – Wecker alle 2 h wartet bis zu 5½ h und startet die Zufallsläufe um 3:05 deutscher Zeit (eigener Nachtstart entfällt)
 - Entwicklung: Tests je Version in sechs kürzeren Teilen nebeneinander (rund 9 statt 16 min), Klickpfade nur nachts; jede Testdatei läuft genau einmal (geprüft)
