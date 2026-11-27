@@ -532,7 +532,7 @@ anhängen – nie löschen.
   Ein Abschnitt der Hilfe nur für die Schalter lohnt keinen eigenen Einstieg, und die „?“ an den Seitentiteln führen zum Abschnitt
   ihrer Seite, nicht dorthin. Daher „Tabellen, Schalter und Excel“ aufgelöst: Allgemeines (Monate/Jahre, blass und schraffiert,
   ‹ ab 2025 ›, Leere Zeilen, Excel, Rechtsklick) steht unter Übersicht neben „Hilfe auf jeder Seite“ und „Drucken“, der Schalter
-  „Plan“ und der Blick beim Öffnen beim Cashflow; ▸, Auge und „inflationsbereinigt“ standen schon bei Bilanz und Planung. (umgesetzt in 3.17.120)
+  „Plan“ und der Blick beim Öffnen beim Cashflow; ▸, Auge und „inflationsbereinigt“ standen schon bei Bilanz und Planung. (umgesetzt in 3.17.121)
 
 ## Offen (Entscheidung steht aus – mit Empfehlung vorlegen, wenn der Punkt dran ist)
 - Umsatzsteuer-Voranmeldung direkt an ELSTER senden (ELSTERs Programmbibliothek ERiC, Anmeldung als Hersteller, Zertifikat und
