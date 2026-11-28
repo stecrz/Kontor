@@ -8755,7 +8755,7 @@ async function asSend(text) {
   const um = Object.assign({role: 'user', text}, refs.length ? {refs} : {}, files.length ? {files: files.map(f => ({name: f.name}))} : {});
   AS.msgs.push(um, m);
   AS.job = null;          // (an answer that is over while Kontor still notes what was said: its loop no longer speaks for the panel)
-  AS.busy = true; AS.refs = []; AS.files = []; asRefsDraw(); asMsgs(true);
+  AS.busy = true; AS.stopEarly = false; AS.refs = []; AS.files = []; asRefsDraw(); asMsgs(true);
   try {
     const web = AS.msgs.some(x => (x.parts || []).some(p => p.k === 'web' && asWebFetched(p)));          // web text in it: no changes (Kontor knows it; told again after a restart)
     const receipt_text = AS.msgs.slice(0, -2).some(x => (x.files || []).length > 0);          // ... and a file's text (given with an earlier question): a note from an answer waits for the click
@@ -8763,6 +8763,7 @@ async function asSend(text) {
     for (const f of files) ids.push((await api('/api/assistant/attach', {name: f.name, content: await asFileB64(f)})).id);
     const r = await api('/api/assistant/ask', Object.assign({question: text, conversation: AS.conv, history: hist, page: asPage(), effort: asEffort(), refs, web, receipt_text}, AS.pasted ? {pasted: true} : {}, ids.length ? {files: ids} : {})); AS.pasted = false;
     AS.job = r.job; AS.conv = r.conversation;
+    if (AS.stopEarly) { AS.stopEarly = false; asStop(); }          // "Stopp" came before the answer had its number
     (um.files || []).forEach((f, k) => { const id = (r.files || {})[ids[k]]; if (id) Object.assign(f, {id, conv: r.conversation}); });          // its name opens it again (from Kontor's memory, in this conversation; the same file given before: by that one's id)
     asPoll(m, r.job);
   } catch (e) { m.parts.push({k: 'err', text: e.message}); m.state = 'error'; AS.busy = false; asMsgs(); }
@@ -9289,7 +9290,9 @@ async function asRefOpen(r) {
   if (g.fig && (g.fig.tip || g.fig.value)) { await asDrawnWait(); found = refMarkFig(g.fig) || found; }
   if (!found) toast(t('ki_ref_nicht_gefunden'), 4000);
 }
-function asStop() { api('/api/assistant/stop', {}).catch(() => {}); }
+// stopped before Kontor has taken the question (its answer has no number yet): said again as soon as it has one (asSend) -- a click
+// in that moment is not lost
+function asStop() { if (AS.busy && !AS.job) AS.stopEarly = true; api('/api/assistant/stop', {}).catch(() => {}); }
 async function asNew() { if (AS.busy) asStop(); AS.job = null; AS.busy = false; AS.msgs = []; AS.conv = ''; AS.list = false; AS.hover = AS.sel = null; asHead(); asMsgs(true); try { await api('/api/assistant/reset', {}); } catch (e) {} }
 // Saved conversations (Verläufe): kept by Kontor, encrypted, while the setting is on -- opened again here, and they go on where they stood
 async function asHist(open) {

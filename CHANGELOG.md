@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.17.128 (2026-11-28 03:25)
+- KI-Assistent: Stopp direkt nach dem Absenden geht nicht mehr verloren
+
 ## 3.17.127 (2026-11-28 03:07)
 - KI-Assistent: Auslastung unter Einstellungen → Betrieb – Prozessor, Grafikchip, Arbeitsspeicher als Verlauf der letzten zwei Minuten
 - KI-Assistent: Prozessoranzeige stimmt (stand immer auf 0 %); gemessen nur, solange die Anzeige zu sehen ist

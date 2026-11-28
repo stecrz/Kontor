@@ -6910,9 +6910,21 @@ class Browser(unittest.TestCase):
                 pg.click(".as-b-no"); pg.wait_for_selector(".as-entry.declined"); until(pg, "!AS.busy")
                 self.assertEqual((store.load_shared("state.json", {}) or {}).get("history", {}), {})
                 # stop: at once
-                pg.fill("#as-in", "slow"); pg.keyboard.press("Enter")
-                until(pg, "AS.busy && document.querySelector('#as-go.stop') && /wort/.test(document.querySelector('#as-body').innerText)")
+                pg.fill("#as-in", "slow"); pg.keyboard.press("Enter")          # (its own words, not "Antwort" of an earlier answer)
+                until(pg, "AS.busy && document.querySelector('#as-go.stop') && /wort\\d+ /.test(document.querySelector('#as-body .as-msg:last-child').innerText)")
                 pg.click("#as-go"); until(pg, "!AS.busy", 30)
+                self.assertEqual(pg.evaluate("AS.msgs[AS.msgs.length - 1].state"), "stopped")
+                # ... also before Kontor has taken the question (the click is not lost: said again once the answer has its number)
+                held = []
+                pg.route("**/api/assistant/ask", lambda r: held.append(r))                # the question held back until "Stopp" has reached Kontor
+                pg.fill("#as-in", "slow"); pg.keyboard.press("Enter"); until(pg, "AS.busy && !AS.job && !!document.querySelector('#as-go.stop')")
+                t0 = time.time()
+                while not held and time.time() - t0 < 10:
+                    pg.wait_for_timeout(20)
+                with pg.expect_response("**/api/assistant/stop"):
+                    pg.click("#as-go")
+                held[0].continue_(); pg.unroute("**/api/assistant/ask")
+                until(pg, "!AS.busy", 15)                                       # (not stopped: the slow answer would take minutes)
                 self.assertEqual(pg.evaluate("AS.msgs[AS.msgs.length - 1].state"), "stopped")
                 # Cmd-K hides and shows it; as a page; a new conversation
                 pg.keyboard.press("Meta+k"); until(pg, "!document.querySelector('#assist').classList.contains('open') && getComputedStyle(document.querySelector('main')).marginRight === '0px'")

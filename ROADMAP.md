@@ -553,7 +553,7 @@ anhängen – nie löschen.
   Auslastung des ganzen Chips (einen Anteil je Programm hielte macOS ohne Administratorrechte nur in undokumentierten Werten bereit),
   Arbeitsspeicher der Modellprozesse. Kein Messen im Hintergrund, keine Historie auf dem Mac. Im Assistenten selbst vorerst nicht
   (dort steht unter jeder Antwort ihr Tempo). Die Update-Prüfung fragt beim Update darauf einmal nach der Freigabe: `ioreg` ist ein
-  neues Programm (Apples, nur lesend, feste Frage), dazu der geänderte `ps`-Aufruf. (umgesetzt in 3.17.125)
+  neues Programm (Apples, nur lesend, feste Frage), dazu der geänderte `ps`-Aufruf. (umgesetzt in 3.17.127)
 
 ## Offen (Entscheidung steht aus – mit Empfehlung vorlegen, wenn der Punkt dran ist)
 - Umsatzsteuer-Voranmeldung direkt an ELSTER senden (ELSTERs Programmbibliothek ERiC, Anmeldung als Hersteller, Zertifikat und
