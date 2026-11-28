@@ -127,8 +127,8 @@ Mac … · Arbeitsspeicher …".
 ### settings.assistant.operation — Betrieb
 - **Zustand**: gestoppt, startet …, läuft or Fehler; "abgeschirmt" when it runs in macOS's strict sandbox (no network at all – no internet and none inside this Mac either: Kontor
   talks to the model over one file in the model's own temporary folder –, no other
-  programs, cannot read Kontor's or MoneyMoney's data); memory and processor use, speed of the last answer (tokens per second);
-  "Starten"/"Stoppen".
+  programs, cannot read Kontor's or MoneyMoney's data); speed of the last answer (tokens per second); "Starten"/"Stoppen".
+- **Auslastung** (only while the model runs; key `settings.assistant.load`): see below.
 - **Kontext**: how much the model keeps in view at once (Automatisch by the Mac's memory, or 16–128 K tokens).
 - **Beenden bei Leerlauf**: the model ends after 5, 10, 30 (default) or 60 minutes without a question, or never ("nie – läuft immer": started by Kontor right after the sign-in and after every restart, running as long as Kontor's service runs, whether the Mac app is open or not; after "Stoppen" off until the next question).
 - **Verläufe speichern** (default on): conversations kept encrypted to open again under "Verläufe"; number and size; "Ältere als ein
@@ -136,6 +136,19 @@ Mac … · Arbeitsspeicher …".
 - **Abschirmung von macOS**: Streng (recommended: no internet and no network inside this Mac, no other programs, reads only its
   own folder – so neither Kontor's nor MoneyMoney's data), Einfach (still without any network, Kontor's folders closed) or Aus –
   only the user can weaken it, Kontor never does.
+
+### settings.assistant.load — Auslastung
+What the assistant's running models take of this Mac right now – the model for answers and, while they run, the ones for dictating
+and for finding by meaning –, three small line charts over the last two minutes (newest on the right, one point every two seconds; a gap
+where nothing was measured – the chart out of view, the page away or the window hidden). Measured only while this is in view, with
+macOS's own tools (ps, ioreg), never in the background.
+- **Prozessor**: the models' CPU time between two measurements over the time between, as a share of the whole processor – all cores
+  together, 0–100 % (the Mac's Activity Monitor counts per core, up to cores × 100 %). "–": the first measurement, nothing to compare
+  with yet. On a Mac the model computes mostly on the graphics chip, so this stays low even while it answers.
+- **Grafikchip**: how busy the whole graphics chip is, in percent, as macOS counts it – all programs together, not the model alone;
+  while the model answers it is almost all the model. "unbekannt": macOS names no such figure.
+- **Arbeitsspeicher**: memory the model processes hold (resident, with the model file loaded into memory), in GB; the chart's height is
+  the Mac's whole memory.
 
 ### settings.assistant.memory — Gedächtnis
 "Gedächtnis verwenden" (default on) and the notes the assistant keeps -- short, condensed from what the user said or from its

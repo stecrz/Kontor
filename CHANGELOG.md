@@ -1,5 +1,10 @@
 # Änderungen
 
+## 3.17.127 (2026-11-28 03:07)
+- KI-Assistent: Auslastung unter Einstellungen → Betrieb – Prozessor, Grafikchip, Arbeitsspeicher als Verlauf der letzten zwei Minuten
+- KI-Assistent: Prozessoranzeige stimmt (stand immer auf 0 %); gemessen nur, solange die Anzeige zu sehen ist
+- KI-Assistent: Einstellungsseite folgt, wenn das Modell von selbst endet oder startet
+
 ## 3.17.126 (2026-11-28 02:37)
 - KI-Assistent: Vorbereiten der Suche nach Bedeutung im Hintergrund gedrosselt – der Mac bleibt kühler
 - KI-Assistent: Unter Suche nach Bedeutung steht, wie weit das Vorbereiten ist

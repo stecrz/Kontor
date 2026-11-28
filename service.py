@@ -2326,7 +2326,7 @@ DEMO_NEVER = frozenset(("/api/setup", "/api/login", "/api/touchid", "/api/touchi
                         "/api/package/import", "/api/receipts/link", "/api/receipts/open", "/api/receipts/export",
                         "/api/assistant/settings", "/api/assistant/check", "/api/assistant/runtime/install", "/api/assistant/runtime/remove",
                         "/api/assistant/model/files", "/api/assistant/model/download", "/api/assistant/model/cancel", "/api/assistant/model/delete",
-                        "/api/assistant/web", "/api/assistant/server", "/api/assistant/update-all",
+                        "/api/assistant/web", "/api/assistant/server", "/api/assistant/update-all", "/api/assistant/load",
                         "/api/assistant/memory", "/api/assistant/memory/export", "/api/assistant/memory/import", "/api/assistant/memory/import/undo",
                         # the iPhones added at the Mac and their passkeys: the demo knows none (a sign-in with one opens the demo in the real Kontor)
                         "/api/passkey/options", "/api/passkey/login", "/api/pair/begin", "/api/pair/finish", "/api/devices",
@@ -3681,6 +3681,10 @@ def make_handler(app: App):
                 if not self._assistant_ok(s):
                     return self._json(200, {"settings": {"enabled": False}, "local": False, "remote_off": True})
                 return self._json(200, app.assistant.status(self._is_local(s)))
+            if path == "/api/assistant/load":                     # what the models take of this Mac right now (the chart under Settings -> Assistant, while it is on screen): only at the Mac
+                if not self._is_local(s) or not self._assistant_ok(s):
+                    return self._json(403, {"error": tr("s_nur_von_diesem_mac_aus")})
+                return self._json(200, app.assistant.load())
             if path in ("/api/assistant/chats", "/api/assistant/chat"):        # saved conversations: where one may ask, one may read them again
                 if not self._assistant_ok(s):
                     return self._json(403, {"error": tr("s_nur_von_diesem_mac_aus")})

@@ -543,6 +543,17 @@ anhängen – nie löschen.
   Zeitpunkt, als die Antwort fertig war („heute 14:32“, „gestern …“, älter mit Datum – wie sonst in Kontor); die Dauer vom Absenden
   bis zur fertigen Antwort, ohne die Zeit, in der eine Karte auf den Klick wartet (die gehört dem Nutzer, nicht dem Modell); früher
   gespeicherte Antworten zeigen keinen Zeitpunkt – nichts wird nachträglich erfunden. (umgesetzt in 3.17.123)
+- **Auslastung des Assistenten: richtig oder gar nicht** (Nutzer, 2026-11-28): Die Prozessoranzeige unter Einstellungen →
+  KI-Assistent stand immer auf 0 % (eine Momentaufnahme von `ps` beim Laden der Seite, wenn das Modell ruht; dazu rechnet es auf dem
+  Mac vor allem auf dem Grafikchip, der fehlte). Gewünscht: korrekte Werte, gern als Live-Verlauf von Prozessor, Grafikchip und
+  Arbeitsspeicher – aber nur, solange man die Stelle sieht, ohne nennenswerten Verbrauch und ohne das Modell zu bremsen; ginge das
+  nicht, lieber weglassen (die Aktivitätsanzeige des Macs zeigt es ohnehin). Umgesetzt: „Auslastung“ unter Betrieb, drei Verläufe
+  über zwei Minuten, gemessen nur auf Anfrage der offenen Seite alle zwei Sekunden (nicht im Bild, Fenster im Dock oder verdeckt: nichts), höchstens
+  einmal je Sekunde gleich wer fragt; Prozessor aus der CPU-Zeit zwischen zwei Messungen als Anteil aller Kerne, Grafikchip als
+  Auslastung des ganzen Chips (einen Anteil je Programm hielte macOS ohne Administratorrechte nur in undokumentierten Werten bereit),
+  Arbeitsspeicher der Modellprozesse. Kein Messen im Hintergrund, keine Historie auf dem Mac. Im Assistenten selbst vorerst nicht
+  (dort steht unter jeder Antwort ihr Tempo). Die Update-Prüfung fragt beim Update darauf einmal nach der Freigabe: `ioreg` ist ein
+  neues Programm (Apples, nur lesend, feste Frage), dazu der geänderte `ps`-Aufruf. (umgesetzt in 3.17.125)
 
 ## Offen (Entscheidung steht aus – mit Empfehlung vorlegen, wenn der Punkt dran ist)
 - Umsatzsteuer-Voranmeldung direkt an ELSTER senden (ELSTERs Programmbibliothek ERiC, Anmeldung als Hersteller, Zertifikat und

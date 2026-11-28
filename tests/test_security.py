@@ -1198,7 +1198,8 @@ class NothingGoesOut(unittest.TestCase):
                 "osascript", "/usr/bin/osascript", "xcode-select", "git", "/bin/sh",
                 "sips", "iconutil", "defaults", "tccutil",          # Kontor's own Mac app: its icon, its address, gone on uninstall
                 "/usr/bin/xattr", "/usr/bin/codesign"}              # Kontor's own Python, unpacked: the mark for files from the internet off, signed on this Mac if need be
-    # ... and by a path Kontor made up itself (its Touch ID helper, the password window, llama.cpp, Tailscale's own tool, lsof, the receipt reader, the web reader)
+    # ... and by a path Kontor made up itself (its Touch ID helper, the password window, llama.cpp, Tailscale's own tool, lsof, the receipt reader, the web reader;
+    # llm_local: Apple's /bin/ps and /usr/sbin/ioreg too -- what the models take of the Mac, read only while its chart is in view)
     COMMANDS_BY_PATH = {"auth.py", "mm_history.py", "llm_local.py", "tls_cert.py", "receipt_text.py", "web_search.py",     # receipt_text: its text recognition, sealed; web_search: python3 -I web_reader.py (in the sandbox)
                         "pyboot.py", "pyruntime.py"}        # Kontor's own Python, only from inside .python/ in the program folder: the starter runs the service in it; a build is tried before
     # where links on the pages lead (opened by you, in a new window; the pages themselves only talk to Kontor)

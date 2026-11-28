@@ -64,7 +64,7 @@ import table_text
 from decimal import ROUND_HALF_UP, Decimal
 from model import fmt_eur, has_mark, norm_cat
 from report import COMPANY_ROWS, PLAN_AREA_METHODS, PLAN_METHODS, PLAN_MODELS, position_row
-from llm_local import CATALOG, EMBED, EMBED_CONTEXT, EMBED_IDS, PICTURE_TOKENS, SANDBOXES, SPEECH, Cancelled, LocalAI, ModelError, StreamError, SPEECH_IDS, SPEECH_CONTEXT, MAX_AUDIO, fit, physical_ram
+from llm_local import CATALOG, EMBED, EMBED_CONTEXT, EMBED_IDS, PICTURE_TOKENS, SANDBOXES, SPEECH, Cancelled, LoadMeter, LocalAI, ModelError, StreamError, SPEECH_IDS, SPEECH_CONTEXT, MAX_AUDIO, fit, physical_ram
 from llm_local import tuning as model_tuning
 from storage import StoreError, StoreLocked, selftest
 
@@ -624,6 +624,7 @@ class Assistant:
             self.ai = LocalAI(os.path.join(app.data_dir, FOLDER), app.data_dir, app.program_dir)
             self.speech = LocalAI(os.path.join(app.data_dir, FOLDER), app.data_dir, app.program_dir, role="speech")       # the model that writes down what is dictated
             self.embedder = LocalAI(os.path.join(app.data_dir, FOLDER), app.data_dir, app.program_dir, role="embed")      # the model for finding by meaning
+        self.meter = LoadMeter()                         # what the models take of the Mac: measured only while its chart is on screen (load)
         self.queue: List[dict] = []                      # "update everything": what is still to come
         self.looked: Optional[float] = None              # the last look for newer versions (by itself or on your click)
         self.auto_due = False                            # a look found something newer: loaded by itself once the assistant is idle (auto_tick)
@@ -800,6 +801,12 @@ class Assistant:
                        meaning_work=dict(self._index_work) if self._indexing and self._index_work.get("made") else None,
                        folder=self.ai.base, folder_exists=os.path.isdir(self.ai.base))          # llama.cpp and every model (also for dictating)
         return out
+
+    def load(self) -> dict:
+        """What the running models (answering, dictating, finding by meaning) take of the Mac right now: processor (share of all
+        cores), graphics chip (all programs together), memory -- for the chart under Settings -> Assistant, asked only while it
+        is on screen (service.py: only at the Mac)."""
+        return dict(self.meter.sample([self.ai, self.speech, self.embedder]), ram=physical_ram())
 
     def set(self, body: dict) -> dict:
         """Changes settings (only from the Mac, see service.py): any of enabled, model, speech, context (0: automatic),

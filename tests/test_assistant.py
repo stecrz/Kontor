@@ -17,6 +17,7 @@ import os
 import re
 import shutil
 import stat
+import subprocess
 import sys
 import tarfile
 import tempfile
@@ -1277,6 +1278,137 @@ class Several(_Open):
         self.assertTrue(os.path.exists(outside))
 
 
+class Load(unittest.TestCase):
+    """What the models take of the Mac (Settings -> Assistant, the chart "Auslastung"): measured only when asked, at most once a
+    second, the processor as the CPU time between two measurements over the time between, of all cores; nothing made up."""
+
+    def test_cpu_time_as_ps_writes_it(self):
+        for text, secs in (("0:01.23", 1.23), ("125:10.33", 7510.33), ("12:34,56", 754.56), (" 0:00.00 ", 0.0),       # the Mac: minutes (past 60), seconds, hundredths
+                           ("00:01:05", 65.0), ("1-02:03:04", 93784.0), ("17", 17.0)):                        # elsewhere: [days-]hours:minutes:seconds
+            self.assertAlmostEqual(L.cpu_seconds(text), secs, places=6, msg=text)
+        for bad in ("", "abc", "1:2:3:4", "-1:00", "1:00.", "12:345", None):
+            self.assertIsNone(L.cpu_seconds(bad), bad)
+
+    def test_its_own_process_by_ps(self):
+        calls, orig = [], L.subprocess.run
+        proc = type("P", (), {"pid": 4242, "poll": lambda self: None})()
+        own = type("M", (), {"proc": proc})()
+        answer = lambda text: (lambda cmd, **kw: calls.append(cmd) or type("R", (), {"stdout": text})())
+        try:
+            L.subprocess.run = answer("  2048 1:02.50\n")
+            self.assertEqual(L.LocalAI.usage(own), {"pid": 4242, "rss": 2048 * 1024, "cpu_seconds": 62.5})
+            self.assertEqual(calls, [[L.PS, "-o", "rss=,time=", "-p", "4242"]])
+            for text in ("", "x 0:01.00", "2048 junk", "2048", "1 2 3"):                    # nothing readable: nothing made up
+                L.subprocess.run = answer(text); self.assertEqual(L.LocalAI.usage(own), {}, text)
+            L.subprocess.run = lambda cmd, **kw: (_ for _ in ()).throw(OSError("no ps"))
+            self.assertEqual(L.LocalAI.usage(own), {})
+            calls.clear(); L.subprocess.run = answer("1 0:00.00")
+            for p in (None, type("P", (), {"pid": 7, "poll": lambda self: 0})()):          # not started, ended: not asked
+                self.assertEqual((L.LocalAI.usage(type("M", (), {"proc": p})()), L.LocalAI.pid(type("M", (), {"proc": p})())), ({}, None))
+            self.assertEqual(calls, [])
+        finally:
+            L.subprocess.run = orig
+
+    def test_a_real_process(self):
+        p = subprocess.Popen([sys.executable, "-c", "import time\nt = time.process_time()\nwhile time.process_time() - t < 1.3: pass\ntime.sleep(30)"])
+        own = type("M", (), {"proc": p})()
+        try:
+            deadline = time.time() + 20
+            while time.time() < deadline and L.LocalAI.usage(own).get("cpu_seconds", 0) < 1:
+                time.sleep(0.2)
+            u = L.LocalAI.usage(own)
+            self.assertEqual(u["pid"], p.pid); self.assertGreater(u["rss"], 1 << 20)
+            self.assertTrue(1 <= u["cpu_seconds"] < 10, u)                             # 1.3 s used: read as seconds (not minutes as hours, not ticks)
+        finally:
+            p.kill(); p.wait()
+        self.assertEqual(L.LocalAI.usage(own), {})                                      # ended: nothing, not zero
+
+    def meter(self, cores=4):
+        self.now, self.cpu, self.reads, self.gpus = 100.0, {}, 0, 0
+        test = self
+
+        class Model:
+            def __init__(self, pid):
+                self.id = pid
+
+            def pid(self):
+                return self.id if self.id in test.cpu or self.id in test.alive else None
+
+            def usage(self):
+                test.reads += 1
+                return {"pid": self.id, "rss": 1000 * self.id, "cpu_seconds": test.cpu[self.id]} if self.id in test.cpu else {}
+        self.Model, self.alive = Model, set()
+        orig = L.gpu_busy
+
+        def gpu():
+            self.gpus += 1
+            return 64
+        L.gpu_busy = gpu
+        self.addCleanup(setattr, L, "gpu_busy", orig)
+        m = L.LoadMeter(); m.cores = cores
+        return m
+
+    def test_processor_share_of_all_cores_between_two_measurements(self):
+        m = self.meter()
+        both = [self.Model(11), self.Model(12)]
+        sample = lambda: m.sample(both, now=self.now)
+        self.cpu = {11: 50.0, 12: 7.0}
+        self.assertEqual(sample(), {"running": True, "cpu": None, "memory": 23000, "gpu": 64, "cores": 4})      # nothing to compare with yet
+        self.now += 2.0; self.cpu = {11: 52.5, 12: 8.5}                                 # 2.5 s + 1.5 s CPU in 2 s on 4 cores: 50 %
+        self.assertEqual(sample()["cpu"], 50.0)
+        self.now += 0.4; self.cpu = {11: 99.0, 12: 99.0}                                # asked again within a second (two windows): the same answer, ps not asked
+        self.assertEqual((sample()["cpu"], self.reads, self.gpus), (50.0, 4, 2))
+        self.now += 0.6; self.cpu = {11: 99.0, 12: 99.0}                                # far more than all cores could: at most 100 %
+        self.assertEqual(sample()["cpu"], 100.0)
+        self.now += 2.0; self.cpu = {11: 100.0, 12: 0.0}                                # a time going back (an unlikely new process under the same number): never below 0
+        self.assertEqual(sample()["cpu"], 12.5)                                         # 1 s of 11 only: 1 / 2 / 4
+        self.now += 2.0; self.cpu = {11: 100.0}                                         # one ended: the other alone, its memory alone
+        r = sample(); self.assertEqual((r["cpu"], r["memory"]), (0.0, 11000))
+
+    def test_nothing_made_up(self):
+        m = self.meter(cores=8)
+        first, again = self.Model(11), self.Model(21)
+        self.cpu = {11: 5.0}; m.sample([first], now=self.now)
+        self.now += 2.0; self.cpu = {21: 9.0}                                           # the model started anew (another process): not compared with the old one
+        self.assertEqual(m.sample([first, again], now=self.now)["cpu"], None)
+        self.now += 30.0; self.cpu = {21: 25.0}                                         # the page was away for 30 s: an average of them would not be "now"
+        self.assertEqual(m.sample([again], now=self.now)["cpu"], None)
+        self.now += 2.0; self.cpu = {21: 26.6}
+        self.assertEqual(m.sample([again], now=self.now)["cpu"], 10.0)                  # 1.6 s in 2 s on 8 cores
+        self.now += 2.0; self.cpu = {21: 26.7, 12: 3.0}                                 # a second model started beside it: not a part shown as the whole
+        self.assertEqual(m.sample([again, self.Model(12)], now=self.now)["cpu"], None)
+        self.now += 2.0; self.cpu = {21: 26.9, 12: 4.4}
+        self.assertEqual(m.sample([again, self.Model(12)], now=self.now)["cpu"], 10.0)  # both: (0.2 + 1.4) / 2 / 8
+        self.now += 2.0; self.cpu = {}; self.alive = {21}                               # ps answered nothing for a running model: unknown, not 0
+        r = m.sample([again], now=self.now); self.assertEqual((r["running"], r["cpu"], r["memory"], r["gpu"]), (False, None, None, None))
+        self.now += 2.0; self.alive = set(); gpus, reads = self.gpus, self.reads        # no model runs: it takes nothing -- nothing is asked
+        self.assertEqual(m.sample([first, again], now=self.now), {"running": False, "cpu": 0.0, "memory": 0, "gpu": None, "cores": 8})
+        self.assertEqual((self.gpus, self.reads), (gpus, reads))
+
+    def test_graphics_chip_as_macos_counts_it(self):
+        out = ('+-o AGXAcceleratorG14X  <class AGXAcceleratorG14X, id 0x1000002a2, registered, matched, active, busy 0 (12 ms), retain 85>\n'
+               '    {\n      "IOClass" = "AGXAcceleratorG14X"\n      "PerformanceStatistics" = {"In use system memory"=1234,"Tiler Utilization %"=81,'
+               '"Device Utilization %"=87,"Renderer Utilization %"=85}\n    }\n')
+        orig, plat, calls = L.subprocess.run, L.sys.platform, []
+        run = lambda text: (lambda cmd, **kw: calls.append(cmd) or type("R", (), {"stdout": text})())
+        try:
+            L.sys.platform = "linux"; L.subprocess.run = run(out)
+            self.assertIsNone(L.gpu_busy()); self.assertEqual(calls, [])                # not a Mac: nothing asked
+            L.sys.platform = "darwin"
+            self.assertEqual(L.gpu_busy(), 87)
+            self.assertEqual(calls, [[L.IOREG, "-r", "-d", "1", "-w", "0", "-c", "IOAccelerator"]])
+            L.subprocess.run = run(out + out.replace("=87", "=12"))                     # two graphics chips: the busier one
+            self.assertEqual(L.gpu_busy(), 87)
+            L.subprocess.run = run(out.replace('"Device Utilization %"=87', '"Device Utilization %" = 140'))
+            self.assertEqual(L.gpu_busy(), 100)
+            for text in ("", out.replace("Device Utilization", "Device Use")):
+                L.subprocess.run = run(text); self.assertIsNone(L.gpu_busy())           # nothing to read: unknown
+            L.subprocess.run = lambda cmd, **kw: (_ for _ in ()).throw(subprocess.TimeoutExpired(cmd, 5))
+            self.assertIsNone(L.gpu_busy())
+        finally:
+            L.subprocess.run, L.sys.platform = orig, plat
+
+
 class Server(_Open):
     """The model process: started and ended by Kontor, on this machine only."""
 
@@ -1329,7 +1461,9 @@ class Server(_Open):
         self.ai.ensure("qwen3.6-35b-a3b", 16384, "off")
         st = self.ai.status()["server"]
         self.assertEqual((st["state"], st["model"], st["context"], st["sealed"]), ("ready", "qwen3.6-35b-a3b", 16384, ""))
-        self.assertGreater(st["rss"], 0)
+        self.assertNotIn("rss", st); self.assertNotIn("cpu", st)          # the status measures nothing (LoadMeter, only while its chart is shown)
+        u = self.ai.usage()
+        self.assertEqual(u["pid"], self.ai.proc.pid); self.assertGreater(u["rss"], 0); self.assertGreaterEqual(u["cpu_seconds"], 0)
         with open(os.path.join(self.bin, "started.json")) as f:
             started = json.load(f)
         argv = started["argv"]
@@ -5767,6 +5901,31 @@ class Http(_Assist):
         self.assertEqual((s["enabled"], s["rights"]["enter_values"]), (True, True))
         self.assertIn("qwen3.6-35b-a3b", self.a.ai.models())
 
+    def test_load_of_the_models_only_at_the_mac(self):
+        """The chart "Auslastung": what the running models take of the Mac -- only at the Mac, measured only when asked."""
+        code, r = self.call("/api/assistant/load")
+        self.assertEqual((code, r["running"], r["cpu"], r["memory"], r["gpu"]), (200, False, 0.0, 0, None))     # nothing runs: nothing taken, nothing asked
+        self.assertEqual((r["ram"], r["cores"]), (L.physical_ram(), os.cpu_count()))
+        self.a.ai.ensure("qwen3.6-35b-a3b", 16384, "off")
+        try:
+            self.a.meter.last = None
+            code, r = self.call("/api/assistant/load")
+            self.assertEqual((code, r["running"], r["cpu"]), (200, True, None)); self.assertGreater(r["memory"], 0)      # the first: nothing to compare with
+            self.a.meter.last = (self.a.meter.last[0] - 2,) + self.a.meter.last[1:]   # (two seconds later)
+            r = self.call("/api/assistant/load")[1]
+            self.assertTrue(0 <= r["cpu"] <= 100, r)
+            self.assertNotIn("rss", json.dumps(self.call("/api/assistant/status")[1]["server"]))        # the status measures nothing
+            cfg = copy.deepcopy(self.app.config); cfg["ui"]["remote_read_only"] = False
+            cfg.setdefault("assistant", {}).setdefault("rights", {})["remote"] = True; self.app.save_config(cfg)
+            self.remote()
+            try:
+                self.assertNotIn("remote_off", self.call("/api/assistant/status")[1])     # (asking from there is allowed ...)
+                self.assertEqual(self.call("/api/assistant/load")[0], 403)          # ... the load not: the settings are only at the Mac
+            finally:
+                self.remote(False)
+        finally:
+            self.a.ai.stop()
+
     def test_a_file_given_opens_again_only_where_one_may_ask(self):
         """A file given in the chat, opened again from its name: signed in, from another device only with the right "remote",
         never with the assistant off -- and only while Kontor keeps it (the oldest goes once more than ATTACH_MAX are given)."""
@@ -6083,6 +6242,70 @@ class Browser(unittest.TestCase):
             app.assistant_stop(); srv.shutdown(); srv.server_close()
             with app.rebuild_cv:
                 app.rebuild_cv.wait_for(lambda: not app.rebuild_running and not app.rebuild_pending, timeout=30)
+            shutil.rmtree(d, ignore_errors=True)
+
+    def test_load_chart_only_while_on_screen(self):
+        """Einstellungen -> KI-Assistent, the chart "Auslastung": shown while the model runs (the page follows when it starts or ends
+        by itself), measured every two seconds only while it is in view and the window seen -- gone with the page or the stopped
+        model, and with it every request."""
+        try:
+            from playwright.sync_api import sync_playwright
+        except ImportError:
+            self.skipTest("playwright fehlt")
+        from http.server import ThreadingHTTPServer
+        from fixtures import new_store
+        d = tempfile.mkdtemp(prefix="kontor-asload-")
+        store = new_store(d); store.save("config.json", T.config_for_test(os.path.join(d, "Belege")))
+        T.reset_mock(); T.patch_today()
+        app = MA.App(store, d, bridge_factory=T.MockBridge); app.do_run(False, True)
+        orig = L._open
+        install(app)
+        srv = ThreadingHTTPServer(("127.0.0.1", 0), MA.make_handler(app)); threading.Thread(target=srv.serve_forever, daemon=True).start()
+        url = "http://127.0.0.1:%d/" % srv.server_address[1]
+        until = lambda pg, js: pg.wait_for_function("() => " + js, timeout=20000)
+        try:
+            with sync_playwright() as p:
+                b = p.chromium.launch()
+                pg = b.new_page(viewport={"width": 1440, "height": 900})
+                errors, asked = [], []
+                pg.on("pageerror", lambda e: errors.append(str(e)))
+                pg.on("request", lambda r: asked.append(r.url) if "/api/assistant/load" in r.url else None)
+                pg.goto(url); pg.fill("#login-pw", "sehr-geheimes-passwort"); pg.fill("#login-pw2", "sehr-geheimes-passwort"); pg.click("#login-btn"); T.wait_shell(pg)
+                pg.goto(url + "#settings/assistant"); pg.wait_for_selector("#as-start")
+                self.assertEqual((pg.query_selector("#as-load"), asked), (None, []))          # the model stopped: no chart, nothing measured
+                app.assistant.ai.ensure("qwen3.6-35b-a3b", 16384, "off")                        # a question started it: the page follows by itself
+                pg.wait_for_selector("#as-load", timeout=20000); until(pg, "AS.loadT > 0")
+                turn = lambda: (lambda k: until(pg, "AS.loadT !== %d" % k))(pg.evaluate("AS.loadT"))      # one more turn of asking (or not)
+                pg.evaluate("window.scrollTo(0, 0)")
+                if pg.evaluate("document.querySelector('#as-load').getBoundingClientRect().top > innerHeight"):
+                    turn(); turn()
+                    self.assertEqual((asked, pg.evaluate("AS.loadSeen")), ([], False))       # not scrolled to: nothing measured
+                pg.evaluate("document.querySelector('#as-load').scrollIntoView()")
+                until(pg, "(AS.loadHist || []).filter(p => p.cpu != null).length >= 1 && !!document.querySelector('.as-load-t[data-k=cpu] path.l').getAttribute('d')")
+                cpu, gpu, mem = pg.evaluate("['cpu', 'gpu', 'memory'].map(k => document.querySelector(`.as-load-t[data-k=${k}] b`).textContent)")
+                self.assertRegex(cpu, r"^\d+(,\d)? %$"); self.assertRegex(mem, r"^\d+(,\d)? GB$")
+                self.assertEqual(gpu, "unbekannt" if sys.platform != "darwin" else gpu)       # (no graphics chip to read here: said so)
+                self.assertIn("Kerne", pg.get_attribute(".as-load-t[data-k=cpu]", "title"))
+                # the window hidden (in the Dock, behind another tab): nothing measured -- and again once it is seen
+                pg.evaluate("Object.defineProperty(document, 'hidden', {value: true, configurable: true}); document.dispatchEvent(new Event('visibilitychange'))")
+                turn(); n = len(asked); turn(); turn()
+                self.assertEqual(len(asked), n)
+                pg.evaluate("delete document.hidden; document.dispatchEvent(new Event('visibilitychange'))"); until(pg, "AS.loadT > 0")
+                turn(); turn(); self.assertGreater(len(asked), n)
+                pg.goto(url + "#overview"); until(pg, "AS.loadT === 0")                       # the page left: no more asking
+                n = len(asked)
+                pg.goto(url + "#settings/assistant"); pg.wait_for_selector("#as-load"); pg.evaluate("document.querySelector('#as-load').scrollIntoView()")
+                until(pg, "AS.loadT > 0"); turn(); turn(); self.assertGreater(len(asked), n)
+                app.assistant.ai.stop()                                                          # ended by itself (idle): the page follows, the asking ends
+                pg.wait_for_selector("#as-start", timeout=20000); until(pg, "AS.loadT === 0")
+                n = len(asked); pg.evaluate("route()"); pg.wait_for_selector("#as-start")
+                self.assertEqual((len(asked), pg.evaluate("AS.loadT")), (n, 0))
+                self.assertEqual(errors, [])
+                b.close()
+        finally:
+            app.assistant.ai.stop(); app.assistant_stop()
+            L._open = orig
+            srv.shutdown(); srv.server_close()
             shutil.rmtree(d, ignore_errors=True)
 
     def test_rules_page_open_while_the_assistant_changes_a_rule(self):

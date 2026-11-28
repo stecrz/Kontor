@@ -75,6 +75,12 @@ SANDBOX = "/usr/bin/sandbox-exec"
 TMP_PREFIX = "llm-run-"             # a model process's own temporary folder, a new one for every start (never "kontor-...")
 SOCK_NAME = "m.sock"                # the socket file the model's server listens on, in that folder (llama.cpp: a --host ending in .sock)
 SOCK_MAX = 100                      # bytes of its whole path at most (macOS takes 103)
+# what the models take of the Mac (Settings -> Assistant, while the chart is on screen): Apple's own tools, read only
+PS = "/bin/ps"
+IOREG = "/usr/sbin/ioreg"
+GPU_BUSY_RE = re.compile(r'"Device Utilization %"\s*=\s*(\d{1,3})\b')
+LOAD_GAP = 1.0                      # seconds: asked again sooner (two windows with the chart), the last measurement is the answer
+LOAD_FRESH = 10.0                   # ... more than this since the one before (the page was away): nothing to compare with
 
 # Models Kontor names (they change with Kontor's versions); any other GGUF from Hugging Face can be added by its repository.
 # In the order the settings show them, by what a model is for ("kind"), within a kind the most thorough first:
@@ -155,6 +161,72 @@ def physical_ram() -> int:
         return os.sysconf("SC_PHYS_PAGES") * os.sysconf("SC_PAGE_SIZE")
     except (ValueError, OSError, AttributeError):
         return 0
+
+
+def cpu_seconds(text: str) -> Optional[float]:
+    """ps's "time" of a process (CPU time so far, user and system) in seconds: on the Mac minutes, seconds and hundredths
+    ("12:34.56", the minutes going on past 60), elsewhere [days-]hours:minutes:seconds ("1-02:03:04"). None: no such text."""
+    m = re.fullmatch(r"(?:(\d{1,6})-)?(\d{1,9}(?::\d{1,2}){0,2})(?:[.,](\d{1,6}))?", (text or "").strip())
+    if not m:
+        return None
+    secs = 0
+    for part in m.group(2).split(":"):
+        secs = secs * 60 + int(part)
+    return int(m.group(1) or 0) * 86400 + secs + (float("0." + m.group(3)) if m.group(3) else 0.0)
+
+
+def gpu_busy() -> Optional[int]:
+    """How busy the Mac's graphics chip is right now, in percent -- all programs together (while the assistant answers, almost
+    all of it is the model). macOS's own figure ("Device Utilization %" of the graphics chip in its registry of devices), read
+    with Apple's ioreg: read only, a fixed question, no rights needed. None: not a Mac, or nothing to read."""
+    if sys.platform != "darwin":
+        return None
+    try:
+        out = subprocess.run([IOREG, "-r", "-d", "1", "-w", "0", "-c", "IOAccelerator"], capture_output=True, text=True, errors="replace",
+                             timeout=5).stdout
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    found = [int(x) for x in GPU_BUSY_RE.findall(out)]
+    return min(100, max(found)) if found else None
+
+
+class LoadMeter:
+    """What Kontor's models take of the Mac right now -- for the chart under Settings -> Assistant. Measured only when the page
+    asks (while the chart is on screen), at most once every LOAD_GAP seconds whoever asks: nothing runs in the background,
+    nothing the models wait for (ps and ioreg read what macOS counts anyway). The processor: the CPU time the models used since
+    the measurement before, over the time between, of all cores together (0-100 %; the Mac's Activity Monitor counts each core,
+    up to cores x 100 %). The first measurement, one after a pause or with a process new since: None ("not measured yet")."""
+
+    def __init__(self) -> None:
+        self.cores = max(1, os.cpu_count() or 1)
+        self.lock = threading.Lock()
+        self.last: Optional[tuple] = None            # (when, {pid: CPU seconds}, the answer then)
+
+    def sample(self, models: list, now: Optional[float] = None) -> dict:
+        """models: Kontor's model processes (LocalAI: pid(), usage()); now: the time (tests), else time.monotonic()."""
+        with self.lock:
+            if self.last is not None and 0 <= (time.monotonic() if now is None else now) - self.last[0] < LOAD_GAP:
+                return dict(self.last[2])
+            running = [m for m in models if m.pid()]
+            got: Dict[int, tuple] = {}
+            for m in running:
+                u = m.usage()
+                if u:
+                    got[u["pid"]] = (u["rss"], u["cpu_seconds"])
+            t = time.monotonic() if now is None else now
+            before, since = (self.last[1], t - self.last[0]) if self.last is not None else ({}, 0.0)
+            cpu: Optional[float] = None
+            if not running:
+                cpu = 0.0                                # nothing of the assistant runs: it takes nothing
+            elif got and all(p in before for p in got) and 0 < since <= LOAD_FRESH:
+                # (a process new since then -- a model started anew, or a second one beside it -- has nothing to compare with: its
+                # time since its start is not of these seconds, and leaving it out would show a part as the whole)
+                used = sum(max(0.0, got[p][1] - before[p]) for p in got)
+                cpu = round(min(100.0, 100.0 * used / since / self.cores), 1)
+            out = {"running": bool(got), "cpu": cpu, "memory": sum(r for r, _ in got.values()) if got or not running else None,
+                   "gpu": gpu_busy() if got else None, "cores": self.cores}
+            self.last = (t, {p: v[1] for p, v in got.items()}, out)
+            return dict(out)
 
 
 def fit(gb: float, ram_from: Optional[int], ram: int) -> str:
@@ -1588,14 +1660,22 @@ class LocalAI:
         elif self.proc is not None and self.state == "ready" and self.proc.poll() is not None:
             self.stop()                                    # it ended by itself
 
+    def pid(self) -> Optional[int]:
+        """The model's process while it runs (for LoadMeter), else None."""
+        p = self.proc
+        return p.pid if p is not None and p.poll() is None else None
+
     def usage(self) -> dict:
+        """What the model's process takes right now (for LoadMeter): {"pid", "rss": resident memory in bytes, "cpu_seconds": CPU
+        time so far}, read with Apple's ps for its own process only. {}: it does not run, or ps said nothing readable."""
         p = self.proc
         if p is None or p.poll() is not None:
             return {}
         try:
-            out = subprocess.run(["ps", "-o", "rss=,pcpu=", "-p", str(p.pid)], capture_output=True, text=True, timeout=5).stdout.split()
-            return {"rss": int(out[0]) * 1024, "cpu": float(out[1].replace(",", "."))}
-        except (OSError, ValueError, IndexError, subprocess.TimeoutExpired):
+            out = subprocess.run([PS, "-o", "rss=,time=", "-p", str(p.pid)], capture_output=True, text=True, errors="replace", timeout=5).stdout.split()
+            secs = cpu_seconds(out[1]) if len(out) == 2 and out[0].isdigit() else None
+            return {"pid": p.pid, "rss": int(out[0]) * 1024, "cpu_seconds": secs} if secs is not None else {}
+        except (OSError, subprocess.TimeoutExpired):
             return {}
 
     def status(self) -> dict:
@@ -1638,8 +1718,7 @@ class LocalAI:
                 "runtime": {"installed": bool(rt), "tag": rt.get("tag", ""), "version": rt.get("version", ""), "date": rt.get("installed", ""),
                             "latest": (news.get("runtime") or {}).get("tag", ""), "newer": bool((news.get("runtime") or {}).get("newer"))},
                 "models": models, "speech": speech, "embed": embed, "recommended": recommended(ram), "checked": news.get("at", ""), "check_error": news.get("error", ""),
-                "server": dict({"state": self.state if running or self.state in ("error", "starting") else "stopped", "model": self.model if running else "",
-                                "since": int(time.time() - self.since) if running and self.since else 0, "sealed": self.sealed if running else "",
-                                "busy": self.busy, "error": self.error if self.state == "error" else "", "tps": self.tps, "context": self.ctx if running else 0},
-                               **(self.usage() if running else {})),
+                "server": {"state": self.state if running or self.state in ("error", "starting") else "stopped", "model": self.model if running else "",
+                           "since": int(time.time() - self.since) if running and self.since else 0, "sealed": self.sealed if running else "",
+                           "busy": self.busy, "error": self.error if self.state == "error" else "", "tps": self.tps, "context": self.ctx if running else 0},
                 "job": self.job_view(), "disk_free": free}

@@ -210,7 +210,7 @@ const H = {
   bind: t('auf_diesem_mac_ist_die'),
   tls: t('optional_zertifikat_schluessel_pem_fue'),
   updates: t('einzige_netzverbindung_von_kontor_einm'), python: t('h_python'), programme: t('h_programme'),
-  assistent: t('h_assistent'), ki_abschirmung: t('h_ki_abschirmung'), ki_kontext: t('h_ki_kontext'), ki_leerlauf: t('h_ki_leerlauf'),
+  assistent: t('h_assistent'), ki_abschirmung: t('h_ki_abschirmung'), ki_kontext: t('h_ki_kontext'), ki_leerlauf: t('h_ki_leerlauf'), ki_auslastung: t('h_ki_auslastung'),
   ki_eintragen: t('h_ki_eintragen'), ki_eigenes: t('h_ki_eigenes'), ki_diktat: t('h_ki_diktat'), ki_bedeutung: t('h_ki_bedeutung'), ki_sp_start: t('h_ki_sp_start'), ki_mikrofilter: t('h_ki_mikrofilter'), ki_speichern: t('h_ki_speichern'), ki_internet: t('h_ki_internet'), ki_tavily: t('h_ki_tavily'), ki_claude: t('h_ki_claude'), ki_claude_tag: t('h_ki_claude_tag'), ki_vertraut: t('h_ki_vertraut'), ki_websites: t('h_ki_websites'),
   ki_gedaechtnis: t('h_ki_gedaechtnis'),
   ki_programm: t('h_ki_programm'), ki_auto_suchen: t('h_ki_auto_suchen'), ki_modelle: t('h_ki_modelle'), ki_ablage: t('h_ki_ablage'),
@@ -275,7 +275,7 @@ const HELP_AT = {als_app: 'app', berechtigung: 'setup', immo_abrechnung: 'proper
   h_co_rueck: 'rules-back', h_co_takt: 'rules-companies', h_co_schwelle: 'rules-companies', h_co_gp: 'rules-companies', method: 'planning', plan_modell: 'planning', inflation: 'planning', steig_ein: 'planning',
   rendite: 'planning', event: 'planning', wert_bereich: 'planning', fern: 'iphone', fern_was: 'iphone', offline: 'iphone', bind: 'iphone', tls: 'iphone',
   port: 'iphone', touchid: 'security', package: 'backup', timemachine: 'backup', datenschluessel: 'security', diagnose: 'troubleshooting', einrichtung_knoepfe: 'setup', updates: 'updates', python: 'python', programme: 'components',
-  update_quelle: 'updates', belege_ordner: 'receipts', belege_sub: 'receipts', documents: 'properties', assistent: 'assistant', ki_diktat: 'assistant-dictation', ki_bedeutung: 'assistant-memory', ki_sp_start: 'assistant-dictation', ki_mikrofilter: 'assistant-dictation', ki_abschirmung: 'assistant-sandbox', ki_kontext: 'assistant-setup', ki_leerlauf: 'assistant-setup', ki_auto_suchen: 'assistant-setup', ki_eintragen: 'assistant-rights', ki_eigenes: 'assistant-setup', ki_speichern: 'assistant', ki_programm: 'assistant-setup', ki_modelle: 'assistant-setup', ki_ablage: 'assistant-setup', ki_internet: 'assistant-internet', ki_tavily: 'assistant-internet', ki_claude: 'assistant-claude', ki_claude_tag: 'assistant-claude', ki_vertraut: 'assistant-internet', ki_websites: 'assistant-internet'};
+  update_quelle: 'updates', belege_ordner: 'receipts', belege_sub: 'receipts', documents: 'properties', assistent: 'assistant', ki_diktat: 'assistant-dictation', ki_bedeutung: 'assistant-memory', ki_sp_start: 'assistant-dictation', ki_mikrofilter: 'assistant-dictation', ki_abschirmung: 'assistant-sandbox', ki_kontext: 'assistant-setup', ki_leerlauf: 'assistant-setup', ki_auslastung: 'assistant-setup', ki_auto_suchen: 'assistant-setup', ki_eintragen: 'assistant-rights', ki_eigenes: 'assistant-setup', ki_speichern: 'assistant', ki_programm: 'assistant-setup', ki_modelle: 'assistant-setup', ki_ablage: 'assistant-setup', ki_internet: 'assistant-internet', ki_tavily: 'assistant-internet', ki_claude: 'assistant-claude', ki_claude_tag: 'assistant-claude', ki_vertraut: 'assistant-internet', ki_websites: 'assistant-internet'};
 const more = id => ` <a href="#help/${id}" class="more" title="${esc(t('mehr_in_der_hilfe_tip'))}">${t('mehr_in_der_hilfe')}</a>`;   // Verweis auf einen Abschnitt der Hilfe (with its own tooltip: it also stands where no "?" explains its group -- the properties' toolbar, 3.17.85)
 // beside a page's title: what the page does in a line, a click opens its part of the help (settings and Konten & Regeln: per tab)
 const PAGE_HELP = {overview: 'overview', balance: 'balance-sheet', cashflow: 'cash-flow', planning: 'planning', properties: 'properties', tax: 'tax',
@@ -9447,7 +9447,7 @@ async function vEinstellungenAssistent() {
   const mlist = models.map((m, i) => (i && (models[i - 1].kind || '') === (m.kind || '') ? '' : m.kind ? `<div class="as-item as-group">${t(`ki_gruppe_${m.kind}`)}</div>` : others) + mrow(m)).join('')
     + (models.length && !models[models.length - 1].kind ? '' : others);
   const state = sv.state || 'stopped', opt = (v, l, cur) => `<option value="${v}" ${String(cur) === String(v) ? 'selected' : ''}>${l}</option>`;
-  const use = sv.rss ? t('ki_verbrauch', asRAM(sv.rss), asN(sv.cpu || 0)) + (sv.tps ? ' · ' + t('ki_tempo', asN(sv.tps)) : '') : '';
+  const use = state === 'ready' && sv.tps ? t('ki_tempo', asN(sv.tps)) : '';
   // under the internet's checkbox, while it is allowed: the Tavily key, what goes without asking (sources, websites)
   const wt = st.web_trusted || {};
   const webKey = r.internet ? `<div class="form as-web-key"><label for="as-tavily">${t('ki_tavily')}${hq('ki_tavily')}</label><div class="row tight">${(a.web || {}).tavily
@@ -9505,6 +9505,7 @@ async function vEinstellungenAssistent() {
       ${state === 'ready' ? `<span class="tag${sv.sealed === 'strict' ? '' : ' warn'}" title="${esc(t(sv.sealed === 'strict' ? 'ki_abgeschirmt_tip' : sv.sealed ? 'ki_abgeschirmt_einfach_tip' : 'ki_nicht_abgeschirmt_tip'))}">${t(sv.sealed === 'strict' ? 'ki_abgeschirmt' : sv.sealed ? 'ki_abgeschirmt_einfach' : 'ki_nicht_abgeschirmt')}</span>` : ''}<span class="muted small" id="as-use">${esc(use)}</span>
       ${state === 'ready' || state === 'starting' ? `<button class="small secondary" id="as-stop">${t('ki_stoppen')}</button>` : `<button class="small secondary" id="as-start" ${st.enabled && a.ready ? '' : 'disabled'}>${t('ki_starten')}</button>`}</div>
     ${state === 'error' && sv.error ? `<div class="full banner err small">${esc(sv.error)}</div>` : ''}
+    ${state === 'ready' && !demoOn() ? `<label>${t('ki_auslastung')}${hq('ki_auslastung')}</label><div class="as-load" id="as-load" data-ex="settings.assistant.load">${asLoadTiles()}</div>` : ''}
     <label>${t('ki_kontext')}${hq('ki_kontext')}</label><label class="chk"><select id="as-context">${opt(0, t('ki_kontext_auto', a.context_auto_value / 1024), st.context_auto ? 0 : st.context)}${[16384, 32768, 65536, 131072].map(k => opt(k, t('ki_kontext_n', k / 1024), st.context_auto ? 0 : st.context)).join('')}</select></label>
     <label>${t('ki_leerlauf')}${hq('ki_leerlauf')}</label><label class="chk"><select id="as-idle">${[5, 10, 30, 60, 0].map(k => opt(k, k ? t('ki_leerlauf_n', k) : t('ki_leerlauf_nie'), st.idle_minutes)).join('')}</select></label>
     <label for="as-save">${t('ki_speichern')}${hq('ki_speichern')}</label><div class="row tight as-save-row"><label class="chk"><input type="checkbox" id="as-save" ${st.save_chats !== false ? 'checked' : ''} aria-label="${esc(t('ki_speichern'))}"></label>
@@ -9629,7 +9630,64 @@ function asWatch() {
   };
   AS_WATCH = setTimeout(tick, 1500);
 }
+// What the running models take of this Mac (Einstellungen -> KI-Assistent -> Betrieb): processor, graphics chip and memory over the
+// last two minutes -- asked every two seconds only while the chart is on the page and the window in front, kept in the page only
+// (left and back within two minutes: the lines go on after a gap). Nothing is measured otherwise (LoadMeter in llm_local.py).
+const LOAD_SPAN = 120000, LOAD_EVERY = 2000;
+const asPct = v => v.toLocaleString(LOCALE, {maximumFractionDigits: v < 10 ? 1 : 0}) + ' %';
+function asSpark(pts, key, max, now) {
+  const W = 120, H = 30, x = tt => W - (now - tt) / LOAD_SPAN * W, y = v => H - 1 - Math.max(0, Math.min(1, v / max)) * (H - 2), f = n => n.toFixed(1);
+  const segs = []; let cur = [], prev = null;          // a gap (no answer, the page away) breaks the line
+  for (const p of pts) {
+    const v = p[key];
+    if (v == null || (prev && p.t - prev.t > LOAD_EVERY * 2.5)) { if (cur.length) segs.push(cur); cur = []; }
+    if (v != null) cur.push([x(p.t), y(v)]);
+    prev = p;
+  }
+  if (cur.length) segs.push(cur);
+  const line = segs.map(sg => (sg.length > 1 ? sg : [[sg[0][0] - 1, sg[0][1]], sg[0]]).map((q, i) => (i ? 'L' : 'M') + f(q[0]) + ' ' + f(q[1])).join('')).join('');
+  const area = segs.filter(sg => sg.length > 1).map(sg => `M${f(sg[0][0])} ${H}` + sg.map(q => `L${f(q[0])} ${f(q[1])}`).join('') + `L${f(sg[sg.length - 1][0])} ${H}Z`).join('');
+  return `<svg class="as-spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true"><path class="a" d="${area}"/><path class="l" d="${line}" vector-effect="non-scaling-stroke"/></svg>`;
+}
+function asLoadTiles() {
+  const h = AS.loadHist || [], now = Date.now(), last = h[h.length - 1] || {}, ram = AS.loadRam || 0;
+  // no value: '–' while it is the first measurement in a row (nothing to compare with yet), "unbekannt" once a second one has none either
+  const prev = h[h.length - 2], run = prev && last.t - prev.t <= LOAD_EVERY * 2.5;
+  const val = (k, fmt) => last[k] != null ? fmt(last[k]) : run && prev[k] == null ? t('unbekannt') : '–';
+  const tile = (k, name, v, max, tip) => `<div class="as-load-t" data-k="${k}" title="${esc(tip)}"><div class="as-load-h"><span>${name}</span><b>${v}</b></div>${asSpark(h, k, max, now)}</div>`;
+  return tile('cpu', t('ki_last_cpu'), val('cpu', asPct), 100, t('ki_last_cpu_tip', last.cores || navigator.hardwareConcurrency || '…'))
+    + tile('gpu', t('ki_last_gpu'), val('gpu', asPct), 100, t('ki_last_gpu_tip'))
+    + tile('memory', t('ki_last_ram'), val('memory', asRAM), ram || Math.max(1, ...h.map(p => p.memory || 0)), ram ? t('ki_last_ram_tip', asRAM(ram)) : t('ki_last_ram'));
+}
+function asLoadWatch() {
+  // only while the chart is in view (scrolled to) and the window can be seen (not covered, in the Dock or behind another tab)
+  if (AS.loadIO) { AS.loadIO.disconnect(); AS.loadIO = null; }
+  const box = $('#as-load');
+  if (!box) return;
+  AS.loadSeen = !window.IntersectionObserver;          // (a browser without it: as if in view)
+  if (window.IntersectionObserver) {
+    AS.loadIO = new IntersectionObserver(es => { const was = AS.loadSeen; AS.loadSeen = es.some(e => e.isIntersecting); if (AS.loadSeen && !was) asLoadTurn(); });
+    AS.loadIO.observe(box);
+  }
+  if (!AS.loadVis) { AS.loadVis = true; document.addEventListener('visibilitychange', () => { if (!document.hidden && AS.loadT) asLoadTurn(); }); }
+  asLoadTurn();
+}
+async function asLoadTurn() {
+  clearTimeout(AS.loadT); AS.loadT = 0;
+  if (!$('#as-load') || S.tab !== 'settings' || S.sub !== 'assistant') { if (AS.loadIO) { AS.loadIO.disconnect(); AS.loadIO = null; } return; }          // the page left, the model stopped: no more asking
+  if (!document.hidden && AS.loadSeen && !AS.loadAsking) {
+    AS.loadAsking = true;
+    try {
+      const r = await api('/api/assistant/load'), now = Date.now();
+      AS.loadRam = r.ram || AS.loadRam;
+      AS.loadHist = (AS.loadHist || []).filter(p => now - p.t <= LOAD_SPAN).concat([{t: now, cpu: r.cpu, gpu: r.gpu, memory: r.memory, cores: r.cores}]);
+    } catch (e) { /* the next turn asks again */ } finally { AS.loadAsking = false; }
+    const box = $('#as-load'); if (box) box.innerHTML = asLoadTiles();
+  }
+  clearTimeout(AS.loadT); AS.loadT = $('#as-load') ? setTimeout(asLoadTurn, LOAD_EVERY) : 0;          // (one turn after another, never two at once)
+}
 function bindAssistent(main) {
+  asLoadWatch();
   const post = async (path, body, quiet) => { try { const r = await api(path, body || {}); if (r && r.settings) AS.st = r; asChrome(); if (!quiet) await route(); return r; } catch (e) { toast(e.message, 7000); await route(); return null; } };
   const set = body => post('/api/assistant/settings', body);
   const on = (sel, ev, fn) => $$(sel, main).forEach(el => el.addEventListener(ev, e => fn(el, e)));
@@ -9736,7 +9794,7 @@ function bindAssistent(main) {
   let shown = moving();
   // what is being loaded as the page shows it ("update everything" goes from one to the next), and the look the page knows
   const part = () => { const l = (AS.st || {}).load; return l && l.state === 'running' ? l.kind + ' ' + l.id : ''; };
-  const looked = a.checked || '', drawn = part();
+  const looked = a.checked || '', drawn = part(), running = (a.server || {}).state === 'ready';
   // something typed or opened here that drawing the page anew would throw away
   const inUse = () => [...main.querySelectorAll('input:not([type=checkbox]):not([type=radio])')].some(e => e.value) || !!(($('#as-filelist', main) || {}).childElementCount) || !!(document.activeElement && document.activeElement.closest('#main input, #main select'));
   const tick = async () => {
@@ -9751,9 +9809,10 @@ function bindAssistent(main) {
     // Kontor has looked for newer versions meanwhile: what it found is shown (not while you are typing here)
     if (moving() && part() !== drawn) { await route(); return; }          // the next part: its progress in its place
     if ((AS.st.checked || '') !== looked && !moving() && !inUse()) { await route(); return; }
+    if (((AS.st.server || {}).state === 'ready') !== running && !moving() && !inUse()) { await route(); return; }          // the model ended by itself (idle) or a question started it: its state and the chart "Auslastung" as they are
     if (l && l.state === 'running' && p) { $('.prog i', p).style.width = (l.total ? Math.round(100 * l.done / l.total) : 0) + '%'; $('.prog-l', p).textContent = asLoadText(l); }
     const sv = AS.st.server || {}, u = $('#as-use', main);
-    if (u && sv.rss) u.textContent = t('ki_verbrauch', asRAM(sv.rss), asN(sv.cpu || 0)) + (sv.tps ? ' · ' + t('ki_tempo', asN(sv.tps)) : '');
+    if (u) u.textContent = sv.state === 'ready' && sv.tps ? t('ki_tempo', asN(sv.tps)) : '';
     const mw = $('#as-meaning-work', main); if (mw) mw.textContent = asMeaningWork(AS.st.meaning_work);          // texts made searchable in the background: how far
     AS.setT = setTimeout(tick, moving() ? 1000 : 5000);
   };

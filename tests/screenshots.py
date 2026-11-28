@@ -56,9 +56,10 @@ def assistant(app):
         st["platform"].update(can_seal=True)
         st["disk_free"] = 412e9
         if st["server"]["state"] == "ready":
-            st["server"].update(sealed="strict", rss=23.4e9, cpu=2.0, tps=41.0)
+            st["server"].update(sealed="strict", tps=41.0)
         return st
     a.ai.status = status
+    a.meter.sample = lambda pids: {"running": True, "cpu": 4.2, "memory": 23.4e9, "gpu": 92, "cores": 14}       # the chart "Auslastung"
     cf = a.t_get_cashflow({"detail": "rows"}, {"area": ""})
     exp = next(s for s in cf["sections"] if s["section"] == ("Ausgaben" if de else "Expenses"))
     rows = sorted(exp["rows"], key=lambda r: r["values"][0])[:4]
