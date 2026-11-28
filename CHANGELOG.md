@@ -1,5 +1,10 @@
 # Änderungen
 
+## 3.17.126 (2026-11-28 02:37)
+- KI-Assistent: Vorbereiten der Suche nach Bedeutung im Hintergrund gedrosselt – der Mac bleibt kühler
+- KI-Assistent: Unter Suche nach Bedeutung steht, wie weit das Vorbereiten ist
+- KI-Assistent: „Stoppen“ hält auch die Arbeit im Hintergrund an, bis zur nächsten Frage oder „Starten“
+
 ## 3.17.125 (2026-11-28 02:14)
 - Kategorisieren: oberste Stufe der Vorschläge heißt „sehr wahrscheinlich“ statt „sicher“ – auch ein grüner Vorschlag kann falsch sein
 - Kategorisieren: Sammelknopf heißt „Sehr wahrscheinliche übernehmen“

@@ -111,7 +111,10 @@ on (about two seconds until it hears after a pause) or off (hears at once). Belo
 
 ### settings.assistant.meaning — Suche nach Bedeutung
 A third, small model that writes nothing but compares texts: notes, help and transactions are then found by meaning too
-("Ferien" finds "Urlaub"). It starts and ends with the answering model.
+("Ferien" finds "Urlaub"). It starts and ends with the answering model. While texts get their embeddings in the background (after the
+first question, for thousands of transactions a while), a grey line under it says how many were made and, for help and transactions,
+about how many are left; the work is throttled (after each batch a pause twice as long) and "Stoppen" under Betrieb ends it until the
+next question or "Starten".
 
 ### settings.assistant.updates — Aktualisierung und Ablage
 **Automatisch suchen**: how often Kontor asks GitHub and Hugging Face for a newer llama.cpp or newer files of the models loaded –

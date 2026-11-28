@@ -7927,6 +7927,8 @@ const asDur = s => {
   const m = Math.round(n / 60);
   return t('ki_dauer_h', Math.floor(m / 60)) + (m % 60 ? ' ' + t('ki_dauer_m', m % 60) : '');
 };
+// texts made searchable by meaning in the background (throttled): how many so far, how many left where known
+const asMeaningWork = w => !w || !w.made ? '' : w.left != null ? tn('ki_bedeutung_arbeit', w.made, asN(w.made), asN(w.left)) : tn('ki_bedeutung_arbeit_kurz', w.made, asN(w.made));
 const asRAM = b => (b / 2 ** 30).toLocaleString(LOCALE, {maximumFractionDigits: b >= 10 * 2 ** 30 ? 0 : 1}) + ' GB';          // memory as the Mac names it (64 GB)
 const asGB = b => b < 5e7 ? Math.round(b / 1e6).toLocaleString(LOCALE) + ' MB' : (b / 1e9).toLocaleString(LOCALE, {maximumFractionDigits: b >= 1e10 ? 0 : 1}) + ' GB';
 async function asLoad() { try { AS.st = await api('/api/assistant/status'); } catch (e) { AS.st = null; } asChrome(); statusMini(); asWatch(); if (AS.open || S.tab === 'assistant') asWarm(); return AS.st; }
@@ -9486,6 +9488,7 @@ async function vEinstellungenAssistent() {
     <span class="as-act">${m.newer ? `<span class="pill info">${t('ki_neuere_datei')}</span>` : m.installed ? `<span class="pill ok">${t('ki_geladen')}</span>` : ''}
       ${!m.installed || m.newer ? `<button class="small secondary as-dl" data-id="${esc(m.id)}" data-name="${esc(m.name)}" data-fit="" ${busy}>${t(m.installed ? 'ki_aktualisieren' : 'ki_laden')}</button>` : ''}
       ${m.installed ? `<button class="small secondary as-del" data-id="${esc(m.id)}" data-name="${esc(m.name)}" ${busy}>${t('ki_loeschen')}</button>` : ''}</span></div>`).join('')}</div>
+  <div class="muted small" id="as-meaning-work">${esc(asMeaningWork(a.meaning_work))}</div>
   ${a.embed_state === 'error' && a.embed_error ? `<div class="banner err small">${esc(a.embed_error)}</div>` : ''}${prog('embed')}${err('embed')}
   </div><div data-ex="settings.assistant.updates"><h2>${t('ki_aktualisierung')}${hq('ki_auto_suchen')}</h2>
   <div class="form">
@@ -9751,6 +9754,7 @@ function bindAssistent(main) {
     if (l && l.state === 'running' && p) { $('.prog i', p).style.width = (l.total ? Math.round(100 * l.done / l.total) : 0) + '%'; $('.prog-l', p).textContent = asLoadText(l); }
     const sv = AS.st.server || {}, u = $('#as-use', main);
     if (u && sv.rss) u.textContent = t('ki_verbrauch', asRAM(sv.rss), asN(sv.cpu || 0)) + (sv.tps ? ' · ' + t('ki_tempo', asN(sv.tps)) : '');
+    const mw = $('#as-meaning-work', main); if (mw) mw.textContent = asMeaningWork(AS.st.meaning_work);          // texts made searchable in the background: how far
     AS.setT = setTimeout(tick, moving() ? 1000 : 5000);
   };
   AS.setT = setTimeout(tick, moving() ? 1000 : 5000);

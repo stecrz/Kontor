@@ -2948,6 +2948,8 @@ const I18N = {
 "ki_note_speech":["genau – empfohlen", "accurate – recommended"],
 "ki_note_speech_small":["kleiner, etwas ungenauer", "smaller, a little less accurate"],
 "ki_bedeutung":["Suche nach Bedeutung", "Search by meaning"],
+"ki_bedeutung_arbeit":["Im Hintergrund, gedrosselt: {1} Text durchsuchbar gemacht, noch etwa {2}.|Im Hintergrund, gedrosselt: {1} Texte durchsuchbar gemacht, noch etwa {2}.", "In the background, throttled: {1} text made searchable, about {2} to go.|In the background, throttled: {1} texts made searchable, about {2} to go."],
+"ki_bedeutung_arbeit_kurz":["Im Hintergrund, gedrosselt: {1} Text durchsuchbar gemacht.|Im Hintergrund, gedrosselt: {1} Texte durchsuchbar gemacht.", "In the background, throttled: {1} text made searchable.|In the background, throttled: {1} texts made searchable."],
 "h_ki_bedeutung":["Ein drittes, kleines Modell findet Notizen, Verläufe, Hilfe und Umsätze auch, wenn andere Wörter darin stehen – „Ferien“ zu „Urlaub“. Es schreibt keinen Text, läuft wie die anderen nur auf diesem Mac, abgeschirmt und ohne Internet. Ohne es sucht Kontor nach Wörtern (auch Wortformen und Tippfehler).", "A third, small model finds notes, saved conversations, help and transactions even when other words are in them – “vacation” for “holiday”. It writes no text and, like the others, runs only on this Mac, sandboxed and without the internet. Without it Kontor searches by words (word forms and typos too)."],
 "ki_note_embed":["klein, für die Suche", "small, for searching"],
 "ki_g_bedeutung_n":["nach Bedeutung durchsuchbar: {0} von {1}", "searchable by meaning: {0} of {1}"],

@@ -2036,6 +2036,45 @@ class HelpAndTransactions(_Assist):
         self.a.set({"rights": {"read": False}})
         self.assertIsNone(self.a.tx_meaning())
 
+    def test_made_in_the_background_throttled_shown_and_stopped(self):
+        """Texts made searchable in the background: a pause after each batch (twice as long), how far on the settings page,
+        and your "Stop" ends it -- the model for finding by meaning is not started again by it until the next question."""
+        self.rows = [{"id": i, "date": "2026-03-01", "amount": -1.0 - i, "name": "Händler %d" % i, "purpose": "Kauf Nummer %d" % i,
+                      "account_name": "Giro", "entity": ""} for i in range(200)]
+        waits = []
+        halt = self.a._index_halt
+        class Slow(threading.Event):                     # each pause made long enough to look in between, and counted
+            def wait(self, timeout=None):
+                waits.append(timeout)
+                return halt.wait(0.3) if timeout else halt.wait(timeout)
+            def set(self):
+                halt.set()
+            def clear(self):
+                halt.clear()
+            def is_set(self):
+                return halt.is_set()
+        self.a._index_halt = Slow()
+        self.a.index_notes()
+        t0 = time.time()
+        while not (self.a.status(True).get("meaning_work") or {}).get("left"):
+            self.assertLess(time.time() - t0, 30); time.sleep(0.02)
+        work = self.a.status(True)["meaning_work"]
+        self.assertGreater(work["made"], 0); self.assertGreater(work["left"], 0)
+        self.assertTrue(waits); self.assertTrue(all(0 <= w <= A.INDEX_REST_MAX for w in waits))
+        self.a.stop_all(hold=True)                                                    # "Stoppen" under Betrieb
+        t0 = time.time()
+        while self.a._indexing:
+            self.assertLess(time.time() - t0, 5); time.sleep(0.02)
+        self.assertIsNone(self.a.embedder.proc); self.assertIsNone(self.a.status(True)["meaning_work"])
+        self.a.index_notes()                                                          # opened settings, a note typed: not begun again
+        self.assertFalse(self.a._indexing); self.assertIsNone(self.a.embedder.proc)
+        left = len(self.a.tx_vecs.missing(self.a._meaning_key(memory=False), self.a._tx_texts()))
+        self.assertGreater(left, 0)
+        self.a._index_halt = halt
+        self.ask("Hallo")                                                             # the next question: it goes on, to its end
+        self.done()
+        self.assertEqual(self.a.tx_vecs.missing(self.a._meaning_key(memory=False), self.a._tx_texts()), [])
+
 
 class Names(_Assist):
     def test_names_in_notes_typed_by_hand_are_named(self):
