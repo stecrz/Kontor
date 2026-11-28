@@ -218,6 +218,16 @@ anhängen – nie löschen.
   (teilweise umgesetzt in 3.17.9: empfohlen wird nur das gründlichste Modell, das gut läuft)
   (geprüft und eingestellt in 3.17.17 – Werte je Modellfamilie, Denken je Schritt, Gedanken bleiben zwischen den Abfragen,
   längere Ergebnisse; Start weiter ohne fremdes Chat-Template und mit dem Zwischenspeicher in voller Genauigkeit; offen: Bildeingabe, siehe Offen)
+- **Gedanken des Assistenten: knapp, auf Englisch** (Nutzer, 2026-11-28): Der Gedankenbereich ist kein Muss; Nachdenken nur, soweit
+  es nicht erheblich Zeit kostet oder die Ergebnisse verschlechtert – auf Deutsch nur, wenn das nichts kostet; es zählt das Ergebnis.
+  Befund: Gedanken sind keine Anzeige, sondern die Rechenarbeit selbst – jedes Token Nachdenken kostet so viel Zeit wie eines der
+  Antwort (beim empfohlenen 27B-Modell auf einem MacBook grob 40–80 ms), Verbergen spart nichts. Deutsch kostet: rund ein Viertel
+  bis ein Drittel mehr Token für denselben Inhalt und messbar weniger richtige Antworten (Qi u. a., EMNLP 2025: Denken in der
+  Sprache des Nutzers senkt die Genauigkeit, die Modelle fallen ohnehin oft ins Englische zurück). Daher: Das Modell denkt auf
+  Englisch, die Antwort bleibt in Kontors Sprache; „Denke auf Deutsch“ (3.16.36) abgelöst. Im Systemtext: Gedanken knapp – keine
+  gelesenen Tabellen, Texte oder Listen hineinkopieren, nichts doppelt denken. Grenze je Schritt bei „Ausgewogen“ bleibt 4.000
+  Token (nicht gesenkt: eine Grenze schneidet mitten im Gedanken ab, trifft gerade die schweren Fragen und widerspräche „Antworten
+  vor Tempo“; wer es schneller will, wählt „Schnell“ – je Gerät gemerkt). (umgesetzt am 2026-11-28, im Changelog „KI-Assistent: denkt auf Englisch und knapp“)
 - **Ursachen statt Aufzählung** (Nutzer, 2026-11-23): Auf „Warum ist … gestiegen oder gefallen?“ zählt der Assistent nicht
   Zeilen auf, sondern verfolgt Zusammenhänge – über Bereiche, Konten, Beteiligungen, Immobilien, Darlehen und Umsätze: Treiber
   finden, eine Ebene tiefer gehen, verknüpfte Bereiche und große Umsätze ansehen, daraus schließen, was vermutlich passiert ist.

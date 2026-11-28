@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.17.130 (2026-11-28 04:31)
+- KI-Assistent: denkt auf Englisch und knapp – schneller, genauer; Antwort weiter auf Deutsch
+
 ## 3.17.129 (2026-11-28 04:01)
 - Kategorisieren: Stufen der Vorschläge mit je einem Wort – wahrscheinlich, möglich, unsicher
 - Kategorisieren: Sammelknopf „Wahrscheinliche übernehmen“, im Filter „Möglich“: „Mögliche übernehmen“
