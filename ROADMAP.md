@@ -533,6 +533,11 @@ anhängen – nie löschen.
   ihrer Seite, nicht dorthin. Daher „Tabellen, Schalter und Excel“ aufgelöst: Allgemeines (Monate/Jahre, blass und schraffiert,
   ‹ ab 2025 ›, Leere Zeilen, Excel, Rechtsklick) steht unter Übersicht neben „Hilfe auf jeder Seite“ und „Drucken“, der Schalter
   „Plan“ und der Blick beim Öffnen beim Cashflow; ▸, Auge und „inflationsbereinigt“ standen schon bei Bilanz und Planung. (umgesetzt in 3.17.121)
+- **Zeit unter jeder Antwort des Assistenten** (Nutzer, 2026-11-28): Weil das Nachdenken teils sehr lange dauert, steht unter jeder
+  Antwort zuerst Datum und Uhrzeit, dann die Dauer, dann die übrigen Angaben (nachgedacht, Abfragen, Token/s). Umsetzung: der
+  Zeitpunkt, als die Antwort fertig war („heute 14:32“, „gestern …“, älter mit Datum – wie sonst in Kontor); die Dauer vom Absenden
+  bis zur fertigen Antwort, ohne die Zeit, in der eine Karte auf den Klick wartet (die gehört dem Nutzer, nicht dem Modell); früher
+  gespeicherte Antworten zeigen keinen Zeitpunkt – nichts wird nachträglich erfunden. (umgesetzt in 3.17.123)
 
 ## Offen (Entscheidung steht aus – mit Empfehlung vorlegen, wenn der Punkt dran ist)
 - Umsatzsteuer-Voranmeldung direkt an ELSTER senden (ELSTERs Programmbibliothek ERiC, Anmeldung als Hersteller, Zertifikat und

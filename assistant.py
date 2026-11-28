@@ -569,6 +569,7 @@ class Job:
         self.stopped_at_card = False                  # ... or the answer was stopped while that card waited (nothing made)
         self.click_local = True                       # ... and whether that click came from this Mac (categories: written at once there)
         self.started = time.time()
+        self.idle = 0.0                               # seconds a card waited for the user's click (not part of how long the answer took)
         self.polled = time.time()                     # when the page last asked for news
         self.used: List[str] = []                     # tools used (for the log: names only)
         self.chat = ""                                # the conversation it belongs to (an entry taken back later is marked there)
@@ -4355,6 +4356,7 @@ class Assistant:
         t0 = time.time()
         while not w["event"].is_set() and not job.cancel.is_set() and time.time() - t0 <= CONFIRM_SECONDS:
             w["event"].wait(0.2)
+        job.idle += time.time() - t0
         job.waiting.pop(bid, None)
         stopped = job.cancel.is_set()                     # stopped while the card waited: nothing is made
         chosen = set(w["ids"]) if w.get("ok") is True and not stopped else set()
@@ -4419,6 +4421,7 @@ class Assistant:
         t0 = time.time()
         while not w["event"].is_set() and not job.cancel.is_set() and time.time() - t0 <= WEB_SECONDS:
             w["event"].wait(0.2)
+        job.idle += time.time() - t0
         job.waiting.pop(wid, None)
         if job.cancel.is_set():
             job.emit("web_state", id=wid, state="declined")
@@ -5762,7 +5765,8 @@ class Assistant:
                 if job.stopped_at_card:
                     raise Cancelled()
             job.noting = True                                # the answer is over (the page lets the next question come): what follows gives way to it
-            job.emit("done", seconds=round(time.time() - t0, 1), tokens=tokens, tps=self.ai.tps, cut=cut, thought=thought, reads=reads, limit=limit)
+            # at: when it was there; seconds: how long it took -- without the time a card waited for the user's click
+            job.emit("done", at=datetime.now().strftime("%Y-%m-%d %H:%M"), seconds=round(max(0.0, time.time() - t0 - job.idle), 1), tokens=tokens, tps=self.ai.tps, cut=cut, thought=thought, reads=reads, limit=limit)
             answered = True
         except Cancelled:
             job.emit("stopped")
@@ -6259,7 +6263,7 @@ def _shown(events: List[dict]) -> dict:
             while parts and parts[-1]["k"] == "text":
                 parts.pop()
         elif t == "done":
-            m["state"], m["meta"] = "done", {x: ev.get(x) for x in ("seconds", "tokens", "tps", "cut", "thought", "reads", "limit")}
+            m["state"], m["meta"] = "done", {x: ev.get(x) for x in ("at", "seconds", "tokens", "tps", "cut", "thought", "reads", "limit")}
         elif t == "stopped":
             m["state"] = "stopped"
         elif t == "error":

@@ -66,7 +66,9 @@ from pasted text, "aus der Antwort" when it came from the answer; "ersetzt: …"
 
 ## assistant.steps — Gedanken und Kennzahlen
 "Gedanken" (folded; "Denkt nach …" while running) holds what the model weighed and the steps it took, e.g. "Liest die Bilanz ·
-Privat"; without thoughts the steps stand as one quiet line. Under the answer: "N Token nachgedacht" (1 token ≈ ¾ word), "N
+Privat"; without thoughts the steps stand as one quiet line. Under the answer, in this order: when it was ready ("heute
+14:32", "gestern 09:10", older with the date; answers saved before Kontor noted it have none), how long it took (from sending the
+question to the finished answer, without the time a card waited for the user's click – "8,4 s", "1 Min. 23 s"), "N Token nachgedacht" (1 token ≈ ¾ word), "N
 Abfragen" (reads of the user's data; 0 = from the model's knowledge), "N Token/s" (speed of this Mac), "Antwort abgeschnitten",
 "Denkgrenze erreicht – mit „Gründlich“ genauer", or "Gestoppt."
 

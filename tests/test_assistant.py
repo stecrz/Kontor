@@ -1600,6 +1600,32 @@ class _Assist(T._AppBase):
 
 
 class Tools(_Assist):
+    def test_when_and_how_long(self):
+        """Under each answer: when it was there and how long it took -- the time a card waited for the user's click is the user's,
+        not the answer's."""
+        before = datetime.now().strftime("%Y-%m-%d %H:%M")
+        evs = self.ask("Hallo Kontor")
+        done = evs[-1]
+        self.assertEqual(done["type"], "done")
+        self.assertRegex(done["at"], r"^\d{4}-\d\d-\d\d \d\d:\d\d$")
+        self.assertTrue(before <= done["at"] <= datetime.now().strftime("%Y-%m-%d %H:%M"), done["at"])
+        self.assertIsInstance(done["seconds"], float); self.assertTrue(0 <= done["seconds"] < 30, done["seconds"])
+        meta = self.a.conv["turns"][-1]["meta"]                    # kept with the answer: shown again in a saved conversation
+        self.assertEqual((meta["at"], meta["seconds"]), (done["at"], done["seconds"]))
+        # a card of changes waits for the click: those seconds are left out
+        self.a.set({"rights": {"enter_values": True}})
+        t0 = time.time()
+        r = self.a.ask({"question": 'call enter_balances {"account": "Depot", "values": [{"month": "2025-03", "amount": 98765.43}]}'})
+        ev = events(self.a, r["job"], until="batch")
+        time.sleep(1.5)
+        self.a.confirm(r["job"], next(e["id"] for e in ev if e["type"] == "batch"), True)
+        done = events(self.a, r["job"])[-1]
+        took = time.time() - t0
+        self.assertEqual(done["type"], "done", done)
+        self.assertGreaterEqual(took, 1.5)
+        self.assertLessEqual(done["seconds"], round(took - 1.5, 1) + 0.1, (done["seconds"], took))
+        self.assertGreaterEqual(done["seconds"], 0)
+
     def test_question_and_answer(self):
         evs = self.ask("Hallo Kontor")
         self.assertEqual([e["type"] for e in evs if e["type"] != "delta"], ["status", "status", "done"])
@@ -3349,7 +3375,7 @@ class Chats(_Assist):
                {"type": "delta", "text": "<tool_call>"}, {"type": "reset"}, {"type": "delta", "text": "Die "}, {"type": "delta", "text": "Antwort"},
                {"type": "entry", "id": "a1", "state": "queued", "kind": "plan", "n": 7}, {"type": "batch", "id": "b1", "ids": ["a1"]},
                {"type": "entry_state", "id": "a1", "state": "declined"}, {"type": "batch_state", "id": "b1", "state": "declined", "done": 0, "failed": 0, "left": 1},
-               {"type": "ui", "id": "u", "action": "open"}, {"type": "done", "seconds": 1.5, "tokens": 9, "tps": 3, "cut": False}]
+               {"type": "ui", "id": "u", "action": "open"}, {"type": "done", "at": "2026-03-14 09:26", "seconds": 1.5, "tokens": 9, "tps": 3, "cut": False}]
         m = A._shown(evs)
         self.assertEqual(m["parts"], [{"k": "think", "text": "hm"}, {"k": "tool", "label": "Liest", "kind": "read"}, {"k": "text", "text": "Die Antwort"},
                                       {"k": "entry", "id": "a1", "state": "declined", "kind": "plan", "text": ""},
@@ -3357,7 +3383,7 @@ class Chats(_Assist):
         # never decided (Kontor stopped while the card waited): nothing was made
         m2 = A._shown([{"type": "delta", "text": "x"}, {"type": "entry", "id": "a2", "state": "queued", "kind": "plan"}, {"type": "batch", "id": "b2", "ids": ["a2"]}])
         self.assertEqual([(p["k"], p["state"]) for p in m2["parts"] if p["k"] != "text"], [("entry", "declined"), ("batch", "declined")])
-        self.assertEqual((m["state"], m["meta"]["seconds"]), ("done", 1.5))
+        self.assertEqual((m["state"], m["meta"]["seconds"], m["meta"]["at"]), ("done", 1.5, "2026-03-14 09:26"))
         self.assertEqual(A._shown([{"type": "delta", "text": "halb"}, {"type": "stopped"}])["state"], "stopped")
         self.assertEqual(A._shown([{"type": "error", "text": "kaputt"}])["parts"], [{"k": "err", "text": "kaputt"}])
         self.assertEqual(A._title([{"role": "user", "text": "  eine\n lange " + "x" * 100}])[:12], "eine lange x")
@@ -6592,6 +6618,16 @@ class Browser(unittest.TestCase):
                 self.assertNotIn("tool_call", last); self.assertIn("Rechnet", last); self.assertIn("42", last)
                 ask(pg, "cut")
                 self.assertIn("abgeschnitten", pg.evaluate("document.querySelector('#as-body .as-msg:last-child .as-meta').innerText"))
+                # under the answer: first when it was there, then how long it took, then the rest
+                meta = pg.evaluate("document.querySelector('#as-body .as-msg:last-child .as-meta').innerText").split(" · ")
+                self.assertRegex(meta[0], r"^heute \d\d:\d\d$"); self.assertRegex(meta[1], r"^\d+(,\d)? s$"); self.assertIn("abgeschnitten", meta[2])
+                self.assertEqual(pg.evaluate("[0.42, 8.44, 9.96, 42.4, 59.6, 83, 120, 3599.6, 3631, 7322].map(asDur)"),
+                                 ["0,4 s", "8,4 s", "10 s", "42 s", "1 Min.", "1 Min. 23 s", "2 Min.", "1 Std.", "1 Std. 1 Min.", "2 Std. 2 Min."])
+                old = pg.evaluate("""(() => { const m = AS.msgs[AS.msgs.length - 1], keep = m.meta; m.meta = {seconds: 83, thought: 33, reads: 0, tps: 5};
+                  const a = asMsg(m, AS.msgs.length - 1); m.meta = Object.assign({}, keep, {at: '2025-01-02 08:05'}); const b = asMsg(m, AS.msgs.length - 1); m.meta = keep;
+                  const txt = h => { const d = document.createElement('div'); d.innerHTML = h; return d.querySelector('.as-meta').textContent; }; return [txt(a), txt(b)]; })()""")
+                self.assertEqual(old[0], "1 Min. 23 s · 33 Token nachgedacht · 0 Abfragen · 5 Token/s")     # saved before Kontor noted when: no date made up
+                self.assertTrue(old[1].startswith("02.01.25 08:05 · "), old[1])
                 # it opens a page in another area; the panel stays
                 ask(pg, 'call open_page {"page": "balance", "area": "Alpha GbR"}')
                 until(pg, "location.hash === '#balance' && BN() === 'Alpha GbR'")

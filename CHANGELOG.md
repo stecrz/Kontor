@@ -1,5 +1,8 @@
 # Änderungen
 
+## 3.17.123 (2026-11-28 01:23)
+- KI-Assistent: unter jeder Antwort zuerst Datum und Uhrzeit, dann die Dauer (ohne Warten auf deinen Klick), dann Nachgedacht, Abfragen, Token/s
+
 ## 3.17.122 (2026-11-28 00:57)
 - Entwicklung: Fahrplan nennt die richtige Version
 

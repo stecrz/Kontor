@@ -7919,6 +7919,14 @@ const asOn = () => !!(AS.st && AS.st.settings && AS.st.settings.enabled && !OFFL
 // newer versions of llama.cpp or of the models in use, found by the look (only told at the Mac): what the menu marks at Settings
 function asNewer() { return asOn() ? ((AS.st.newer || {}).marked || 0) : 0; }
 const asN = v => Math.round(v).toLocaleString(LOCALE);
+// how long an answer took: 3.2 s / 42 s / 1 min 5 s / 2 h 3 min
+const asDur = s => {
+  if (s < 59.5) return t('ki_dauer_s', s.toLocaleString(LOCALE, {maximumFractionDigits: s < 9.95 ? 1 : 0}));
+  const n = Math.round(s);
+  if (n < 3600) return t('ki_dauer_m', Math.floor(n / 60)) + (n % 60 ? ' ' + t('ki_dauer_s', n % 60) : '');
+  const m = Math.round(n / 60);
+  return t('ki_dauer_h', Math.floor(m / 60)) + (m % 60 ? ' ' + t('ki_dauer_m', m % 60) : '');
+};
 const asRAM = b => (b / 2 ** 30).toLocaleString(LOCALE, {maximumFractionDigits: b >= 10 * 2 ** 30 ? 0 : 1}) + ' GB';          // memory as the Mac names it (64 GB)
 const asGB = b => b < 5e7 ? Math.round(b / 1e6).toLocaleString(LOCALE) + ' MB' : (b / 1e9).toLocaleString(LOCALE, {maximumFractionDigits: b >= 1e10 ? 0 : 1}) + ' GB';
 async function asLoad() { try { AS.st = await api('/api/assistant/status'); } catch (e) { AS.st = null; } asChrome(); statusMini(); asWatch(); if (AS.open || S.tab === 'assistant') asWarm(); return AS.st; }
@@ -8319,9 +8327,9 @@ function asMsg(m, i) {
   if (m.state === 'run' && !(m.parts || []).some(p => (p.k === 'batch' || p.k === 'web') && p.state === 'ask') && (m.status === 'loading' || !busy)) h += `<div class="as-run"><span class="spin"></span>${t(m.status === 'loading' ? 'ki_laedt_modell' : 'ki_denkt')}</div>`;          // the card of changes waiting for the click: nothing is being thought
   else if (m.state === 'stopped') h += `<div class="as-meta">${t('ki_gestoppt')}</div>`;
   else if (m.meta && m.meta.seconds != null) {
-    const mm = m.meta, bits = [mm.cut ? t('ki_abgeschnitten') : '', mm.thought != null ? tn('ki_nachgedacht', mm.thought, asN(mm.thought)) : '',
+    const mm = m.meta, bits = [mm.at ? fmtZeit(mm.at) : '', asDur(Math.max(0, +mm.seconds || 0)), mm.cut ? t('ki_abgeschnitten') : '', mm.thought != null ? tn('ki_nachgedacht', mm.thought, asN(mm.thought)) : '',
       mm.reads != null ? tn('ki_abfragen', mm.reads, mm.reads) : '', mm.tps ? t('ki_tempo', asN(mm.tps)) : '', mm.limit ? t('ki_denkgrenze') : ''].filter(Boolean);
-    h += `<div class="as-meta" data-ex="assistant.steps" title="${esc(t('ki_meta_tip'))}">${bits.map(esc).join(' · ')}</div>`;
+    h += `<div class="as-meta" data-ex="assistant.steps" title="${esc(t('ki_meta_tip'))}">${bits.map(b => `<span>${esc(b)}</span>`).join(' · ')}</div>`;          // a line breaks between its parts, not inside one
   }
   return `<div class="as-msg">${h}</div>`;
 }
