@@ -56,6 +56,10 @@ FOUND_CLICKS += [552234862]     # 3.17.96 (by hand, iPhone, WebKit, under load -
 FOUND_CLICKS += [594715502, 740557602, 843199979]     # 3.17.105 (a night, WebKit; under load only): the same on a page change from the
                                 # balance or the cash flow -- the new page drawn inside an observer's callback (WebKit runs a finished
                                 # request's answer there) took away what the old page's charts observed (PageSwapObserversTest)
+FOUND_CLICKS += [103983820, 308844772]     # 3.17.131 (a night): on the iPhone the first tap on a cell of the heat map showed no numbers
+                                            # right after its side window was closed (the walk: "opens no second time"; it taps twice
+                                            # now, as a user does); a reference to a booking that other rules had taken away -- Kontor
+                                            # says so, the walk expected a mark (FoundAtNightTest)
 KINDS = ["test", "random", "demo", "empty"]
 LOCKED_401 = "the server responded with a status of 401"      # a request of a session that was just locked (demo_in)
 WORLD_NAMES = {"test": "Testwelt", "random": "Zufallswelt", "demo": "Demo", "empty": "leeres Kontor"}
@@ -108,6 +112,12 @@ POINT = r"""(() => {
     if (on(x, y) && on(x - 1, y) && on(x + 1, y) && on(x, y - 1) && on(x, y + 1)) return {x: x - r.left, y: y - r.top}; }
   return null;
 })()"""
+# by touch: the first tap on a month or a cell of the cash flow's charts has shown its numbers, the next one acts (app.js: CF.armed)
+ARMED = "typeof CF !== 'undefined' && !!CF.armed && !document.querySelector('#drawer').classList.contains('open')"
+TIP_SHOWN = "(() => { const b = document.querySelector('#cf-tip'); return !!b && !b.classList.contains('hidden') && b.textContent.trim() !== ''; })()"
+# a reference clicked: what it points to is marked, in view -- or Kontor says that the place is no longer on the page
+MARKED = "[...document.querySelectorAll('.as-mark')].some(e => { const r = e.getBoundingClientRect(); return r.height > 0 && r.bottom > 0 && r.top < innerHeight; })"
+NOT_FOUND = "(() => { const b = document.querySelector('#toast'); return !!b && !b.classList.contains('hidden') && b.textContent === t('ki_ref_nicht_gefunden'); })()"
 DRAWER_READY = "document.querySelector('#drawer').classList.contains('open') && !document.querySelector('#drawer .spin') && !document.querySelector('#drawer').textContent.includes(t('wird_geladen'))"
 SNAP = r"""(root => {
   const box = document.querySelector(root); if (!box) return null;
@@ -605,6 +615,14 @@ class Walk:
         self.note("wieder geöffnet")
         if not self.press(how_opened):
             return
+        # by touch the first tap on a month or a cell of the cash flow's charts shows its numbers, the second acts -- each time
+        # anew, also after its side window was closed
+        if self.mobile and how_opened == "click" and self.until(ARMED + " || document.querySelector('#drawer').classList.contains('open')", 2) and self.js(ARMED):
+            if not self.js(TIP_SHOWN):
+                self.problem("das erste Tippen zeigt die Zahlen der Stelle nicht")
+            self.note("zweites Tippen")
+            if not self.press(how_opened):
+                return
         if not self.until(DRAWER_READY, 4):
             self.problem("das Seitenfenster öffnet beim zweiten Mal nicht")
             return
@@ -716,8 +734,15 @@ class Walk:
             return
         if self.ref["route"] and not self.until("r => location.hash.split('?')[0] === r.split('?')[0]", 6, self.ref["route"]):
             self.problem("der Bezug führt nicht zurück nach %s (steht auf %s)" % (self.ref["route"], self.js("location.hash")))
-        elif self.ref["mark"] and not self.until("[...document.querySelectorAll('.as-mark')].some(e => { const r = e.getBoundingClientRect(); return r.height > 0 && r.bottom > 0 && r.top < innerHeight; })", 4):
-            self.problem("der Bezug „%s“ markiert dort nichts im Blick" % self.ref["label"][:40])
+        elif self.ref["mark"]:
+            self.until("(%s) || (%s)" % (MARKED, NOT_FOUND), 4)
+            if self.js(MARKED):
+                pass
+            elif self.ref.get("stale") and self.js(NOT_FOUND):
+                # the rules were saved since: other bookings, the row or figure may be gone -- then Kontor says so, and marks nothing
+                self.note("die Stelle gibt es nach den geänderten Regeln nicht mehr – gemeldet")
+            else:
+                self.problem("der Bezug „%s“ markiert dort nichts im Blick" % self.ref["label"][:40])
         if self.settle():
             self.check()
 
@@ -771,6 +796,8 @@ class Walk:
         if not self.until("v => (S.CFG.companies || [])[0] && String((S.CFG.companies || [])[0].threshold) === v", 10, v):
             self.problem("⌘S: die Schwelle ist nicht gespeichert")
         self.snaps.clear(); self.latest.clear()          # other rules: other bookings and proposals -- no page shows what it showed
+        if self.ref:
+            self.ref["stale"] = True                     # ... and what a reference points to may be gone
         if self.settle():
             self.check()
 
@@ -1163,6 +1190,75 @@ class FoundAtNightTest(_Kontor, unittest.TestCase):
                 self.assertEqual(over, 0)
                 self.assertEqual(errors, [])
                 b.close()
+        finally:
+            srv.shutdown(); srv.server_close()
+            app.assistant_stop(); app.stop.set()
+            shutil.rmtree(d, ignore_errors=True)
+
+    def test_a_tap_shows_the_numbers_first_and_a_reference_to_a_row_that_is_gone_says_so(self):
+        """Two things a night found (3.17.131). On the iPhone the first tap on a cell of the heat map shows its numbers, the second
+        opens its side window -- each time anew, also right after that window was closed: the cell still had the focus then,
+        so the first tap showed nothing (the walk took it for a side window that does not open again). And a reference of the
+        assistant to a row the page no longer has (the booking rules were changed since): nothing is marked, Kontor says so --
+        a row that is there is marked, without that note."""
+        from playwright.sync_api import sync_playwright
+        c = Case(0, False)
+        c.kind, c.world_seed, c.assistant, c.lang = "random", 832507012, False, "de"
+        d = tempfile.mkdtemp(prefix="kontor-found-")
+        app, store, day = self.world(c, d)
+        srv = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(app))
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        base = "http://127.0.0.1:%d/" % srv.server_address[1]
+        shut = "!document.querySelector('#drawer').classList.contains('open')"
+        try:
+            with sync_playwright() as p:
+                engines = [p.chromium.launch()]
+                try:
+                    engines.append(p.webkit.launch())
+                except Exception:
+                    pass                       # Safari's engine not installed here: Chromium only
+                for b in engines:
+                    errors = []
+                    ctx = b.new_context(**TT.DEVICES["iphone"]); ctx.clock.install(time=datetime.datetime(day.year, day.month, day.day, 10, 0))
+                    pg = ctx.new_page()
+                    pg.on("pageerror", lambda e: errors.append(str(e)))
+                    self.sign_in(pg, base, c)
+                    pg.evaluate("location.hash = '#cashflow'")
+                    T.until(pg, "!!document.querySelector('#cf-heat .cf-heat-c.open')"); TT.settle(pg)
+                    cell = pg.locator("#cf-heat .cf-heat-c.open").first
+                    cell.scroll_into_view_if_needed(); TT.settle(pg)
+                    for again in (False, True, True):
+                        cell.tap(); T.until(pg, ARMED, 4)
+                        pg.wait_for_timeout(300)          # (the finger's pointerout and the focus have come by now)
+                        self.assertTrue(pg.evaluate(TIP_SHOWN), "%s: the first tap%s shows no numbers" % (b.browser_type.name, " after the side window was closed" if again else ""))
+                        self.assertTrue(pg.evaluate(shut))
+                        cell.tap(); T.until(pg, DRAWER_READY, 4)
+                        self.assertFalse(pg.evaluate(TIP_SHOWN))
+                        pg.keyboard.press("Escape"); T.until(pg, shut, 4); TT.settle(pg)
+                    self.assertEqual(errors, [])
+                    ctx.close()
+                # the reference: a row of the bookings that is there, and one that is not (any more)
+                ctx = engines[0].new_context(viewport={"width": 1440, "height": 900}); ctx.clock.install(time=datetime.datetime(day.year, day.month, day.day, 10, 0))
+                pg = ctx.new_page(); errors = []
+                pg.on("pageerror", lambda e: errors.append(str(e)))
+                self.sign_in(pg, base, c)
+                pg.evaluate("location.hash = '#bookings'")
+                T.until(pg, "location.hash === '#bookings' && !document.querySelector('#main .loading') && !!document.querySelector('#main tbody td')"); TT.settle(pg)
+                there = pg.evaluate("[...document.querySelectorAll('#main tbody tr td:first-child')].map(td => td.textContent.trim()).find(x => /^\\d\\d\\.\\d\\d\\.\\d{4}$/.test(x))")
+                self.assertTrue(there)
+                pg.evaluate("location.hash = '#overview'"); T.until(pg, "S.tab === 'overview' && !document.querySelector('#main .loading')")
+                pg.evaluate("d => { asRefOpen({label: d, go: {route: '#bookings', mark: {text: d, column: 'Konto'}}}); }", there)
+                T.until(pg, MARKED, 6)
+                self.assertFalse(pg.evaluate(NOT_FOUND))
+                pg.evaluate("location.hash = '#overview'"); T.until(pg, "S.tab === 'overview' && !document.querySelector('#main .loading')")
+                pg.evaluate("asRefOpen({label: '31.12.1987', go: {route: '#bookings', mark: {text: '31.12.1987', column: 'Konto'}}})")
+                T.until(pg, NOT_FOUND, 6)
+                self.assertEqual(pg.evaluate("location.hash"), "#bookings")
+                self.assertEqual(pg.evaluate("document.querySelectorAll('.as-mark').length"), 0)
+                self.assertEqual(errors, [])
+                ctx.close()
+                for b in engines:
+                    b.close()
         finally:
             srv.shutdown(); srv.server_close()
             app.assistant_stop(); app.stop.set()

@@ -1,5 +1,9 @@
 # Änderungen
 
+## 3.17.131 (2026-11-28 14:39)
+- Cashflow: am iPhone zeigt das erste Tippen auf ein Feld der Heatmap wieder die Zahlen – auch direkt nach dem Schließen des Seitenfensters
+- Entwicklung: Klickpfade – zweites Tippen öffnet das Seitenfenster; Bezug auf eine nach geänderten Regeln entfallene Buchung gilt als gemeldet; fester Test für beides
+
 ## 3.17.130 (2026-11-28 04:31)
 - KI-Assistent: denkt auf Englisch und knapp – schneller, genauer; Antwort weiter auf Deutsch
 

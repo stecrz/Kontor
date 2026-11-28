@@ -5063,7 +5063,8 @@ function bindCfCharts(main) {
   }
   // touch: the first tap on a month or a cell shows its numbers, the second acts
   wrap.addEventListener('pointerdown', e => { CF.touch = e.pointerType === 'touch'; }, true);
-  const act = (el, key) => { if (CF.touch && CF.armed !== key) { CF.armed = key; return false; } CF.armed = null; return true; };
+  // (shown here: a cell that still has the focus -- its side window was just closed -- gets no focusin, and the finger's pointerout hid the numbers again)
+  const act = (el, key) => { if (CF.touch && CF.armed !== key) { CF.armed = key; cfShowTip(el); return false; } CF.armed = null; return true; };
   wrap.addEventListener('click', e => {
     if (e.target.closest('#cf-order-reset')) { try { LS.del(CF_ORDER_KEY); } catch (x) {} hide(); route(); toast(t('ansicht_zurueckgesetzt')); return; }
     const mvb = e.target.closest('[data-cfmv]');
