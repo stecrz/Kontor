@@ -3,7 +3,7 @@ model. What it answers is told by the question itself:
 
   call <tool> {json}     -> calls that tool (several lines: several calls); after the tool answered: "Ergebnis: <result>"
   think <text>           -> thoughts first, then "Fertig."
-  slow                   -> writes slowly for a long time (to stop it)
+  slow                   -> writes slowly for a long time, about 200 s (to stop it)
   fail                   -> the server answers with an error
   toolong                -> "exceeds the available context size" while earlier turns are in the request
   silent                 -> says nothing (until it is asked again); mute -> says nothing at all
@@ -453,7 +453,7 @@ def main():
                         self._send(delta({"reasoning_content": w + " "}))
                     self._send(delta({"content": "Fertig."}))
                 elif q.startswith("slow"):
-                    for i in range(400):
+                    for i in range(4000):                   # (200 s: on a slow machine the test's stop comes later than it would here)
                         self._send(delta({"content": "wort%d " % i}))
                         time.sleep(0.05)
                 else:
