@@ -18,17 +18,17 @@ Filters above the list: area chips (only ticked areas are listed and counted; th
 saved), the period (categories.period; saved), "ab … €" (only transactions whose absolute amount is at least this; this view only,
 not saved, not in the sidebar's count), the level filter (categories.levels). The note "N Umsätze ohne Kategorie in MoneyMoney"
 counts the transactions matching these filters (not the groups). A blue banner counts assignments made
-from another device that wait to be written at the next sync at the Mac (they already count in Kontor). "Sehr wahrscheinliche
-übernehmen (N)": N = transactions of the groups the level filter shows, not deselected, whose own suggestion is "sehr wahrscheinlich";
-in the filter "Wahrscheinlich" the button reads "Wahrscheinliche übernehmen (N)" and N also counts "wahrscheinlich" ones; never "unsicher"
+from another device that wait to be written at the next sync at the Mac (they already count in Kontor). "Wahrscheinliche
+übernehmen (N)": N = transactions of the groups the level filter shows, not deselected, whose own suggestion is "wahrscheinlich";
+in the filter "Möglich" the button reads "Mögliche übernehmen (N)" and N also counts "möglich" ones; never "unsicher"
 ones (no button in that filter). The card "Nichts offen" means no transaction matches.
 
 ### categories.levels — Wie wahrscheinlich die Vorschläge stimmen (Filter)
-A segmented filter: "Alle (N)" = all groups (counterparties, not transactions), "Sicher (N)", "Wahrscheinlich (N)", "Unsicher (N)" =
+A segmented filter: "Alle (N)" = all groups (counterparties, not transactions), "Wahrscheinlich (N)", "Möglich (N)", "Unsicher (N)" =
 groups whose level is that (a group's level is that of its least sure transaction; a group without any suggestion counts as
 "Unsicher"). Counted over all groups under the other filters, also beyond the 300 shown. Choosing one lists only those groups
 (the 300 with the largest sums; then the note "Die N größten von M Gegenparteien"); "Keine … Vorschläge." when there are none.
-"Sehr wahrscheinlich" lists only groups whose every suggestion is very likely – such suggestions in a mixed group count for "Sehr wahrscheinliche übernehmen"
+"Wahrscheinlich" lists only groups whose every suggestion is "wahrscheinlich" – such suggestions in a mixed group count for "Wahrscheinliche übernehmen"
 under "Alle".
 
 ### categories.period — Zeitraum
@@ -59,9 +59,9 @@ negative): the sum of all its open transactions (all years matching the filters,
 value. Dates: first and last booking date of these transactions. A group of one transaction shows its purpose and MoneyMoney's
 booking text as a tag.
 The text field holds Kontor's suggestion when every transaction of the group has the same one. The coloured tag beside it is how
-likely it is right: "sehr wahrscheinlich" (green, at least 80 %), "wahrscheinlich" (yellow, 60–80 %), "unsicher" (red, below – down
+likely it is right: "wahrscheinlich" (green, at least 80 %), "möglich" (yellow, 60–80 %), "unsicher" (red, below – down
 to a guess) – an estimate from the user's past, not a promise; for the group the level and percentage of its least likely transaction.
-Its tooltip: "Sehr wahrscheinlich – stimmt nach Kontors Erfahrung zu etwa P %" and the
+Its tooltip: "Wahrscheinlich – stimmt nach Kontors Erfahrung zu etwa P %" and the
 reasons, strongest first. Tag "Vorschläge je Umsatz" (coloured like its least sure transaction): the transactions have different
 suggestions (shown per transaction in the expanded list).
 How sure: see categories.open.group.level. Kontor never applies a suggestion by itself. The button with the user's transfer category (only when the other side is an account
@@ -85,14 +85,14 @@ Umsätze lesen" and its model for finding by meaning; the embeddings it already 
 counterparties with likeness ≥ 0.5 vote, × 0.8. A word in the name of one of the user's categories: 45 % (40 % if another category
 matches as well). Nothing else: the most common category of income or spending (by cash flow position; never a transfer, saving or repayment) for this direction in the area – its share, at most 50 % (a guess). Two kinds of reasons for the
 same category: the best plus half of what is left times the second; a reason of another kind for another category at 50 % or more
-takes half of what it has above 40 % ("Spricht auch für …"). Levels: from 80 % "sehr wahrscheinlich", from 60 % "wahrscheinlich". Only categories
+takes half of what it has above 40 % ("Spricht auch für …"). Levels: from 80 % "wahrscheinlich", from 60 % "möglich". Only categories
 that exist in MoneyMoney are suggested.
 
 ### categories.open.group.tx — Umsätze einer Gegenpartei
 The group's transactions (newest first, at most 300): checkbox (ticked = included when assigning), Datum (booking date), Konto,
 Zweck (the transaction's own name in bold where it differs from the group's, the purpose, MoneyMoney's booking text as a tag),
 Betrag (€, signed: negative = outflow), and – only when the group has no common suggestion – "Vorschlag": this transaction's
-suggestion with a coloured dot for its level (green sehr wahrscheinlich, yellow wahrscheinlich, red unsicher; tooltip: percentage and reasons;
+suggestion with a coloured dot for its level (green wahrscheinlich, yellow möglich, red unsicher; tooltip: percentage and reasons;
 "–": none).
 
 ## categories.doubts — Auffällig

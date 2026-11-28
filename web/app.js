@@ -6288,9 +6288,9 @@ function assignMsg(r) {
 }
 // Kategorien zum Zuordnen: die aus MoneyMoney (keine Ordner, nicht „Unkategorisiert“)
 const katList = id => `<datalist id="${id}">${(S.KATS || []).filter(k => !k.group && !k.default).map(k => `<option value="${esc(CP(k.path))}">`).join('')}</datalist>`;
-// Kontor's suggestions have a level (how often such a one was right: sehr wahrscheinlich, wahrscheinlich, unsicher) -- the groups the level filter shows,
+// Kontor's suggestions have a level (how often such a one was right: wahrscheinlich, möglich, unsicher) -- the groups the level filter shows,
 // and their chosen transactions whose suggestion is at least as sure as taking them all at once allows: sure ones, and in the
-// filter "wahrscheinlich" those too; never a guess (unsicher). [id, category] -- each transaction its own suggestion
+// filter "möglich" those too; never a guess (unsicher). [id, category] -- each transaction its own suggestion
 const KZ_LV = ['high', 'medium', 'low'];
 const kzShown = off => off.groups.filter(g => !KZ.level || g.level === KZ.level);
 const kzBulkLevel = () => KZ.level === 'medium' ? 1 : 0;

@@ -4730,7 +4730,7 @@ class Categories(_Assist):
     def group(self):
         got = self.tool("get_uncategorized")
         self.assertIn("assign_categories", got["note"]); self.assertIn("Haushalt / Werkzeug", got["category_names"]); self.assertIn("only a guess", got["note"])
-        self.assertTrue(all(g["suggestion_level"] in ("very likely", "likely", "unsure") for g in got["by_counterparty"] if g["kontors_suggestion"]))
+        self.assertTrue(all(g["suggestion_level"] in ("likely", "possible", "unsure") for g in got["by_counterparty"] if g["kontors_suggestion"]))
         return next(g for g in got["by_counterparty"] if g["counterparty"] == "Bauhaus")
 
     def test_assign_after_the_click_and_take_back(self):

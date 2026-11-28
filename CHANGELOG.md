@@ -1,5 +1,9 @@
 # Änderungen
 
+## 3.17.129 (2026-11-28 04:01)
+- Kategorisieren: Stufen der Vorschläge mit je einem Wort – wahrscheinlich, möglich, unsicher
+- Kategorisieren: Sammelknopf „Wahrscheinliche übernehmen“, im Filter „Möglich“: „Mögliche übernehmen“
+
 ## 3.17.128 (2026-11-28 03:25)
 - KI-Assistent: Stopp direkt nach dem Absenden geht nicht mehr verloren
 

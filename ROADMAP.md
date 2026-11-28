@@ -528,6 +528,10 @@ anhängen – nie löschen.
   wahrscheinlich“ (ab 80 %), „wahrscheinlich“ (ab 60 %), „unsicher“; der Tooltip sagt „stimmt nach Kontors Erfahrung zu etwa P %“, der
   Sammelknopf heißt „Sehr wahrscheinliche übernehmen“ (im Filter „Wahrscheinlich“: „Wahrscheinliche übernehmen“). Der Assistent liest
   „very likely / likely / unsure“. (umgesetzt in 3.17.125)
+- **Je Stufe ein Wort** (Nutzer, 2026-11-28): nicht „sehr wahrscheinlich“, sondern jeweils nur ein Wort. Umgesetzt: „wahrscheinlich“ (grün, ab
+  80 %), „möglich“ (gelb, ab 60 %), „unsicher“ (rot); Sammelknopf „Wahrscheinliche übernehmen“, im Filter „Möglich“: „Mögliche
+  übernehmen“; der Assistent liest „likely / possible / unsure“. Abgelöst: „sehr wahrscheinlich / wahrscheinlich“ (3.17.125).
+  (umgesetzt in 3.17.129)
 - **Dieselbe Datei im Assistenten nur einmal** (Nutzer, 2026-11-27): Wird eine Datei noch einmal angehängt (Byte für Byte gleich),
   erkennt Kontor sie – als Optimierung. Umsetzung: einmal im Arbeitsspeicher, was schon gelesen ist (Text, Tabellen, Seitenbilder),
   wird nicht neu gelesen; in derselben Unterhaltung ist sie dieselbe Datei wie vorher (gleiche Kennung für das Modell), in einer

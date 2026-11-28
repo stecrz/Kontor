@@ -18,7 +18,7 @@
  "cash-flow": ["Cashflow", "Kapitalfluss", "freier Cashflow", "Einnahmen und Ausgaben"],
  "cash-flow-charts": ["Diagramme Cashflow", "Grafiken Cashflow"],
  "categories": ["Kategorisieren", "Umsätze zuordnen", "Kategorie vergeben", "unkategorisiert", "alte Jahre nicht kategorisieren"],
- "categories-suggestions": ["wie sicher ist der Vorschlag", "Vorschlag Kategorie grün gelb rot", "sehr wahrscheinliche übernehmen"],
+ "categories-suggestions": ["wie sicher ist der Vorschlag", "Vorschlag Kategorie grün gelb rot", "wahrscheinliche übernehmen"],
  "categories-doubts": ["falsche Kategorie finden", "Kategorie passt nicht", "Ausreißer Kategorien"],
  "categories-rules": ["Regeln für MoneyMoney", "Kategorieregel"],
  "categories-write-back": ["rückgängig machen Kategorie", "eingetragen zurücknehmen"],
