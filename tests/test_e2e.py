@@ -3571,7 +3571,7 @@ class FeatureTests(_AppBase):
         code, k = self.call("/api/categories/positions")
         self.assertEqual(code, 200); self.assertNotIn("baum", k); self.assertNotIn("rules", k)
         self.assertGreater({r["path"]: r for r in k["categories"]}["Lebensmittel"]["count_all"], 0)
-        # Offene Umsaetze: Baumarkt (ohne Kategorie) als Gruppe -- ein Vorschlag, aber nie "sicher" ohne eigene Vergangenheit; Vorschlaege
+        # Offene Umsaetze: Baumarkt (ohne Kategorie) als Gruppe -- ein Vorschlag, aber nie "sehr wahrscheinlich" ohne eigene Vergangenheit; Vorschlaege
         # ordnen nie selbst zu (alle Jahre)
         self.call("/api/categories/areas", {"period": {"from": "", "to": ""}, "wait": True})
         code, off = self.call("/api/categories/unassigned")
@@ -5605,7 +5605,7 @@ class BrowserTest(unittest.TestCase):
                 # how sure each suggestion is: the button that takes them all at once takes sure ones only, the filter "Unsicher"
                 # never offers it; each group shows its level
                 sure = pg.evaluate("() => KZ.open.groups.reduce((n, g) => n + Object.values(g.levels || {}).filter(l => l === 'high').length, 0)")
-                self.assertEqual(pg.inner_text("#kz-alle") if sure else None, ("Alle sicheren übernehmen (%d)" % sure) if sure else None)
+                self.assertEqual(pg.inner_text("#kz-alle") if sure else None, ("Sehr wahrscheinliche übernehmen (%d)" % sure) if sure else None)
                 self.assertIsNone(pg.query_selector("#kz-alle") if not sure else None)
                 self.assertEqual(len(pg.query_selector_all(".kz-group .kz-lv")), len(pg.query_selector_all(".kz-group")))
                 low = pg.evaluate("() => KZ.open.levels.low")

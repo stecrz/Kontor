@@ -523,6 +523,11 @@ anhängen – nie löschen.
   Umgesetzt: „Deine Kategorie → Kontors Vorschlag“ nebeneinander, und jeder Knopf nennt die Kategorie, die danach gilt:
   „„Vorschlag“ übernehmen“ (deine ersetzt Kontor in MoneyMoney nach Rückfrage), „„Deine“ behalten“ (nichts in MoneyMoney, aus der
   Liste), „Andere …“ (Feld erst auf Klick). Abgelöst: Feld mit Kontors Vorschlag, „Ändern“ und „Passt so“. (umgesetzt in 3.17.120)
+- **„sehr wahrscheinlich“ statt „sicher“** (Nutzer, 2026-11-28): Die oberste Stufe der Vorschläge hieß „sicher“ – irreführend, auch ein
+  solcher Vorschlag kann falsch sein; es ist Kontors Einschätzung, die man nicht überbewerten soll. Umgesetzt: Stufen „sehr
+  wahrscheinlich“ (ab 80 %), „wahrscheinlich“ (ab 60 %), „unsicher“; der Tooltip sagt „stimmt nach Kontors Erfahrung zu etwa P %“, der
+  Sammelknopf heißt „Sehr wahrscheinliche übernehmen“ (im Filter „Wahrscheinlich“: „Wahrscheinliche übernehmen“). Der Assistent liest
+  „very likely / likely / unsure“. (umgesetzt in 3.17.125)
 - **Dieselbe Datei im Assistenten nur einmal** (Nutzer, 2026-11-27): Wird eine Datei noch einmal angehängt (Byte für Byte gleich),
   erkennt Kontor sie – als Optimierung. Umsetzung: einmal im Arbeitsspeicher, was schon gelesen ist (Text, Tabellen, Seitenbilder),
   wird nicht neu gelesen; in derselben Unterhaltung ist sie dieselbe Datei wie vorher (gleiche Kennung für das Modell), in einer

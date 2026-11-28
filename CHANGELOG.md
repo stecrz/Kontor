@@ -1,5 +1,9 @@
 # Änderungen
 
+## 3.17.125 (2026-11-28 02:14)
+- Kategorisieren: oberste Stufe der Vorschläge heißt „sehr wahrscheinlich“ statt „sicher“ – auch ein grüner Vorschlag kann falsch sein
+- Kategorisieren: Sammelknopf heißt „Sehr wahrscheinliche übernehmen“
+
 ## 3.17.124 (2026-11-28 01:49)
 - Entwicklung: Test des Stopp-Knopfs im KI-Assistenten auf langsamen Rechnern stabil
 
